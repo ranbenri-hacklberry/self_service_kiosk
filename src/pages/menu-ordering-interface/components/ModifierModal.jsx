@@ -1,0 +1,940 @@
+import React, { useEffect, useState, useMemo } from 'react';
+import {
+  X, Check, Coffee, Milk, Leaf, Wheat, Nut,
+  Cloud, CloudOff, Thermometer, Flame, Droplets,
+  Zap, Ban, Puzzle, ArrowUpFromLine, ArrowDownToLine, Blend, Gauge, Apple, Disc
+} from 'lucide-react';
+import { fetchManagerItemOptions } from '@/lib/managerApi';
+
+const formatPrice = (price = 0) => {
+  const numPrice = Number(price);
+  return numPrice > 0 ? `+${numPrice}₪` : '';
+};
+
+// Helper function to get icon based on value name
+const getIconForValue = (valueName, groupName) => {
+  const name = (valueName || '').toLowerCase();
+  const group = (groupName || '').toLowerCase();
+
+  // Milk icons
+  if (group.includes('חלב') || group.includes('milk')) {
+    if (name.includes('סויה')) return Leaf;
+    if (name.includes('שיבולת')) return Wheat;
+    if (name.includes('שקדים')) return Nut;
+    return Milk;
+  }
+
+  // Foam icons
+  if (group.includes('קצף') || group.includes('foam')) {
+    if (name.includes('הרבה') || name.includes('extra')) return ArrowUpFromLine;
+    if (name.includes('מעט') || name.includes('little')) return ArrowDownToLine;
+    if (name.includes('בלי') || name.includes('none')) return X;
+    return Cloud;
+  }
+
+  // Temperature icons
+  if (group.includes('טמפרטורה') || group.includes('temp')) {
+    if (name.includes('רותח') || name.includes('hot')) return Flame;
+    if (name.includes('פושר') || name.includes('warm')) return Thermometer;
+    return Thermometer;
+  }
+
+  // Base icons
+  if (group.includes('בסיס') || group.includes('base')) {
+    if (name.includes('מים') || name.includes('water')) return Droplets;
+    if (name.includes('חצי')) return Blend;
+    return Droplets;
+  }
+
+  // Strength icons
+  if (group.includes('חוזק') || group.includes('strength')) {
+    if (name.includes('חזק') || name.includes('strong')) return Gauge;
+    if (name.includes('חלש') || name.includes('weak')) return Coffee;
+    return Zap;
+  }
+
+  // Topping icons (for pizza/toast)
+  const groupLower = group.toLowerCase();
+  if (groupLower.includes('תוספות') || groupLower.includes('topping')) {
+    if (name.includes('עגבניות') || name.includes('tomato')) return Apple;
+    if (name.includes('זיתים') || name.includes('olive')) return Disc;
+    if (name.includes('בצל') || name.includes('onion')) return Disc;
+    return Disc;
+  }
+
+  // Special icons
+  if (name.includes('נטול')) return Ban;
+  if (name.includes('מפורק')) return Puzzle;
+
+  return Coffee;
+};
+
+// Milk Card Component (Hero Section)
+const MilkCard = ({ label, Icon, price, isSelected, onClick }) => {
+  return (
+    <button
+      onClick={onClick}
+      className={`
+        relative flex-1 flex flex-col items-center justify-center gap-1.5 py-4 px-3 rounded-2xl
+        font-semibold transition-all duration-200 touch-manipulation min-h-[88px] active:scale-95
+        ${isSelected
+          ? "bg-orange-50 text-orange-600 ring-2 ring-orange-400 ring-offset-2 shadow-lg shadow-orange-100"
+          : "bg-white text-slate-500 hover:bg-slate-50 border border-slate-100 shadow-sm hover:shadow-md"
+        }
+      `}
+    >
+      <Icon
+        size={24}
+        strokeWidth={isSelected ? 2.5 : 2}
+        className={`transition-transform duration-200 ${isSelected ? "scale-110" : ""}`}
+      />
+      <span className="text-sm">{label}</span>
+      {price > 0 && (
+        <span className={`text-xs font-medium ${isSelected ? "text-orange-500" : "text-slate-400"}`}>
+          +₪{price}
+        </span>
+      )}
+    </button>
+  );
+};
+
+// Modifier Pill Button
+const ModifierPill = ({ label, Icon, isSelected, onClick, variant = "default", price }) => {
+  const selectedStyles =
+    variant === "purple"
+      ? "bg-purple-600 text-white shadow-lg shadow-purple-200"
+      : "bg-slate-800 text-white shadow-lg shadow-slate-300";
+
+  return (
+    <button
+      onClick={onClick}
+      className={`
+        w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl
+        font-medium transition-all duration-200 touch-manipulation active:scale-95
+        ${isSelected
+          ? selectedStyles
+          : "bg-white text-slate-600 border border-slate-100 shadow-sm hover:shadow-md hover:bg-slate-50"
+        }
+      `}
+    >
+      <Icon size={18} strokeWidth={isSelected ? 2.5 : 2} />
+      <span className="text-sm">{label}</span>
+      {price !== undefined && price > 0 && (
+        <span className={`text-xs ${isSelected ? "text-white/80" : "text-slate-400"}`}>
+          +₪{price}
+        </span>
+      )}
+    </button>
+  );
+};
+
+const ModifierModal = (props) => {
+  const { isOpen, selectedItem, onClose, onAddItem } = props;
+
+  // ⚠️ CRITICAL: All hooks MUST be called before any early returns (React Rules of Hooks)
+  const [optionGroups, setOptionGroups] = useState([]);
+  const [orderNote, setOrderNote] = useState('');
+  const [isNoteOpen, setIsNoteOpen] = useState(false);
+  const [optionSelections, setOptionSelections] = useState({});
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isLoadingOptions, setIsLoadingOptions] = useState(false);
+
+  // Check if this is an espresso item
+  const isEspresso = selectedItem?.name?.includes('אספרסו');
+
+  // Reset state when selectedItem changes
+  useEffect(() => {
+    if (selectedItem) {
+      setOptionGroups([]);
+      setOptionSelections({});
+      setShowAdvanced(false);
+      setOrderNote('');
+      setIsNoteOpen(false);
+    }
+  }, [selectedItem?.id]);
+
+  useEffect(() => {
+    if (!isOpen || !selectedItem) {
+      return;
+    }
+
+    const loadOptions = async () => {
+      try {
+        setIsLoadingOptions(true);
+        // Determine the correct ID to fetch options for
+        // If it's an existing order item, it has a menu_item_id property.
+        // If it's a new item from menu, id is the menu_item_id.
+        const targetItemId = selectedItem.menu_item_id || selectedItem.id;
+
+        // Check cache first
+        if (props.optionsCache && props.optionsCache[targetItemId]) {
+          console.log('⚡ Using Cached Options for:', selectedItem.name);
+          const cachedOptions = props.optionsCache[targetItemId];
+          setOptionGroups(cachedOptions);
+          setIsLoadingOptions(false);
+
+          // If cached options are empty, auto-add item immediately
+          if ((!cachedOptions || cachedOptions.length === 0) && props.allowAutoAdd !== false) {
+            onAddItem?.({
+              ...selectedItem,
+              selectedOptions: [],
+              totalPrice: selectedItem.price,
+              price: selectedItem.price
+            });
+            onClose();
+            return;
+          }
+
+          setOptionGroups(cachedOptions);
+          processDefaults(cachedOptions);
+          return;
+        }
+
+        console.log('🔄 Fetching Options from DB for:', selectedItem.name, 'ID:', targetItemId);
+        const fetchedOptions = await fetchManagerItemOptions(targetItemId);
+
+        // Combine with injected extra groups (e.g. for Salad Prep)
+        const allOptions = [...(fetchedOptions || []), ...(props.extraGroups || [])];
+
+        // Update cache (only with fetched options to keep cache clean)
+        if (props.onCacheUpdate && fetchedOptions?.length > 0) {
+          props.onCacheUpdate(prev => ({
+            ...prev,
+            [targetItemId]: fetchedOptions
+          }));
+        }
+
+        setOptionGroups(allOptions);
+        setIsLoadingOptions(false);
+
+        // If NO options at all (fetched or extra), auto-add item immediately ONLY if allowed
+        console.log('🔍 ModifierModal AutoAdd Check:', {
+          item: selectedItem.name,
+          optionsCount: allOptions.length,
+          allowAutoAdd: props.allowAutoAdd
+        });
+
+        if (allOptions.length === 0 && props.allowAutoAdd !== false) {
+          console.log('⚡ Auto-adding item (no options & allowed)');
+          onAddItem?.({
+            ...selectedItem,
+            selectedOptions: [],
+            totalPrice: selectedItem.price,
+            price: selectedItem.price
+          });
+          onClose();
+          return;
+        }
+
+        processDefaults(allOptions);
+
+      } catch (error) {
+        console.error('Error loading options:', error);
+        setIsLoadingOptions(false);
+
+        // Only auto-add on error if allowed. Otherwise show modal (allows notes)
+        if (props.allowAutoAdd !== false) {
+          onAddItem?.(selectedItem);
+          onClose();
+        }
+      }
+    };
+
+    const processDefaults = (options) => {
+      const defaults = {};
+      const existingSelections = selectedItem.selectedOptions || [];
+
+      options.forEach(group => {
+        const isMultipleSelect = group.is_multiple_select || group.type === 'multi';
+        if (isMultipleSelect) {
+          const existingToppings = existingSelections
+            .filter(opt => String(opt.groupId) === String(group.id))
+            .map(opt => String(opt.valueId));
+
+          if (existingToppings.length > 0) {
+            defaults[group.id] = existingToppings;
+          } else {
+            defaults[group.id] = [];
+          }
+          return;
+        }
+
+        // Try to find match by ID first
+        let existingChoice = existingSelections.find(opt =>
+          opt.groupId && String(opt.groupId) === String(group.id)
+        );
+
+        // If not found by ID, try to find by matching value names across all selections
+        // This handles cases where we only stored names in the DB (legacy/simple format)
+        if (!existingChoice) {
+          const matchingValue = group.values?.find(v =>
+            existingSelections.some(sel => {
+              // If selection is just a string (legacy)
+              if (typeof sel === 'string') return sel === v.name;
+              // If selection is object but only has names
+              return sel.valueName === v.name;
+            })
+          );
+
+          if (matchingValue) {
+            defaults[group.id] = String(matchingValue.id);
+            return;
+          }
+        }
+
+        if (existingChoice) {
+          const existingVal = group.values?.find(v =>
+            String(v.id) === String(existingChoice.valueId)
+          );
+          if (existingVal) {
+            defaults[group.id] = String(existingVal.id);
+            return;
+          }
+        }
+
+        const defaultVal = group.values?.find(v => v.is_default) ||
+          group.values?.find(v => v.name?.includes('רגיל')) ||
+          group.values?.[0];
+
+        if (defaultVal) defaults[group.id] = String(defaultVal.id);
+      });
+
+      setOptionSelections(defaults);
+
+      const hasOtherGroupSelections = options.some((group) => {
+        const isMilkGroup = group.name?.toLowerCase().includes('חלב');
+        if (isMilkGroup) return false;
+        return existingSelections.some(opt =>
+          String(opt.groupId) === String(group.id)
+        );
+      });
+
+      const hasMilkGroup = options.some(g => g.name?.toLowerCase().includes('חלב'));
+      if ((hasOtherGroupSelections && options.length > 1) || !hasMilkGroup) {
+        setShowAdvanced(true);
+      }
+    };
+
+    loadOptions();
+  }, [isOpen, selectedItem?.id]);
+
+  const { milkGroup, foamGroup, tempGroup, baseGroup, strengthGroup, otherGroups } = useMemo(() => {
+    if (!optionGroups?.length) return {
+      milkGroup: null, foamGroup: null, tempGroup: null,
+      baseGroup: null, strengthGroup: null, otherGroups: []
+    };
+
+    const normalize = (str) => (str || '').toLowerCase();
+    const hasValue = (group, keyword) => {
+      return group.values?.some(v => {
+        const valName = normalize(v.name || v.value_name);
+        return valName.includes(keyword);
+      });
+    };
+
+    // Helper to check group name/title/category
+    const checkGroup = (group, keywords, category) => {
+      const title = normalize(group.title || group.name); // Use title as primary, fallback to name
+      const cat = normalize(group.category);
+
+      if (category && cat === category) return true;
+      return keywords.some(k => title.includes(k));
+    };
+
+    // 1. Milk
+    const milk = optionGroups.find(g => {
+      if (checkGroup(g, ['חלב', 'milk'], 'milk')) return true;
+
+      // Fallback: check values
+      const hasSoy = hasValue(g, 'סויה');
+      const hasOat = hasValue(g, 'שיבולת');
+      const hasAlmond = hasValue(g, 'שקדים');
+      return hasSoy || hasOat || hasAlmond;
+    });
+
+    // 2. Foam
+    const foam = optionGroups.find(g => {
+      return checkGroup(g, ['קצף', 'foam'], 'texture') || hasValue(g, 'קצף');
+    });
+
+    // 3. Temp
+    const temp = optionGroups.find(g => {
+      return checkGroup(g, ['טמפרטורה', 'חום', 'temp'], 'temperature') ||
+        hasValue(g, 'רותח') || hasValue(g, 'פושר');
+    });
+
+    // 4. Base
+    let base = optionGroups.find(g => {
+      return checkGroup(g, ['בסיס', 'base', 'water'], 'base') ||
+        hasValue(g, 'בסיס') || hasValue(g, 'מים');
+    });
+
+    // Filter base group: remove orange base if item is coffee
+    const isCoffeeItem = selectedItem?.name?.includes('קפה') ||
+      selectedItem?.name?.includes('הפוך') ||
+      selectedItem?.name?.includes('אספרסו') ||
+      selectedItem?.name?.includes('נס') ||
+      selectedItem?.name?.includes('מקיאטו');
+
+    if (base && isCoffeeItem) {
+      const hasWaterOrMilkBase = base.values.some(v =>
+        v.name.includes('מים') || v.name.includes('חלב') || v.name.includes('סודה')
+      );
+
+      if (!hasWaterOrMilkBase) {
+        base = null;
+      }
+    }
+
+    // 5. Strength
+    const strength = optionGroups.find(g => {
+      return checkGroup(g, ['חוזק', 'strength'], 'strength') ||
+        hasValue(g, 'חזק') || hasValue(g, 'חלש');
+    });
+
+    const others = optionGroups.filter(g =>
+      g !== milk && g !== foam && g !== temp && g !== base && g !== strength
+    );
+
+    return {
+      milkGroup: milk, foamGroup: foam, tempGroup: temp,
+      baseGroup: base, strengthGroup: strength, otherGroups: others
+    };
+  }, [optionGroups, selectedItem]);
+
+  const totalPrice = useMemo(() => {
+    if (!selectedItem) return 0;
+    let sum = Number(selectedItem?.price || 0);
+
+    (optionGroups || []).forEach(group => {
+      const selectedId = optionSelections[group.id];
+      if (!selectedId) return;
+
+      const isMultipleSelect = group.is_multiple_select || group.type === 'multi';
+      if (isMultipleSelect && Array.isArray(selectedId)) {
+        selectedId.forEach(id => {
+          const value = group.values?.find(v => String(v.id) === String(id));
+          const effectivePrice = Number(value?.priceAdjustment || 0);
+          if (effectivePrice > 0) sum += effectivePrice;
+        });
+      } else {
+        const value = group.values?.find(v => String(v.id) === selectedId);
+        const effectivePrice = Number(value?.priceAdjustment || 0);
+        if (effectivePrice > 0) sum += effectivePrice;
+      }
+    });
+    return sum;
+  }, [selectedItem?.price, optionGroups, optionSelections]);
+
+  const toggleOption = (groupId, valueId) => {
+    if (!selectedItem) return;
+
+    setOptionSelections(prev => {
+      const group = (optionGroups || []).find(g => g.id === groupId);
+      const current = prev[groupId];
+      const isMultipleSelect = group?.is_multiple_select || group?.type === 'multi';
+
+      if (isMultipleSelect) {
+        const currentArray = Array.isArray(current) ? current : [];
+        const valueIdStr = String(valueId);
+        if (currentArray.includes(valueIdStr)) {
+          return { ...prev, [groupId]: currentArray.filter(id => id !== valueIdStr) };
+        }
+        return { ...prev, [groupId]: [...currentArray, valueIdStr] };
+      }
+
+      if (current === valueId) {
+        const defaultVal = group.values?.find(v => v.is_default) ||
+          group.values?.find(v => v.name?.includes('רגיל')) ||
+          group.values?.[0];
+        return { ...prev, [groupId]: defaultVal ? String(defaultVal.id) : null };
+      }
+
+      return { ...prev, [groupId]: valueId };
+    });
+  };
+
+  const handleAdd = () => {
+    const selectedOptions = (optionGroups || []).flatMap(group => {
+      const selId = optionSelections[group.id];
+      if (!selId) return [];
+
+      const isMultipleSelect = group.is_multiple_select || group.type === 'multi';
+      if (isMultipleSelect && Array.isArray(selId)) {
+        return selId.map(id => {
+          const val = group.values.find(v => String(v.id) === String(id));
+          if (!val) return null;
+          const effectivePrice = Number(val.priceAdjustment || 0);
+          return {
+            groupId: group.id,
+            groupName: group.title || group.name, // Use title
+            valueId: val.id,
+            valueName: val.name,
+            priceAdjustment: effectivePrice
+          };
+        }).filter(Boolean);
+      }
+
+      const val = group.values.find(v => String(v.id) === selId);
+      if (!val) return [];
+      const effectivePrice = Number(val.priceAdjustment || 0);
+      if (val.name?.includes('רגיל') && effectivePrice === 0) return [];
+
+      return [{
+        groupId: group.id,
+        groupName: group.title || group.name, // Use title
+        valueId: val.id,
+        valueName: val.name,
+        priceAdjustment: effectivePrice
+      }];
+    });
+
+    onAddItem?.({
+      ...selectedItem,
+      tempId: `${selectedItem.id}-${Date.now()}`,
+      quantity: 1,
+      selectedOptions,
+      notes: orderNote, // Add the note here
+      totalPrice,
+      price: totalPrice
+    });
+    onClose();
+  };
+
+  if (!isOpen || !selectedItem) return null;
+
+
+  try {
+    console.log('🚀 ModifierModal Reaching Return Statement - Rendering JSX');
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+        dir="rtl"
+        onClick={onClose}
+      >
+        {/* Backdrop */}
+        {/* The backdrop is now part of the main container div */}
+
+        {/* Modal */}
+        <div
+          className="relative w-auto max-w-[90vw] min-w-[420px] flex flex-col bg-[#FAFAFA] rounded-[2rem] shadow-2xl overflow-hidden"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="bg-white/80 backdrop-blur-xl px-6 py-4 flex items-center sticky top-0 z-20 border-b border-slate-100/50">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-gradient-to-br from-orange-100 to-orange-50 text-orange-500 rounded-2xl flex items-center justify-center shadow-inner">
+                <Coffee size={20} strokeWidth={2.5} />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 tracking-tight">{selectedItem.name}</h2>
+                <p className="text-sm text-slate-400">התאמה אישית</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[150px]">
+
+            {/* 1. Milk Selection - Hero - MOVED TO TOP EXPLICITLY */}
+            {milkGroup && milkGroup.values && !isEspresso && (
+              <section className="order-first mb-4">
+                <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
+                  <div className="flex gap-2">
+                    {(() => {
+                      const seen = new Set();
+                      let values = milkGroup.values?.filter(value => {
+                        const name = (value.name || '').toLowerCase();
+
+                        // Always filter out juices and chocolate drinks from milk options
+                        if (name.includes('תפוזים') || name.includes('לימונענע') || name.includes('גזר') || name.includes('תפוח')) return false;
+                        if (name.includes('שוקו')) return false;
+
+                        // Filter out special modifiers
+                        if (name.includes('נטול קפאין') || name.includes('מפורק')) return false;
+                        if (name.includes('ללא')) return false;
+
+                        const shortName = name.includes('סויה') ? 'סויה' :
+                          name.includes('שיבולת') ? 'שיבולת' :
+                            name.includes('שקדים') ? 'שקדים' :
+                              name.includes('רגיל') ? 'רגיל' : name;
+
+                        if (seen.has(shortName)) return false;
+                        seen.add(shortName);
+                        return true;
+                      }) || [];
+
+                      // Sort: Regular (Right), Oat, Soy
+                      values.sort((a, b) => {
+                        const aName = (a.name || '').toLowerCase();
+                        const bName = (b.name || '').toLowerCase();
+
+                        const getScore = (n) => {
+                          if (n.includes('רגיל')) return 10;
+                          if (n.includes('שיבולת')) return 9;
+                          if (n.includes('סויה')) return 8;
+                          if (n.includes('שקדים')) return 7;
+                          return 0;
+                        };
+
+                        return getScore(bName) - getScore(aName); // Descending score
+                      });
+
+                      return values.map(value => {
+                        let displayName = value.name;
+                        if (displayName.includes('סויה')) displayName = 'סויה';
+                        else if (displayName.includes('שיבולת')) displayName = 'שיבולת';
+                        else if (displayName.includes('שקדים')) displayName = 'שקדים';
+                        else if (displayName.includes('רגיל')) displayName = 'רגיל';
+
+                        // FIX: Pass 'milk' explicitly
+                        const IconComponent = getIconForValue(value.name, 'milk');
+                        const isSelected = String(optionSelections[milkGroup.id]) === String(value.id);
+                        const effectivePrice = value.priceAdjustment || 0;
+
+                        return (
+                          <MilkCard
+                            key={value.id}
+                            label={displayName}
+                            Icon={IconComponent}
+                            price={effectivePrice}
+                            isSelected={isSelected}
+                            onClick={() => toggleOption(milkGroup.id, String(value.id))}
+                          />
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* Loading State */}
+            {isLoadingOptions && (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+              </div>
+            )}
+
+            {/* Empty State Message */}
+            {(optionGroups || []).length === 0 && !isLoadingOptions && (
+              <div className="p-4 text-center text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200 mb-4">
+                <p className="font-medium">אין תוספות מובנות לפריט זה</p>
+                <p className="text-xs mt-1">אבל אפשר לכתוב הערות חופשיות למטה 👇</p>
+              </div>
+            )}
+
+            {/* 2. Modifiers Grid (Dynamic Columns) */}
+            {(foamGroup || tempGroup || baseGroup || strengthGroup) && (
+              <section>
+                <div className={`grid gap-4 ${[foamGroup, tempGroup, baseGroup, strengthGroup].filter(Boolean).length === 1
+                  ? 'grid-cols-1'
+                  : [foamGroup, tempGroup, baseGroup, strengthGroup].filter(Boolean).length === 2
+                    ? 'grid-cols-2'
+                    : [foamGroup, tempGroup, baseGroup, strengthGroup].filter(Boolean).length === 3
+                      ? 'grid-cols-3'
+                      : 'grid-cols-4'
+                  }`}>
+
+                  {/* Foam Column */}
+                  {foamGroup && (
+                    <div className="space-y-1.5 min-w-[140px]">
+                      <p className="text-xs text-slate-400 text-center mb-1">קצף</p>
+                      {foamGroup.values?.filter(v => {
+                        const name = (v.name || '').toLowerCase();
+                        return !name.includes('רגיל') && !name.includes('default');
+                      }).map(value => {
+                        const IconComponent = getIconForValue(value.name, 'foam');
+                        const isSelected = String(optionSelections[foamGroup.id]) === String(value.id);
+                        const effectivePrice = value.priceAdjustment || 0;
+
+                        return (
+                          <ModifierPill
+                            key={value.id}
+                            label={value.name}
+                            Icon={IconComponent}
+                            isSelected={isSelected}
+                            onClick={() => toggleOption(foamGroup.id, String(value.id))}
+                            price={effectivePrice}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Temperature Column */}
+                  {tempGroup && (
+                    <div className="space-y-1.5 min-w-[140px]">
+                      <p className="text-xs text-slate-400 text-center mb-1">טמפרטורה</p>
+                      {tempGroup.values?.filter(v => {
+                        const name = (v.name || '').toLowerCase();
+                        return !name.includes('רגיל') && !name.includes('default');
+                      }).map(value => {
+                        const IconComponent = getIconForValue(value.name, 'temp');
+                        const isSelected = String(optionSelections[tempGroup.id]) === String(value.id);
+                        const effectivePrice = value.priceAdjustment || 0;
+
+                        return (
+                          <ModifierPill
+                            key={value.id}
+                            label={value.name}
+                            Icon={IconComponent}
+                            isSelected={isSelected}
+                            onClick={() => toggleOption(tempGroup.id, String(value.id))}
+                            price={effectivePrice}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Base Column */}
+                  {baseGroup && (
+                    <div className="space-y-1.5 min-w-[140px]">
+                      <p className="text-xs text-slate-400 text-center mb-1">בסיס</p>
+                      {baseGroup.values?.filter(v => {
+                        const name = (v.name || '').toLowerCase();
+                        return !name.includes('רגיל') && !name.includes('default');
+                      }).map(value => {
+                        const IconComponent = getIconForValue(value.name, 'base');
+                        const isSelected = String(optionSelections[baseGroup.id]) === String(value.id);
+                        const effectivePrice = value.priceAdjustment || 0;
+
+                        return (
+                          <ModifierPill
+                            key={value.id}
+                            label={value.name}
+                            Icon={IconComponent}
+                            isSelected={isSelected}
+                            onClick={() => toggleOption(baseGroup.id, String(value.id))}
+                            price={effectivePrice}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Strength Column */}
+                  {strengthGroup && (
+                    <div className="space-y-1.5 min-w-[140px]">
+                      <p className="text-xs text-slate-400 text-center mb-1">חוזק</p>
+                      {strengthGroup.values?.filter(v => {
+                        const name = (v.name || '').toLowerCase();
+                        return !name.includes('רגיל') && !name.includes('default');
+                      }).map(value => {
+                        const IconComponent = getIconForValue(value.name, 'strength');
+                        const isSelected = String(optionSelections[strengthGroup.id]) === String(value.id);
+                        const effectivePrice = value.priceAdjustment || 0;
+
+                        return (
+                          <ModifierPill
+                            key={value.id}
+                            label={value.name}
+                            Icon={IconComponent}
+                            isSelected={isSelected}
+                            onClick={() => toggleOption(strengthGroup.id, String(value.id))}
+                            price={effectivePrice}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+
+                </div>
+              </section>
+            )}
+
+            {/* 4. Other Groups (Toppings, etc.) */}
+            {otherGroups.length > 0 && (
+              <div className="flex flex-col gap-4">
+                {otherGroups.map((group) => {
+                  const isMultipleSelect = group.is_multiple_select || group.type === 'multi';
+                  const visibleOptions = (group.values || []).filter(v => {
+                    if (!v.name) return false;
+                    const lower = (v.name || '').toLowerCase();
+                    if (lower.includes('מפורק')) return false;
+                    if (lower.includes('נטול')) return false;
+                    if (lower.includes('רגיל') || lower.includes('default')) return false;
+                    return true;
+                  });
+
+                  if (visibleOptions.length === 0) return null;
+
+                  return (
+                    <div key={group.id} className="flex flex-col gap-2 bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
+                      <h4 className="text-sm font-black text-slate-800 px-1">{group.name}</h4>
+                      <div className={`grid gap-2 ${isMultipleSelect ? 'grid-cols-3' : visibleOptions.length <= 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                        {visibleOptions.map(value => {
+                          const valueIdStr = String(value.id);
+                          let isSelected;
+                          if (isMultipleSelect) {
+                            const selectedArray = Array.isArray(optionSelections[group.id])
+                              ? optionSelections[group.id]
+                              : [];
+                            isSelected = selectedArray.some(id => String(id) === valueIdStr);
+                          } else {
+                            isSelected = String(optionSelections[group.id]) === valueIdStr;
+                          }
+
+                          const effectivePrice = value.priceAdjustment || 0;
+
+                          return (
+                            <button
+                              key={value.id}
+                              onClick={() => toggleOption(group.id, String(value.id))}
+                              className={`
+                                relative flex flex-col items-center justify-center gap-1.5 py-4 px-3 rounded-2xl
+                                font-semibold transition-all duration-200 touch-manipulation min-h-[88px] active:scale-95
+                                ${isSelected
+                                  ? "bg-orange-50 text-orange-600 ring-2 ring-orange-400 ring-offset-2 shadow-lg shadow-orange-100"
+                                  : "bg-white text-slate-500 hover:bg-slate-50 border border-slate-100 shadow-sm hover:shadow-md"
+                                }
+                              `}
+                            >
+                              {(() => {
+                                const groupLower = (group.title || group.name || '').toLowerCase();
+                                const valueName = (value.name || value.value_name || '').toLowerCase();
+
+                                // Use emojis for toppings, icons for everything else
+                                const IconComponent = getIconForValue(value.name || value.value_name, group.title || group.name);
+                                return <IconComponent size={24} strokeWidth={isSelected ? 2.5 : 2} className={`transition-transform duration-200 ${isSelected ? "scale-110" : ""}`} />;
+                              })()}
+                              <span className="text-sm text-center">{value.name || value.value_name}</span>
+                              {effectivePrice > 0 && (
+                                <span className={`text-xs font-medium ${isSelected ? "text-orange-500" : "text-slate-400"}`}>
+                                  +₪{effectivePrice}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* 3. Special Options Row: Decaf | Note - AT BOTTOM */}
+            <section className="mt-2">
+              {(() => {
+                const specialOptions = [];
+                const isCoffeeItem = selectedItem?.name?.includes('אספרסו') ||
+                  selectedItem?.name?.includes('הפוך') ||
+                  selectedItem?.name?.includes('מוקה') ||
+                  selectedItem?.name?.includes('אמריקנו');
+
+                [...(optionGroups || [])].forEach(group => {
+                  group.values?.forEach(val => {
+                    if (val.name?.includes('מפורק')) {
+                      specialOptions.push({ ...val, groupId: group.id });
+                    }
+                    if (val.name?.includes('נטול') && isCoffeeItem) {
+                      specialOptions.push({ ...val, groupId: group.id });
+                    }
+                  });
+                });
+
+                specialOptions.sort((a, b) => {
+                  const aIsDecaf = a.name?.includes('נטול');
+                  const bIsDecaf = b.name?.includes('נטול');
+                  if (aIsDecaf && !bIsDecaf) return -1;
+                  if (!aIsDecaf && bIsDecaf) return 1;
+                  return 0;
+                });
+
+                const hasSpecialOptions = specialOptions.length > 0;
+                const gridCols = hasSpecialOptions ? 'grid-cols-2' : 'grid-cols-1';
+
+                return (
+                  <div className={`grid gap-3 ${gridCols}`}>
+                    {hasSpecialOptions && (
+                      <div className="flex gap-2">
+                        {specialOptions.map(value => {
+                          const IconComponent = getIconForValue(value.name, '');
+                          const isSelected = String(optionSelections[value.groupId]) === String(value.id);
+                          const effectivePrice = value.priceAdjustment || 0;
+                          const displayName = value.name.includes('נטול') ? 'נטול קפאין' : 'מפורק';
+
+                          return (
+                            <button
+                              key={value.id}
+                              onClick={() => toggleOption(value.groupId, String(value.id))}
+                              className={`flex-1 relative flex items-center justify-center gap-2 h-[50px] rounded-xl border transition-all duration-200 ${isSelected
+                                ? 'bg-purple-50 border-purple-200 ring-1 ring-purple-500'
+                                : 'bg-white border-slate-200 hover:border-slate-300'
+                                }`}
+                            >
+                              <IconComponent size={16} className={isSelected ? 'text-purple-600' : 'text-slate-400'} />
+                              <span className={`text-sm font-bold ${isSelected ? 'text-purple-700' : 'text-slate-600'}`}>
+                                {displayName}
+                              </span>
+                              {effectivePrice > 0 && (
+                                <span className="text-[10px] text-slate-400 ml-1">+{effectivePrice}₪</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Note Input Pill - Only show if allow_notes is not false */}
+                    {selectedItem?.allow_notes !== false && (
+                      <div className={`relative flex items-center h-[50px] rounded-xl border transition-all duration-200 ${orderNote.length > 0
+                        ? 'bg-orange-50 border-orange-500 ring-1 ring-orange-500'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
+                        }`}>
+
+                        <input
+                          type="text"
+                          value={orderNote}
+                          onChange={(e) => setOrderNote(e.target.value)}
+                          maxLength={20}
+                          placeholder="הוסף הערה"
+                          className={`w-full h-full bg-transparent text-center font-bold text-sm focus:outline-none px-2 placeholder:text-slate-400 ${orderNote.length > 0 ? 'text-orange-600' : 'text-slate-800'
+                            }`}
+                        />
+
+                        {orderNote.length > 0 && (
+                          <span className="absolute bottom-1 left-2 text-[9px] text-orange-400 font-medium">
+                            {orderNote.length}/20
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </section>
+
+
+          </div>
+          <div className="p-3 bg-white border-t border-slate-100 shadow-[0_-10px_30px_rgba(0,0,0,0.03)]">
+            <div className="flex gap-3">
+              <button
+                onClick={onClose}
+                className="w-1/3 h-12 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold transition-colors active:scale-95"
+              >
+                ביטול
+              </button>
+              <button
+                onClick={handleAdd}
+                className="flex-1 bg-slate-900 hover:bg-black text-white h-12 rounded-2xl flex items-center justify-between px-6 text-base font-bold shadow-xl shadow-slate-300/50 transition-colors active:scale-98"
+              >
+                <span>הוסף להזמנה</span>
+                <div className="flex items-center gap-2 bg-white/15 px-3 py-1 rounded-xl">
+                  <span>₪{totalPrice}</span>
+                  <Check size={16} />
+                </div>
+              </button>
+            </div>
+          </div>
+        </div >
+      </div >
+    );
+  } catch (error) {
+    console.error("ModifierModal crashed:", error, error.message, error.stack);
+    return null;
+  }
+};
+
+export default React.memo(ModifierModal);

@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Data Manager Agent",
+    "slug": "data-manager-agent",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "datamanageragent",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "extra": {
+      "supportsRTL": true
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.datamanageragent.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.datamanageragent.app"
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
+
