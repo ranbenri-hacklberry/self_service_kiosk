@@ -7,40 +7,28 @@ export const AuthProvider = ({ children }) => {
     const [deviceMode, setDeviceMode] = useState(null); // 'kiosk', 'kds', 'manager'
     const [isLoading, setIsLoading] = useState(true);
 
-    // Load state from localStorage on mount
+    // Load state from sessionStorage on mount (Refresh resilience only)
     useEffect(() => {
-        const storedUser = localStorage.getItem('kiosk_user');
-        const storedSession = sessionStorage.getItem('employee_session');
-        const storedMode = localStorage.getItem('kiosk_mode');
+        // We do NOT load from localStorage anymore to ensure "New Opening" = Login Screen
+        const storedSession = sessionStorage.getItem('kiosk_user');
+        const storedMode = localStorage.getItem('kiosk_mode'); // Keep mode persistent (Device config)
 
         console.log('🔐 AuthContext Loading:', {
-            hasStoredUser: !!storedUser,
             hasStoredSession: !!storedSession,
             hasStoredMode: !!storedMode
         });
 
-        // Prefer sessionStorage (employee login) over localStorage (customer)
         if (storedSession) {
             try {
                 const sessionUser = JSON.parse(storedSession);
                 console.log('🔐 Loaded from sessionStorage:', {
                     id: sessionUser.id,
-                    name: sessionUser.name,
-                    whatsapp_phone: sessionUser.whatsapp_phone
+                    name: sessionUser.name
                 });
                 setCurrentUser(sessionUser);
             } catch (e) {
                 console.error('Failed to parse session user', e);
-                sessionStorage.removeItem('employee_session');
-            }
-        } else if (storedUser) {
-            try {
-                const localUser = JSON.parse(storedUser);
-                console.log('🔐 Loaded from localStorage:', localUser);
-                setCurrentUser(localUser);
-            } catch (e) {
-                console.error('Failed to parse stored user', e);
-                localStorage.removeItem('kiosk_user');
+                sessionStorage.removeItem('kiosk_user');
             }
         }
 
@@ -53,7 +41,10 @@ export const AuthProvider = ({ children }) => {
 
     const login = (employee) => {
         setCurrentUser(employee);
-        localStorage.setItem('kiosk_user', JSON.stringify(employee));
+        // Save to Session Storage (Persist on refresh, clear on close)
+        sessionStorage.setItem('kiosk_user', JSON.stringify(employee));
+        // Clear any old local storage to be sure
+        localStorage.removeItem('kiosk_user');
     };
 
     const logout = () => {
