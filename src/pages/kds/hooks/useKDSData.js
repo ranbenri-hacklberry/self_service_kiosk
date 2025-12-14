@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { supabase, getSupabase } from '../../../lib/supabase';
+import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../context/AuthContext';
 import { sendSms } from '../../../services/smsService';
 import { groupOrderItems } from '../../../utils/kdsUtils';
@@ -33,9 +33,8 @@ export const useKDSData = () => {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
-            const client = getSupabase(currentUser);
-
-            const { data: ordersData, error } = await client.rpc('get_kds_orders', {
+            // CHANGED: Use supabase directly instead of getSupabase
+            const { data: ordersData, error } = await supabase.rpc('get_kds_orders', {
                 p_date: today.toISOString()
             });
 
@@ -390,8 +389,8 @@ export const useKDSData = () => {
                 if (error) throw error;
                 setLastAction({ orderId, previousStatus: 'in_progress' });
             } else {
-                const client = getSupabase(currentUser);
-                const { error } = await client
+                // CHANGED: Use supabase directly
+                const { error } = await supabase
                     .from('orders')
                     .update({ order_status: nextStatus })
                     .eq('id', orderId);
@@ -416,9 +415,9 @@ export const useKDSData = () => {
         try {
             setIsLoading(true);
             const itemIds = itemsToFire.map(i => i.id);
-            const client = getSupabase(currentUser);
 
-            const { error } = await client.rpc('fire_items_v2', {
+            // CHANGED: Use supabase directly
+            const { error } = await supabase.rpc('fire_items_v2', {
                 p_order_id: orderId,
                 p_item_ids: itemIds
             });
@@ -444,9 +443,9 @@ export const useKDSData = () => {
         try {
             setIsLoading(true);
             const itemIds = itemsToReady.map(i => i.id);
-            const client = getSupabase(currentUser);
 
-            const { error } = await client.rpc('mark_items_ready_v2', {
+            // CHANGED: Use supabase directly
+            const { error } = await supabase.rpc('mark_items_ready_v2', {
                 p_order_id: orderId,
                 p_item_ids: itemIds
             });
@@ -488,8 +487,8 @@ export const useKDSData = () => {
 
     const handleConfirmPayment = async (orderId) => {
         try {
-            const client = getSupabase(currentUser);
-            const { error } = await client
+            // CHANGED: Use supabase directly
+            const { error } = await supabase
                 .from('orders')
                 .update({ is_paid: true })
                 .eq('id', orderId);
