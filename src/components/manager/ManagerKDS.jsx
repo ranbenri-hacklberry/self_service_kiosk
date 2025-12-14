@@ -314,51 +314,44 @@ const ManagerKDS = () => {
             const yesterday = new Date();
             yesterday.setHours(yesterday.getHours() - 24);
 
-            const { data, error } = await supabase
-                .from('orders')
-                .select(`
-                    *,
-                    order_items (
-                        *,
-                        menu_items (
-                            id, name, price, category
-                        )
-                    )
-                `)
-                .gte('created_at', yesterday.toISOString())
-                .neq('order_status', 'cancelled')
-                .order('created_at', { ascending: true });
+            // CHANGED: Use secure RPC 'get_kds_orders' instead of direct table select.
+            // This ensures consistent filtering logic across User KDS and Manager KDS.
+            const { data: ordersData, error } = await supabase.rpc('get_kds_orders', {
+                p_date: yesterday.toISOString()
+            });
 
             if (error) throw error;
 
-            const processed = (data || []).map(order => {
-                // filter out cancelled items or items without menu data
+            // Process RPC result format (which is slightly different but much richer)
+            // The RPC returns { id, order_items, ... } where order_items is already aggregated.
+            // We need to map it to the structure ManagerKDS expects.
+
+            const processed = (ordersData || []).map(order => {
                 const rawItems = (order.order_items || []).filter(item =>
                     item.item_status !== 'cancelled' && item.menu_items
                 );
 
                 if (rawItems.length === 0) return null;
 
-                // 2. Determine Group Status
                 const allReady = rawItems.every(i => i.item_status === 'ready' || i.item_status === 'completed');
                 const isCompleted = order.order_status === 'completed';
 
                 let groupStatus = 'prep';
                 if (allReady && !isCompleted) groupStatus = 'ready';
+                if (isCompleted && !order.is_paid) groupStatus = 'ready'; // Unpaid delivered
+                else if (isCompleted && order.is_paid) return null; // Hide finished
 
-                // Special Case: Unpaid Completed Orders (should appear in "Ready/Delivered" tab to collect payment)
-                if (isCompleted && !order.is_paid) {
-                    groupStatus = 'ready'; // Show in "Ready" tab so we can see it needs payment
-                } else if (isCompleted && order.is_paid) {
-                    return null; // Fully done, hide from KDS
-                }
-
-                // Format items
+                // RPC returns order_items with embedded menu_items, so formatItem works if structure matches.
+                // We need to ensure formatItem handles the RPC structure.
                 const formattedItems = groupItems(rawItems.map(formatItem));
 
-                // 3. Construct Order Object
                 return formatOrder(
-                    order,
+                    {
+                        ...order,
+                        created_at: order.created_at, // RPC returns this
+                        order_number: order.order_number, // RPC returns this
+                        order_status: order.order_status // RPC returns this
+                    },
                     formattedItems,
                     groupStatus,
                     order.is_paid,
