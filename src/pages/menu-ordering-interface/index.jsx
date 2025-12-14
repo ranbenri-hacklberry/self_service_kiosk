@@ -1201,7 +1201,7 @@ const MenuOrderingInterface = () => {
       }
 
       // Build payload matching submit_order_v2 function signature exactly
-      const client = getSupabase(currentUser);
+      const client = supabase;
       const orderPayload = {
         p_customer_phone: guestPhone,
         p_customer_name: customerNameForOrder || 'אורח אנונימי',
@@ -1238,7 +1238,7 @@ const MenuOrderingInterface = () => {
       });
 
       // Use static supabase client to prevent schema context issues
-      // const { data: orderResult, error: orderError } = await getSupabase(currentUser).rpc('submit_order_v2', orderPayload);
+
       const { data: orderResult, error: orderError } = await supabase.rpc('submit_order_v2', orderPayload);
 
       if (orderError) {
@@ -1342,7 +1342,7 @@ const MenuOrderingInterface = () => {
 
       // Fetch order_number in background if not provided by API
       if (!orderNumber && orderId) {
-        getSupabase(currentUser)
+        supabase
           .from('orders')
           .select('order_number')
           .eq('id', orderId)
