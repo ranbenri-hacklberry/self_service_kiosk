@@ -20,6 +20,10 @@ import { useMenuItems, useLoyalty, useCart } from './hooks';
 const ORDER_ORIGIN_STORAGE_KEY = 'order_origin';
 
 const MenuOrderingInterface = () => {
+  const { currentUser } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
   // ===== Menu Items Hook (replaces local state + fetch logic) =====
   const {
     menuItems,
@@ -67,9 +71,6 @@ const MenuOrderingInterface = () => {
     return raw ? JSON.parse(raw) : null;
   });
   const [modifierOptionsCache, setModifierOptionsCache] = useState({}); // Cache for modifier options
-  const { currentUser } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
 
   // ===== Loyalty Hook (replaces loyalty state + fetch logic) =====
   const {
