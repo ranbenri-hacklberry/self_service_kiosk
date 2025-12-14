@@ -6,7 +6,7 @@ import { X, Clock, LogOut, RefreshCw, UserCheck } from 'lucide-react';
 
 const StaffQuickAccessModal = ({ isOpen, onClose }) => {
     const navigate = useNavigate();
-    const { logout } = useAuth();
+    const { logout, currentUser } = useAuth(); // Get currentUser from context
 
     const [pin, setPin] = useState('');
     const [tempUser, setTempUser] = useState(null);
@@ -15,8 +15,9 @@ const StaffQuickAccessModal = ({ isOpen, onClose }) => {
     const [message, setMessage] = useState('');
     const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-    // Use demo phone number
-    const DEMO_PHONE = '0500000000';
+    // Use current user's phone if available, otherwise fall back to demo/prompt
+    // Ideally we should ask for phone if not logged in, but for Quick Access we assume logged in context or Demo fallback
+    const targetPhone = currentUser?.whatsapp_phone || '0500000000';
 
     if (!isOpen) return null;
 
@@ -38,7 +39,8 @@ const StaffQuickAccessModal = ({ isOpen, onClose }) => {
 
         setIsLoading(true);
         try {
-            const result = await loginEmployee(DEMO_PHONE, pin);
+            console.log('🔐 Authenticating Quick Access for:', targetPhone);
+            const result = await loginEmployee(targetPhone, pin);
             if (result.success) {
                 setTempUser(result.employee);
                 // Check shift status

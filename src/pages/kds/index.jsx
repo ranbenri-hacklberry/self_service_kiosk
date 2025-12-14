@@ -59,7 +59,7 @@ transform: scale(1.02);
 
 // --- רכיבים ---
 
-const Header = ({ onRefresh, lastUpdated, viewMode, setViewMode, onOpenStaffMenu, onUndoLastAction, canUndo }) => {
+const Header = ({ onRefresh, lastUpdated, viewMode, setViewMode, onOpenStaffMenu, onUndoLastAction, canUndo, currentUser }) => {
   const navigate = useNavigate();
 
   const handleNewOrder = () => {
@@ -94,6 +94,11 @@ const Header = ({ onRefresh, lastUpdated, viewMode, setViewMode, onOpenStaffMenu
 
       <div className="flex items-center gap-4">
         <div className="flex flex-col items-end text-gray-500 hidden md:flex cursor-pointer" onClick={onRefresh}>
+          {currentUser && (
+            <span className="text-xs font-bold text-gray-400 mb-0.5 max-w-[120px] truncate" dir="rtl">
+              {currentUser.name}
+            </span>
+          )}
           <span className="text-xl font-black leading-none tracking-tight text-slate-700">
             {lastUpdated.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
           </span>
@@ -554,6 +559,7 @@ const KdsScreen = () => {
           onOpenStaffMenu={() => setIsStaffModalOpen(true)}
           onUndoLastAction={handleUndoLastAction}
           canUndo={!!lastAction}
+          currentUser={currentUser}
         />
 
         {viewMode === 'kds' ? (
