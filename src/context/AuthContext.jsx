@@ -7,51 +7,60 @@ export const AuthProvider = ({ children }) => {
     const [deviceMode, setDeviceMode] = useState(null); // 'kiosk', 'kds', 'manager'
     const [isLoading, setIsLoading] = useState(true);
 
-    // Load state from sessionStorage on mount (Refresh resilience only)
+    // Load state from localStorage on mount with expiration check
     useEffect(() => {
-        // We do NOT load from localStorage anymore to ensure "New Opening" = Login Screen
-        const storedSession = sessionStorage.getItem('kiosk_user');
-        const storedMode = localStorage.getItem('kiosk_mode'); // Keep mode persistent (Device config)
+        const checkAuth = () => {
+            const storedSession = localStorage.getItem('kiosk_user');
+            const storedTime = localStorage.getItem('kiosk_auth_time');
+            const storedMode = localStorage.getItem('kiosk_mode');
 
-        console.log('🔐 AuthContext Loading:', {
-            hasStoredSession: !!storedSession,
-            hasStoredMode: !!storedMode
-        });
+            if (storedSession && storedTime) {
+                const now = Date.now();
+                // 18 hours expiration (Daily login requirement)
+                const hoursPassed = (now - parseInt(storedTime)) / (1000 * 60 * 60);
 
-        if (storedSession) {
-            try {
-                const sessionUser = JSON.parse(storedSession);
-                console.log('🔐 Loaded from sessionStorage:', {
-                    id: sessionUser.id,
-                    name: sessionUser.name
-                });
-                setCurrentUser(sessionUser);
-            } catch (e) {
-                console.error('Failed to parse session user', e);
-                sessionStorage.removeItem('kiosk_user');
+                if (hoursPassed < 18) {
+                    try {
+                        const sessionUser = JSON.parse(storedSession);
+                        setCurrentUser(sessionUser);
+                    } catch (e) {
+                        console.error('Failed to parse session user', e);
+                        localStorage.removeItem('kiosk_user');
+                        localStorage.removeItem('kiosk_auth_time');
+                    }
+                } else {
+                    // Session expired
+                    localStorage.removeItem('kiosk_user');
+                    localStorage.removeItem('kiosk_auth_time');
+                }
             }
-        }
 
-        if (storedMode) {
-            setDeviceMode(storedMode);
-        }
+            if (storedMode) {
+                setDeviceMode(storedMode);
+            }
 
-        setIsLoading(false);
+            setIsLoading(false);
+        };
+
+        checkAuth();
     }, []);
 
     const login = (employee) => {
         setCurrentUser(employee);
-        // Save to Session Storage (Persist on refresh, clear on close)
-        sessionStorage.setItem('kiosk_user', JSON.stringify(employee));
-        // Clear any old local storage to be sure
-        localStorage.removeItem('kiosk_user');
+        localStorage.setItem('kiosk_user', JSON.stringify(employee));
+        localStorage.setItem('kiosk_auth_time', Date.now().toString());
     };
 
     const logout = () => {
         setCurrentUser(null);
         setDeviceMode(null);
         localStorage.removeItem('kiosk_user');
+        localStorage.removeItem('kiosk_auth_time');
         localStorage.removeItem('kiosk_mode');
+        // Also clear manager legacy keys if any
+        localStorage.removeItem('manager_auth_key');
+        localStorage.removeItem('manager_auth_time');
+        localStorage.removeItem('manager_employee_id');
     };
 
     const setMode = (mode) => {

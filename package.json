@@ -61,7 +61,7 @@
     "uuid": "^13.0.0"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host --port 4028",
     "start": "vite",
     "build": "vite build",
     "preview": "vite preview",

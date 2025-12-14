@@ -1,182 +1,149 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { loginEmployee, clockEvent } from '../../lib/employees/employeeService';
-import { Loader2, User, KeyRound, ArrowRight, CheckCircle } from 'lucide-react';
+import { Loader2, User, KeyRound, ArrowRight, CheckCircle, AlertTriangle } from 'lucide-react';
 
 const LoginScreen = () => {
     const navigate = useNavigate();
     const { login } = useAuth();
 
-    const [step, setStep] = useState('phone'); // 'phone' | 'pin'
-    const [phone, setPhone] = useState('');
-    const [pin, setPin] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
-    const [shouldClockIn, setShouldClockIn] = useState(true);
 
-    const handleNumberClick = (num) => {
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setIsLoading(true);
         setError('');
-        if (step === 'phone') {
-            if (phone.length < 10) setPhone(prev => prev + num);
-        } else {
-            if (pin.length < 4) setPin(prev => prev + num);
-        }
-    };
 
-    const handleBackspace = () => {
-        setError('');
-        if (step === 'phone') {
-            setPhone(prev => prev.slice(0, -1));
-        } else {
-            setPin(prev => prev.slice(0, -1));
-        }
-    };
+        try {
+            // Find employee by Email
+            const { data: employees, error: fetchError } = await supabase
+                .from('employees')
+                .select('*')
+                .eq('email', email.trim().toLowerCase())
+                .limit(1);
 
-    const handleNext = async () => {
-        if (step === 'phone') {
-            if (phone.length < 10) {
-                setError('נא להזין מספר טלפון תקין (10 ספרות)');
-                return;
-            }
-            setStep('pin');
-        } else {
-            // Submit Login
-            if (pin.length < 4) {
-                setError('נא להזין קוד אישי בן 4 ספרות');
-                return;
-            }
+            if (fetchError) throw fetchError;
 
-            setIsLoading(true);
-            try {
-                const result = await loginEmployee(phone, pin);
-
-                if (result.success) {
-                    // Login successful
-                    login(result.employee);
-
-                    // Optional: Auto Clock In
-                    if (shouldClockIn) {
-                        try {
-                            await clockEvent(result.employee.id, 'clock_in');
-                        } catch (e) {
-                            console.error('Auto clock-in failed', e);
-                        }
-                    }
-
-                    navigate('/mode-selection');
-                } else {
-                    setError(result.message || 'שגיאה בהתחברות');
-                    setPin(''); // Clear PIN on error
-                }
-            } catch (err) {
-                setError('שגיאה בתקשורת עם השרת');
-            } finally {
+            if (!employees || employees.length === 0) {
+                setError('אימייל לא נמצא במערכת');
                 setIsLoading(false);
+                return;
             }
+
+            const employee = employees[0];
+            let isValid = false;
+
+            // Check Password (or PIN as fallback)
+            if (employee.password_hash) {
+                // In a real app, compare hash. For this demo/legacy, we might check direct equality if stored plain, or PIN
+                // Assuming 'password_hash' stores the password for now as per previous 'ManagerAuthenticationScreen' logic
+                isValid = (employee.password_hash === password) || (employee.pin_code === password);
+            } else {
+                isValid = employee.pin_code === password;
+            }
+
+            if (!isValid) {
+                setError('סיסמה שגויה');
+                setIsLoading(false);
+                return;
+            }
+
+            // Success
+            login(employee);
+
+            // Clock In Check currently removed from UI to simplify, or could be auto-triggered
+            try {
+                await clockEvent(employee.id, 'clock_in');
+            } catch (e) { console.log('Auto clock-in optional', e) }
+
+            navigate('/mode-selection');
+
+        } catch (err) {
+            console.error('Login error:', err);
+            setError('שגיאה בהתחברות לשירות');
+        } finally {
+            setIsLoading(false);
         }
     };
 
     return (
         <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-heebo" dir="rtl">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
-
-                {/* Header */}
                 <div className="bg-slate-800 p-8 text-center text-white">
-                    <h1 className="text-3xl font-black mb-2">כניסת עובדים</h1>
-                    <p className="text-slate-300">
-                        {step === 'phone' ? 'הזן מספר טלפון' : 'הזן קוד אישי'}
-                    </p>
+                    <h1 className="text-3xl font-black mb-2">כניסה למערכת</h1>
+                    <p className="text-slate-300">הזן פרטי התחברות</p>
                 </div>
 
                 <div className="p-8">
-                    {/* Input Display */}
-                    <div className="mb-8 text-center">
-                        <div className="text-4xl font-mono font-bold tracking-widest text-slate-800 h-12 flex items-center justify-center gap-2">
-                            {step === 'phone' ? (
-                                phone || <span className="text-gray-300">050...</span>
-                            ) : (
-                                <div className="flex gap-4">
-                                    {[...Array(4)].map((_, i) => (
-                                        <div key={i} className={`w-4 h-4 rounded-full ${i < pin.length ? 'bg-slate-800' : 'bg-gray-200'}`} />
-                                    ))}
-                                </div>
-                            )}
+                    {error && (
+                        <div className="mb-6 bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                            AlertTriangle size={16}
+                            {error}
                         </div>
-                        {error && <p className="text-red-500 text-sm mt-2 font-bold animate-pulse">{error}</p>}
-                    </div>
+                    )}
 
-                    {/* Keypad */}
-                    <div className="grid grid-cols-3 gap-4 mb-8" dir="ltr">
-                        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
-                            <button
-                                key={num}
-                                onClick={() => handleNumberClick(num)}
-                                className="h-16 rounded-2xl bg-slate-50 text-2xl font-bold text-slate-700 hover:bg-slate-100 active:scale-95 transition-all shadow-sm border border-slate-100"
-                            >
-                                {num}
-                            </button>
-                        ))}
+                    <form onSubmit={handleLogin} className="space-y-6">
+                        <div>
+                            <label className="block text-slate-700 font-bold mb-2 text-sm">אימייל</label>
+                            <div className="relative">
+                                <User className="absolute top-1/2 -translate-y-1/2 right-4 text-slate-400 w-5 h-5" />
+                                <input
+                                    type="email"
+                                    value={email}
+                                    onChange={e => setEmail(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4 pr-12 pl-4 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400"
+                                    placeholder="your@email.com"
+                                    required
+                                    autoFocus
+                                    dir="ltr"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-slate-700 font-bold mb-2 text-sm">סיסמה</label>
+                            <div className="relative">
+                                <KeyRound className="absolute top-1/2 -translate-y-1/2 right-4 text-slate-400 w-5 h-5" />
+                                <input
+                                    type={showPassword ? "text" : "password"}
+                                    value={password}
+                                    onChange={e => setPassword(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4 pr-12 pl-4 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400 font-sans"
+                                    placeholder="••••••••"
+                                    required
+                                    dir="ltr"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute top-1/2 -translate-y-1/2 left-4 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                                >
+                                    {showPassword ? 'הסתר' : 'הצג'}
+                                </button>
+                            </div>
+                        </div>
+
                         <button
-                            onClick={handleBackspace}
-                            className="h-16 rounded-2xl bg-red-50 text-red-600 font-bold hover:bg-red-100 active:scale-95 transition-all flex items-center justify-center"
-                        >
-                            ⌫
-                        </button>
-                        <button
-                            onClick={() => handleNumberClick(0)}
-                            className="h-16 rounded-2xl bg-slate-50 text-2xl font-bold text-slate-700 hover:bg-slate-100 active:scale-95 transition-all shadow-sm border border-slate-100"
-                        >
-                            0
-                        </button>
-                        <button
-                            onClick={handleNext}
+                            type="submit"
                             disabled={isLoading}
-                            className="h-16 rounded-2xl bg-slate-900 text-white font-bold hover:bg-slate-800 active:scale-95 transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-4 rounded-xl text-lg shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                         >
-                            {isLoading ? <Loader2 className="animate-spin" /> : (step === 'phone' ? <ArrowRight /> : <CheckCircle />)}
+                            {isLoading ? (
+                                <Loader2 className="animate-spin w-6 h-6" />
+                            ) : (
+                                <>
+                                    <span>התחבר</span>
+                                    <ArrowRight className="w-5 h-5" />
+                                </>
+                            )}
                         </button>
-                    </div>
-
-                    {/* Clock In Checkbox (Only on PIN step) */}
-                    {step === 'pin' && (
-                        <div className="flex items-center justify-center gap-2 mb-4">
-                            <input
-                                type="checkbox"
-                                id="clockIn"
-                                checked={shouldClockIn}
-                                onChange={(e) => setShouldClockIn(e.target.checked)}
-                                className="w-5 h-5 rounded border-gray-300 text-slate-900 focus:ring-slate-900"
-                            />
-                            <label htmlFor="clockIn" className="text-slate-700 font-medium select-none cursor-pointer">
-                                רשום כניסה למשמרת
-                            </label>
-                        </div>
-                    )}
-
-                    {/* Back Button */}
-                    {step === 'pin' && (
-                        <button
-                            onClick={() => {
-                                setStep('phone');
-                                setPin('');
-                                setError('');
-                            }}
-                            className="w-full py-3 text-slate-500 font-medium hover:text-slate-700 transition-colors"
-                        >
-                            חזרה להזנת טלפון
-                        </button>
-                    )}
-                </div>
-                {/* Manager Login Link */}
-                <div className="bg-gray-50 p-4 text-center border-t border-gray-100">
-                    <button
-                        onClick={() => navigate('/manager')}
-                        className="text-xs text-slate-400 hover:text-slate-600 transition-colors flex items-center justify-center gap-1 mx-auto"
-                    >
-                        <User size={12} />
-                        <span>כניסת מנהל</span>
-                    </button>
+                    </form>
                 </div>
             </div>
         </div>

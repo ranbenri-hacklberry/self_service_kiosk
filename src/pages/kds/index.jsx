@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   LayoutGrid, Package, Plus, RotateCcw,
   Clock, CreditCard, ChefHat, CheckCircle, List,
-  Check, AlertTriangle, X, RefreshCw, Flame, Edit
+  Check, AlertTriangle, X, RefreshCw, Flame, Edit, ChevronRight
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { sendSms } from '../../services/smsService';
@@ -59,12 +59,16 @@ transform: scale(1.02);
 
 // --- רכיבים ---
 
-const Header = ({ onRefresh, lastUpdated, viewMode, setViewMode, onOpenStaffMenu, onUndoLastAction, canUndo, currentUser }) => {
+const Header = ({ onRefresh, lastUpdated, viewMode, setViewMode, onUndoLastAction, canUndo, currentUser }) => {
   const navigate = useNavigate();
 
   const handleNewOrder = () => {
     sessionStorage.setItem('order_origin', 'kds');
     navigate('/customer-phone-input-screen?from=kds');
+  };
+
+  const handleExit = () => {
+    navigate('/mode-selection');
   };
 
   // טאבים מעודכנים
@@ -120,10 +124,11 @@ const Header = ({ onRefresh, lastUpdated, viewMode, setViewMode, onOpenStaffMenu
           </button>
 
           <button
-            onClick={onOpenStaffMenu}
-            className="flex flex-col items-center justify-center w-12 h-12 bg-white text-slate-600 rounded-xl hover:bg-slate-50 transition border border-gray-200 shadow-sm"
+            onClick={handleExit}
+            className="flex items-center gap-2 px-4 h-12 bg-white text-slate-600 rounded-xl hover:bg-red-50 hover:text-red-500 transition border border-gray-200 shadow-sm font-bold text-sm"
           >
-            <ChefHat size={20} strokeWidth={2.5} />
+            <span>יציאה</span>
+            <ChevronRight size={18} />
           </button>
 
           <button

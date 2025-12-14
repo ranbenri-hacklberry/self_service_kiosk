@@ -13,7 +13,6 @@ import KdsScreen from './pages/kds';
 import CustomerPhoneInputScreen from './pages/customer-phone-input-screen';
 import NewCustomerNameCollectionScreen from './pages/new-customer-name-collection-screen';
 import ReturningCustomerWelcomeScreen from './pages/returning-customer-welcome-screen';
-import ManagerAuthenticationScreen from './pages/manager-authentication-screen';
 
 import DataManagerInterface from './pages/data-manager-interface';
 import SuperAdminDashboard from './pages/super-admin';
@@ -29,6 +28,7 @@ const ProtectedRoute = ({ children }) => {
       if (!currentUser) {
         navigate('/login');
       } else if (!deviceMode && location.pathname !== '/mode-selection') {
+        // If logged in but no mode selected, force selection
         navigate('/mode-selection');
       }
     }
@@ -45,9 +45,8 @@ const AppRoutes = () => {
     <RouterRoutes>
       {/* Public Routes */}
       <Route path="/login" element={<LoginScreen />} />
-      <Route path="/admin" element={<ManagerAuthenticationScreen />} />
-      <Route path="/admin" element={<ManagerAuthenticationScreen />} />
-      <Route path="/manager" element={<ManagerAuthenticationScreen />} />
+      <Route path="/admin" element={<LoginScreen />} />
+      <Route path="/manager" element={<LoginScreen />} />
       <Route path="/super-admin" element={<SuperAdminDashboard />} />
 
       {/* Protected Routes */}
@@ -75,8 +74,7 @@ const AppRoutes = () => {
       <Route path="/returning-customer-welcome-screen" element={<ProtectedRoute><ReturningCustomerWelcomeScreen /></ProtectedRoute>} />
       <Route path="/menu-ordering-interface" element={<ProtectedRoute><MenuOrderingInterface /></ProtectedRoute>} />
       <Route path="/kitchen-display-system-interface" element={<ProtectedRoute><KdsScreen /></ProtectedRoute>} />
-      <Route path="/manager-authentication-screen" element={<ManagerAuthenticationScreen />} />
-      <Route path="/data-manager-interface" element={<DataManagerInterface />} />
+      <Route path="/data-manager-interface" element={<ProtectedRoute><DataManagerInterface /></ProtectedRoute>} />
 
       <Route path="*" element={<NotFound />} />
     </RouterRoutes>

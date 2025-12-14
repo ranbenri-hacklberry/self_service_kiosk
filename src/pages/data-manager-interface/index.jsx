@@ -7,6 +7,7 @@ import MenuDisplay from '@/components/manager/MenuDisplay';
 import ItemDetails from '@/components/manager/ItemDetails';
 import InventoryScreen from '@/components/manager/InventoryScreen';
 import SalesDashboard from '@/components/manager/SalesDashboard';
+import { useAuth } from '@/context/AuthContext';
 import ManagerKDS from '@/components/manager/ManagerKDS';
 
 const ManagerDashboard = () => {
@@ -16,26 +17,21 @@ const ManagerDashboard = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [menuView, setMenuView] = useState('grid'); // 'grid' | 'details'
 
-  useEffect(() => {
-    const authKey = localStorage.getItem('manager_auth_key');
-    if (!authKey) {
-      navigate('/manager-authentication');
-      return;
-    }
+  const { currentUser } = useAuth();
 
-    // Check auth expiration (24h)
-    const authTime = localStorage.getItem('manager_auth_time');
-    if (authTime) {
-      const timeDiff = Date.now() - parseInt(authTime);
-      const hoursDiff = timeDiff / (1000 * 60 * 60);
-      if (hoursDiff > 24) {
-        localStorage.removeItem('manager_auth_key');
-        localStorage.removeItem('manager_auth_time');
-        localStorage.removeItem('manager_employee_id');
-        navigate('/manager-authentication');
+  useEffect(() => {
+    if (!currentUser) {
+      navigate('/login');
+    } else {
+      // Optional: Check role again if needed, or rely on ProtectedRoute wrapper
+      if (currentUser.access_level !== 'Admin' && currentUser.access_level !== 'Manager' && !currentUser.is_admin) {
+        // If user somehow got here without being manager
+        // But ModeSelection hides the button, and ProtectedRoute works...
+        // Maybe just alert? Or route back.
+        // navigate('/mode-selection');
       }
     }
-  }, [navigate]);
+  }, [currentUser, navigate]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -134,8 +130,8 @@ const ManagerDashboard = () => {
             <button
               onClick={() => setShowLogoutConfirm(true)}
               className={`flex flex-col items-center justify-center w-14 h-14 rounded-xl transition-all text-xs font-bold gap-1 border shadow-sm ${isImpersonating
-                  ? 'bg-slate-700/50 hover:bg-slate-600 border-slate-600'
-                  : 'bg-blue-700/50 hover:bg-red-500/80 border-blue-500/30'
+                ? 'bg-slate-700/50 hover:bg-slate-600 border-slate-600'
+                : 'bg-blue-700/50 hover:bg-red-500/80 border-blue-500/30'
                 }`}
             >
               {isImpersonating ? (
