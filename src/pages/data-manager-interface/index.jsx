@@ -93,26 +93,62 @@ const ManagerDashboard = () => {
     };
   }, []);
 
+  const [isImpersonating, setIsImpersonating] = useState(false);
+
+  useEffect(() => {
+    try {
+      const authKey = localStorage.getItem('manager_auth_key');
+      if (authKey) {
+        const decoded = JSON.parse(decodeURIComponent(atob(authKey)));
+        if (decoded.isImpersonated) {
+          setIsImpersonating(true);
+        }
+      }
+    } catch (e) {
+      console.error('Error parsing auth key', e);
+    }
+  }, []);
+
   const handleLogout = () => {
+    // Check if we are checking out as super admin
+    const wasImpersonating = isImpersonating;
+
     localStorage.removeItem('manager_auth_key');
     localStorage.removeItem('manager_auth_time');
     localStorage.removeItem('manager_employee_id');
-    navigate('/');
+
+    if (wasImpersonating) {
+      navigate('/super-admin');
+    } else {
+      navigate('/');
+    }
   };
 
   return (
     <div className="h-screen flex flex-col bg-gray-100" dir="rtl">
       {/* ... (Header remains same) */}
-      <header className="bg-blue-600 text-white p-2 shadow-md shrink-0 z-20 relative">
+      <header className={`text-white p-2 shadow-md shrink-0 z-20 relative ${isImpersonating ? 'bg-slate-800' : 'bg-blue-600'}`}>
         <div className="flex items-center justify-between max-w-7xl mx-auto w-full">
           {/* ... (Header content) */}
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowLogoutConfirm(true)}
-              className="flex flex-col items-center justify-center w-14 h-14 bg-blue-700/50 rounded-xl hover:bg-red-500/80 transition-all text-xs font-bold gap-1 border border-blue-500/30 shadow-sm"
+              className={`flex flex-col items-center justify-center w-14 h-14 rounded-xl transition-all text-xs font-bold gap-1 border shadow-sm ${isImpersonating
+                  ? 'bg-slate-700/50 hover:bg-slate-600 border-slate-600'
+                  : 'bg-blue-700/50 hover:bg-red-500/80 border-blue-500/30'
+                }`}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-log-out"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></svg>
-              <span>יציאה</span>
+              {isImpersonating ? (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" /></svg>
+                  <span>חזור</span>
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-log-out"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></svg>
+                  <span>יציאה</span>
+                </>
+              )}
             </button>
           </div>
 

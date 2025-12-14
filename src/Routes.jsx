@@ -14,7 +14,9 @@ import CustomerPhoneInputScreen from './pages/customer-phone-input-screen';
 import NewCustomerNameCollectionScreen from './pages/new-customer-name-collection-screen';
 import ReturningCustomerWelcomeScreen from './pages/returning-customer-welcome-screen';
 import ManagerAuthenticationScreen from './pages/manager-authentication-screen';
+
 import DataManagerInterface from './pages/data-manager-interface';
+import SuperAdminDashboard from './pages/super-admin';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -44,7 +46,9 @@ const AppRoutes = () => {
       {/* Public Routes */}
       <Route path="/login" element={<LoginScreen />} />
       <Route path="/admin" element={<ManagerAuthenticationScreen />} />
+      <Route path="/admin" element={<ManagerAuthenticationScreen />} />
       <Route path="/manager" element={<ManagerAuthenticationScreen />} />
+      <Route path="/super-admin" element={<SuperAdminDashboard />} />
 
       {/* Protected Routes */}
       <Route path="/mode-selection" element={

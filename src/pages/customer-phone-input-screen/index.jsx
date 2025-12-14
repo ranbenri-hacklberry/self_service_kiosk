@@ -1,24 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { supabase } from '../../lib/supabase'; // IMPORTED
+import { useAuth } from '../../context/AuthContext'; // IMPORTED
 
 import { APP_VERSION } from '../../config/version';
 import NumericKeypad from './components/NumericKeypad';
-
-const IDENTIFY_AND_GREET_URL =
-  import.meta.env?.VITE_CUSTOMER_IDENTIFY_FUNCTION_URL ||
-  'https://identifyandgreet-4hiqfyxbaa-ey.a.run.app';
-const ADMIN_PHONE = import.meta.env?.VITE_ADMIN_PHONE_NUMBER;
-
-const isIPadDevice = () => {
-  if (typeof navigator === 'undefined') {
-    return false;
-  }
-
-  return (
-    /iPad/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-  );
-};
 
 const ORDER_ORIGIN_STORAGE_KEY = 'order_origin';
 
@@ -30,6 +16,7 @@ const CustomerPhoneInputScreen = () => {
   const inputRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const { currentUser } = useAuth(); // GET AUTH CONTEXT
 
   const formattedPhoneNumber = useMemo(() => {
     const digits = phoneNumber?.replace(/[^0-9]/g, '')?.split('') || [];
@@ -50,47 +37,19 @@ const CustomerPhoneInputScreen = () => {
       return null;
     }
 
-    // Also check ADMIN_PHONE env var if set - this part was removed in the instructions
-    // if (ADMIN_PHONE) {
-    //   const adminDigits = ADMIN_PHONE.replace(/[^0-9]/g, '');
-    //   if (adminDigits && cleanedPhone === adminDigits) {
-    //     sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
-    //     navigate('/kds');
-    //     return null;
-    //   }
-    // }
-
-    const response = await fetch(`${IDENTIFY_AND_GREET_URL}?nocache=${Date.now()}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        phoneNumber: cleanedPhone
-      })
-    });
-
-    let payload;
     try {
-      payload = await response?.json();
+      console.log('🔍 Checking customer:', cleanedPhone);
+      const { data, error } = await supabase.rpc('lookup_customer', {
+        p_phone: cleanedPhone,
+        p_business_id: currentUser?.business_id || null
+      });
+
+      if (error) throw error;
+      return data;
     } catch (err) {
-      throw new Error('תשובת שרת לא תקינה (JSON).');
+      console.error('Lookup error:', err);
+      throw new Error('שגיאה בחיפוש לקוח: ' + err.message);
     }
-
-    if (!response?.ok) {
-      const errorMessage =
-        payload?.error ||
-        payload?.message ||
-        'שגיאת שרת לא ידועה או שגיאת פורמט JSON';
-
-      throw new Error(errorMessage);
-    }
-
-    if (!payload || typeof payload !== 'object') {
-      throw new Error('תשובת שרת לא תקינה (JSON).');
-    }
-
-    return payload;
   };
 
   const handlePhysicalInputChange = (inputValue) => {

@@ -58,6 +58,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const [newIngredientExpanded, setNewIngredientExpanded] = useState(false);
     const [newIngredient, setNewIngredient] = useState({ inventory_item_id: '', quantity: '', unit: '', price: 0 });
     const [inventoryOptions, setInventoryOptions] = useState([]); // For dropdowns
+    const [deletedOptionIds, setDeletedOptionIds] = useState(new Set()); // Pending deletes for options
     const [saveBanner, setSaveBanner] = useState(null);
     const searchRef = useRef(null);
     const nameInputRef = useRef(null);
@@ -93,31 +94,55 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
 
     // Initial History Push
     useEffect(() => {
-        if (item && history.length === 0) {
-            setHistory([{ ...formData }]);
+        // Wait for components to load? No, initial state might have empty components
+        // But we want baseline.
+    }, [item]);
+
+    // Update baseline history when components OR groups load for the first time
+    useEffect(() => {
+        if (item && !loading && history.length === 0 && (components.length > 0 || allGroups.length > 0)) {
+            setHistory([{
+                formData,
+                components,
+                deletedComponentIds: Array.from(deletedComponentIds),
+                allGroups,
+                deletedOptionIds: Array.from(deletedOptionIds)
+            }]);
         }
-    }, [item]); // Only on mount/item change
+    }, [components, allGroups, loading]);
 
     // History Tracker (Debounced)
     useEffect(() => {
-        if (!item || history.length === 0) return; // Don't track if no item or no baseline
+        if (!item || history.length === 0) return;
 
-        // Deep compare or simple JSON stringify check involves performance, 
-        // but for small formData it is fine.
-        const currentParams = JSON.stringify(formData);
-        const lastParams = history.length > 0 ? JSON.stringify(history[history.length - 1]) : null;
+        const currentSnapshot = {
+            formData,
+            components,
+            deletedComponentIds: Array.from(deletedComponentIds),
+            allGroups, // Track modifier groups state
+            deletedOptionIds: Array.from(deletedOptionIds)
+        };
+        const currentParams = JSON.stringify(currentSnapshot);
+
+        const lastSnapshot = history.length > 0 ? history[history.length - 1] : null;
+        const lastParams = lastSnapshot ? JSON.stringify({
+            formData: lastSnapshot.formData,
+            components: lastSnapshot.components,
+            deletedComponentIds: lastSnapshot.deletedComponentIds,
+            allGroups: lastSnapshot.allGroups,
+            deletedOptionIds: lastSnapshot.deletedOptionIds
+        }) : null;
 
         if (currentParams !== lastParams) {
-            setIsDirty(true); // Mark dirty immediately for UI feedback
+            setIsDirty(true);
 
-            // Clear existing timeout to debounce history updates
             if (historyTimeoutRef.current) clearTimeout(historyTimeoutRef.current);
 
             historyTimeoutRef.current = setTimeout(() => {
-                setHistory(prev => [...prev, { ...formData }]);
-            }, 800); // 800ms debounce for history
+                setHistory(prev => [...prev, currentSnapshot]);
+            }, 800);
         }
-    }, [formData]);
+    }, [formData, components, deletedComponentIds, allGroups, deletedOptionIds]);
 
     // Auto-Save Effect
     useEffect(() => {
@@ -208,21 +233,11 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             // Include cost_per_unit from recipe_ingredients
             const { data: ingredients } = await supabase.from('recipe_ingredients').select('id, recipe_id, inventory_item_id, quantity_used, unit_of_measure, cost_per_unit').eq('recipe_id', activeRecipeId);
 
-            // Build a map from the passed inventory data for name lookups (use String keys for consistent matching)
-            console.log('🔧 fetchComponents received inventoryData:', inventoryData?.length, 'items');
+            // Build a map from the passed inventory data for name lookups
             const invMap = (inventoryData || []).reduce((acc, it) => {
                 acc[String(it.id)] = { ...it, price: it.cost_per_unit ? Number(it.cost_per_unit) : (it.price ? Number(it.price) : null) };
                 return acc;
             }, {});
-            console.log('🔧 invMap keys:', Object.keys(invMap).slice(0, 5), '...');
-            console.log('🔧 ingredients inventory_item_ids:', (ingredients || []).slice(0, 3).map(i => i.inventory_item_id));
-
-            // Debug: show cost_per_unit values from recipe_ingredients
-            console.log('🔧 Recipe ingredients with costs:', (ingredients || []).map(i => ({
-                id: i.id,
-                inv_id: i.inventory_item_id,
-                cost: i.cost_per_unit
-            })));
 
             setComponents((ingredients || []).map(row => {
                 const inv = invMap[String(row.inventory_item_id)] || {};
@@ -249,7 +264,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             console.log('📦 Inventory fetched:', data?.length, 'items', error ? `Error: ${error.message}` : '');
             // Debug: show some cost_per_unit values
             const withCosts = (data || []).filter(i => i.cost_per_unit && i.cost_per_unit > 0);
-            console.log('📦 Items with cost_per_unit > 0:', withCosts.length, withCosts.slice(0, 3).map(i => ({ id: i.id, name: i.name, cost: i.cost_per_unit })));
+            console.log('📦 Items with cost_per_unit > 0:', withCosts.length, withCosts.slice(0, 3).map(i => ({ id: i.id, name: i.name, cost: i.cost_per_per_unit })));
             // Map cost_per_unit to price for consistency in component
             const mappedData = (data || []).map(item => ({ ...item, price: item.cost_per_unit }));
             setInventoryOptions(mappedData);
@@ -325,22 +340,13 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     };
 
     const handleUpdateOption = async (optionId, updates) => {
-        try {
-            // Update local state immediately for responsive UI
-            setAllGroups(prev => prev.map(group => ({
-                ...group,
-                optionvalues: group.optionvalues?.map(ov =>
-                    ov.id === optionId ? { ...ov, ...updates } : ov
-                ) || []
-            })));
-            // Then persist to database
-            const { error } = await supabase.from('optionvalues').update(updates).eq('id', optionId);
-            if (error) {
-                console.error("Error updating option:", error);
-                // Revert on error by refetching
-                fetchModifiers();
-            }
-        } catch (e) { console.error("Error updating option:", e); }
+        // Local state update only
+        setAllGroups(prev => prev.map(group => ({
+            ...group,
+            optionvalues: group.optionvalues?.map(ov =>
+                ov.id === optionId ? { ...ov, ...updates } : ov
+            ) || []
+        })));
     };
 
     // --- PICKER LOGIC ---
@@ -524,38 +530,41 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
 
     const resetGroupCreation = () => { setIsCreatingGroup(false); setNewGroupName(''); setGroupSuggestionsOpen(false); };
     const handleAddOptionClick = (groupId) => { setAddingToGroupId(groupId); setNewOptionData({ name: '', price: '0', is_default: false }); setSearchTerm(''); setShowSuggestions(false); setTimeout(() => nameInputRef.current?.focus(), 100); };
-    const handleSaveNewOption = async () => {
+    const handleSaveNewOption = () => {
         const name = searchTerm.trim() || newOptionData.name.trim();
         if (!addingToGroupId || !name) return;
-        try {
-            await supabase.from('optionvalues').insert({
-                group_id: addingToGroupId,
-                value_name: name,
-                price_adjustment: 0, // Default to 0 as requested
-                is_default: false
-            });
-            setSearchTerm('');
-            setNewOptionData({ name: '', price: '0', is_default: false });
-            // Don't close immediately, allow adding more
-            fetchModifiers();
-            setTimeout(() => nameInputRef.current?.focus(), 100);
-        } catch (e) { alert('Error'); }
+
+        const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const newOpt = {
+            id: tempId,
+            group_id: addingToGroupId,
+            value_name: name,
+            price_adjustment: 0,
+            is_default: false,
+            // Add other fields if necessary
+        };
+
+        setAllGroups(prev => prev.map(group => {
+            if (group.id !== addingToGroupId) return group;
+            return {
+                ...group,
+                optionvalues: [...(group.optionvalues || []), newOpt]
+            };
+        }));
+
+        setSearchTerm('');
+        setNewOptionData({ name: '', price: '0', is_default: false });
+        // Keep input focus
+        setTimeout(() => nameInputRef.current?.focus(), 100);
     };
-    const handleDeleteOption = async (id) => {
+    const handleDeleteOption = (id) => {
         if (!id) return;
-        try {
-            const { error } = await supabase.from('optionvalues').delete().eq('id', id);
-            if (error) {
-                console.error('Delete failed:', error);
-                alert('שגיאה במחיקת התוספת: ' + error.message);
-                return;
-            }
-            setDeleteCandidateId(null);
-            await fetchModifiers();
-        } catch (e) {
-            console.error('Delete exception:', e);
-            alert('שגיאה לא צפויה במחיקה');
-        }
+        // Local delete only
+        setAllGroups(prev => prev.map(group => ({
+            ...group,
+            optionvalues: group.optionvalues?.filter(ov => ov.id !== id) || []
+        })));
+        setDeletedOptionIds(prev => { const next = new Set(prev); next.add(id); return next; });
     };
 
     // Format display - show in grams, no decimals for whole numbers
@@ -696,13 +705,10 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         }
     };
 
-    const handleDeleteComponent = async (id) => {
-        if (!confirm('למחוק רכיב זה?')) return;
-        try {
-            await supabase.from('recipe_ingredients').delete().eq('id', id);
-            setComponents(prev => prev.filter(c => c.id !== id));
-            setDeletedComponentIds(prev => { const next = new Set(prev); next.add(id); return next; }); // Just to be safe with UI logic relying on it
-        } catch (e) { console.error(e); }
+    const handleDeleteComponent = (id) => {
+        // Local delete only (Pending). Actual delete happens on Save.
+        setComponents(prev => prev.filter(c => c.id !== id));
+        setDeletedComponentIds(prev => { const next = new Set(prev); next.add(id); return next; });
     };
 
     const saveRecipeData = async (menuItemId) => {
@@ -744,6 +750,71 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         }
     };
 
+    const saveOptionsData = async (menuItemId) => {
+        // 1. Delete options marked for deletion
+        const idsToDelete = Array.from(deletedOptionIds).filter(id => typeof id === 'number');
+        if (idsToDelete.length) {
+            await supabase.from('optionvalues').delete().in('id', idsToDelete);
+        }
+
+        // 2. Process all groups and their options
+        for (const group of allGroups) {
+            // If group is new (temp ID), insert it first
+            let currentGroupId = group.id;
+            if (typeof group.id === 'string' && group.id.startsWith('temp_')) {
+                const { data: newGroup, error: groupError } = await supabase.from('optiongroups').insert({
+                    name: group.name,
+                    menu_item_id: group.menu_item_id,
+                    is_food: group.is_food,
+                    is_drink: group.is_drink,
+                    min_select: group.min_select,
+                    max_select: group.max_select,
+                    display_order: group.display_order
+                }).select().single();
+                if (groupError) { console.error('Error inserting new group:', groupError); continue; }
+                currentGroupId = newGroup.id;
+            } else {
+                // Update existing group properties if needed (e.g., min_select, max_select)
+                await supabase.from('optiongroups').update({
+                    name: group.name,
+                    is_food: group.is_food,
+                    is_drink: group.is_drink,
+                    min_select: group.min_select,
+                    max_select: group.max_select,
+                    display_order: group.display_order
+                }).eq('id', currentGroupId);
+            }
+
+            // Process options within this group
+            for (const option of group.optionvalues || []) {
+                if (typeof option.id === 'string' && option.id.startsWith('temp_')) {
+                    // Insert new option
+                    await supabase.from('optionvalues').insert({
+                        group_id: currentGroupId,
+                        value_name: option.value_name,
+                        price_adjustment: Number(option.price_adjustment),
+                        is_default: option.is_default,
+                        display_order: option.display_order,
+                        inventory_item_id: option.inventory_item_id,
+                        quantity: option.quantity
+                    });
+                } else if (!deletedOptionIds.has(option.id)) {
+                    // Update existing option (if not marked for deletion)
+                    await supabase.from('optionvalues').update({
+                        value_name: option.value_name,
+                        price_adjustment: Number(option.price_adjustment),
+                        is_default: option.is_default,
+                        display_order: option.display_order,
+                        inventory_item_id: option.inventory_item_id,
+                        quantity: option.quantity
+                    }).eq('id', option.id);
+                }
+            }
+        }
+        // Clear deletedOptionIds after successful save
+        setDeletedOptionIds(new Set());
+    };
+
     const handleImageUpload = async (e) => { const file = e.target.files[0]; if (!file) return; try { const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${file.name.split('.').pop()}`; await supabase.storage.from('menu-images').upload(fileName, file); const { data } = supabase.storage.from('menu-images').getPublicUrl(fileName); setFormData(prev => ({ ...prev, image_url: data.publicUrl })); } catch (e) { alert('Upload failed'); } };
 
     const saveInternal = async (silent = false) => {
@@ -778,6 +849,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             await supabase.from('menuitemoptions').delete().eq('item_id', savedId);
             if (selectedGroupIds.size > 0) { const links = Array.from(selectedGroupIds).map(gid => ({ item_id: savedId, group_id: gid })); await supabase.from('menuitemoptions').insert(links); }
             await saveRecipeData(savedId);
+            await saveOptionsData(savedId); // Save modifier groups and options
 
             setLastSavedTime(new Date());
             setIsDirty(false);
@@ -796,8 +868,15 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         if (history.length <= 1) return;
         const prev = history[history.length - 2]; // Get previous state
         setHistory(h => h.slice(0, -1)); // Pop current
-        setFormData(prev);
-        setIsDirty(true); // Undo is a change that needs saving
+
+        // Restore State
+        if (prev.formData) setFormData(prev.formData);
+        if (prev.components) setComponents(prev.components);
+        if (prev.deletedComponentIds) setDeletedComponentIds(new Set(prev.deletedComponentIds));
+        if (prev.allGroups) setAllGroups(prev.allGroups);
+        if (prev.deletedOptionIds) setDeletedOptionIds(new Set(prev.deletedOptionIds));
+
+        setIsDirty(true);
     };
 
     const getModClass = (text) => { if (!text) return ''; const t = String(text).toLowerCase(); if (t.includes('בלי') || t.includes('ללא')) return 'text-red-600'; if (t.includes('תוספת') || t.includes('extra')) return 'text-green-600'; return ''; };
@@ -1592,7 +1671,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
 
                                                                     <button
                                                                         type="button"
-                                                                        onClick={() => handleDeleteComponent(comp.id)}
+                                                                        onClick={(e) => handleDeleteComponent(comp.id, e)}
                                                                         className="w-10 h-10 rounded-xl bg-white text-red-500 hover:bg-red-50 hover:text-red-600 flex items-center justify-center border border-gray-200 hover:border-red-100 transition-colors shadow-sm"
                                                                     >
                                                                         <Trash2 size={18} />

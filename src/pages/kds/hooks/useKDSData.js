@@ -29,16 +29,32 @@ export const useKDSData = () => {
                 optionMap.set(ov.id, ov.value_name); // למקרה שזה מספר
             });
 
-            // Fetch orders from TODAY only
+            // Fetch orders from last 48 hours to be safe
             const today = new Date();
             today.setHours(0, 0, 0, 0);
+            today.setDate(today.getDate() - 2);
+
+            // DEBUGGING LOGS 
+            const businessId = currentUser?.business_id;
+            console.log('🔍 [useKDSData] Fetching orders (Relaxed Mode)...', {
+                businessId,
+                userId: currentUser?.id,
+                lookbackDate: today.toISOString()
+            });
+
+            // REMOVED STRICT CLIENT-SIDE CHECK
+            // We let the server decide based on auth token.
+            // if (!businessId) { ... }
 
             // CHANGED: Use supabase directly instead of getSupabase
             const { data: ordersData, error } = await supabase.rpc('get_kds_orders', {
-                p_date: today.toISOString()
+                p_date: today.toISOString(),
+                p_business_id: businessId || null // Pass the ID explicitly for PIN users
             });
 
             if (error) throw error;
+
+            console.log(`📦 [useKDSData] Total orders fetched: ${ordersData?.length || 0}`);
 
             const processedOrders = [];
 
@@ -519,18 +535,27 @@ export const useKDSData = () => {
     useEffect(() => {
         if (!currentUser) return;
 
-        // Always use 'public' schema. Multi-tenancy is handled via Row Level Security / Business ID.
         const schema = 'public';
+        const businessId = currentUser?.business_id;
 
-        console.log(`🔌 Connecting to Realtime on schema: ${schema}`);
+        console.log(`🔌 Connecting to Realtime on schema: ${schema}, business: ${businessId}`);
+
+        // Helper to create filter string
+        const filter = businessId ? `business_id=eq.${businessId}` : undefined;
 
         const channel = supabase
             .channel('kds-changes')
-            .on('postgres_changes', { event: '*', schema: schema, table: 'orders' }, () => {
+            .on('postgres_changes', { event: '*', schema: schema, table: 'orders', filter: filter }, () => {
                 console.log('🔔 Realtime update received (orders)');
                 fetchOrders();
             })
             .on('postgres_changes', { event: '*', schema: schema, table: 'order_items' }, () => {
+                // order_items might not have business_id on the table itself? 
+                // Let's check schema. If item doesn't have business_id, we can't filter safely.
+                // But usually we just refresh on order change. 
+                // For now, let's keep order_items unfiltered OR check if I can filter via join (Realtime doesn't support joins).
+                // Safest: Leave order_items unfiltered, but rely on fetchOrders() filtering.
+                // Optimized: Only listen to 'orders' updates if possible, but status changes on items trigger order refresh.
                 console.log('🔔 Realtime update received (order_items)');
                 fetchOrders();
             })

@@ -67,6 +67,17 @@ const MenuDisplay = () => {
 
   useEffect(() => { fetchItems(); }, []);
 
+  // Sync selectedItem with fresh data when items update
+  useEffect(() => {
+    if (selectedItem && items.length > 0) {
+      const fresh = items.find(i => i.id === selectedItem.id);
+      // Only update if data changed to avoid loops/unnecessary renders
+      if (fresh && JSON.stringify(fresh) !== JSON.stringify(selectedItem)) {
+        setSelectedItem(fresh);
+      }
+    }
+  }, [items]);
+
   const handleToggleAvailability = async (item) => {
     const newStatus = item.is_in_stock === false ? true : false;
     try {
