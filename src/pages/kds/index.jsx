@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   LayoutGrid, Package, Plus, RotateCcw,
   Clock, CreditCard, ChefHat, CheckCircle, List,
-  Check, AlertTriangle, X, RefreshCw, Flame, Edit, ChevronRight
+  Check, AlertTriangle, X, RefreshCw, Flame, Edit, ChevronRight, House
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { sendSms } from '../../services/smsService';
@@ -13,6 +13,8 @@ import { useAuth } from '../../context/AuthContext';
 import { isDrink, isHotDrink, sortItems, groupOrderItems } from '../../utils/kdsUtils';
 import OrderCard from './components/OrderCard';
 import { useKDSData } from './hooks/useKDSData';
+import KDSInventoryScreen from './components/KDSInventoryScreen';
+import TaskManagementView from '../../components/kds/TaskManagementView';
 
 const API_URL =
   (import.meta.env.VITE_MANAGER_API_URL ||
@@ -59,6 +61,8 @@ transform: scale(1.02);
 
 // --- רכיבים ---
 
+// --- רכיבים ---
+
 const Header = ({ onRefresh, lastUpdated, viewMode, setViewMode, onUndoLastAction, canUndo, currentUser }) => {
   const navigate = useNavigate();
 
@@ -71,76 +75,55 @@ const Header = ({ onRefresh, lastUpdated, viewMode, setViewMode, onUndoLastActio
     navigate('/mode-selection');
   };
 
-  // טאבים מעודכנים
   const tabs = [
-    { id: 'kds', label: 'מסך מטבח', icon: LayoutGrid },
-    { id: 'orders_inventory', label: 'מלאי והזמנות', icon: Package },
-    { id: 'tasks_prep', label: 'משימות והכנות', icon: List },
+    { id: 'kds', label: 'מטבח', icon: LayoutGrid },
+    { id: 'orders_inventory', label: 'מלאי', icon: Package },
+    { id: 'tasks_prep', label: 'משימות', icon: List },
   ];
 
   return (
-    <header className="bg-white/95 backdrop-blur-md h-16 flex justify-between items-center px-4 border-b border-gray-200 font-heebo shrink-0 z-20 shadow-sm">
-      <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-xl border border-gray-100">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setViewMode(tab.id)}
-            className={`flex items-center gap-2 px-5 py-2 rounded-lg transition-all duration-200 ${viewMode === tab.id
-              ? 'bg-white text-slate-900 shadow-sm font-black ring-1 ring-black/5'
-              : 'text-gray-500 hover:text-gray-700 font-medium'
-              } `}
-          >
-            <tab.icon size={18} strokeWidth={viewMode === tab.id ? 2.5 : 2} />
-            <span className="text-base">{tab.label}</span>
-          </button>
-        ))}
-      </div>
-
+    <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-2 flex justify-between items-center border-b border-gray-200 font-heebo">
       <div className="flex items-center gap-4">
-        <div className="flex flex-col items-end text-gray-500 hidden md:flex cursor-pointer" onClick={onRefresh}>
-          {currentUser && (
-            <span className="text-xs font-bold text-gray-400 mb-0.5 max-w-[120px] truncate" dir="rtl">
-              {currentUser.name}
-            </span>
-          )}
-          <span className="text-xl font-black leading-none tracking-tight text-slate-700">
-            {lastUpdated.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        </div>
-
-        <div className="w-px h-8 bg-gray-200 mx-1 hidden md:block"></div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={canUndo ? onUndoLastAction : undefined}
-            disabled={!canUndo}
-            className={`flex flex-col items-center justify-center w-20 h-12 rounded-xl transition border shadow-sm ${canUndo
-              ? 'bg-blue-50 text-blue-600 hover:bg-blue-100 border-blue-100 active:scale-95 cursor-pointer'
-              : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed opacity-60'
-              }`}
-          >
-            <RotateCcw size={20} strokeWidth={2.5} />
-            <span className="text-[10px] font-bold mt-0.5">ביטול פעולה</span>
-          </button>
-
-          <button
-            onClick={handleExit}
-            className="flex items-center gap-2 px-4 h-12 bg-white text-slate-600 rounded-xl hover:bg-red-50 hover:text-red-500 transition border border-gray-200 shadow-sm font-bold text-sm"
-          >
-            <span>יציאה</span>
-            <ChevronRight size={18} />
-          </button>
-
-          <button
-            onClick={handleNewOrder}
-            className="flex items-center gap-2 px-5 h-12 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition shadow-md active:scale-95"
-          >
-            <Plus size={20} strokeWidth={3} />
-            <span className="text-lg font-bold">הזמנה</span>
-          </button>
+        <div className="flex bg-gray-100 p-1 rounded-xl">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setViewMode(tab.id)}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${viewMode === tab.id
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+                }`}
+            >
+              <tab.icon size={16} /> {tab.label}
+            </button>
+          ))}
         </div>
       </div>
-    </header>
+
+      <div className="flex items-center gap-3">
+        <div className="text-lg font-black text-slate-700 hidden md:block">
+          {lastUpdated.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+        </div>
+
+        <div className="w-px h-6 bg-gray-200 hidden md:block" />
+
+        <button
+          onClick={canUndo ? onUndoLastAction : undefined}
+          disabled={!canUndo}
+          className={`p-2 rounded-xl transition ${canUndo ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-300'}`}
+        >
+          <RotateCcw size={18} />
+        </button>
+
+        <button onClick={handleExit} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition">
+          <House size={18} />
+        </button>
+
+        <button onClick={handleNewOrder} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition shadow-sm text-sm font-bold">
+          <Plus size={16} /> הזמנה
+        </button>
+      </div>
+    </div>
   );
 };
 
@@ -173,12 +156,10 @@ const KdsScreen = () => {
 
   // States for tasks and inventory views
   const [tasksSubTab, setTasksSubTab] = useState('prep'); // 'opening' | 'prep' | 'closing'
-  const [inventorySubTab, setInventorySubTab] = useState('counts'); // 'counts' | 'orders'
+  /* inventorySubTab, supplierOrders, inventoryCounts removed */
   const [openingTasks, setOpeningTasks] = useState([]);
   const [prepBatches, setPrepBatches] = useState([]);
   const [closingTasks, setClosingTasks] = useState([]);
-  const [supplierOrders, setSupplierOrders] = useState([]);
-  const [inventoryCounts, setInventoryCounts] = useState([]);
   const [currentHour, setCurrentHour] = useState(new Date().getHours());
 
   const navigate = useNavigate();
@@ -188,358 +169,156 @@ const KdsScreen = () => {
   };
 
 
-  // Fetch kitchen tasks and prep batches from API
-  const fetchOpeningTasks = async () => {
+  // Unified Task Fetching
+  const fetchTasksByCategory = async (category) => {
     try {
-      const response = await fetch(`${API_URL}/tasks`);
-      if (!response.ok) throw new Error('Failed to fetch tasks');
-      const tasks = await response.json();
+      const todayIdx = new Date().getDay();
+      const dateStr = new Date().toISOString().split('T')[0];
 
-      // Filter opening tasks
-      const openingTasks = tasks.filter(task =>
-        task.status === 'Pending' &&
-        (task.description?.includes('פתיחה') || task.category?.includes('opening'))
-      );
-
-      setOpeningTasks(openingTasks || []);
-    } catch (err) {
-      console.error('Error fetching opening tasks:', err);
-      setOpeningTasks([]);
-    }
-  };
-
-  const fetchPrepBatches = async () => {
-    try {
-      const response = await fetch(`${API_URL}/prep_tasks`);
-      if (!response.ok) throw new Error('Failed to fetch prep tasks');
-      const tasks = await response.json();
-
-      // Transform tasks to prep batches format
-      const prepBatches = tasks
-        .filter(task => task.recipe && task.recipe.preparation_quantity > 0)
-        .map(task => ({
-          id: task.id,
-          recipe_id: task.recipe?.id,
-          quantity: task.recipe?.preparation_quantity || 1,
-          status: 'pending',
-          recipes: {
-            name: task.description,
-            instructions: task.recipe?.instructions
-          }
-        }));
-
-      setPrepBatches(prepBatches || []);
-    } catch (err) {
-      console.error('Error fetching prep batches:', err);
-      setPrepBatches([]);
-    }
-  };
-
-  const fetchClosingTasks = async () => {
-    try {
-      const response = await fetch(`${API_URL}/tasks`);
-      if (!response.ok) throw new Error('Failed to fetch tasks');
-      const tasks = await response.json();
-
-      // Filter closing tasks
-      const closingTasks = tasks.filter(task =>
-        task.status === 'Pending' &&
-        (task.description?.includes('סגירה') || task.category?.includes('closing'))
-      );
-
-      setClosingTasks(closingTasks || []);
-    } catch (err) {
-      console.error('Error fetching closing tasks:', err);
-      setClosingTasks([]);
-    }
-  };
-
-  const fetchSupplierOrders = async () => {
-    try {
-      // Note: Backend doesn't have supplier orders endpoint yet
-      // Using Supabase directly for now
-      const today = new Date().toISOString().split('T')[0];
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-
-      const { data, error } = await supabase
-        .from('supplier_orders')
-        .select('*, suppliers(name)')
-        .in('delivery_status', ['pending', 'arrived'])
-        .or(`expected_delivery_date.eq.${today},expected_delivery_date.eq.${tomorrow}`)
-        .order('expected_delivery_date', { ascending: true });
+      // 1. Fetch active recurring tasks for this category
+      const { data: allTasks, error } = await supabase
+        .from('recurring_tasks')
+        .select(`
+                *, 
+                menu_item:menu_items(image_url, description)
+            `)
+        .eq('category', category)
+        .eq('is_active', true);
 
       if (error) throw error;
-      setSupplierOrders(data || []);
-    } catch (err) {
-      console.error('Error fetching supplier orders:', err);
-      setSupplierOrders([]);
-    }
-  };
 
-  const fetchInventoryCounts = async () => {
-    try {
-      const response = await fetch(`${API_URL}/inventory`);
-      if (!response.ok) throw new Error('Failed to fetch inventory');
-      const data = await response.json();
-      setInventoryCounts(data || []);
-    } catch (err) {
-      console.error('Error fetching inventory counts:', err);
-      setInventoryCounts([]);
-    }
-  };
-
-  const completeKitchenTask = async (taskId) => {
-    try {
-      const response = await fetch(`${API_URL}/tasks/${taskId}/complete`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ skip_ingredient_deduction: true })
+      // 2. Filter by Schedule (Client-side)
+      const scheduled = (allTasks || []).filter(t => {
+        const schedule = t.weekly_schedule || {};
+        // Legacy support: if no schedule, rely on day_of_week check or show everyday if day_of_week is null?
+        // If new schedule exists:
+        if (Object.keys(schedule).length > 0) {
+          const config = schedule[todayIdx];
+          return config && config.qty > 0;
+        }
+        // Legacy fallback (simple day_of_week int)
+        if (t.day_of_week !== null && t.day_of_week !== undefined) {
+          return t.day_of_week === todayIdx;
+        }
+        // Default: show everyday if no constraints?
+        return true;
       });
 
-      if (!response.ok) throw new Error('Failed to complete task');
+      // 3. Fetch logs specifically for today to exclude completed
+      const { data: logs } = await supabase.from('task_completions')
+        .select('recurring_task_id')
+        .eq('completion_date', dateStr);
 
-      // Refresh tasks
-      await fetchOpeningTasks();
-      await fetchClosingTasks();
+      const completedSet = new Set(logs?.map(l => l.recurring_task_id));
+
+      // 4. Map to display format
+      const final = scheduled
+        .filter(t => !completedSet.has(t.id))
+        .map(t => {
+          const config = (t.weekly_schedule || {})[todayIdx] || {};
+          return {
+            id: t.id,
+            name: t.name,
+            description: t.description || t.menu_item?.description,
+            image_url: t.image_url || t.menu_item?.image_url,
+            target_qty: config.qty || t.quantity, // Prioritize daily schedule
+            logic_type: config.mode || t.logic_type || 'fixed',
+            category: t.category,
+            due_time: t.due_time || '08:00',
+            is_recurring: true
+          };
+        });
+
+      // Update appropriate state
+      if (category === 'opening') setOpeningTasks(final);
+      if (category === 'prep') setPrepBatches(final);
+      if (category === 'closing') setClosingTasks(final);
+
     } catch (err) {
-      console.error('Error completing kitchen task:', err);
-      alert('שגיאה בסימון המשימה כבוצעה');
+      console.error(`Error fetching ${category} tasks:`, err);
     }
   };
 
-  const completePrepBatch = async (taskId, recipeId, quantity) => {
+  const fetchOpeningTasks = () => fetchTasksByCategory('opening');
+  const fetchPrepBatches = () => fetchTasksByCategory('prep');
+  const fetchClosingTasks = () => fetchTasksByCategory('closing');
+
+
+  // --- Task Operations ---
+
+  const handleCompleteTask = async (task) => {
+    // Optimistic Update
+    if (task.category === 'opening') setOpeningTasks(p => p.filter(t => t.id !== task.id));
+    if (task.category === 'prep') setPrepBatches(p => p.filter(t => t.id !== task.id));
+    if (task.category === 'closing') setClosingTasks(p => p.filter(t => t.id !== task.id));
+
     try {
-      // Complete the task via API (this will update inventory automatically)
-      const response = await fetch(`${API_URL}/tasks/${taskId}/complete`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          skip_ingredient_deduction: false // Let backend handle ingredient deduction
-        })
-      });
-
-      if (!response.ok) throw new Error('Failed to complete prep batch');
-
-      // Refresh prep batches and inventory
-      await fetchPrepBatches();
-      await fetchInventoryCounts();
-    } catch (err) {
-      console.error('Error completing prep batch:', err);
-      alert('שגיאה בסימון ההכנה כבוצעה');
+      if (task.is_recurring) {
+        const { error } = await supabase.from('task_completions').insert({
+          recurring_task_id: task.id,
+          business_id: currentUser?.business_id,
+          quantity_produced: task.target_qty,
+          completion_date: new Date().toISOString().split('T')[0],
+          completed_by: currentUser?.id
+        });
+        if (error) throw error;
+      }
+    } catch (e) {
+      console.error("Task completion failed:", e);
     }
   };
+
+  // Fetch based on Time Phase (Auto-Switch)
+  useEffect(() => {
+    if (viewMode === 'tasks_prep') {
+      // Logic: Opening starts 3 hours before 9:00 = 06:00.
+      // Closing starts at 15:00.
+      const isClosingPhase = currentHour >= 15; // 3 PM
+
+      if (isClosingPhase) {
+        fetchClosingTasks();
+      } else {
+        fetchOpeningTasks();
+      }
+    }
+  }, [viewMode, currentHour]);
 
   // Update current hour every minute
   useEffect(() => {
     const updateHour = () => {
       setCurrentHour(new Date().getHours());
     };
-    updateHour();
-    const interval = setInterval(updateHour, 60000); // Update every minute
+    const interval = setInterval(updateHour, 60000);
     return () => clearInterval(interval);
   }, []);
 
-  // Load data based on viewMode
-  useEffect(() => {
-    if (viewMode === 'tasks_prep') {
-      if (currentHour >= 8) {
-        fetchOpeningTasks();
-      }
-      fetchPrepBatches();
-      if (currentHour >= 16) {
-        fetchClosingTasks();
-      }
-    } else if (viewMode === 'orders_inventory') {
-      if (inventorySubTab === 'counts') {
-        fetchInventoryCounts();
-      } else {
-        fetchSupplierOrders();
-      }
-    }
-  }, [viewMode, inventorySubTab, currentHour]);
+  // Render tasks view (Auto Phase)
+  const renderTasksPrepView = () => {
+    // Current Phase Logic
+    const isClosingPhase = currentHour >= 15;
+    const title = isClosingPhase ? 'משימות סגירה' : 'משימות פתיחה';
+    const activeList = isClosingPhase ? closingTasks : openingTasks;
 
-  // Render tasks/prep view
-  const renderTasksPrepView = () => (
-    <div className="flex flex-col flex-1 overflow-hidden">
-      {/* Tasks Sub-tabs */}
-      <div className="bg-white border-b border-gray-200 px-4 py-2">
-        <div className="flex items-center gap-2">
-          {currentHour >= 8 && openingTasks.length > 0 && (
-            <button
-              onClick={() => setTasksSubTab('opening')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${tasksSubTab === 'opening' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'
-                }`}
-            >
-              פתיחה
-            </button>
-          )}
-          <button
-            onClick={() => setTasksSubTab('prep')}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${tasksSubTab === 'prep' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'
-              }`}
-          >
-            הכנות
-          </button>
-          {currentHour >= 16 && (
-            <button
-              onClick={() => closingTasks.length === 0 && setTasksSubTab('closing')}
-              disabled={closingTasks.length > 0}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${tasksSubTab === 'closing' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'
-                } ${closingTasks.length > 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              סגירה {closingTasks.length > 0 && '🔒'}
-            </button>
-          )}
+    return (
+      <div className="flex flex-col h-full bg-slate-50 p-4">
+        {/* Info Badge */}
+        <div className="flex justify-center mb-4">
+          <span className={`px-4 py-1 rounded-full text-xs font-bold flex items-center gap-2 shadow-sm border ${isClosingPhase ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-orange-50 text-orange-700 border-orange-100'}`}>
+            <Clock size={12} />
+            {isClosingPhase ? 'נוהל סגירה פעיל (החל מ-15:00)' : 'נוהל פתיחה פעיל (עד 15:00)'}
+          </span>
         </div>
+
+        <TaskManagementView
+          tasks={activeList}
+          onComplete={handleCompleteTask}
+          title={title}
+        />
       </div>
+    );
+  };
 
-      {/* Tasks Content */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {tasksSubTab === 'opening' && (
-          <div className="space-y-3">
-            {openingTasks.length === 0 ? (
-              <p className="text-gray-500 text-center">אין משימות פתיחה ממתינות</p>
-            ) : (
-              openingTasks.map(task => (
-                <div key={task.id} className="bg-gray-50 p-4 rounded-lg flex justify-between items-center">
-                  <span className="font-semibold">{task.description || task.name}</span>
-                  <button
-                    onClick={() => completeKitchenTask(task.id)}
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
-                  >
-                    בוצע
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {tasksSubTab === 'prep' && (
-          <div className="space-y-3">
-            {prepBatches.length === 0 ? (
-              <p className="text-gray-500 text-center">אין הכנות ממתינות</p>
-            ) : (
-              prepBatches.map(batch => (
-                <div key={batch.id} className="bg-blue-50 p-4 rounded-xl">
-                  <h4 className="font-bold text-lg mb-2">
-                    {batch.recipes?.name || 'הכנה'} ×{batch.quantity || 1}
-                  </h4>
-                  {batch.recipes?.instructions && (
-                    <p className="text-sm text-gray-600 mb-3">{batch.recipes.instructions}</p>
-                  )}
-                  <button
-                    onClick={() => completePrepBatch(batch.id, batch.recipe_id, batch.quantity || 1)}
-                    className="bg-green-600 text-white w-full py-2 rounded-lg hover:bg-green-700"
-                  >
-                    הוסף למלאי
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {tasksSubTab === 'closing' && (
-          <div className="space-y-3">
-            {closingTasks.length === 0 ? (
-              <p className="text-gray-500 text-center">אין משימות סגירה ממתינות</p>
-            ) : (
-              closingTasks.map(task => (
-                <div key={task.id} className="bg-gray-50 p-4 rounded-lg flex justify-between items-center">
-                  <span className="font-semibold">{task.description || task.name}</span>
-                  <button
-                    onClick={() => completeKitchenTask(task.id)}
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
-                  >
-                    בוצע
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  // Render inventory/orders view
-  const renderInventoryOrdersView = () => (
-    <div className="flex flex-col flex-1 overflow-hidden">
-      {/* Inventory Sub-tabs */}
-      <div className="bg-white border-b border-gray-200 px-4 py-2">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setInventorySubTab('counts')}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${inventorySubTab === 'counts' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'
-              }`}
-          >
-            ספירות מלאי
-          </button>
-          <button
-            onClick={() => setInventorySubTab('orders')}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${inventorySubTab === 'orders' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'
-              }`}
-          >
-            הזמנות ממתינות
-          </button>
-        </div>
-      </div>
-
-      {/* Inventory Content */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {inventorySubTab === 'counts' && (
-          <div className="space-y-3">
-            {inventoryCounts.length === 0 ? (
-              <p className="text-gray-500 text-center">אין פריטים במלאי</p>
-            ) : (
-              inventoryCounts.map(item => (
-                <div key={item.id} className="bg-white border border-gray-200 p-4 rounded-lg">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h4 className="font-bold">פריט #{item.item_id}</h4>
-                      <p className="text-sm text-gray-600">
-                        מלאי נוכחי: <span className="font-semibold">{item.current_stock || 0}</span>
-                      </p>
-                      {item.initial_stock && (
-                        <p className="text-xs text-gray-500">
-                          מלאי התחלתי: {item.initial_stock}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {inventorySubTab === 'orders' && (
-          <div className="space-y-3">
-            {supplierOrders.length === 0 ? (
-              <p className="text-gray-500 text-center">אין הזמנות ספקים ממתינות</p>
-            ) : (
-              supplierOrders.map(order => (
-                <div key={order.id} className="bg-orange-50 p-4 rounded-lg border border-orange-200">
-                  <div className="font-semibold text-lg mb-2">
-                    {order.suppliers?.name || 'ספק'}
-                  </div>
-                  {order.expected_delivery_date && (
-                    <div className="text-sm text-gray-600 mb-2">
-                      צפויה: {new Date(order.expected_delivery_date).toLocaleDateString('he-IL')}
-                    </div>
-                  )}
-                  <div className="text-xs text-gray-500">
-                    סטטוס: {order.delivery_status === 'arrived' ? 'הגיעה' : 'ממתינה'}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  // renderInventoryOrdersView removed - replaced by KDSInventoryScreen component
 
   const handleEditOrder = (order) => {
     navigate('/menu-ordering-interface', {
@@ -614,7 +393,7 @@ const KdsScreen = () => {
         ) : viewMode === 'tasks_prep' ? (
           renderTasksPrepView()
         ) : (
-          renderInventoryOrdersView()
+          <KDSInventoryScreen />
         )}
 
         {/* SMS Toast Notification */}

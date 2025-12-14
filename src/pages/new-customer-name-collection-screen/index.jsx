@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { House } from 'lucide-react';
 
 import HebrewKeyboard from './components/HebrewKeyboard';
 
@@ -130,7 +131,7 @@ const NewCustomerNameCollectionScreen = () => {
           ...(data?.customer ?? {}),
           phone: data?.customer?.phone || resolvedPhoneNumber
         };
-        
+
         localStorage.setItem('currentCustomer', JSON.stringify(customerData));
       }
 
@@ -150,6 +151,14 @@ const NewCustomerNameCollectionScreen = () => {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gray-50 font-heebo" dir="rtl">
+      {/* Home Button */}
+      <button
+        onClick={() => navigate('/mode-selection')}
+        className="absolute top-4 right-4 p-3 bg-white hover:bg-gray-50 text-slate-600 border border-gray-200 rounded-xl shadow-sm transition-all hover:scale-105 z-10"
+      >
+        <House size={20} className="text-slate-700" />
+      </button>
+
       <main className="bg-white rounded-3xl shadow-sm border border-gray-200 p-4 w-full max-w-[600px] flex flex-col items-center space-y-3">
         <input
           ref={inputRef}
@@ -210,8 +219,8 @@ const NewCustomerNameCollectionScreen = () => {
           <button
             onClick={handleContinue}
             className={`w-full font-extrabold py-3 px-6 rounded-xl text-lg transition-all duration-200 ${isValidName && !isLoading
-                ? 'bg-orange-500 hover:bg-orange-600 text-white shadow-sm transform active:scale-[0.98]'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              ? 'bg-orange-500 hover:bg-orange-600 text-white shadow-sm transform active:scale-[0.98]'
+              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
               }`}
             disabled={!isValidName || isLoading}
           >

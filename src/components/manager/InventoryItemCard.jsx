@@ -3,6 +3,7 @@ import { Package, ChevronDown, ChevronUp, History, CheckCircle2, Minus, Plus, Sh
 
 const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty = 0 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
+    // Reduce height by 20% -> Use tighter vertical padding in main container
     const [currentStock, setCurrentStock] = useState(Number(item.current_stock) || 0);
     const [orderQty, setOrderQty] = useState(draftOrderQty);
     const [updating, setUpdating] = useState(false);
@@ -36,7 +37,12 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
     const orderStep = caseQty > 0 ? caseQty : 1;
 
     // Status Logic
-    const lastCountDate = item.last_counted_at ? new Date(item.last_counted_at) : null;
+    // Status Logic
+    // const lastCountDate = item.last_counted_at ? new Date(item.last_counted_at) : null; 
+    // ^-- Removed to use state instead
+
+    const [lastCountDate, setLastCountDate] = useState(item.last_counted_at ? new Date(item.last_counted_at) : null);
+
     const isCountedToday = lastCountDate && (
         lastCountDate.getDate() === new Date().getDate() &&
         lastCountDate.getMonth() === new Date().getMonth() &&
@@ -56,6 +62,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
 
         setCurrentStock(val);
         setUpdating(true);
+        setLastCountDate(new Date()); // Optimistic update of "Last Counted"
 
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
         timeoutRef.current = setTimeout(async () => {
@@ -123,21 +130,19 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
     return (
         <div className={`bg-white rounded-2xl border transition-all duration-200 ${isExpanded ? 'border-blue-300 shadow-md ring-1 ring-blue-100' : 'border-gray-200 shadow-sm'} overflow-hidden`}>
             {/* Header - Always Visible */}
+            {/* Header - Always Visible - Reduced Padding */}
             <div
                 onClick={() => setIsExpanded(!isExpanded)}
-                className={`p-4 flex items-center justify-between cursor-pointer select-none transition-colors ${isExpanded ? 'bg-blue-50/30' : 'bg-white hover:bg-gray-50'}`}
+                className={`p-3 flex items-center justify-between cursor-pointer select-none transition-colors ${isExpanded ? 'bg-blue-50/30' : 'bg-white hover:bg-gray-50'}`}
             >
-                {/* Right: Item Info */}
-                <div className="flex items-center gap-4 overflow-hidden flex-1">
-                    <div className={`w-12 h-12 flex items-center justify-center rounded-2xl shrink-0 transition-colors ${item.current_stock <= (item.low_stock_alert || 5) ? 'bg-red-100 text-red-500' : 'bg-gray-100 text-gray-500'} `}>
-                        <Package size={24} strokeWidth={1.5} />
+                {/* Right: Item Info - Compact padding */}
+                <div className="flex items-center gap-3 overflow-hidden flex-1">
+                    <div className={`w-10 h-10 flex items-center justify-center rounded-xl shrink-0 transition-colors ${item.current_stock <= (item.low_stock_alert || 5) ? 'bg-red-100 text-red-500' : 'bg-gray-100 text-gray-500'} `}>
+                        <Package size={20} strokeWidth={1.5} />
                     </div>
-                    <div className="flex flex-col min-w-0">
-                        <h3 className="font-black text-gray-800 text-base truncate leading-tight">{item.name}</h3>
-                        <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">{item.unit || 'יח׳'}</span>
-                            {item.supplier && <span className="text-[10px] text-gray-400 truncate max-w-[100px]">{item.supplier.name}</span>}
-                        </div>
+                    <div className="flex flex-col min-w-0 justify-center">
+                        <h3 className="font-black text-gray-800 text-lg truncate leading-tight">{item.name}</h3>
+                        <span className="text-[11px] font-bold text-gray-400">{item.unit || 'יח׳'}</span>
                     </div>
                 </div>
 
@@ -174,12 +179,19 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
 
                     {/* 1. Stock Update Section */}
                     <div>
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-bold text-gray-400 flex items-center gap-2">
-                                <History size={12} />
-                                עדכון ספירה (מלאי נוכחי)
+                        <div className="flex flex-col mb-3">
+                            <span className="text-xs font-bold text-gray-800 flex items-center gap-2">
+                                <History size={14} className="text-blue-500" />
+                                {lastCountDate
+                                    ? `ספירה אחרונה ב-${lastCountDate.toLocaleDateString('he-IL')}`
+                                    : 'טרם בוצעה ספירה'
+                                }
                             </span>
-                            {updating && <span className="text-[10px] text-blue-500 font-bold animate-pulse">שומר...</span>}
+                            {lastCountDate && (
+                                <span className="text-[10px] text-gray-400 mt-0.5 mr-6">
+                                    ומתאריך {lastCountDate.toLocaleDateString('he-IL')} הערכה לפי נתונים
+                                </span>
+                            )}
                         </div>
                         <div className="flex items-center gap-3">
                             <button onClick={() => handleStockUpdate(currentStock - countStep)} className="h-12 flex-1 flex items-center justify-center bg-gray-50 border border-gray-200 rounded-xl text-red-500 hover:bg-red-50 hover:border-red-200 active:scale-95 transition-all">

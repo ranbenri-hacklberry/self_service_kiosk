@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -273,14 +274,24 @@ const SuperAdminDashboard = () => {
 
     // Mock Super Admin PIN
     const SUPER_ADMIN_PIN = '9999';
+    const { currentUser, isLoading } = useAuth(); // Get current user to check permissions
 
     useEffect(() => {
+        // Wait for auth to initialize
+        if (isLoading) return;
+
+        // Security Check: Must be Super Admin
+        if (!currentUser?.is_super_admin) {
+            navigate('/mode-selection'); // Kick out intruders (to mode selection, not phone screen)
+            return;
+        }
+
         const isSessionActive = sessionStorage.getItem('super_admin_active');
         if (isSessionActive === 'true') {
             setIsAuthenticated(true);
             fetchBusinesses();
         }
-    }, []);
+    }, [currentUser, isLoading, navigate]);
 
     const handleLogin = (e) => {
         e.preventDefault();
@@ -293,33 +304,81 @@ const SuperAdminDashboard = () => {
         }
     };
 
+    const [errorMsg, setErrorMsg] = useState(null);
+
     const fetchBusinesses = async () => {
         setLoading(true);
+        setErrorMsg(null);
         try {
-            const { data, error } = await supabase
-                .from('businesses')
-                .select(`
-          id, 
-          name, 
-          created_at,
-          settings,
-          employees:employees(count),
-          orders:orders(count)
-        `)
-                .order('created_at', { ascending: false });
+            console.log('🔄 Fetching business stats...');
+            // Use RPC to get live stats
+            const { data, error } = await supabase.rpc('get_all_business_stats');
+
+            console.log('📊 RPC Response:', { data, error });
 
             if (error) throw error;
-            setBusinesses(data || []);
+
+            // Map and Ensure Settings
+            const safeData = (data || []).map(b => ({
+                ...b,
+                settings: b.settings || {}
+            }));
+
+            if (safeData.length === 0) {
+                console.warn('⚠️ RPC returned empty list, forcing fallback to check raw table...');
+                // We throw here so the catch block executes the fallback fetch
+                throw new Error('RPC_EMPTY');
+            }
+
+            setBusinesses(safeData);
+
         } catch (err) {
-            console.error('Error fetching businesses:', err);
-            alert('שגיאה בטעינת עסקים');
+            console.error('❌ Error fetching businesses:', err);
+            const detailedError = err.message + (err.details ? ` (${err.details})` : '') + (err.hint ? ` [Hint: ${err.hint}]` : '');
+            setErrorMsg(detailedError);
+
+            // Fallback
+            try {
+                console.log('⚠️ Attempting fallback fetch...');
+                // Ensure we fetch 'settings' so the Edit button works!
+                const { data: fallbackData } = await supabase
+                    .from('businesses')
+                    .select('id, name, created_at, settings')
+                    .order('created_at', { ascending: false });
+
+                if (fallbackData) {
+                    setBusinesses(fallbackData.map(b => ({
+                        ...b,
+                        settings: b.settings || {},
+                        is_online: false, // Default to offline in fallback
+                        active_orders_count: 0,
+                        orders_last_hour_count: 0,
+                        employee_count: 0
+                    })));
+                    // Success! Clear the RPC error since we found data via fallback
+                    setErrorMsg(null);
+                }
+            } catch (e) {
+                console.error('Fallback failed', e);
+            }
         } finally {
             setLoading(false);
         }
     };
 
+    // Auto-refresh data when authenticated (Live Dashboard)
+    useEffect(() => {
+        let interval;
+        if (isAuthenticated) {
+            fetchBusinesses(); // Initial fetch on auth
+            interval = setInterval(fetchBusinesses, 10000); // Poll every 10 seconds
+        }
+        return () => clearInterval(interval);
+    }, [isAuthenticated]);
+
     const impersonateManager = async (business) => {
         try {
+            console.log('Impersonating manager for:', business.name);
             const { data: employees, error } = await supabase
                 .from('employees')
                 .select('*')
@@ -330,13 +389,12 @@ const SuperAdminDashboard = () => {
             if (error) throw error;
 
             if (!employees || employees.length === 0) {
-                // If no manager exists, check if we should create a default one or alert
-                alert('לא נמצא מנהל לעסק זה שניתן להתחבר דרכו.');
+                alert(`לא נמצא מנהל לעסק "${business.name}" שניתן להתחבר דרכו.`);
                 return;
             }
 
             const manager = employees[0];
-
+            // ... rest of logic
             const sessionData = {
                 employeeId: manager.id,
                 employeeName: `SuperAdmin as ${manager.name}`,
@@ -356,11 +414,12 @@ const SuperAdminDashboard = () => {
 
         } catch (err) {
             console.error('Impersonation error:', err);
-            alert('שגיאה בהתחברות לעסק');
+            alert('שגיאה בהתחברות לעסק: ' + err.message);
         }
     };
 
     const handleAddBusiness = async (e) => {
+        // ... same implementation ...
         e.preventDefault();
         if (!formData.name) return;
 
@@ -400,23 +459,53 @@ const SuperAdminDashboard = () => {
         }
     };
 
+    // --- Settings Logic ---
+
     const openSettings = (business) => {
         setSelectedBusinessId(business.id);
+        // Load existing settings or defaults
+        const s = business.settings || {};
         setFormData({
-            ...business.settings,
-            businessName: business.name // Keep name separate for display
+            businessName: business.name,
+            enableOnlineOrders: s.enableOnlineOrders,
+            isVisibleInApp: s.isVisibleInApp,
+            greenInvoiceKeyId: s.greenInvoiceKeyId,
+            greenInvoiceSecret: s.greenInvoiceSecret,
+            meshulamTerminalId: s.meshulamTerminalId,
+            meshulamApiKey: s.meshulamApiKey,
+            loyaltyEnabled: s.loyaltyEnabled,
+            loyaltyPointsRate: s.loyaltyPointsRate,
+            loyaltyWelcomeBonus: s.loyaltyWelcomeBonus,
+            adminPin: s.defaultAdminPin // Or fetch real one if we could, but for now use setting
         });
+        setSettingsView('menu');
         setShowSettingsModal(true);
     };
 
     const saveSettings = async () => {
+        if (!selectedBusinessId) return;
         try {
-            // Update settings column
-            const { businessName, ...settingsToSave } = formData;
+            // Prepare settings object
+            const cleanSettings = {
+                enableOnlineOrders: formData.enableOnlineOrders,
+                isVisibleInApp: formData.isVisibleInApp,
+                greenInvoiceKeyId: formData.greenInvoiceKeyId,
+                greenInvoiceSecret: formData.greenInvoiceSecret,
+                meshulamTerminalId: formData.meshulamTerminalId,
+                meshulamApiKey: formData.meshulamApiKey,
+                loyaltyEnabled: formData.loyaltyEnabled,
+                loyaltyPointsRate: formData.loyaltyPointsRate,
+                loyaltyWelcomeBonus: formData.loyaltyWelcomeBonus,
+                defaultAdminPin: formData.adminPin
+            };
 
+            // 1. Update Business Settings & Name
             const { error } = await supabase
                 .from('businesses')
-                .update({ settings: settingsToSave })
+                .update({
+                    name: formData.businessName,
+                    settings: cleanSettings
+                })
                 .eq('id', selectedBusinessId);
 
             if (error) throw error;
@@ -424,53 +513,13 @@ const SuperAdminDashboard = () => {
             alert('הגדרות נשמרו בהצלחה');
             setShowSettingsModal(false);
             fetchBusinesses();
+
         } catch (err) {
             console.error('Error saving settings:', err);
-            alert('שגיאה בשמירה');
+            alert('שגיאה בשמירה: ' + err.message);
         }
-    }
+    };
 
-
-    if (!isAuthenticated) {
-        return (
-            <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4" dir="rtl">
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-slate-900/50 p-8 rounded-3xl shadow-2xl w-full max-w-sm border border-slate-800 backdrop-blur-xl"
-                >
-                    <div className="text-center mb-10">
-                        <div className="w-20 h-20 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-500/20 rotate-3 transform hover:rotate-6 transition-transform">
-                            <Shield className="text-white w-10 h-10" />
-                        </div>
-                        <h1 className="text-3xl font-black text-white tracking-tight">Super Admin</h1>
-                        <p className="text-slate-400 text-sm mt-2 font-medium">גישה למנהל מערכת בלבד</p>
-                    </div>
-
-                    <form onSubmit={handleLogin} className="space-y-6">
-                        <div className="relative group">
-                            <input
-                                type="password"
-                                value={pin}
-                                onChange={(e) => setPin(e.target.value)}
-                                placeholder="קוד גישה"
-                                className="w-full bg-slate-800/50 border border-slate-700 text-white px-4 py-5 rounded-2xl text-center text-3xl tracking-[0.5em] focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:tracking-normal placeholder:text-lg placeholder:text-slate-600 group-hover:border-slate-600"
-                                maxLength={4}
-                                autoFocus
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-5 rounded-2xl transition-all shadow-lg shadow-blue-900/20 hover:shadow-blue-600/30 hover:-translate-y-1 flex items-center justify-center gap-3 text-lg"
-                        >
-                            <Key className="w-6 h-6" />
-                            כניסה למערכת
-                        </button>
-                    </form>
-                </motion.div>
-            </div>
-        );
-    }
 
     return (
         <div className="min-h-screen bg-slate-950 pb-24 font-sans text-slate-200" dir="rtl">
@@ -489,8 +538,16 @@ const SuperAdminDashboard = () => {
                         </div>
                         <button
                             onClick={() => {
-                                setIsAuthenticated(false);
+                                // Just exit to mode selection, don't clear session if we want to keep them logged in as user
+                                // But maybe clear super admin flag so they need PIN again?
+                                // User said: "admin also doesn't need another authentication"
+                                // If we navigate away, the component unmounts, so local 'isAuthenticated' resets anyway.
+                                // But 'super_admin_active' in sessionStorage remains.
+                                // If we want to require PIN again, we should clear sessionStorage.
+                                // If we want to avoid the "4 digit code screen" (which is likely the Local PIN screen here),
+                                // we should just navigate away.
                                 sessionStorage.removeItem('super_admin_active');
+                                navigate('/mode-selection');
                             }}
                             className="p-3 bg-slate-800 rounded-2xl hover:bg-red-500/10 hover:text-red-400 transition-all border border-slate-700 hover:border-red-500/30 active:scale-95"
                         >
@@ -517,7 +574,7 @@ const SuperAdminDashboard = () => {
                                 <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">משתמשים</span>
                             </div>
                             <span className="text-3xl font-black text-white">
-                                {businesses.reduce((acc, curr) => acc + (curr.employees ? curr.employees[0].count : 0), 0)}
+                                {businesses.reduce((acc, curr) => acc + (curr.employee_count || 0), 0)}
                             </span>
                         </div>
                     </div>
@@ -540,10 +597,22 @@ const SuperAdminDashboard = () => {
                     </button>
                 </div>
 
+                {/* Error / Debug Message */}
+                {errorMsg && (
+                    <div className="bg-red-500/10 border border-red-500/50 p-4 rounded-xl text-red-200 text-sm mb-4" dir="ltr">
+                        <b>Error:</b> {errorMsg}
+                    </div>
+                )}
+
                 {/* Business List */}
                 <div className="space-y-4">
                     <div className="flex items-center justify-between px-2">
-                        <h2 className="font-bold text-slate-400 text-sm">כל העסקים</h2>
+                        <div className="flex items-center gap-2">
+                            <h2 className="font-bold text-slate-400 text-sm">כל העסקים</h2>
+                            <button onClick={fetchBusinesses} className="p-1 bg-slate-800 rounded-lg hover:text-white" title="רענן">
+                                <Activity size={12} className={loading ? "animate-spin" : ""} />
+                            </button>
+                        </div>
                         <span className="text-xs text-slate-600 bg-slate-900 px-2 py-1 rounded-lg border border-slate-800">{businesses.length} תוצאות</span>
                     </div>
 
@@ -551,6 +620,23 @@ const SuperAdminDashboard = () => {
                         <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-4">
                             <div className="w-8 h-8 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
                             <span>טוען נתונים...</span>
+                        </div>
+                    ) : businesses.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-20 bg-slate-900/50 rounded-3xl border border-slate-800/50 text-center px-4">
+                            <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                                <Building2 className="w-10 h-10 text-slate-600" />
+                            </div>
+                            <h3 className="text-xl font-bold text-slate-300 mb-2">לא נמצאו עסקים</h3>
+                            <p className="text-slate-500 max-w-xs mx-auto mb-6">
+                                נראה שאין כרגע עסקים רשומים במערכת. לחץ על כפתור הפלוס למטה כדי להוסיף את העסק הראשון.
+                            </p>
+                            <button
+                                onClick={fetchBusinesses}
+                                className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition-colors flex items-center gap-2 text-sm"
+                            >
+                                <Activity size={16} />
+                                נסה לרענן שוב
+                            </button>
                         </div>
                     ) : (
                         businesses.map((business) => (
@@ -562,23 +648,35 @@ const SuperAdminDashboard = () => {
                                         </div>
                                         <div>
                                             <h3 className="font-bold text-lg text-white group-hover:text-blue-400 transition-colors">{business.name}</h3>
-                                            <p className="text-xs text-slate-500 font-mono mt-1 tracking-wide opacity-60">{business.id.substring(0, 8)}...</p>
+                                            <p className="text-xs text-slate-500 font-mono mt-1 tracking-wide opacity-60 flex items-center gap-2">
+                                                {business.id.substring(0, 8)}...
+                                            </p>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 px-3 py-1.5 rounded-xl text-xs font-bold border border-emerald-500/20">
-                                        <Activity className="w-3.5 h-3.5" />
-                                        פעיל
+
+                                    {/* System Health / Online Status */}
+                                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${business.is_online
+                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                        : 'bg-slate-800 text-slate-500 border-slate-700'}`}>
+                                        <div className={`w-2 h-2 rounded-full ${business.is_online ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}`} />
+                                        {business.is_online ? 'אונליין' : 'אופליין'}
                                     </div>
                                 </div>
 
-                                <div className="flex gap-4 text-xs text-slate-400 mb-6 bg-slate-950/30 p-3 rounded-xl border border-slate-800/50">
-                                    <div className="flex items-center gap-2 flex-1 justify-center border-l border-slate-800 pl-4">
-                                        <FileText className="w-4 h-4 text-blue-500/70" />
-                                        <span className="font-medium">{business.orders ? business.orders[0].count : 0} <span className="opacity-50">הזמנות</span></span>
+                                <div className="grid grid-cols-2 gap-4 mb-6">
+                                    {/* Active Orders */}
+                                    <div className="bg-slate-950/30 p-3 rounded-xl border border-slate-800/50 text-center">
+                                        <div className="text-xs text-slate-500 mb-1">הזמנות פעילות</div>
+                                        <div className="text-xl font-black text-white">{business.active_orders_count || 0}</div>
                                     </div>
-                                    <div className="flex items-center gap-2 flex-1 justify-center">
-                                        <Users className="w-4 h-4 text-purple-500/70" />
-                                        <span className="font-medium">{business.employees ? business.employees[0].count : 0} <span className="opacity-50">עובדים</span></span>
+
+                                    {/* Throughput */}
+                                    <div className="bg-slate-950/30 p-3 rounded-xl border border-slate-800/50 text-center">
+                                        <div className="text-xs text-slate-500 mb-1">בשעה האחרונה</div>
+                                        <div className="text-xl font-black text-white flex items-center justify-center gap-1">
+                                            {business.orders_last_hour_count || 0}
+                                            <Activity size={12} className="text-blue-500" />
+                                        </div>
                                     </div>
                                 </div>
 

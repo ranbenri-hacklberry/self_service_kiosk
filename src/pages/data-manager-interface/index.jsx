@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '@/lib/supabase';
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -42,6 +43,24 @@ const ManagerDashboard = () => {
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // --- HEARTBEAT FOR ONLINE STATUS ---
+  useEffect(() => {
+    const sendHeartbeat = async () => {
+      try {
+        await supabase.rpc('send_kds_heartbeat');
+      } catch (err) {
+        // Silent fail
+      }
+    };
+
+    // Send immediately on mount
+    sendHeartbeat();
+
+    // Loop every 60s to keep "Online" status green in Super Admin
+    const interval = setInterval(sendHeartbeat, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   const {
@@ -116,7 +135,7 @@ const ManagerDashboard = () => {
     if (wasImpersonating) {
       navigate('/super-admin');
     } else {
-      navigate('/');
+      navigate('/mode-selection');
     }
   };
 

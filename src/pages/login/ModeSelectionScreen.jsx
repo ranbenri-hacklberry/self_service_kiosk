@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Monitor, ChefHat, LogOut, BarChart3, Coffee, Users, Music } from 'lucide-react';
+import { Monitor, ChefHat, LogOut, BarChart3, Coffee, Users, Music, ShieldAlert } from 'lucide-react';
 
 const ModeSelectionScreen = () => {
     const navigate = useNavigate();
@@ -35,6 +35,25 @@ const ModeSelectionScreen = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 max-w-7xl mx-auto">
 
+                    {/* 0. Super Admin - Only for Super Admin */}
+                    {currentUser?.is_super_admin && (
+                        <button
+                            onClick={() => navigate('/super-admin')}
+                            className="group relative bg-slate-900 rounded-3xl p-8 hover:bg-slate-800 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl text-right overflow-hidden border-2 border-transparent hover:border-slate-700"
+                        >
+                            <div className="absolute top-0 left-0 w-32 h-32 bg-slate-800 rounded-br-full -translate-x-8 -translate-y-8 group-hover:scale-110 transition-transform" />
+                            <div className="relative z-10">
+                                <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white mb-6 shadow-lg group-hover:rotate-12 transition-transform">
+                                    <ShieldAlert size={32} strokeWidth={2.5} />
+                                </div>
+                                <h2 className="text-3xl font-black text-white mb-2">Super Admin</h2>
+                                <p className="text-slate-400 text-lg leading-relaxed font-medium">
+                                    אזור מסוכן. כניסה למורשים בלבד. <br /> ניהול עסקים, משתמשים והגדרות על.
+                                </p>
+                            </div>
+                        </button>
+                    )}
+
                     {/* 1. Manager Interface - Visible to Manager/Admin on ALL devices */}
                     {isManager && (
                         <button
@@ -54,34 +73,34 @@ const ModeSelectionScreen = () => {
                         </button>
                     )}
 
-                    {/* 2. Staff Coffee Station - Active */}
+                    {/* 2. active Cash Register (ex-Coffee) - Hidden on Mobile */}
                     <button
                         onClick={() => handleModeSelect('kiosk')}
-                        className="group relative bg-white rounded-3xl p-8 hover:bg-orange-50 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl text-right overflow-hidden border-2 border-transparent hover:border-orange-100"
+                        className="hidden md:block group relative bg-white rounded-3xl p-8 hover:bg-orange-50 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl text-right overflow-hidden border-2 border-transparent hover:border-orange-100"
                     >
                         <div className="absolute top-0 left-0 w-32 h-32 bg-orange-100 rounded-br-full -translate-x-8 -translate-y-8 group-hover:scale-110 transition-transform" />
                         <div className="relative z-10">
                             <div className="w-16 h-16 bg-orange-500 rounded-2xl flex items-center justify-center text-white mb-6 shadow-lg group-hover:rotate-6 transition-transform">
                                 <Coffee size={32} strokeWidth={2.5} />
                             </div>
-                            <h2 className="text-3xl font-black text-slate-900 mb-2">עמדת קפה (צוות)</h2>
+                            <h2 className="text-3xl font-black text-slate-900 mb-2">עמדת קופה</h2>
                             <p className="text-slate-500 text-lg leading-relaxed font-medium">
                                 להקליד הזמנות בקצב מסחרר. מי אמר שאי אפשר לעשות דברים טובים ומהר? יאללה לעבודה.
                             </p>
                         </div>
                     </button>
 
-                    {/* 3. KDS - Active */}
+                    {/* 3. Service (ex-KDS) - Active - Hidden on Mobile */}
                     <button
                         onClick={() => handleModeSelect('kds')}
-                        className="group relative bg-white rounded-3xl p-8 hover:bg-emerald-50 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl text-right overflow-hidden border-2 border-transparent hover:border-emerald-100"
+                        className="hidden md:block group relative bg-white rounded-3xl p-8 hover:bg-emerald-50 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl text-right overflow-hidden border-2 border-transparent hover:border-emerald-100"
                     >
                         <div className="absolute top-0 left-0 w-32 h-32 bg-emerald-100 rounded-br-full -translate-x-8 -translate-y-8 group-hover:scale-110 transition-transform" />
                         <div className="relative z-10">
                             <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center text-white mb-6 shadow-lg group-hover:rotate-6 transition-transform">
                                 <Monitor size={32} strokeWidth={2.5} />
                             </div>
-                            <h2 className="text-3xl font-black text-slate-900 mb-2">המטבח (KDS)</h2>
+                            <h2 className="text-3xl font-black text-slate-900 mb-2">סרוויס (KDS)</h2>
                             <p className="text-slate-500 text-lg leading-relaxed font-medium">
                                 איפה שהקסם קורה והבונים יוצאים. רק בלי הנייר והצעקות (בתקווה). שיהיה סרוויס רגוע.
                             </p>

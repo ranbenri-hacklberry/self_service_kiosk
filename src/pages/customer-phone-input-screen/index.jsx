@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { House } from 'lucide-react';
 import { supabase } from '../../lib/supabase'; // IMPORTED
 import { useAuth } from '../../context/AuthContext'; // IMPORTED
 
@@ -194,11 +195,12 @@ const CustomerPhoneInputScreen = () => {
     <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gray-50 font-heebo overflow-hidden" dir="rtl">
 
       {/* Admin Button */}
+      {/* Home Button */}
       <button
-        onClick={() => navigate('/manager')}
-        className="absolute top-4 right-4 px-4 py-2 bg-white hover:bg-gray-50 text-purple-600 border border-purple-100 rounded-xl shadow-sm transition-all text-xs font-bold z-10"
+        onClick={() => navigate('/mode-selection')}
+        className="absolute top-4 right-4 p-3 bg-white hover:bg-gray-50 text-slate-600 border border-gray-200 rounded-xl shadow-sm transition-all hover:scale-105 z-10"
       >
-        🔒 מנהל
+        <House size={20} className="text-slate-700" />
       </button>
 
       <main className="bg-white rounded-3xl shadow-sm border border-gray-200 p-4 w-full max-w-[400px] flex flex-col items-center space-y-2">

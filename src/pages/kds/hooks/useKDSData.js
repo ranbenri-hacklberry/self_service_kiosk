@@ -564,6 +564,25 @@ export const useKDSData = () => {
         return () => supabase.removeChannel(channel);
     }, [currentUser, fetchOrders]);
 
+    // Heartbeat for System Health (Super Admin Stats)
+    useEffect(() => {
+        if (!currentUser?.business_id) return;
+
+        const sendHeartbeat = async () => {
+            try {
+                await supabase.rpc('send_kds_heartbeat');
+            } catch (err) {
+                // Silent fail is fine for heartbeat
+                console.warn('Heartbeat failed:', err);
+            }
+        };
+
+        sendHeartbeat(); // Initial call
+        const interval = setInterval(sendHeartbeat, 60000); // Every minute
+
+        return () => clearInterval(interval);
+    }, [currentUser]);
+
     return {
         currentOrders,
         completedOrders,

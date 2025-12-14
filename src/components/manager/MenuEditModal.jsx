@@ -90,7 +90,16 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const [pinInput, setPinInput] = useState('');
     const { currentUser: user } = useAuth();
     const scrollContainerRef = useRef(null);
-    const [expandedOptionId, setExpandedOptionId] = useState(null);
+    const [expandedOptionId, setExpandedOptionId] = useState(null); // Re-added
+    const [showKitchenLogic, setShowKitchenLogic] = useState(false);
+    const [taskSchedule, setTaskSchedule] = useState({}); // { 0: { qty: 10, mode: 'fixed' }, ... }
+
+    const updateSchedule = (day, field, value) => {
+        setTaskSchedule(prev => ({
+            ...prev,
+            [day]: { ...(prev[day] || { qty: 0, mode: 'fixed' }), [field]: value }
+        }));
+    };
 
     // Initial History Push
     useEffect(() => {
@@ -179,6 +188,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             fetchCategories();
             fetchModifiers();
             fetchAllOptionNames();
+            fetchKitchenLogic();
             // Fetch inventory first, then components (pass inventory data directly)
             fetchInventoryOptions().then((invData) => fetchComponents(item.id, invData));
             fetchUniqueModifiers(); // Fetch unique modifiers for the picker
@@ -275,6 +285,24 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         }
     };
     const fetchAllOptionNames = async () => { const { data } = await supabase.from('optionvalues').select('value_name'); if (data) setAllOptionNames([...new Set(data.map(d => d.value_name))].sort()); };
+
+    const fetchKitchenLogic = async () => {
+        if (!item?.id) return;
+        try {
+            const { data } = await supabase.from('recurring_tasks')
+                .select('weekly_schedule, logic_type')
+                .eq('menu_item_id', item.id)
+                .maybeSingle();
+
+            if (data && data.weekly_schedule) {
+                setTaskSchedule(data.weekly_schedule || {});
+            } else {
+                setTaskSchedule({});
+            }
+        } catch (e) {
+            console.error('Fetch kitchen logic error:', e);
+        }
+    };
 
     const fetchUniqueModifiers = async () => {
         // Fetch all distinct value_names from the system to serve as a library
@@ -446,8 +474,44 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
 
 
 
+    const saveKitchenLogicToDB = async () => {
+        if (!item?.id) return;
+        const savedId = item.id;
+        try {
+            const hasSchedule = Object.values(taskSchedule).some(v => v.qty > 0 || v.mode === 'par_level');
+            const { data: existingTask } = await supabase.from('recurring_tasks')
+                .select('id')
+                .eq('menu_item_id', savedId)
+                .maybeSingle();
+
+            if (hasSchedule) {
+                const payload = {
+                    name: formData.name || 'משימה אוטומטית',
+                    menu_item_id: savedId,
+                    category: 'prep',
+                    frequency: 'Weekly',
+                    weekly_schedule: taskSchedule,
+                    is_active: true
+                };
+
+                if (existingTask) {
+                    await supabase.from('recurring_tasks').update(payload).eq('id', existingTask.id);
+                } else {
+                    await supabase.from('recurring_tasks').insert(payload);
+                }
+            } else if (existingTask) {
+                await supabase.from('recurring_tasks').update({ is_active: false }).eq('id', existingTask.id);
+            }
+        } catch (e) { console.error('Auto-save kitchen logic failed', e); }
+    };
+
     // --- ACCORDION & SCROLL LOGIC ---
     const toggleSection = (section) => {
+        // Auto-save logic when closing Kitchen Logic
+        if (showKitchenLogic && section !== 'kitchenLogic') {
+            saveKitchenLogicToDB();
+        }
+
         // Close others and scroll to top with offset
         if (section === 'price') {
             const willOpen = !showPriceSection;
@@ -455,19 +519,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             if (willOpen) {
                 setShowModifiersSection(false);
                 setShowComponentsSection(false);
+                setShowKitchenLogic(false);
                 setTimeout(() => {
-                    if (scrollContainerRef.current) {
-                        const top = scrollContainerRef.current.scrollTop + document.getElementById('price-header')?.getBoundingClientRect().top - 90 || 0;
-                        // Or better: manual calculation relative to container? 
-                        // With offsetTop of element? Ref was removed. 
-                        // I will use element ID 'price-section-header' if existed? 
-                        // No, I'll rely on scrollContainerRef.current.children? 
-                        // Let's us ID 'price-section' which I need to add/ensure exists?
-                        // Line 910 has no ID. 
-                        // I'll add id="price-section" to line 910 in Chunk 4?
-                        // Yes.
-                    }
-                    // Actually, I'll just restore the logic from Step 1625 but use IDs for all.
                     const el = document.getElementById('price-section');
                     if (el && scrollContainerRef.current) {
                         const top = el.offsetTop - 90;
@@ -482,6 +535,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             if (willOpen) {
                 setShowPriceSection(false);
                 setShowComponentsSection(false);
+                setShowKitchenLogic(false);
                 setTimeout(() => {
                     const el = document.getElementById('modifiers-section');
                     if (el && scrollContainerRef.current) {
@@ -497,8 +551,27 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             if (willOpen) {
                 setShowPriceSection(false);
                 setShowModifiersSection(false);
+                setShowKitchenLogic(false);
                 setTimeout(() => {
                     const el = document.getElementById('components-section');
+                    if (el && scrollContainerRef.current) {
+                        const top = el.offsetTop - 90;
+                        scrollContainerRef.current.scrollTo({ top, behavior: 'smooth' });
+                    }
+                }, 300);
+            }
+        }
+        if (section === 'kitchenLogic') {
+            const willOpen = !showKitchenLogic;
+            setShowKitchenLogic(willOpen);
+            if (!willOpen) {
+                saveKitchenLogicToDB();
+            } else {
+                setShowPriceSection(false);
+                setShowModifiersSection(false);
+                setShowComponentsSection(false);
+                setTimeout(() => {
+                    const el = document.getElementById('kitchen-logic-section');
                     if (el && scrollContainerRef.current) {
                         const top = el.offsetTop - 90;
                         scrollContainerRef.current.scrollTo({ top, behavior: 'smooth' });
@@ -849,7 +922,36 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             await supabase.from('menuitemoptions').delete().eq('item_id', savedId);
             if (selectedGroupIds.size > 0) { const links = Array.from(selectedGroupIds).map(gid => ({ item_id: savedId, group_id: gid })); await supabase.from('menuitemoptions').insert(links); }
             await saveRecipeData(savedId);
-            await saveOptionsData(savedId); // Save modifier groups and options
+            await saveOptionsData(savedId);
+
+            // --- NEW: SAVE RECURRING TASK SCHEDULE ---
+            const hasSchedule = Object.values(taskSchedule).some(v => v.qty > 0 || v.mode === 'par_level');
+            // Check if we already have one
+            const { data: existingTask } = await supabase.from('recurring_tasks')
+                .select('id')
+                .eq('menu_item_id', savedId)
+                .maybeSingle();
+
+            if (hasSchedule) {
+                const payload = {
+                    name: formData.name || 'משימה אוטומטית',
+                    menu_item_id: savedId,
+                    category: 'prep',
+                    frequency: 'Weekly',
+                    weekly_schedule: taskSchedule,
+                    is_active: true
+                };
+
+                if (existingTask) {
+                    await supabase.from('recurring_tasks').update(payload).eq('id', existingTask.id);
+                } else {
+                    await supabase.from('recurring_tasks').insert(payload);
+                }
+            } else if (existingTask) {
+                // If cleared all quantities, maybe deactivate?
+                await supabase.from('recurring_tasks').update({ is_active: false }).eq('id', existingTask.id);
+            }
+            // -----------------------------------------
 
             setLastSavedTime(new Date());
             setIsDirty(false);
@@ -1815,6 +1917,99 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                 </div>
                                             </div>
                                         )}
+                                    </div>
+                                </AnimatedSection>
+                            </div>
+
+                            {/* --- KITCHEN LOGIC SECTION (Bottom) --- */}
+                            <div id="kitchen-logic-section" className="border-t border-gray-100 bg-white">
+                                <div className="flex items-center gap-3 w-full p-4 pointer-events-auto">
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleSection('kitchenLogic')}
+                                        className="w-full flex items-center justify-between hover:bg-gray-50 transition-colors p-2 rounded-xl"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-2 rounded-xl transition-colors ${showKitchenLogic ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-500'}`}>
+                                                <RotateCcw size={20} />
+                                            </div>
+                                            <div className="text-right">
+                                                <h3 className={`font-black text-lg ${showKitchenLogic ? 'text-purple-900' : 'text-gray-700'}`}>
+                                                    הכנות אוטומטיות (פרדקשן)
+                                                </h3>
+                                                <p className="text-xs text-gray-400 font-medium">הגדרת כמויות ייצור יומיות</p>
+                                            </div>
+                                        </div>
+                                        <div className={`transform transition-transform duration-300 ${showKitchenLogic ? 'rotate-180' : ''}`}>
+                                            <ChevronDown size={20} className="text-gray-400" />
+                                        </div>
+                                    </button>
+                                </div>
+
+                                <AnimatedSection show={showKitchenLogic}>
+                                    <div className="p-4 bg-purple-50/50 space-y-3 pb-6">
+                                        {/* Days Grid */}
+                                        <div className="space-y-2">
+                                            {[0, 1, 2, 3, 4, 5, 6].map(dayIdx => {
+                                                const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+                                                const config = taskSchedule[dayIdx] || { qty: 0, mode: 'fixed' };
+
+                                                return (
+                                                    <div key={dayIdx} className="bg-white rounded-xl p-3 border border-purple-100/50 shadow-sm flex items-center justify-between">
+
+                                                        {/* Left: Day & Type Toggle */}
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="w-12 text-center">
+                                                                <span className="block font-black text-slate-700 text-sm">{days[dayIdx]}</span>
+                                                            </div>
+
+                                                            {/* Logic Mode Toggle */}
+                                                            <div className="flex bg-gray-100 rounded-lg p-0.5 h-8">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => updateSchedule(dayIdx, 'mode', 'fixed')}
+                                                                    className={`px-3 rounded-md text-xs font-bold transition flex items-center ${config.mode !== 'par_level' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-400 hover:text-gray-600'}`}
+                                                                >
+                                                                    ייצור
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => updateSchedule(dayIdx, 'mode', 'par_level')}
+                                                                    className={`px-3 rounded-md text-xs font-bold transition flex items-center ${config.mode === 'par_level' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-400 hover:text-gray-600'}`}
+                                                                >
+                                                                    השלמה
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Right: Quantity Picker */}
+                                                        <div className="flex items-center gap-3" dir="ltr">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => updateSchedule(dayIdx, 'qty', Math.max(0, (config.qty || 0) - 1))}
+                                                                className="w-8 h-8 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center justify-center transition-colors active:scale-90"
+                                                            >
+                                                                <Minus size={16} strokeWidth={3} />
+                                                            </button>
+
+                                                            <div className="w-12 text-center">
+                                                                <span className={`text-xl font-black ${config.qty > 0 ? 'text-purple-700' : 'text-gray-300'}`}>
+                                                                    {config.qty || 0}
+                                                                </span>
+                                                            </div>
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => updateSchedule(dayIdx, 'qty', (config.qty || 0) + 1)}
+                                                                className="w-8 h-8 rounded-lg bg-purple-100 text-purple-600 hover:bg-purple-200 flex items-center justify-center transition-colors active:scale-90"
+                                                            >
+                                                                <Plus size={16} strokeWidth={3} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </AnimatedSection>
                             </div>
