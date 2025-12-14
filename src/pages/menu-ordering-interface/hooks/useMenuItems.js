@@ -20,7 +20,7 @@ const CATEGORY_MAP = {
  * Custom hook for menu items management
  * Handles fetching, filtering, and categorizing menu items
  */
-export const useMenuItems = (defaultCategory = 'hot-drinks') => {
+export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) => {
     const [rawMenuData, setRawMenuData] = useState([]); // Raw data from DB
     const [menuLoading, setMenuLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -60,11 +60,19 @@ export const useMenuItems = (defaultCategory = 'hot-drinks') => {
             setMenuLoading(true);
             setError(null);
 
-            const { data, error: fetchError } = await supabase
+            // Default to Pilot Cafe if no business ID provided
+            const targetBusinessId = businessId || '11111111-1111-1111-1111-111111111111';
+
+            console.log('🍽️ Fetching menu items for business:', targetBusinessId);
+
+            let query = supabase
                 .from('menu_items')
                 .select('*')
+                .eq('business_id', targetBusinessId)  // <--- FILTER ADDED
                 .order('category', { ascending: true })
                 .order('name', { ascending: true });
+
+            const { data, error: fetchError } = await query;
 
             if (fetchError) {
                 throw new Error(`Supabase error: ${fetchError.message}`);
@@ -78,7 +86,7 @@ export const useMenuItems = (defaultCategory = 'hot-drinks') => {
         } finally {
             setMenuLoading(false);
         }
-    }, []);
+    }, [businessId]);
 
     // Memoized transformation of raw data to menu items
     // This ensures stable object references and avoids recreation on every render

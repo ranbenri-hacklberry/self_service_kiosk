@@ -30,7 +30,7 @@ const MenuOrderingInterface = () => {
     groupedItems,
     handleCategoryChange,
     isFoodItem
-  } = useMenuItems('hot-drinks');
+  } = useMenuItems('hot-drinks', currentUser?.business_id);
 
   // ===== Cart Hook (replaces cart state + cart functions) =====
   const {
@@ -1220,7 +1220,8 @@ const MenuOrderingInterface = () => {
         p_original_coffee_count: originalCoffeeCount,
         // Critical Fix: ONLY mark as quick order if there is NO real phone number.
         // This prevents overwriting the customer name with an order number if a phone was entered but the flag persisted.
-        p_is_quick_order: !!currentCustomer?.isQuickOrder && !realPhone
+        p_is_quick_order: !!currentCustomer?.isQuickOrder && !realPhone,
+        p_business_id: currentUser?.business_id || null
       };
 
       console.log('📤 Sending Order Payload:', JSON.stringify(orderPayload, null, 2));
