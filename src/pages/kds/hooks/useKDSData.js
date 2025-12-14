@@ -520,9 +520,8 @@ export const useKDSData = () => {
     useEffect(() => {
         if (!currentUser) return;
 
-        // Determine schema based on user
-        const isDemoUser = currentUser?.whatsapp_phone === '0500000000' || currentUser?.whatsapp_phone === '0501111111';
-        const schema = isDemoUser ? 'demo' : 'public';
+        // Always use 'public' schema. Multi-tenancy is handled via Row Level Security / Business ID.
+        const schema = 'public';
 
         console.log(`🔌 Connecting to Realtime on schema: ${schema}`);
 

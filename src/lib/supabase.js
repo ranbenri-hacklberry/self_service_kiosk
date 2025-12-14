@@ -17,19 +17,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * @returns {object} - Supabase client with .schema() applied if needed
  */
 export const getSupabase = (user) => {
-    // Check if user is a demo user (by phone number for now, or a specific flag)
-    // Demo Admin: 0500000000, Demo Staff: 0501111111
-    const isDemoUser = user?.whatsapp_phone === '0500000000' || user?.whatsapp_phone === '0501111111';
-
-    console.log('🔍 getSupabase Debug:', {
-        phone: user?.whatsapp_phone,
-        isDemoUser,
-        schema: isDemoUser ? 'demo' : 'public'
-    });
-
-    if (isDemoUser) {
-        return supabase.schema('demo');
-    }
-
+    // Legacy logic removed: We now use Single Schema (public) with Business ID filtering.
+    // The previous logic attempted to switch to 'demo' schema, causing 406 errors.
     return supabase;
 };
