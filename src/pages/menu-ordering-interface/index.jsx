@@ -11,7 +11,7 @@ import SaladPrepDecision from './components/SaladPrepDecision';
 import MTOQuickNotesModal from './components/MTOQuickNotesModal';
 import OrderConfirmationModal from '../../components/ui/OrderConfirmationModal';
 import { addCoffeePurchase, getLoyaltyCount, handleLoyaltyAdjustment, getLoyaltyRedemptionForOrder } from "../../lib/loyalty";
-import { supabase, getSupabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import Icon from '../../components/AppIcon';
 // Custom hooks
@@ -104,8 +104,7 @@ const MenuOrderingInterface = () => {
       setIsLoading(true);
 
       // Fetch order with items
-      const client = getSupabase(currentUser);
-      const { data: order, error } = await client
+      const { data: order, error } = await supabase
         .from('orders')
         .select(`
           *,
@@ -119,7 +118,7 @@ const MenuOrderingInterface = () => {
 
       if (order?.order_items) {
         console.log('📦 Fetched Order Items from DB:', order.order_items.length);
-        console.log('💰 Fetched Order Total:', order.total_amount); // <--- הלוג החדש
+        console.log('💰 Fetched Order Total:', order.total_amount);
         console.log('📦 Items details:', order.order_items.map(i => ({ id: i.id, name: i.menu_items?.name })));
       }
 
@@ -127,8 +126,7 @@ const MenuOrderingInterface = () => {
 
       // Set customer if exists
       if (order.customer_phone) {
-        const client = getSupabase(currentUser);
-        const { data: customer } = await client
+        const { data: customer } = await supabase
           .from('customers')
           .select('*')
           .eq('phone', order.customer_phone)

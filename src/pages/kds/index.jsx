@@ -5,7 +5,7 @@ import {
   Clock, CreditCard, ChefHat, CheckCircle, List,
   Check, AlertTriangle, X, RefreshCw, Flame, Edit
 } from 'lucide-react';
-import { supabase, getSupabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase';
 import { sendSms } from '../../services/smsService';
 import CashPaymentModal from './components/CashPaymentModal';
 import StaffQuickAccessModal from '../../components/StaffQuickAccessModal';

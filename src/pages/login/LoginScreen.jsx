@@ -35,8 +35,8 @@ const LoginScreen = () => {
 
     const handleNext = async () => {
         if (step === 'phone') {
-            if (phone.length < 9) {
-                setError('נא להזין מספר טלפון תקין');
+            if (phone.length < 10) {
+                setError('נא להזין מספר טלפון תקין (10 ספרות)');
                 return;
             }
             setStep('pin');
