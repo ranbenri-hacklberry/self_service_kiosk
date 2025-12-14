@@ -25,19 +25,32 @@ BEGIN
     -- 1. Identify the current user and their business
     v_user_id := auth.uid();
     
-    -- Try to get business_id from employees table
+    -- Try to get business_id from employees table using auth_user_id
     SELECT business_id INTO v_business_id
     FROM employees
     WHERE auth_user_id = v_user_id
     LIMIT 1;
 
-    -- If no employee record found (or not logged in via Supabase Auth), fallback or handle Demo
-    -- Pilot Cafe ID: '11111111-1111-1111-1111-111111111111'
+    -- 2. Fallback: If not linked by ID, try matching by Phone Number (for Demo/Unlinked users)
     IF v_business_id IS NULL THEN
-        -- Check if it's the specific Demo User phone (hardcoded fallback if auth.uid() fails to map)
-        -- Ideally we rely on auth.uid() being linked to the employee correctly.
-        -- Default to Pilot for safety if unknown.
-        v_business_id := '11111111-1111-1111-1111-111111111111';
+        -- Get phone from JWT or auth.users (Accessing auth.users requires checking permissions, but security definer handles it)
+        -- We'll try to match employees.whatsapp_phone with the user's phone.
+        -- Note: We trust the phone number because it's verified by Supabase Auth (OTP).
+        BEGIN
+            SELECT e.business_id INTO v_business_id
+            FROM employees e
+            JOIN auth.users u ON u.phone = e.whatsapp_phone
+            WHERE u.id = v_user_id
+            LIMIT 1;
+        EXCEPTION WHEN OTHERS THEN
+            v_business_id := NULL;
+        END;
+    END IF;
+
+    -- 3. CRITICAL SECURITY FIX: Remove default fallback to Pilot.
+    -- If we still don't know the business, we return NOTHING.
+    IF v_business_id IS NULL THEN
+        RETURN;
     END IF;
 
   RETURN QUERY
