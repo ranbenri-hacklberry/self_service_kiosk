@@ -16,6 +16,7 @@ import ReturningCustomerWelcomeScreen from './pages/returning-customer-welcome-s
 
 import DataManagerInterface from './pages/data-manager-interface';
 import SuperAdminDashboard from './pages/super-admin';
+import ManagerKDS from './components/manager/ManagerKDS';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -83,6 +84,12 @@ const AppRoutes = () => {
       <Route path="/kds" element={
         <ProtectedRoute>
           <KdsScreen />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/mobile-kds" element={
+        <ProtectedRoute>
+          <ManagerKDS />
         </ProtectedRoute>
       } />
 
