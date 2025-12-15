@@ -149,8 +149,14 @@ const SalesDashboard = () => {
     setLoading(true);
     setSelectedGraphBar(null); // Reset filter on date change
     setError(null);
+    
+    console.log('📊 SalesDashboard: Fetching sales data...');
+    console.log('📊 currentUser:', currentUser);
+    console.log('📊 business_id:', currentUser?.business_id);
+    
     try {
       const { currentStart, currentEnd, previousStart, previousEnd } = getDateRanges(viewMode, selectedDate);
+      console.log('📊 Date range:', { currentStart: currentStart.toISOString(), currentEnd: currentEnd.toISOString() });
 
       const fetchPeriod = async (start, end) => {
         let query = supabase
@@ -167,6 +173,8 @@ const SalesDashboard = () => {
         }
         
         const { data, error } = await query;
+        
+        console.log('📊 Query result:', { ordersCount: data?.length, error });
 
         if (error) throw error;
 
@@ -198,8 +206,8 @@ const SalesDashboard = () => {
       setPreviousSales(prev.flattened); // We only start flattened for prev comparison for now
 
     } catch (err) {
-      console.error('Error fetching sales:', err);
-      setError('שגיאה בטעינת נתוני מכירות');
+      console.error('❌ Error fetching sales:', err);
+      setError('שגיאה בטעינת נתוני מכירות: ' + err.message);
     } finally {
       setLoading(false);
     }
