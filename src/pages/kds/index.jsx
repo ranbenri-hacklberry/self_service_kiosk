@@ -179,22 +179,18 @@ const KdsScreen = () => {
 
       console.log(`📋 Fetching ${category} tasks for business:`, businessId, 'day:', todayIdx);
 
-      // 1. Fetch active recurring tasks for this category
-      let query = supabase
-        .from('recurring_tasks')
-        .select(`
-                *, 
-                menu_item:menu_items(image_url, description)
-            `)
-        .eq('category', category)
-        .eq('is_active', true);
-
-      // Add business_id filter if available
-      if (businessId) {
-        query = query.eq('business_id', businessId);
+      if (!businessId) {
+        console.warn('⚠️ No business_id available, skipping task fetch');
+        return;
       }
 
-      const { data: allTasks, error } = await query;
+      // 1. Fetch active recurring tasks for this category
+      const { data: allTasks, error } = await supabase
+        .from('recurring_tasks')
+        .select('*')
+        .eq('category', category)
+        .eq('is_active', true)
+        .eq('business_id', businessId);
 
       console.log(`📋 ${category} tasks fetched:`, allTasks?.length || 0, error ? `Error: ${error.message}` : '');
 
