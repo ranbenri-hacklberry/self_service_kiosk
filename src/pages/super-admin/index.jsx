@@ -315,6 +315,10 @@ const SuperAdminDashboard = () => {
             const { data, error } = await supabase.rpc('get_all_business_stats');
 
             console.log('📊 RPC Response:', { data, error });
+            if (data && data.length > 0) {
+                console.log('📱 Active devices for first business:', data[0].active_devices);
+                console.log('🟢 Is online:', data[0].is_online, 'Last active:', data[0].last_active_at);
+            }
 
             if (error) throw error;
 

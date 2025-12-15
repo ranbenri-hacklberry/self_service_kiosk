@@ -607,7 +607,7 @@ export const useKDSData = () => {
         const sendHeartbeat = async () => {
             try {
                 const ip = await fetchIp();
-                await supabase.rpc('send_device_heartbeat', { 
+                const payload = { 
                     p_business_id: currentUser.business_id,
                     p_device_id: deviceId,
                     p_device_type: 'kds',
@@ -616,16 +616,28 @@ export const useKDSData = () => {
                     p_screen_resolution: `${window.screen.width}x${window.screen.height}`,
                     p_user_name: currentUser.name || currentUser.employee_name || 'אורח',
                     p_employee_id: currentUser.id || null
-                });
-                console.log('💓 Device heartbeat sent:', deviceId, 'User:', currentUser.name);
+                };
+                console.log('💓 Sending heartbeat:', payload);
+                const { data, error } = await supabase.rpc('send_device_heartbeat', payload);
+                if (error) {
+                    console.error('❌ Heartbeat error:', error);
+                    throw error;
+                }
+                console.log('✅ Heartbeat success:', data);
             } catch (err) {
+                console.warn('⚠️ Device heartbeat failed, trying fallback:', err.message);
                 // Fallback to old heartbeat if new one doesn't exist yet
                 try {
-                    await supabase.rpc('send_kds_heartbeat', { 
+                    const { error: fallbackError } = await supabase.rpc('send_kds_heartbeat', { 
                         p_business_id: currentUser.business_id 
                     });
-                } catch {
-                    console.warn('Heartbeat failed:', err);
+                    if (fallbackError) {
+                        console.error('❌ Fallback heartbeat also failed:', fallbackError);
+                    } else {
+                        console.log('✅ Fallback heartbeat success');
+                    }
+                } catch (e) {
+                    console.error('❌ All heartbeats failed:', e);
                 }
             }
         };
