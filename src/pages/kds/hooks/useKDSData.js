@@ -589,16 +589,29 @@ export const useKDSData = () => {
             localStorage.setItem('kds_device_id', deviceId);
         }
 
-        // Get public IP (cached for session)
-        let cachedIp = sessionStorage.getItem('device_public_ip');
+        // Get public IP - fetch once at start, then use cached
         const fetchIp = async () => {
-            if (cachedIp) return cachedIp;
+            const cached = sessionStorage.getItem('device_public_ip');
+            if (cached) return cached;
             try {
-                const res = await fetch('https://api.ipify.org?format=json');
-                const data = await res.json();
-                cachedIp = data.ip;
-                sessionStorage.setItem('device_public_ip', cachedIp);
-                return cachedIp;
+                // Try multiple IP services in case one fails
+                const services = [
+                    'https://api.ipify.org?format=json',
+                    'https://api.my-ip.io/ip.json'
+                ];
+                for (const url of services) {
+                    try {
+                        const res = await fetch(url, { timeout: 5000 });
+                        const data = await res.json();
+                        const ip = data.ip || data.success?.ip;
+                        if (ip) {
+                            sessionStorage.setItem('device_public_ip', ip);
+                            console.log('🌐 Got IP:', ip);
+                            return ip;
+                        }
+                    } catch { /* try next */ }
+                }
+                return null;
             } catch {
                 return null;
             }
@@ -607,42 +620,42 @@ export const useKDSData = () => {
         const sendHeartbeat = async () => {
             try {
                 const ip = await fetchIp();
+                const screenRes = `${window.screen.width}x${window.screen.height}`;
                 const payload = { 
                     p_business_id: currentUser.business_id,
                     p_device_id: deviceId,
                     p_device_type: 'kds',
-                    p_ip_address: ip,
-                    p_user_agent: navigator.userAgent?.substring(0, 200),
-                    p_screen_resolution: `${window.screen.width}x${window.screen.height}`,
+                    p_ip_address: ip || 'לא זמין',
+                    p_user_agent: navigator.userAgent?.substring(0, 200) || 'Unknown',
+                    p_screen_resolution: screenRes,
                     p_user_name: currentUser.name || currentUser.employee_name || 'אורח',
                     p_employee_id: currentUser.id || null
                 };
-                console.log('💓 Sending heartbeat:', payload);
+                console.log('💓 Sending heartbeat:', { deviceId, ip, screenRes, user: payload.p_user_name });
                 const { data, error } = await supabase.rpc('send_device_heartbeat', payload);
                 if (error) {
                     console.error('❌ Heartbeat error:', error);
                     throw error;
                 }
-                console.log('✅ Heartbeat success:', data);
+                console.log('✅ Heartbeat success');
             } catch (err) {
-                console.warn('⚠️ Device heartbeat failed, trying fallback:', err.message);
-                // Fallback to old heartbeat if new one doesn't exist yet
+                console.warn('⚠️ Device heartbeat failed:', err.message);
+                // Fallback to old heartbeat
                 try {
-                    const { error: fallbackError } = await supabase.rpc('send_kds_heartbeat', { 
+                    await supabase.rpc('send_kds_heartbeat', { 
                         p_business_id: currentUser.business_id 
                     });
-                    if (fallbackError) {
-                        console.error('❌ Fallback heartbeat also failed:', fallbackError);
-                    } else {
-                        console.log('✅ Fallback heartbeat success');
-                    }
                 } catch (e) {
-                    console.error('❌ All heartbeats failed:', e);
+                    console.error('❌ All heartbeats failed');
                 }
             }
         };
 
-        sendHeartbeat(); // Initial call
+        // Fetch IP first, then start heartbeat cycle
+        fetchIp().then(() => {
+            sendHeartbeat(); // Initial call after IP is fetched
+        });
+        
         const interval = setInterval(sendHeartbeat, 30000); // Every 30 seconds
 
         return () => clearInterval(interval);
