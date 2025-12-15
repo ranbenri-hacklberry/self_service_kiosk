@@ -72,7 +72,6 @@ const AppRoutes = () => {
       <Route path="/customer-phone-input-screen" element={<ProtectedRoute><CustomerPhoneInputScreen /></ProtectedRoute>} />
       <Route path="/new-customer-name-collection-screen" element={<ProtectedRoute><NewCustomerNameCollectionScreen /></ProtectedRoute>} />
       <Route path="/returning-customer-welcome-screen" element={<ProtectedRoute><ReturningCustomerWelcomeScreen /></ProtectedRoute>} />
-<<<<<<< HEAD
       <Route path="/menu-ordering-interface" element={
         <ProtectedRoute>
           <ErrorBoundary>
@@ -94,7 +93,6 @@ const AppRoutes = () => {
           </ErrorBoundary>
         </ProtectedRoute>
       } />
->>>>>>> 302f54a3a8e2ef98ad25971583d4829fcbd18dcf
 
       <Route path="*" element={<NotFound />} />
     </RouterRoutes>
