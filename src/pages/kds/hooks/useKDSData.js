@@ -501,12 +501,26 @@ export const useKDSData = () => {
         }
     };
 
-    const handleConfirmPayment = async (orderId) => {
+    const handleConfirmPayment = async (orderId, amount = null) => {
         try {
-            // CHANGED: Use supabase directly
+            // If amount not provided, fetch the order's total_amount first
+            let paidAmount = amount;
+            if (paidAmount === null) {
+                const { data: orderData } = await supabase
+                    .from('orders')
+                    .select('total_amount')
+                    .eq('id', orderId)
+                    .maybeSingle();
+                paidAmount = orderData?.total_amount || 0;
+            }
+
+            // Update both is_paid and paid_amount
             const { error } = await supabase
                 .from('orders')
-                .update({ is_paid: true })
+                .update({ 
+                    is_paid: true,
+                    paid_amount: paidAmount
+                })
                 .eq('id', orderId);
 
             if (error) throw error;
@@ -519,7 +533,7 @@ export const useKDSData = () => {
                 message: 'לא הצלחנו לעדכן את התשלום במערכת',
                 details: err.message,
                 retryLabel: 'נסה שוב',
-                onRetry: () => handleConfirmPayment(orderId)
+                onRetry: () => handleConfirmPayment(orderId, amount)
             });
         }
     };

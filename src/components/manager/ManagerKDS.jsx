@@ -405,7 +405,13 @@ const ManagerKDS = () => {
     };
 
     const handlePayment = async (order) => {
-        const { error } = await supabase.from('orders').update({ is_paid: true }).eq('id', order.id);
+        const { error } = await supabase
+            .from('orders')
+            .update({ 
+                is_paid: true,
+                paid_amount: order.totalAmount || order.total_amount || 0
+            })
+            .eq('id', order.id);
         if (error) console.error("Error paying:", error);
         else fetchKDS();
     };

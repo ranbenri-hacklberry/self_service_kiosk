@@ -19,13 +19,9 @@ BEGIN
     'paid_amount', o.paid_amount,
     'total_amount', o.total_amount,
     'created_at', o.created_at,
-    'fired_at', o.fired_at,
-    'ready_at', o.ready_at,
     'customer_name', o.customer_name,
     'customer_phone', o.customer_phone,
     'business_id', o.business_id,
-    'loyalty_discount', o.loyalty_discount,
-    'loyalty_points_earned', o.loyalty_points_earned,
     'order_items', (
       SELECT COALESCE(json_agg(
         json_build_object(
@@ -37,15 +33,12 @@ BEGIN
           'mods', oi.mods,
           'notes', oi.notes,
           'item_status', oi.item_status,
-          'course_stage', oi.course_stage,
-          'item_fired_at', oi.item_fired_at,
-          'is_delayed', oi.is_delayed,
           'menu_items', json_build_object(
             'id', mi.id,
             'name', mi.name,
             'price', mi.price,
             'category', mi.category,
-            'image', mi.image,
+            'image_url', mi.image_url,
             'is_prep_required', mi.is_prep_required,
             'kds_routing_logic', mi.kds_routing_logic
           )
