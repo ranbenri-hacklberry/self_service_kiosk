@@ -177,20 +177,15 @@ const KdsScreen = () => {
       const dateStr = new Date().toISOString().split('T')[0];
       const businessId = currentUser?.business_id;
 
-      console.log(`📋 Fetching ${category} tasks for business:`, businessId, 'day:', todayIdx);
-
-      if (!businessId) {
-        console.warn('⚠️ No business_id available, skipping task fetch');
-        return;
-      }
+      console.log(`📋 Fetching ${category} tasks, day:`, todayIdx);
 
       // 1. Fetch active recurring tasks for this category
+      // Note: recurring_tasks table doesn't have business_id column yet
       const { data: allTasks, error } = await supabase
         .from('recurring_tasks')
         .select('*')
         .eq('category', category)
-        .eq('is_active', true)
-        .eq('business_id', businessId);
+        .eq('is_active', true);
 
       console.log(`📋 ${category} tasks fetched:`, allTasks?.length || 0, error ? `Error: ${error.message}` : '');
 
@@ -214,15 +209,14 @@ const KdsScreen = () => {
       });
 
       // 3. Fetch logs specifically for today to exclude completed
-      let logsQuery = supabase.from('task_completions')
+      const { data: logs, error: logsError } = await supabase
+        .from('task_completions')
         .select('recurring_task_id')
         .eq('completion_date', dateStr);
       
-      if (businessId) {
-        logsQuery = logsQuery.eq('business_id', businessId);
+      if (logsError) {
+        console.warn('⚠️ Could not fetch task completions:', logsError.message);
       }
-
-      const { data: logs } = await logsQuery;
 
       console.log(`📋 Completed tasks today:`, logs?.length || 0);
 
