@@ -149,7 +149,12 @@ const OrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPaymentColle
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onEditOrder?.(order);
+                console.log('🔘 Edit button clicked for order:', order.id, 'originalOrderId:', order.originalOrderId);
+                if (onEditOrder) {
+                  onEditOrder(order);
+                } else {
+                  console.error('❌ onEditOrder prop is not defined!');
+                }
               }}
               className="p-1 rounded-full bg-gray-100 hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors shrink-0"
               title="ערוך הזמנה"

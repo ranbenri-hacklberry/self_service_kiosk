@@ -20,9 +20,11 @@ import { useMenuItems, useLoyalty, useCart } from './hooks';
 const ORDER_ORIGIN_STORAGE_KEY = 'order_origin';
 
 const MenuOrderingInterface = () => {
+  console.log('🚀 MenuOrderingInterface component rendering...');
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  console.log('📍 Location state received:', location.state);
 
   // ===== Menu Items Hook (replaces local state + fetch logic) =====
   const {
@@ -92,6 +94,7 @@ const MenuOrderingInterface = () => {
 
   // --- Edit Mode Logic ---
   useEffect(() => {
+    console.log('🔄 MenuOrderingInterface mounted, location.state:', location.state);
     if (location.state?.isEditMode && location.state?.orderId) {
       console.log('✏️ Entering Edit Mode for Order:', location.state.orderId);
       setIsEditMode(true);
