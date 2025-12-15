@@ -1,0 +1,9 @@
+{
+  "name": "send-sms",
+  "version": "1.0.0",
+  "description": "Send SMS via GlobalSMS",
+  "main": "index.js",
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.0.0"
+  }
+}

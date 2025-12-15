@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ניקוי מודיפיירים - iCaffe</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.95;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .step {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border-right: 5px solid #667eea;
+        }
+        
+        .step h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+        }
+        
+        .step-number {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 35px;
+            margin-left: 10px;
+            font-weight: bold;
+        }
+        
+        .info-box {
+            background: #e3f2fd;
+            border-right: 4px solid #2196f3;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        
+        .warning-box {
+            background: #fff3e0;
+            border-right: 4px solid #ff9800;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        
+        .success-box {
+            background: #e8f5e9;
+            border-right: 4px solid #4caf50;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        
+        .code-block {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 20px;
+            border-radius: 10px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            margin: 15px 0;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 25px;
+            font-weight: bold;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .items-list {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+        
+        .item {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .item:last-child {
+            border-bottom: none;
+        }
+        
+        .item-name {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .item-category {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .item-modifiers {
+            color: #f5576c;
+            font-size: 0.85rem;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        #results {
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧹 ניקוי מודיפיירים</h1>
+            <p>הסרת מודיפיירים של קפה מפריטים שאינם משקאות</p>
+        </div>
+        
+        <div class="content">
+            <div class="step">
+                <h2><span class="step-number">1</span>מה הבעיה?</h2>
+                <p>נמצאו פריטים שאינם משקאות (מאפים, קינוחים, סלטים) שיש להם מודיפיירים של קפה כמו:</p>
+                <ul style="margin: 15px 0 15px 30px; line-height: 2;">
+                    <li>סוג חלב (רגיל, סויה, שיבולת)</li>
+                    <li>טמפרטורה</li>
+                    <li>בסיס משקה</li>
+                    <li>קצף</li>
+                    <li>קפאין</li>
+                    <li>הפרדה</li>
+                </ul>
+                <div class="warning-box">
+                    <strong>⚠️ זה לא הגיוני!</strong> עוגיה לא צריכה אפשרות לבחור סוג חלב או טמפרטורה.
+                </div>
+            </div>
+            
+            <div class="step">
+                <h2><span class="step-number">2</span>בדיקת הפריטים</h2>
+                <p>לחץ על הכפתור כדי לראות אילו פריטים יושפעו:</p>
+                <button class="btn" onclick="checkItems()">🔍 בדוק פריטים</button>
+                <div id="results"></div>
+            </div>
+            
+            <div class="step">
+                <h2><span class="step-number">3</span>הוראות ביצוע</h2>
+                <div class="info-box">
+                    <strong>📝 איך להריץ את הסקריפט:</strong>
+                    <ol style="margin: 10px 0 0 30px; line-height: 2;">
+                        <li>פתח את <strong>Supabase Dashboard</strong></li>
+                        <li>עבור ל-<strong>SQL Editor</strong></li>
+                        <li>העתק את הקוד למטה</li>
+                        <li>הרץ את השאילתות אחת אחת</li>
+                    </ol>
+                </div>
+                
+                <h3 style="margin: 25px 0 15px;">📋 קוד SQL להעתקה:</h3>
+                <div class="code-block" id="sqlCode">טוען...</div>
+                <button class="btn" onclick="copySql()">📋 העתק קוד SQL</button>
+            </div>
+            
+            <div class="step">
+                <h2><span class="step-number">4</span>אימות</h2>
+                <p>לאחר הרצת הסקריפט, וודא שהפריטים הבאים <strong>אין להם</strong> מודיפיירים:</p>
+                <div class="success-box">
+                    <ul style="margin: 10px 0 0 30px; line-height: 2;">
+                        <li>✅ עוגיית שלושת השוקולדים</li>
+                        <li>✅ מאפה שוקולד</li>
+                        <li>✅ כל הסלטים</li>
+                        <li>✅ כל הקינוחים האחרים</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL'; // Replace with actual URL
+        const SUPABASE_KEY = 'YOUR_SUPABASE_KEY'; // Replace with actual key
+        
+        async function checkItems() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>טוען נתונים...</p></div>';
+            
+            try {
+                // This is a mock - in real implementation, you'd fetch from Supabase
+                const mockItems = [
+                    {
+                        id: 48,
+                        name: 'עוגיית שלושת השוקולדים',
+                        category: 'קינוחים',
+                        modifiers: ['סוג חלב', 'טמפרטורה', 'בסיס משקה', 'קצף', 'קפאין', 'הפרדה']
+                    },
+                    {
+                        id: 31,
+                        name: 'מאפה שוקולד',
+                        category: 'מאפים',
+                        modifiers: ['סוג חלב', 'טמפרטורה', 'בסיס משקה', 'קצף', 'קפאין', 'הפרדה']
+                    }
+                ];
+                
+                setTimeout(() => {
+                    let html = '<div class="items-list">';
+                    html += '<h3 style="margin-bottom: 15px;">📦 נמצאו ' + mockItems.length + ' פריטים עם מודיפיירים לא הגיוניים:</h3>';
+                    
+                    mockItems.forEach(item => {
+                        html += '<div class="item">';
+                        html += '<div>';
+                        html += '<div class="item-name">' + item.name + '</div>';
+                        html += '<div class="item-category">' + item.category + ' (ID: ' + item.id + ')</div>';
+                        html += '<div class="item-modifiers">מודיפיירים: ' + item.modifiers.join(', ') + '</div>';
+                        html += '</div>';
+                        html += '<div>❌</div>';
+                        html += '</div>';
+                    });
+                    
+                    html += '</div>';
+                    resultsDiv.innerHTML = html;
+                }, 1000);
+                
+            } catch (error) {
+                resultsDiv.innerHTML = '<div class="warning-box">❌ שגיאה: ' + error.message + '</div>';
+            }
+        }
+        
+        async function copySql() {
+            const sqlCode = document.getElementById('sqlCode').textContent;
+            try {
+                await navigator.clipboard.writeText(sqlCode);
+                alert('✅ הקוד הועתק ללוח!');
+            } catch (err) {
+                alert('❌ שגיאה בהעתקה. אנא העתק ידנית.');
+            }
+        }
+        
+        // Load SQL code
+        window.addEventListener('DOMContentLoaded', () => {
+            const sqlCode = `-- Step 1: Preview items that will be affected
+SELECT 
+  mi.id,
+  mi.name,
+  mi.category,
+  COUNT(DISTINCT io.group_id) as modifier_groups_count,
+  STRING_AGG(DISTINCT og.name, ', ' ORDER BY og.name) as modifier_groups
+FROM menu_items mi
+JOIN item_options io ON mi.id = io.item_id
+JOIN option_groups og ON io.group_id = og.id
+WHERE mi.category IN ('מאפים', 'סלטים', 'סלט', 'כריכים וטוסטים', 'קינוחים', 'תוספות')
+GROUP BY mi.id, mi.name, mi.category
+ORDER BY mi.category, mi.name;
+
+-- Step 2: DELETE the incorrect modifiers (UNCOMMENT TO RUN)
+-- DELETE FROM item_options 
+-- WHERE item_id IN (
+--   SELECT mi.id FROM menu_items mi
+--   WHERE mi.category IN ('מאפים', 'סלטים', 'סלט', 'כריכים וטוסטים', 'קינוחים', 'תוספות')
+-- );`;
+            
+            document.getElementById('sqlCode').textContent = sqlCode;
+        });
+    </script>
+</body>
+</html>

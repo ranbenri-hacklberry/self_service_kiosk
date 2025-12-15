@@ -1,0 +1,147 @@
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Heebo', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  line-height: normal;
+  font-family: inherit;
+  margin: unset;
+}
+
+/* --- KDS MOD STYLING --- */
+.mod-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  /* white-space: nowrap; REMOVED for wrapping */
+  margin-left: 4px;
+  margin-bottom: 2px;
+  vertical-align: middle;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.05);
+}
+
+/* Base Colors */
+.mod-color-gray {
+  background-color: #f3f4f6;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+}
+
+/* New Color Logic */
+.mod-color-red {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+/* בלי / ללא */
+.mod-color-lightgreen {
+  background-color: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+/* תוספת */
+.mod-color-soy-oat {
+  background-color: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+/* סויה / שיבולת */
+.mod-color-almond {
+  background-color: #ffedd5;
+  color: #9a3412;
+  border: 1px solid #fdba74;
+}
+
+/* שקדים */
+.mod-color-lactose-free {
+  background-color: #e0e7ff;
+  color: #3730a3;
+  border: 1px solid #c7d2fe;
+}
+
+/* נטול / דקף */
+.mod-color-extra-hot {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+/* רותח */
+.mod-color-strong {
+  background-color: #f3e8ff;
+  color: #6b21a8;
+  border: 1px solid #e9d5ff;
+}
+
+/* חזק */
+.mod-color-light {
+  background-color: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+/* חלש */
+.mod-color-blue {
+  background-color: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
+/* רגיל / דל */
+.mod-color-purple {
+  background-color: #f3e8ff;
+  color: #6b21a8;
+  border: 1px solid #e9d5ff;
+}
+
+/* מפורק (אם יש) */
+
+/* Foam Modifiers */
+/* Foam Modifiers */
+.mod-color-foam-up {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.mod-color-foam-up::before {
+  content: '↑';
+  font-weight: 900;
+  margin-left: 4px;
+}
+
+.mod-color-foam-down {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+/* Light Red */
+.mod-color-foam-down::before {
+  content: '↓';
+  font-weight: 900;
+  margin-left: 4px;
+}
+
+.mod-color-foam-none {
+  background-color: transparent !important;
+  color: #ef4444 !important;
+  border: 1px solid #ef4444;
+  text-decoration: line-through;
+  padding: 0 6px;
+  position: relative;
+}
+
+/* Remove the slashed-O icon if we are using strikethrough text */
+.mod-color-foam-none::before {
+  content: '';
+  margin: 0;
+}

@@ -1,0 +1,34 @@
+{
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "build",
+  "rewrites": [
+    {
+      "source": "/api/submit-order",
+      "destination": "https://aimanageragentrani-625352399481.europe-west1.run.app/submit-order"
+    },
+    {
+      "source": "/api/menu-items",
+      "destination": "https://aimanageragentrani-625352399481.europe-west1.run.app/menu-items"
+    },
+    {
+      "source": "/api/loyalty",
+      "destination": "https://aimanageragentrani-625352399481.europe-west1.run.app/loyalty"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    }
+  ]
+}
