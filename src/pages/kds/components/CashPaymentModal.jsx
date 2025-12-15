@@ -16,33 +16,27 @@ const CashPaymentModal = ({ isOpen, onClose, orderId, orderAmount, customerName,
     if (!isOpen) return null;
 
     const handleConfirm = async () => {
-        console.log('🟢 CONFIRM BUTTON CLICKED!');
-        console.log('🟢 orderId:', orderId, 'type:', typeof orderId);
-        console.log('🟢 onConfirmCash exists:', !!onConfirmCash);
+        alert('DEBUG 2: לחצת אישור! orderId=' + orderId);
         
         if (!onConfirmCash) {
-            console.error('❌ onConfirmCash function is missing!');
-            alert('שגיאה: פונקציית אישור חסרה');
+            alert('שגיאה: פונקציית אישור חסרה!');
             return;
         }
         
         if (!orderId) {
-            console.error('❌ orderId is missing!');
-            alert('שגיאה: מזהה הזמנה חסר');
+            alert('שגיאה: מזהה הזמנה חסר!');
             return;
         }
         
         setIsProcessing(true);
-        console.log('💰 CashPaymentModal: Confirming payment for orderId:', orderId);
 
         try {
-            // Call the confirm function and AWAIT it
+            alert('DEBUG 3: שולח לסופאבייס...');
             await onConfirmCash(orderId);
-            console.log('✅ CashPaymentModal: Payment confirmed successfully');
+            alert('DEBUG 4: הצלחה!');
             onClose();
         } catch (err) {
-            console.error('❌ CashPaymentModal: Payment confirmation failed:', err);
-            alert('שגיאה באישור התשלום: ' + err.message);
+            alert('שגיאה באישור התשלום: ' + (err?.message || err));
         } finally {
             setIsProcessing(false);
         }
