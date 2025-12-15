@@ -16,24 +16,12 @@ const CashPaymentModal = ({ isOpen, onClose, orderId, orderAmount, customerName,
     if (!isOpen) return null;
 
     const handleConfirm = async () => {
-        alert('DEBUG 2: לחצת אישור! orderId=' + orderId);
-        
-        if (!onConfirmCash) {
-            alert('שגיאה: פונקציית אישור חסרה!');
-            return;
-        }
-        
-        if (!orderId) {
-            alert('שגיאה: מזהה הזמנה חסר!');
-            return;
-        }
+        if (!onConfirmCash || !orderId) return;
         
         setIsProcessing(true);
 
         try {
-            alert('DEBUG 3: שולח לסופאבייס...');
             await onConfirmCash(orderId);
-            alert('DEBUG 4: הצלחה!');
             onClose();
         } catch (err) {
             alert('שגיאה באישור התשלום: ' + (err?.message || err));

@@ -166,10 +166,6 @@ const KdsScreen = () => {
   const navigate = useNavigate();
 
   const handlePaymentCollected = (order) => {
-    console.log('🔴🔴🔴 PAYMENT BUTTON CLICKED! 🔴🔴🔴');
-    console.log('🔴 Order:', order);
-    console.log('🔴 Order ID:', order?.id, 'Original:', order?.originalOrderId);
-    alert('DEBUG: כפתור תשלום נלחץ! Order ID: ' + (order?.originalOrderId || order?.id));
     setSelectedOrderForPayment(order);
   };
 

@@ -510,46 +510,16 @@ export const useKDSData = () => {
             }
             cleanOrderId = cleanOrderId.replace(/-stage-\d+$/, '');
         }
-        console.log('💰 handleConfirmPayment called');
-        console.log('💰 Original orderId:', orderId);
-        console.log('💰 Clean orderId:', cleanOrderId);
-        console.log('💰 Amount param:', amount);
 
         try {
-            // If amount not provided, fetch the order's total_amount first
-            let paidAmount = amount;
-            if (paidAmount === null) {
-                console.log('💰 Fetching total_amount from DB...');
-                const { data: orderData, error: fetchError } = await supabase
-                    .from('orders')
-                    .select('total_amount')
-                    .eq('id', cleanOrderId)
-                    .maybeSingle();
-                
-                console.log('💰 Fetch result:', orderData, 'Error:', fetchError);
-                if (fetchError) throw fetchError;
-                paidAmount = orderData?.total_amount || 0;
-            }
-            console.log('💰 Paid amount to set:', paidAmount);
+            // Use RPC function to bypass RLS
+            const { data, error } = await supabase.rpc('confirm_order_payment', {
+                p_order_id: cleanOrderId
+            });
 
-            // Update both is_paid and paid_amount
-            console.log('💰 Updating order in DB...');
-            const { data: updateData, error } = await supabase
-                .from('orders')
-                .update({ 
-                    is_paid: true,
-                    paid_amount: paidAmount
-                })
-                .eq('id', cleanOrderId)
-                .select();
-
-            console.log('💰 Update result:', updateData, 'Error:', error);
-            
             if (error) throw error;
             
-            console.log('✅ Payment confirmed successfully, refreshing orders...');
             await fetchOrders();
-            console.log('✅ Orders refreshed');
         } catch (err) {
             console.error('❌ Error confirming payment:', err);
             setErrorModal({
@@ -560,7 +530,7 @@ export const useKDSData = () => {
                 retryLabel: 'נסה שוב',
                 onRetry: () => handleConfirmPayment(orderId, amount)
             });
-            throw err; // Re-throw so the modal knows it failed
+            throw err;
         }
     };
 
