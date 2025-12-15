@@ -178,16 +178,19 @@ const KdsScreen = () => {
 
       // Support single category or array of categories
       const categoryList = Array.isArray(categories) ? categories : [categories];
-      console.log(`📋 Fetching tasks for categories:`, categoryList, 'day:', todayIdx);
+      console.log(`📋 Fetching tasks for categories:`, categoryList);
 
-      // 1. Fetch active recurring tasks for these categories
-      const { data: allTasks, error } = await supabase
+      // 1. Fetch ALL active recurring tasks, then filter client-side
+      const { data: rawTasks, error } = await supabase
         .from('recurring_tasks')
         .select('*')
-        .in('category', categoryList)
         .eq('is_active', true);
 
-      console.log(`📋 ${category} tasks fetched:`, allTasks?.length || 0, error ? `Error: ${error.message}` : '');
+      console.log(`📋 Raw tasks fetched:`, rawTasks?.length || 0, 'Error:', error?.message || 'none');
+      
+      // Filter by category client-side (to avoid Hebrew encoding issues)
+      const allTasks = (rawTasks || []).filter(t => categoryList.includes(t.category));
+      console.log(`📋 Filtered to categories ${categoryList.join(', ')}:`, allTasks.length);
 
       if (error) throw error;
 
