@@ -171,20 +171,20 @@ const KdsScreen = () => {
 
 
   // Unified Task Fetching
-  const fetchTasksByCategory = async (category) => {
+  const fetchTasksByCategory = async (categories, targetSetter) => {
     try {
       const todayIdx = new Date().getDay();
       const dateStr = new Date().toISOString().split('T')[0];
-      const businessId = currentUser?.business_id;
 
-      console.log(`📋 Fetching ${category} tasks, day:`, todayIdx);
+      // Support single category or array of categories
+      const categoryList = Array.isArray(categories) ? categories : [categories];
+      console.log(`📋 Fetching tasks for categories:`, categoryList, 'day:', todayIdx);
 
-      // 1. Fetch active recurring tasks for this category
-      // Note: recurring_tasks table doesn't have business_id column yet
+      // 1. Fetch active recurring tasks for these categories
       const { data: allTasks, error } = await supabase
         .from('recurring_tasks')
         .select('*')
-        .eq('category', category)
+        .in('category', categoryList)
         .eq('is_active', true);
 
       console.log(`📋 ${category} tasks fetched:`, allTasks?.length || 0, error ? `Error: ${error.message}` : '');
@@ -240,30 +240,32 @@ const KdsScreen = () => {
           };
         });
 
-      console.log(`📋 Final ${category} tasks to display:`, final.length, final.map(t => t.name));
+      console.log(`📋 Final tasks to display:`, final.length, final.map(t => t.name));
 
-      // Update appropriate state
-      if (category === 'opening') setOpeningTasks(final);
-      if (category === 'prep') setPrepBatches(final);
-      if (category === 'closing') setClosingTasks(final);
+      // Update state using the provided setter
+      if (targetSetter) {
+        targetSetter(final);
+      }
 
     } catch (err) {
-      console.error(`Error fetching ${category} tasks:`, err);
+      console.error(`Error fetching tasks:`, err);
     }
   };
 
-  const fetchOpeningTasks = () => fetchTasksByCategory('opening');
-  const fetchPrepBatches = () => fetchTasksByCategory('prep');
-  const fetchClosingTasks = () => fetchTasksByCategory('closing');
+  // Category mappings - support both Hebrew and English
+  const fetchOpeningTasks = () => fetchTasksByCategory(['פתיחה', 'opening'], setOpeningTasks);
+  const fetchPrepBatches = () => fetchTasksByCategory(['prep', 'הכנה'], setPrepBatches);
+  const fetchClosingTasks = () => fetchTasksByCategory(['סגירה', 'closing'], setClosingTasks);
 
 
   // --- Task Operations ---
 
   const handleCompleteTask = async (task) => {
-    // Optimistic Update
-    if (task.category === 'opening') setOpeningTasks(p => p.filter(t => t.id !== task.id));
-    if (task.category === 'prep') setPrepBatches(p => p.filter(t => t.id !== task.id));
-    if (task.category === 'closing') setClosingTasks(p => p.filter(t => t.id !== task.id));
+    // Optimistic Update - handle both Hebrew and English categories
+    const cat = task.category;
+    if (cat === 'opening' || cat === 'פתיחה') setOpeningTasks(p => p.filter(t => t.id !== task.id));
+    if (cat === 'prep' || cat === 'הכנה') setPrepBatches(p => p.filter(t => t.id !== task.id));
+    if (cat === 'closing' || cat === 'סגירה') setClosingTasks(p => p.filter(t => t.id !== task.id));
 
     try {
       if (task.is_recurring) {
