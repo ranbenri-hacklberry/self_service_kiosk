@@ -582,17 +582,56 @@ export const useKDSData = () => {
     useEffect(() => {
         if (!currentUser?.business_id) return;
 
+        // Generate or retrieve device ID
+        let deviceId = localStorage.getItem('kds_device_id');
+        if (!deviceId) {
+            deviceId = 'kds_' + crypto.randomUUID();
+            localStorage.setItem('kds_device_id', deviceId);
+        }
+
+        // Get public IP (cached for session)
+        let cachedIp = sessionStorage.getItem('device_public_ip');
+        const fetchIp = async () => {
+            if (cachedIp) return cachedIp;
+            try {
+                const res = await fetch('https://api.ipify.org?format=json');
+                const data = await res.json();
+                cachedIp = data.ip;
+                sessionStorage.setItem('device_public_ip', cachedIp);
+                return cachedIp;
+            } catch {
+                return null;
+            }
+        };
+
         const sendHeartbeat = async () => {
             try {
-                await supabase.rpc('send_kds_heartbeat');
+                const ip = await fetchIp();
+                await supabase.rpc('send_device_heartbeat', { 
+                    p_business_id: currentUser.business_id,
+                    p_device_id: deviceId,
+                    p_device_type: 'kds',
+                    p_ip_address: ip,
+                    p_user_agent: navigator.userAgent?.substring(0, 200),
+                    p_screen_resolution: `${window.screen.width}x${window.screen.height}`,
+                    p_user_name: currentUser.name || currentUser.employee_name || 'אורח',
+                    p_employee_id: currentUser.id || null
+                });
+                console.log('💓 Device heartbeat sent:', deviceId, 'User:', currentUser.name);
             } catch (err) {
-                // Silent fail is fine for heartbeat
-                console.warn('Heartbeat failed:', err);
+                // Fallback to old heartbeat if new one doesn't exist yet
+                try {
+                    await supabase.rpc('send_kds_heartbeat', { 
+                        p_business_id: currentUser.business_id 
+                    });
+                } catch {
+                    console.warn('Heartbeat failed:', err);
+                }
             }
         };
 
         sendHeartbeat(); // Initial call
-        const interval = setInterval(sendHeartbeat, 60000); // Every minute
+        const interval = setInterval(sendHeartbeat, 30000); // Every 30 seconds
 
         return () => clearInterval(interval);
     }, [currentUser]);

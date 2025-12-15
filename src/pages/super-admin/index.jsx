@@ -663,7 +663,7 @@ const SuperAdminDashboard = () => {
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-4 mb-6">
+                                <div className="grid grid-cols-2 gap-4 mb-4">
                                     {/* Active Orders */}
                                     <div className="bg-slate-950/30 p-3 rounded-xl border border-slate-800/50 text-center">
                                         <div className="text-xs text-slate-500 mb-1">הזמנות פעילות</div>
@@ -679,6 +679,52 @@ const SuperAdminDashboard = () => {
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Active Devices Section */}
+                                {business.active_devices && business.active_devices.length > 0 && (
+                                    <div className="bg-slate-950/30 p-3 rounded-xl border border-slate-800/50 mb-4">
+                                        <div className="text-xs text-slate-500 mb-2 flex items-center gap-2">
+                                            <Smartphone size={12} />
+                                            מכשירים מחוברים ({business.active_devices.length})
+                                        </div>
+                                        <div className="space-y-2">
+                                            {business.active_devices.map((device, idx) => (
+                                                <div key={device.device_id || idx} className="bg-slate-900/50 px-3 py-2 rounded-lg text-xs">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                                                            <span className={`font-bold ${
+                                                                device.device_type === 'kds' ? 'text-orange-400' :
+                                                                device.device_type === 'kiosk' ? 'text-blue-400' :
+                                                                'text-purple-400'
+                                                            }`}>
+                                                                {device.device_type?.toUpperCase()}
+                                                            </span>
+                                                            {device.user_name && (
+                                                                <span className="text-white font-medium">• {device.user_name}</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="font-mono text-slate-400">
+                                                            {device.ip_address || 'IP לא זמין'}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center justify-between text-slate-600">
+                                                        <div className="flex items-center gap-2">
+                                                            {device.screen_resolution && (
+                                                                <span>📺 {device.screen_resolution}</span>
+                                                            )}
+                                                        </div>
+                                                        {device.session_started_at && (
+                                                            <span className="flex items-center gap-1">
+                                                                🕐 מחובר מ-{new Date(device.session_started_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="grid grid-cols-2 gap-3">
                                     <button
