@@ -321,6 +321,9 @@ const KdsScreen = () => {
   // renderInventoryOrdersView removed - replaced by KDSInventoryScreen component
 
   const handleEditOrder = (order) => {
+    console.log('🖊️ KDS: Editing order:', order);
+    console.log('🆔 KDS: Using order ID:', order.originalOrderId || order.id);
+    console.log('📋 KDS: Order object keys:', Object.keys(order));
     navigate('/menu-ordering-interface', {
       state: {
         orderId: order.originalOrderId || order.id,

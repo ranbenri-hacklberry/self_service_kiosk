@@ -105,6 +105,7 @@ const MenuOrderingInterface = () => {
       setIsLoading(true);
 
       // Fetch order with items
+      console.log('🔍 Fetching order for editing, ID:', orderId);
       const { data: order, error } = await supabase
         .from('orders')
         .select(`
@@ -115,7 +116,7 @@ const MenuOrderingInterface = () => {
           )
         `)
         .eq('id', orderId)
-        .single();
+        .maybeSingle(); // Use maybeSingle instead of single to avoid PGRST116 when no results
 
       if (order?.order_items) {
         console.log('📦 Fetched Order Items from DB:', order.order_items.length);
@@ -123,7 +124,17 @@ const MenuOrderingInterface = () => {
         console.log('📦 Items details:', order.order_items.map(i => ({ id: i.id, name: i.menu_items?.name })));
       }
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Supabase error fetching order:', error);
+        throw error;
+      }
+
+      if (!order) {
+        console.error('❌ Order not found for ID:', orderId);
+        throw new Error(`הזמנה ${orderId} לא נמצאה`);
+      }
+
+      console.log('✅ Order fetched successfully:', order.id);
 
       // Set customer if exists
       if (order.customer_phone) {
