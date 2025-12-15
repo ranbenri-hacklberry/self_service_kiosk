@@ -891,6 +891,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const handleImageUpload = async (e) => { const file = e.target.files[0]; if (!file) return; try { const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${file.name.split('.').pop()}`; await supabase.storage.from('menu-images').upload(fileName, file); const { data } = supabase.storage.from('menu-images').getPublicUrl(fileName); setFormData(prev => ({ ...prev, image_url: data.publicUrl })); } catch (e) { alert('Upload failed'); } };
 
     const saveInternal = async (silent = false) => {
+        console.log('🔄 saveInternal called, silent:', silent, 'formData.price:', formData.price);
         if (!silent) setLoading(true);
         else setIsSaving(true);
 
@@ -909,9 +910,24 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 sale_start_time: formData.sale_start_time || null,
                 sale_end_time: formData.sale_end_time || null
             };
+            console.log('📤 Saving payload:', payload);
             let savedId = item.id;
-            if (savedId) { await supabase.from('menu_items').update(payload).eq('id', savedId); }
-            else { const { data } = await supabase.from('menu_items').insert(payload).select().single(); savedId = data.id; }
+            console.log('🆔 Item ID:', savedId);
+
+            if (savedId) {
+                console.log('🔄 Updating existing item...');
+                const result = await supabase.from('menu_items').update(payload).eq('id', savedId);
+                console.log('✅ Update result:', result);
+                if (result.error) {
+                    console.error('❌ Update error:', result.error);
+                    throw result.error;
+                }
+            } else {
+                console.log('➕ Inserting new item...');
+                const { data } = await supabase.from('menu_items').insert(payload).select().single();
+                savedId = data.id;
+                console.log('✅ Insert result, new ID:', savedId);
+            }
 
             // Only update relations if not auto-saving (to avoid race conditions or heavy load)? 
             // Actually user expects everything saved. Let's do lightweight update.
