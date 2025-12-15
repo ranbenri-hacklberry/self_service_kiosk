@@ -174,9 +174,12 @@ const KdsScreen = () => {
     try {
       const todayIdx = new Date().getDay();
       const dateStr = new Date().toISOString().split('T')[0];
+      const businessId = currentUser?.business_id;
+
+      console.log(`📋 Fetching ${category} tasks for business:`, businessId, 'day:', todayIdx);
 
       // 1. Fetch active recurring tasks for this category
-      const { data: allTasks, error } = await supabase
+      let query = supabase
         .from('recurring_tasks')
         .select(`
                 *, 
@@ -184,6 +187,15 @@ const KdsScreen = () => {
             `)
         .eq('category', category)
         .eq('is_active', true);
+
+      // Add business_id filter if available
+      if (businessId) {
+        query = query.eq('business_id', businessId);
+      }
+
+      const { data: allTasks, error } = await query;
+
+      console.log(`📋 ${category} tasks fetched:`, allTasks?.length || 0, error ? `Error: ${error.message}` : '');
 
       if (error) throw error;
 
@@ -205,9 +217,17 @@ const KdsScreen = () => {
       });
 
       // 3. Fetch logs specifically for today to exclude completed
-      const { data: logs } = await supabase.from('task_completions')
+      let logsQuery = supabase.from('task_completions')
         .select('recurring_task_id')
         .eq('completion_date', dateStr);
+      
+      if (businessId) {
+        logsQuery = logsQuery.eq('business_id', businessId);
+      }
+
+      const { data: logs } = await logsQuery;
+
+      console.log(`📋 Completed tasks today:`, logs?.length || 0);
 
       const completedSet = new Set(logs?.map(l => l.recurring_task_id));
 
@@ -228,6 +248,8 @@ const KdsScreen = () => {
             is_recurring: true
           };
         });
+
+      console.log(`📋 Final ${category} tasks to display:`, final.length, final.map(t => t.name));
 
       // Update appropriate state
       if (category === 'opening') setOpeningTasks(final);
