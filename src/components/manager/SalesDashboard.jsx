@@ -6,7 +6,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
 
 const SalesDashboard = () => {
+  console.log('🚀 SalesDashboard MOUNTED');
+  
   const { currentUser } = useAuth();
+  console.log('🚀 currentUser from useAuth:', currentUser);
+  
   const [viewMode, setViewMode] = useState('daily'); // 'daily', 'weekly', 'monthly'
   const [currentSales, setCurrentSales] = useState([]); // Data for current period (Flattened Items)
   const [currentRawOrders, setCurrentRawOrders] = useState([]); // Raw Orders for Orders List
