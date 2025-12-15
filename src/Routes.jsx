@@ -81,9 +81,7 @@ const AppRoutes = () => {
       } />
       <Route path="/kitchen-display-system-interface" element={
         <ProtectedRoute>
-          <ErrorBoundary>
-            <KdsScreen />
-          </ErrorBoundary>
+          <KdsScreen />
         </ProtectedRoute>
       } />
       <Route path="/data-manager-interface" element={
