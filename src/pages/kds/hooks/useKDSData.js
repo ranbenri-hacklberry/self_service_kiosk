@@ -502,41 +502,56 @@ export const useKDSData = () => {
     };
 
     const handleConfirmPayment = async (orderId, amount = null) => {
-        try {
-            // Clean orderId - remove KDS suffixes like "-ready" or "-stage-2"
-            let cleanOrderId = orderId;
-            if (typeof orderId === 'string') {
-                if (orderId.endsWith('-ready')) {
-                    cleanOrderId = orderId.replace(/-ready$/, '');
-                }
-                cleanOrderId = cleanOrderId.replace(/-stage-\d+$/, '');
+        // Clean orderId - remove KDS suffixes like "-ready" or "-stage-2"
+        let cleanOrderId = orderId;
+        if (typeof orderId === 'string') {
+            if (orderId.endsWith('-ready')) {
+                cleanOrderId = orderId.replace(/-ready$/, '');
             }
-            console.log('💰 Confirming payment for order:', cleanOrderId, '(original:', orderId, ')');
+            cleanOrderId = cleanOrderId.replace(/-stage-\d+$/, '');
+        }
+        console.log('💰 handleConfirmPayment called');
+        console.log('💰 Original orderId:', orderId);
+        console.log('💰 Clean orderId:', cleanOrderId);
+        console.log('💰 Amount param:', amount);
 
+        try {
             // If amount not provided, fetch the order's total_amount first
             let paidAmount = amount;
             if (paidAmount === null) {
-                const { data: orderData } = await supabase
+                console.log('💰 Fetching total_amount from DB...');
+                const { data: orderData, error: fetchError } = await supabase
                     .from('orders')
                     .select('total_amount')
                     .eq('id', cleanOrderId)
                     .maybeSingle();
+                
+                console.log('💰 Fetch result:', orderData, 'Error:', fetchError);
+                if (fetchError) throw fetchError;
                 paidAmount = orderData?.total_amount || 0;
             }
+            console.log('💰 Paid amount to set:', paidAmount);
 
             // Update both is_paid and paid_amount
-            const { error } = await supabase
+            console.log('💰 Updating order in DB...');
+            const { data: updateData, error } = await supabase
                 .from('orders')
                 .update({ 
                     is_paid: true,
                     paid_amount: paidAmount
                 })
-                .eq('id', cleanOrderId);
+                .eq('id', cleanOrderId)
+                .select();
 
+            console.log('💰 Update result:', updateData, 'Error:', error);
+            
             if (error) throw error;
+            
+            console.log('✅ Payment confirmed successfully, refreshing orders...');
             await fetchOrders();
+            console.log('✅ Orders refreshed');
         } catch (err) {
-            console.error('Error confirming payment:', err);
+            console.error('❌ Error confirming payment:', err);
             setErrorModal({
                 show: true,
                 title: 'שגיאה באישור תשלום',
@@ -545,6 +560,7 @@ export const useKDSData = () => {
                 retryLabel: 'נסה שוב',
                 onRetry: () => handleConfirmPayment(orderId, amount)
             });
+            throw err; // Re-throw so the modal knows it failed
         }
     };
 

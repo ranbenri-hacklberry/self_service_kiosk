@@ -14,15 +14,19 @@ const CashPaymentModal = ({ isOpen, onClose, orderId, orderAmount, customerName,
 
     const handleConfirm = async () => {
         setIsProcessing(true);
+        console.log('💰 CashPaymentModal: Confirming payment for orderId:', orderId);
 
-        // Simulate a small delay for UX
-        setTimeout(() => {
-            // For now, we'll just mark as cash payment
-            // The POS device will handle whether it's cash or credit
-            onConfirmCash(orderId);
-            setIsProcessing(false);
+        try {
+            // Call the confirm function and AWAIT it
+            await onConfirmCash(orderId);
+            console.log('✅ CashPaymentModal: Payment confirmed successfully');
             onClose();
-        }, 300);
+        } catch (err) {
+            console.error('❌ CashPaymentModal: Payment confirmation failed:', err);
+            alert('שגיאה באישור התשלום: ' + err.message);
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     // Direct to POS Instruction Screen (no payment method selection)
