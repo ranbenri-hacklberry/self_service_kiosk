@@ -126,20 +126,11 @@ const MenuOrderingInterface = () => {
       cleanOrderId = cleanOrderId.replace(/-stage-\d+$/, '');
       console.log('🧹 Clean order ID:', cleanOrderId, '(original:', orderId, ')');
 
-      // Fetch order with items
+      // Use RPC function to bypass RLS (same approach as KDS)
       const { data: order, error } = await supabase
-        .from('orders')
-        .select(`
-          *,
-          order_items (
-            *,
-            menu_items (*)
-          )
-        `)
-        .eq('id', cleanOrderId)
-        .maybeSingle(); // Use maybeSingle instead of single to avoid PGRST116 when no results
+        .rpc('get_order_for_editing', { p_order_id: cleanOrderId });
 
-      console.log('📊 Query result - order:', order ? 'found' : 'null', 'error:', error);
+      console.log('📊 RPC result - order:', order ? 'found' : 'null', 'error:', error);
 
       if (order?.order_items) {
         console.log('📦 Fetched Order Items from DB:', order.order_items.length);
