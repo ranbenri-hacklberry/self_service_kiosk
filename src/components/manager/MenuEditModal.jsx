@@ -201,22 +201,29 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const fetchCategories = async () => { try { const { data } = await supabase.from('menu_items').select('category').not('category', 'is', null); if (data) setAvailableCategories([...new Set(data.map(i => i.category))].sort()); } catch (e) { console.error(e); } };
 
     const fetchModifiers = async () => {
+        console.log('🔍 fetchModifiers called for item:', item?.id);
         try {
             // Fetch groups that are either linked via menuitemoptions OR owned by this item (private groups)
             // 1. Get linked group IDs
             let linkedGroupIds = new Set();
             if (item?.id) {
-                const { data: linked } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', item.id);
+                console.log('🔗 Fetching linked groups for item:', item.id);
+                const { data: linked, error: linkedError } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', item.id);
+                console.log('🔗 Linked groups result:', linked, 'error:', linkedError);
                 linked?.forEach(l => linkedGroupIds.add(l.group_id));
+                console.log('🔗 Linked group IDs:', [...linkedGroupIds]);
             }
 
             // 2. Fetch groups (owned by this item OR linked)
-            const { data: groups } = await supabase.from('optiongroups')
+            console.log('📋 Fetching all optiongroups...');
+            const { data: groups, error: groupsError } = await supabase.from('optiongroups')
                 .select(`*, is_food, is_drink, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity)`)
                 .order('name');
+            console.log('📋 Groups fetched:', groups?.length, 'error:', groupsError);
 
             // Filter in memory to handle the OR condition effectively without complex RLS/query logic issues
             const relevantGroups = groups?.filter(g => g.menu_item_id === item?.id || linkedGroupIds.has(g.id)) || [];
+            console.log('🎯 Relevant groups found:', relevantGroups.length, relevantGroups.map(g => ({id: g.id, name: g.name, menu_item_id: g.menu_item_id})));
 
             setAllGroups(relevantGroups.map(g => ({ ...g, optionvalues: g.optionvalues?.sort((a, b) => (a.display_order || 0) - (b.display_order || 0)) || [] })));
 
@@ -224,9 +231,12 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             if (item?.id) {
                 // If it's a private group, it should be treated as selected
                 const combined = new Set([...linkedGroupIds, ...relevantGroups.filter(g => g.menu_item_id === item.id).map(g => g.id)]);
+                console.log('✅ Setting selectedGroupIds to:', [...combined]);
                 setSelectedGroupIds(combined);
             }
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error('❌ fetchModifiers error:', e);
+        }
     };
 
     const fetchComponents = async (menuItemId, inventoryData = []) => {
@@ -929,14 +939,27 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 console.log('✅ Insert result, new ID:', savedId);
             }
 
-            // Only update relations if not auto-saving (to avoid race conditions or heavy load)? 
+            // Only update relations if not auto-saving (to avoid race conditions or heavy load)?
             // Actually user expects everything saved. Let's do lightweight update.
             // But deleting/re-inserting options every 2s is bad.
             // Optimization: Only update Menu Item fields on auto-save, unless we track dirty relations.
             // For now, full save to be safe.
 
-            await supabase.from('menuitemoptions').delete().eq('item_id', savedId);
-            if (selectedGroupIds.size > 0) { const links = Array.from(selectedGroupIds).map(gid => ({ item_id: savedId, group_id: gid })); await supabase.from('menuitemoptions').insert(links); }
+            console.log('🗑️ Deleting existing menuitemoptions for item:', savedId);
+            const deleteResult = await supabase.from('menuitemoptions').delete().eq('item_id', savedId);
+            console.log('✅ Delete result:', deleteResult);
+
+            if (selectedGroupIds.size > 0) {
+                const links = Array.from(selectedGroupIds).map(gid => ({ item_id: savedId, group_id: gid }));
+                console.log('🔗 Inserting new menuitemoptions:', links);
+                const insertResult = await supabase.from('menuitemoptions').insert(links);
+                console.log('✅ Insert result:', insertResult);
+                if (insertResult.error) {
+                    console.error('❌ Insert error:', insertResult.error);
+                }
+            } else {
+                console.log('⚠️ No selected groups to insert');
+            }
             await saveRecipeData(savedId);
             await saveOptionsData(savedId);
 
