@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Check, Info, AlertCircle } from 'lucide-react';
+import { Check, Info, AlertCircle, Image, PlayCircle } from 'lucide-react';
 
 const TaskManagementView = ({ tasks, onComplete, title }) => {
     const [selectedTask, setSelectedTask] = useState(null);
@@ -37,13 +37,6 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
 
             {/* Task Name */}
             <span className="flex-1 font-bold text-gray-800 text-base truncate">{task.name}</span>
-
-            {/* Quantity Badge - Only if has target_qty */}
-            {task.target_qty && task.target_qty > 0 && (
-                <span className="shrink-0 text-xs bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-bold">
-                    {task.logic_type === 'par_level' ? `השלמה ל-${task.target_qty}` : `×${task.target_qty}`}
-                </span>
-            )}
         </div>
     );
 
@@ -59,11 +52,11 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
                 {/* Pre-Closing Tasks Section */}
                 {preClosingTasks.length > 0 && (
                     <div className="mb-6">
-                        <h3 className="text-sm font-bold text-orange-600 mb-2 flex items-center gap-2">
+                        <h3 className="text-sm font-bold text-orange-600 mb-3 flex items-center gap-2">
                             <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
                             אפשר להתחיל עכשיו ({preClosingTasks.length})
                         </h3>
-                        <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-3">
                             {preClosingTasks.map(task => <TaskRow key={task.id} task={task} />)}
                         </div>
                     </div>
@@ -73,12 +66,12 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
                 {regularTasks.length > 0 && (
                     <div>
                         {preClosingTasks.length > 0 && (
-                            <h3 className="text-sm font-bold text-gray-500 mb-2 flex items-center gap-2">
+                            <h3 className="text-sm font-bold text-gray-500 mb-3 flex items-center gap-2">
                                 <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
                                 רק אחרי סגירה ({regularTasks.length})
                             </h3>
                         )}
-                        <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-3">
                             {regularTasks.map(task => <TaskRow key={task.id} task={task} />)}
                         </div>
                     </div>
@@ -95,41 +88,43 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
             {/* Left Side: Detail View (1/3) */}
             <div className="flex-1 bg-white p-6 overflow-y-auto border-r border-gray-100 shadow-xl z-20 custom-scrollbar">
                 {selectedTask ? (
-                    <div className="space-y-4 animate-fadeIn">
-                        {/* Image if exists */}
-                        {selectedTask.image_url && (
-                            <img src={selectedTask.image_url} alt="" className="w-full h-40 object-cover rounded-xl shadow-sm" />
-                        )}
-
-                        <h2 className="text-2xl font-black text-slate-800 leading-tight">{selectedTask.name}</h2>
-
-                        {/* Target - Only if has target_qty */}
-                        {selectedTask.target_qty && selectedTask.target_qty > 0 && (
-                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
-                                <div>
-                                    <span className="text-gray-400 text-xs font-bold block mb-0.5">יעד</span>
-                                    <div className="flex items-baseline gap-2">
-                                        <span className="font-black text-2xl text-slate-800">{selectedTask.target_qty}</span>
-                                        <span className="text-sm font-bold text-gray-500">
-                                            {selectedTask.logic_type === 'par_level' ? 'השלמה' : 'יחידות'}
-                                        </span>
-                                    </div>
+                    <div className="space-y-5 animate-fadeIn">
+                        {/* Image/Video Area */}
+                        {selectedTask.image_url ? (
+                            <img 
+                                src={selectedTask.image_url} 
+                                alt={selectedTask.name} 
+                                className="w-full h-48 object-cover rounded-2xl shadow-md" 
+                            />
+                        ) : (
+                            <div className="w-full h-48 bg-gradient-to-br from-slate-100 to-slate-200 rounded-2xl flex flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-300">
+                                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm">
+                                    <PlayCircle size={32} className="text-slate-400" />
                                 </div>
+                                <span className="text-sm font-medium text-slate-400">סרטון הדרכה יתווסף בקרוב</span>
                             </div>
                         )}
 
+                        {/* Task Title */}
+                        <h2 className="text-2xl font-black text-slate-800 leading-tight">{selectedTask.name}</h2>
+
                         {/* Description */}
-                        {selectedTask.description && (
-                            <div className="p-4 bg-blue-50/30 rounded-xl border border-blue-100 text-right">
+                        {selectedTask.description ? (
+                            <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-100">
                                 <h4 className="font-bold flex items-center gap-2 mb-2 text-blue-700 text-xs uppercase tracking-wider">
-                                    <Info size={14} /> הוראות
+                                    <Info size={14} /> הוראות ביצוע
                                 </h4>
                                 <p className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
                                     {selectedTask.description}
                                 </p>
                             </div>
+                        ) : (
+                            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-center">
+                                <p className="text-sm text-slate-400">אין הוראות למשימה זו</p>
+                            </div>
                         )}
 
+                        {/* Complete Button */}
                         <button
                             onClick={() => onComplete(selectedTask)}
                             className="w-full py-4 bg-green-600 text-white rounded-xl font-black text-lg shadow-lg shadow-green-200 hover:bg-green-700 active:scale-95 transition-all flex items-center justify-center gap-2"
@@ -140,9 +135,11 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
                     </div>
                 ) : (
                     <div className="h-full flex flex-col items-center justify-center text-gray-400 text-center p-8">
-                        <AlertCircle size={48} className="mb-4 opacity-20" />
-                        <h3 className="text-xl font-bold mb-2">לא נבחרה משימה</h3>
-                        <p className="text-sm">לחץ על משימה לפרטים נוספים</p>
+                        <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                            <Image size={32} className="text-slate-300" />
+                        </div>
+                        <h3 className="text-lg font-bold mb-2 text-slate-500">לא נבחרה משימה</h3>
+                        <p className="text-sm text-slate-400">לחץ על משימה לצפייה בפרטים והוראות</p>
                     </div>
                 )}
             </div>
