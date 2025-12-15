@@ -548,6 +548,46 @@ export const useKDSData = () => {
         }
     };
 
+    const handleCancelOrder = async (orderId) => {
+        try {
+            // Clean orderId - remove KDS suffixes
+            let cleanOrderId = orderId;
+            if (typeof orderId === 'string') {
+                if (orderId.endsWith('-ready')) {
+                    cleanOrderId = orderId.replace(/-ready$/, '');
+                }
+                cleanOrderId = cleanOrderId.replace(/-stage-\d+$/, '');
+            }
+            console.log('🗑️ Cancelling order:', cleanOrderId, '(original:', orderId, ')');
+
+            // Mark order as cancelled
+            const { error } = await supabase
+                .from('orders')
+                .update({ order_status: 'cancelled' })
+                .eq('id', cleanOrderId);
+
+            if (error) throw error;
+            
+            // Also cancel all order items
+            await supabase
+                .from('order_items')
+                .update({ item_status: 'cancelled' })
+                .eq('order_id', cleanOrderId);
+
+            await fetchOrders();
+        } catch (err) {
+            console.error('Error cancelling order:', err);
+            setErrorModal({
+                show: true,
+                title: 'שגיאה בביטול הזמנה',
+                message: 'לא הצלחנו לבטל את ההזמנה',
+                details: err.message,
+                retryLabel: 'נסה שוב',
+                onRetry: () => handleCancelOrder(orderId)
+            });
+        }
+    };
+
     // Polling
     useEffect(() => {
         fetchOrders(); // Initial fetch
@@ -688,6 +728,7 @@ export const useKDSData = () => {
         handleReadyItems,
         handleUndoLastAction,
         handleConfirmPayment,
+        handleCancelOrder,
         handleSendSms
     };
 };

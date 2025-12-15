@@ -147,7 +147,8 @@ const KdsScreen = () => {
     handleFireItems,
     handleReadyItems,
     handleUndoLastAction,
-    handleConfirmPayment
+    handleConfirmPayment,
+    handleCancelOrder
   } = useKDSData();
 
   const [viewMode, setViewMode] = useState('kds'); // 'kds' | 'orders_inventory' | 'tasks_prep'
@@ -388,6 +389,7 @@ const KdsScreen = () => {
                       onFireItems={handleFireItems}
                       onReadyItems={handleReadyItems}
                       onEditOrder={handleEditOrder}
+                      onCancelOrder={handleCancelOrder}
                       onRefresh={fetchOrders}
                     />
                   ))}
@@ -408,6 +410,7 @@ const KdsScreen = () => {
                       onOrderStatusUpdate={updateOrderStatus}
                       onPaymentCollected={handlePaymentCollected}
                       onEditOrder={handleEditOrder}
+                      onCancelOrder={handleCancelOrder}
                       onRefresh={fetchOrders}
                     />
                   ))}
