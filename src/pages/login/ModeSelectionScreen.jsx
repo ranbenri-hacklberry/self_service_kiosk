@@ -90,7 +90,7 @@ const ModeSelectionScreen = () => {
                         </div>
                     </button>
 
-                    {/* 3. Service (ex-KDS) - Active - Hidden on Mobile */}
+                    {/* 3. Service (ex-KDS) - Active - Tablet/Desktop */}
                     <button
                         onClick={() => handleModeSelect('kds')}
                         className="hidden md:block group relative bg-white rounded-3xl p-8 hover:bg-emerald-50 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl text-right overflow-hidden border-2 border-transparent hover:border-emerald-100"
@@ -103,6 +103,23 @@ const ModeSelectionScreen = () => {
                             <h2 className="text-3xl font-black text-slate-900 mb-2">סרוויס (KDS)</h2>
                             <p className="text-slate-500 text-lg leading-relaxed font-medium">
                                 איפה שהקסם קורה והבונים יוצאים. רק בלי הנייר והצעקות (בתקווה). שיהיה סרוויס רגוע.
+                            </p>
+                        </div>
+                    </button>
+
+                    {/* 3b. Mobile KDS - Only visible on mobile */}
+                    <button
+                        onClick={() => handleModeSelect('kds')}
+                        className="md:hidden group relative bg-white rounded-3xl p-8 hover:bg-emerald-50 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl text-right overflow-hidden border-2 border-transparent hover:border-emerald-100"
+                    >
+                        <div className="absolute top-0 left-0 w-32 h-32 bg-emerald-100 rounded-br-full -translate-x-8 -translate-y-8 group-hover:scale-110 transition-transform" />
+                        <div className="relative z-10">
+                            <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center text-white mb-6 shadow-lg group-hover:rotate-6 transition-transform">
+                                <ChefHat size={32} strokeWidth={2.5} />
+                            </div>
+                            <h2 className="text-3xl font-black text-slate-900 mb-2">צפייה בהזמנות</h2>
+                            <p className="text-slate-500 text-lg leading-relaxed font-medium">
+                                לעקוב אחרי ההזמנות מהטלפון. לראות מה בתהליך, מה מוכן ומה מחכה לתשלום.
                             </p>
                         </div>
                     </button>
