@@ -503,13 +503,23 @@ export const useKDSData = () => {
 
     const handleConfirmPayment = async (orderId, amount = null) => {
         try {
+            // Clean orderId - remove KDS suffixes like "-ready" or "-stage-2"
+            let cleanOrderId = orderId;
+            if (typeof orderId === 'string') {
+                if (orderId.endsWith('-ready')) {
+                    cleanOrderId = orderId.replace(/-ready$/, '');
+                }
+                cleanOrderId = cleanOrderId.replace(/-stage-\d+$/, '');
+            }
+            console.log('💰 Confirming payment for order:', cleanOrderId, '(original:', orderId, ')');
+
             // If amount not provided, fetch the order's total_amount first
             let paidAmount = amount;
             if (paidAmount === null) {
                 const { data: orderData } = await supabase
                     .from('orders')
                     .select('total_amount')
-                    .eq('id', orderId)
+                    .eq('id', cleanOrderId)
                     .maybeSingle();
                 paidAmount = orderData?.total_amount || 0;
             }
@@ -521,7 +531,7 @@ export const useKDSData = () => {
                     is_paid: true,
                     paid_amount: paidAmount
                 })
-                .eq('id', orderId);
+                .eq('id', cleanOrderId);
 
             if (error) throw error;
             await fetchOrders();

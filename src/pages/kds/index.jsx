@@ -479,7 +479,7 @@ const KdsScreen = () => {
         <CashPaymentModal
           isOpen={!!selectedOrderForPayment}
           onClose={() => setSelectedOrderForPayment(null)}
-          orderId={selectedOrderForPayment?.id}
+          orderId={selectedOrderForPayment?.originalOrderId || selectedOrderForPayment?.id}
           orderAmount={selectedOrderForPayment?.totalAmount || 0}
           customerName={selectedOrderForPayment?.customerName}
           onConfirmCash={handleConfirmPayment}
