@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
 import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Calendar, BarChart3, PieChart, ChevronDown, ChevronUp, Package, X, Phone, User, Clock, Hash, Receipt } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
 
 const SalesDashboard = () => {
+  const { currentUser } = useAuth();
   const [viewMode, setViewMode] = useState('daily'); // 'daily', 'weekly', 'monthly'
   const [currentSales, setCurrentSales] = useState([]); // Data for current period (Flattened Items)
   const [currentRawOrders, setCurrentRawOrders] = useState([]); // Raw Orders for Orders List
@@ -48,10 +50,16 @@ const SalesDashboard = () => {
   // Fetch Active Dates on Mount
   useEffect(() => {
     const fetchActiveDates = async () => {
-      const { data } = await supabase
+      let query = supabase
         .from('orders')
         .select('created_at')
         .order('created_at', { ascending: false });
+      
+      if (currentUser?.business_id) {
+        query = query.eq('business_id', currentUser.business_id);
+      }
+      
+      const { data } = await query;
 
       if (data && data.length > 0) {
         const uniqueDates = new Set();
@@ -71,7 +79,7 @@ const SalesDashboard = () => {
       }
     };
     fetchActiveDates();
-  }, []);
+  }, [currentUser?.business_id]);
 
   // Navigation Logic
   const getDateRanges = (mode, date) => {
@@ -145,13 +153,20 @@ const SalesDashboard = () => {
       const { currentStart, currentEnd, previousStart, previousEnd } = getDateRanges(viewMode, selectedDate);
 
       const fetchPeriod = async (start, end) => {
-        const { data, error } = await supabase
+        let query = supabase
           .from('orders')
           .select('id, order_number, customer_name, customer_phone, total_amount, created_at, order_items(quantity, price, menu_items(name, category, price))')
           .gte('created_at', start.toISOString())
           .lte('created_at', end.toISOString())
           .neq('order_status', 'cancelled')
           .order('created_at', { ascending: false });
+        
+        // Filter by business_id if available
+        if (currentUser?.business_id) {
+          query = query.eq('business_id', currentUser.business_id);
+        }
+        
+        const { data, error } = await query;
 
         if (error) throw error;
 
@@ -191,8 +206,10 @@ const SalesDashboard = () => {
   };
 
   useEffect(() => {
-    fetchSalesData();
-  }, [viewMode, selectedDate]);
+    if (currentUser?.business_id) {
+      fetchSalesData();
+    }
+  }, [viewMode, selectedDate, currentUser?.business_id]);
 
   // Aggregation Helpers
   const aggregate = (data) => {
