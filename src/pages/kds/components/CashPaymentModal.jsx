@@ -4,15 +4,34 @@ import { X, Check, CreditCard } from 'lucide-react';
 const CashPaymentModal = ({ isOpen, onClose, orderId, orderAmount, customerName, onConfirmCash, onSwitchToCredit }) => {
     const [isProcessing, setIsProcessing] = useState(false);
 
+    // Debug: Log when modal opens
     useEffect(() => {
         if (isOpen) {
+            console.log('🔵 CashPaymentModal OPENED');
+            console.log('🔵 Props received:', { orderId, orderAmount, customerName, hasOnConfirmCash: !!onConfirmCash });
             setIsProcessing(false);
         }
-    }, [isOpen]);
+    }, [isOpen, orderId, orderAmount, customerName, onConfirmCash]);
 
     if (!isOpen) return null;
 
     const handleConfirm = async () => {
+        console.log('🟢 CONFIRM BUTTON CLICKED!');
+        console.log('🟢 orderId:', orderId, 'type:', typeof orderId);
+        console.log('🟢 onConfirmCash exists:', !!onConfirmCash);
+        
+        if (!onConfirmCash) {
+            console.error('❌ onConfirmCash function is missing!');
+            alert('שגיאה: פונקציית אישור חסרה');
+            return;
+        }
+        
+        if (!orderId) {
+            console.error('❌ orderId is missing!');
+            alert('שגיאה: מזהה הזמנה חסר');
+            return;
+        }
+        
         setIsProcessing(true);
         console.log('💰 CashPaymentModal: Confirming payment for orderId:', orderId);
 
