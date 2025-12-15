@@ -104,8 +104,26 @@ const MenuOrderingInterface = () => {
     try {
       setIsLoading(true);
 
+      // Validate orderId format
+      console.log('🔍 Fetching order for editing, ID:', orderId, 'Type:', typeof orderId);
+      
+      if (!orderId || typeof orderId !== 'string') {
+        console.error('❌ Invalid orderId:', orderId);
+        throw new Error('מזהה הזמנה לא תקין');
+      }
+
+      // Clean orderId - remove any KDS suffix like "-ready" or "-stage-2"
+      // Note: UUIDs contain hyphens like "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      // So we only remove known suffixes, not split by hyphen
+      let cleanOrderId = orderId;
+      if (orderId.endsWith('-ready')) {
+        cleanOrderId = orderId.replace(/-ready$/, '');
+      }
+      // Also handle stage suffixes like "-stage-2-ready" or "-stage-2"
+      cleanOrderId = cleanOrderId.replace(/-stage-\d+$/, '');
+      console.log('🧹 Clean order ID:', cleanOrderId, '(original:', orderId, ')');
+
       // Fetch order with items
-      console.log('🔍 Fetching order for editing, ID:', orderId);
       const { data: order, error } = await supabase
         .from('orders')
         .select(`
@@ -115,8 +133,10 @@ const MenuOrderingInterface = () => {
             menu_items (*)
           )
         `)
-        .eq('id', orderId)
+        .eq('id', cleanOrderId)
         .maybeSingle(); // Use maybeSingle instead of single to avoid PGRST116 when no results
+
+      console.log('📊 Query result - order:', order ? 'found' : 'null', 'error:', error);
 
       if (order?.order_items) {
         console.log('📦 Fetched Order Items from DB:', order.order_items.length);
@@ -130,19 +150,23 @@ const MenuOrderingInterface = () => {
       }
 
       if (!order) {
-        console.error('❌ Order not found for ID:', orderId);
-        throw new Error(`הזמנה ${orderId} לא נמצאה`);
+        console.error('❌ Order not found for ID:', cleanOrderId, '(original:', orderId, ')');
+        throw new Error(`הזמנה ${cleanOrderId} לא נמצאה`);
       }
 
       console.log('✅ Order fetched successfully:', order.id);
 
       // Set customer if exists
       if (order.customer_phone) {
-        const { data: customer } = await supabase
+        const { data: customer, error: customerError } = await supabase
           .from('customers')
           .select('*')
           .eq('phone', order.customer_phone)
-          .single();
+          .maybeSingle(); // Changed from .single() to avoid PGRST116
+        
+        if (customerError) {
+          console.warn('⚠️ Customer fetch warning:', customerError);
+        }
 
         if (customer) {
           setCurrentCustomer(customer);
