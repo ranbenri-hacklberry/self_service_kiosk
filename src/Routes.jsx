@@ -24,12 +24,30 @@ const ProtectedRoute = ({ children }) => {
   const location = useLocation();
 
   useEffect(() => {
+    console.log('🔐 ProtectedRoute check:', { 
+      isLoading, 
+      hasUser: !!currentUser, 
+      deviceMode, 
+      path: location.pathname 
+    });
+    
     if (!isLoading) {
       if (!currentUser) {
+        console.log('🚫 No user, redirecting to login');
         navigate('/login');
       } else if (!deviceMode && location.pathname !== '/mode-selection') {
         // If logged in but no mode selected, force selection
+        console.log('⚠️ No device mode, redirecting to mode-selection');
         navigate('/mode-selection');
+      } else if (location.pathname === '/' && deviceMode) {
+        // Redirect root path based on device mode
+        console.log('🏠 Redirecting root based on mode:', deviceMode);
+        if (deviceMode === 'kds') {
+          navigate('/kds');
+        } else if (deviceMode === 'manager') {
+          navigate('/data-manager-interface');
+        }
+        // For 'kiosk' mode, stay on CustomerPhoneInputScreen (default)
       }
     }
   }, [currentUser, deviceMode, isLoading, navigate, location]);
