@@ -290,6 +290,11 @@ const KdsScreen = () => {
   // Fetch based on Time Phase (Auto-Switch)
   useEffect(() => {
     if (viewMode === 'tasks_prep') {
+      console.log('📋 Tasks view active, fetching all task types...');
+      
+      // Always fetch prep tasks
+      fetchPrepBatches();
+      
       // Logic: Opening starts 3 hours before 9:00 = 06:00.
       // Closing starts at 15:00.
       const isClosingPhase = currentHour >= 15; // 3 PM
