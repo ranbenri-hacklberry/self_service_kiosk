@@ -3,6 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import { X, Save, Check, Trash2, Image as ImageIcon, Plus, Power, GripHorizontal, PlusCircle, Loader2, DollarSign, ChevronDown, CheckCircle, ArrowRight, Package, Minus, Search, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
+import { fetchManagerItemOptions } from '@/lib/managerApi';
 
 // Reusable animated accordion section to prevent layout jumps
 const AnimatedSection = ({ show, children }) => (
@@ -203,60 +204,71 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const fetchModifiers = async () => {
         console.log('🔍 fetchModifiers called for item:', item?.id);
         try {
-            // Fetch groups that are either linked via menuitemoptions OR owned by this item (private groups)
-            // 1. Get linked group IDs
-            let linkedGroupIds = new Set();
-            if (item?.id) {
-                console.log('🔗 Fetching linked groups for item:', item.id);
-                const { data: linked, error: linkedError } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', item.id);
-                console.log('🔗 Linked groups result:', linked, 'error:', linkedError);
-                if (linkedError) {
-                    console.error('❌ Error fetching menuitemoptions:', linkedError);
-                }
-                linked?.forEach(l => linkedGroupIds.add(l.group_id));
-                console.log('🔗 Linked group IDs:', [...linkedGroupIds]);
-            }
-
-            // 2. Fetch ALL groups from the system (Try without RLS first using .select())
-            console.log('📋 Fetching all optiongroups...');
-            
-            // First, try to fetch groups that are specifically linked to this item
             let relevantGroups = [];
             
-            // Method A: Fetch groups by linked IDs directly
-            if (linkedGroupIds.size > 0) {
-                const linkedIdsArray = Array.from(linkedGroupIds);
-                console.log('📋 Fetching linked groups by IDs:', linkedIdsArray);
-                const { data: linkedGroups, error: linkedGroupsError } = await supabase.from('optiongroups')
-                    .select(`*, is_food, is_drink, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
-                    .in('id', linkedIdsArray);
-                
-                if (linkedGroupsError) {
-                    console.error('❌ Error fetching linked optiongroups:', linkedGroupsError);
-                } else {
-                    console.log('📋 Linked groups found:', linkedGroups?.length, linkedGroups?.map(g => g.name));
-                    relevantGroups = [...relevantGroups, ...(linkedGroups || [])];
+            // First, check what groups are ALREADY linked in menuitemoptions
+            let linkedGroupIds = new Set();
+            if (item?.id) {
+                const { data: linkedData } = await supabase
+                    .from('menuitemoptions')
+                    .select('group_id')
+                    .eq('item_id', item.id);
+                linkedGroupIds = new Set((linkedData || []).map(l => l.group_id));
+                console.log('🔗 Linked group IDs from menuitemoptions:', [...linkedGroupIds]);
+            }
+            
+            // METHOD 1: Try to fetch from External API (same source as customer-facing menu)
+            if (item?.id) {
+                try {
+                    console.log('🌐 Fetching modifiers from External API for item:', item.id);
+                    const externalGroups = await fetchManagerItemOptions(item.id);
+                    console.log('🌐 External API returned:', externalGroups?.length, 'groups');
+                    
+                    if (externalGroups && externalGroups.length > 0) {
+                        // Convert external format to our internal format
+                        const convertedGroups = externalGroups.map(g => ({
+                            id: g.id,
+                            name: g.title || g.name,
+                            is_external: true, // Flag to indicate this came from external API
+                            is_multiple_select: g.type === 'multi',
+                            is_required: g.required,
+                            is_food: true,
+                            is_drink: false,
+                            optionvalues: (g.values || []).map(v => ({
+                                id: v.id,
+                                value_name: v.name,
+                                price_adjustment: v.priceAdjustment || v.price || 0,
+                                is_default: v.is_default || false,
+                                display_order: 0
+                            }))
+                        }));
+                        relevantGroups = [...relevantGroups, ...convertedGroups];
+                        console.log('✅ Converted external groups:', convertedGroups.map(g => g.name));
+                    }
+                } catch (apiError) {
+                    console.warn('⚠️ External API fetch failed, falling back to Supabase:', apiError.message);
                 }
             }
             
-            // Method B: Fetch private groups owned by this item
+            // METHOD 2: Also fetch from Supabase (for locally created groups)
             if (item?.id) {
-                console.log('📋 Fetching private groups for item:', item.id);
+                console.log('📋 Fetching private groups from Supabase for item:', item.id);
                 const { data: privateGroups, error: privateGroupsError } = await supabase.from('optiongroups')
-                    .select(`*, is_food, is_drink, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
+                    .select(`*, is_food, is_drink, is_multiple_select, is_required, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
                     .eq('menu_item_id', item.id);
                 
                 if (privateGroupsError) {
                     console.error('❌ Error fetching private optiongroups:', privateGroupsError);
-                } else {
-                    console.log('📋 Private groups found:', privateGroups?.length, privateGroups?.map(g => g.name));
-                    // Add only if not already in list (avoid duplicates)
-                    const existingIds = new Set(relevantGroups.map(g => g.id));
-                    relevantGroups = [...relevantGroups, ...(privateGroups || []).filter(g => !existingIds.has(g.id))];
+                } else if (privateGroups && privateGroups.length > 0) {
+                    console.log('📋 Supabase private groups found:', privateGroups.length, privateGroups.map(g => g.name));
+                    // Add only if not already in list (avoid duplicates by name)
+                    const existingNames = new Set(relevantGroups.map(g => g.name?.toLowerCase()));
+                    const newGroups = privateGroups.filter(g => !existingNames.has(g.name?.toLowerCase()));
+                    relevantGroups = [...relevantGroups, ...newGroups];
                 }
             }
             
-            console.log('📋 Total relevant groups:', relevantGroups.length, relevantGroups.map(g => ({id: g.id, name: g.name, menu_item_id: g.menu_item_id, optionvalues: g.optionvalues?.length})));
+            console.log('📋 Total groups to display:', relevantGroups.length, relevantGroups.map(g => ({id: g.id, name: g.name, optionvalues: g.optionvalues?.length})));
 
             // Sort optionvalues and set allGroups
             const processedGroups = relevantGroups.map(g => ({ 
@@ -267,10 +279,20 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             setAllGroups(processedGroups);
             console.log('✅ setAllGroups called with:', processedGroups.length, 'groups');
 
-            // All fetched groups should be selected (they're all relevant to this item)
-            const allGroupIds = new Set(processedGroups.map(g => g.id));
-            console.log('✅ Setting selectedGroupIds to:', [...allGroupIds]);
-            setSelectedGroupIds(allGroupIds);
+            // Determine which groups should be selected:
+            // - If we have links in menuitemoptions, use those
+            // - If this is a new item or no links exist yet, select all by default
+            let selectedIds;
+            if (linkedGroupIds.size > 0) {
+                // Only show groups that are explicitly linked
+                selectedIds = new Set(processedGroups.map(g => g.id).filter(id => linkedGroupIds.has(id)));
+                console.log('✅ Using linked groups from DB:', [...selectedIds]);
+            } else {
+                // New item or first time - select all
+                selectedIds = new Set(processedGroups.map(g => g.id));
+                console.log('✅ No links found, selecting all groups:', [...selectedIds]);
+            }
+            setSelectedGroupIds(selectedIds);
         } catch (e) {
             console.error('❌ fetchModifiers error:', e);
         }
@@ -399,7 +421,20 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const handleDeleteGroup = async (group) => {
         // Confirm handled by UI
         try {
-            // Strict delete from DB
+            if (group.is_external) {
+                // External group: just remove from local state (hide it)
+                setSelectedGroupIds(prev => {
+                    const next = new Set(prev);
+                    next.delete(group.id);
+                    return next;
+                });
+                setAllGroups(prev => prev.filter(g => g.id !== group.id));
+                setGroupDeleteCandidateId(null);
+                setIsDirty(true);
+                return;
+            }
+            
+            // Internal group: delete from DB
             const { error } = await supabase.from('optiongroups').delete().eq('id', group.id);
             if (error) {
                 alert('שגיאה במחיקת הקבוצה: ' + error.message);
@@ -879,6 +914,12 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
 
         // 2. Process all groups and their options
         for (const group of allGroups) {
+            // Skip external groups - they're managed elsewhere
+            if (group.is_external) {
+                console.log('⏭️ Skipping external group:', group.name);
+                continue;
+            }
+            
             // If group is new (temp ID), insert it first
             let currentGroupId = group.id;
             if (typeof group.id === 'string' && group.id.startsWith('temp_')) {
@@ -887,6 +928,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                     menu_item_id: group.menu_item_id,
                     is_food: group.is_food,
                     is_drink: group.is_drink,
+                    is_multiple_select: group.is_multiple_select || false,
+                    is_required: group.is_required || false,
                     min_select: group.min_select,
                     max_select: group.max_select,
                     display_order: group.display_order
@@ -894,11 +937,13 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 if (groupError) { console.error('Error inserting new group:', groupError); continue; }
                 currentGroupId = newGroup.id;
             } else {
-                // Update existing group properties if needed (e.g., min_select, max_select)
+                // Update existing group properties
                 await supabase.from('optiongroups').update({
                     name: group.name,
                     is_food: group.is_food,
                     is_drink: group.is_drink,
+                    is_multiple_select: group.is_multiple_select || false,
+                    is_required: group.is_required || false,
                     min_select: group.min_select,
                     max_select: group.max_select,
                     display_order: group.display_order
@@ -1540,13 +1585,6 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                 {/* Expanded Content */}
                                 <AnimatedSection show={showModifiersSection}>
                                     <div className="border-t border-gray-100 p-4 bg-white space-y-4">
-                                        {/* Debug Info */}
-                                        {process.env.NODE_ENV === 'development' && (
-                                            <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded-lg mb-2">
-                                                Debug: allGroups={allGroups.length}, selectedGroupIds={selectedGroupIds.size}, sortedGroups={sortedGroups.length}
-                                            </div>
-                                        )}
-                                        
                                         <label onClick={(e) => { e.preventDefault(); setFormData(p => ({ ...p, allow_notes: !p.allow_notes })); }} className="flex items-center gap-4 p-4 border border-gray-100 rounded-2xl cursor-pointer bg-gray-50/50 hover:bg-gray-50 transition-colors">
                                             <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${formData.allow_notes ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300 bg-white'}`}>
                                                 {formData.allow_notes && <Check size={16} strokeWidth={3} />}
@@ -1568,9 +1606,16 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                         {sortedGroups.filter(g => selectedGroupIds.has(g.id)).map(group => (
                                             <div key={group.id} className="border border-blue-100 rounded-2xl bg-white overflow-hidden">
                                                 <div className="flex items-center justify-between p-4 bg-blue-50/40 border-b border-blue-100">
-                                                    <span className="font-black text-slate-700">{group.name}</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-black text-slate-700">{group.name}</span>
+                                                        {group.is_external && (
+                                                            <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">
+                                                                מסונכרן
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <div className="flex gap-2">
-                                                        {group.menu_item_id && groupDeleteCandidateId === group.id ? (
+                                                        {groupDeleteCandidateId === group.id ? (
                                                             <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow border border-red-100">
                                                                 <span className="text-xs text-red-500 font-bold px-1">למחוק?</span>
                                                                 <button type="button" onClick={() => handleDeleteGroup(group)} className="w-6 h-6 flex items-center justify-center bg-red-500 text-white rounded-lg hover:bg-red-600"><Check size={14} /></button>
@@ -1579,10 +1624,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                         ) : (
                                                             <button
                                                                 type="button"
-                                                                onClick={() => {
-                                                                    if (group.menu_item_id) setGroupDeleteCandidateId(group.id);
-                                                                    else handleModifierToggle(group.id);
-                                                                }}
+                                                                onClick={() => setGroupDeleteCandidateId(group.id)}
                                                                 className="p-2 bg-white text-red-500 rounded-xl shadow-sm border border-red-100 hover:bg-red-50"
                                                             >
                                                                 <Trash2 size={16} />
@@ -1590,10 +1632,43 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                         )}
                                                     </div>
                                                 </div>
+                                                
+                                                {/* Group Settings */}
+                                                <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex flex-wrap gap-4 text-sm">
+                                                    {/* Selection Type */}
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={group.is_multiple_select || group.type === 'multi' || false}
+                                                            onChange={(e) => {
+                                                                setAllGroups(prev => prev.map(g => 
+                                                                    g.id === group.id ? {...g, is_multiple_select: e.target.checked, type: e.target.checked ? 'multi' : 'single'} : g
+                                                                ));
+                                                                setIsDirty(true);
+                                                            }}
+                                                            className="w-4 h-4 accent-blue-600 rounded"
+                                                        />
+                                                        <span className="text-gray-600 font-medium">בחירה מרובה</span>
+                                                    </label>
+                                                    
+                                                    {/* Required */}
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={group.is_required || group.required || false}
+                                                            onChange={(e) => {
+                                                                setAllGroups(prev => prev.map(g => 
+                                                                    g.id === group.id ? {...g, is_required: e.target.checked, required: e.target.checked} : g
+                                                                ));
+                                                                setIsDirty(true);
+                                                            }}
+                                                            className="w-4 h-4 accent-blue-600 rounded"
+                                                        />
+                                                        <span className="text-gray-600 font-medium">חובה לבחור</span>
+                                                    </label>
+                                                </div>
 
                                                 <div className="space-y-2 p-3">
-
-
                                                     {group.optionvalues?.map(ov => {
                                                         const isExpanded = expandedOptionId === ov.id;
                                                         return (
@@ -1604,11 +1679,16 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                                     className="p-3 flex items-center justify-between cursor-pointer select-none"
                                                                 >
                                                                     <div className="flex items-center gap-3">
-                                                                        <div className="font-bold text-gray-800">{ov.value_name}</div>
+                                                                        <div className="font-bold text-gray-800">{ov.value_name || ov.name}</div>
+                                                                        {ov.is_default && (
+                                                                            <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">
+                                                                                ברירת מחדל
+                                                                            </span>
+                                                                        )}
                                                                     </div>
                                                                     <div className="flex items-center gap-3">
                                                                         <div className="text-sm font-bold text-teal-700">
-                                                                            {ov.price_adjustment ? `+₪${Number(ov.price_adjustment).toFixed(2)}` : '--'}
+                                                                            {(ov.price_adjustment || ov.priceAdjustment) ? `+₪${Number(ov.price_adjustment || ov.priceAdjustment).toFixed(2)}` : '--'}
                                                                         </div>
                                                                         <ChevronDown size={18} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                                                                     </div>
@@ -1715,6 +1795,28 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                                                         </div>
                                                                                     </label>
                                                                                 </div>
+
+                                                                                {/* Set as Default Button */}
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        // Toggle default: if already default, unset; otherwise set this as default and unset others
+                                                                                        setAllGroups(prev => prev.map(g => {
+                                                                                            if (g.id !== group.id) return g;
+                                                                                            return {
+                                                                                                ...g,
+                                                                                                optionvalues: g.optionvalues?.map(o => ({
+                                                                                                    ...o,
+                                                                                                    is_default: o.id === ov.id ? !ov.is_default : false
+                                                                                                }))
+                                                                                            };
+                                                                                        }));
+                                                                                        setIsDirty(true);
+                                                                                    }}
+                                                                                    className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-colors w-full ${ov.is_default ? 'text-green-700 bg-green-100 border border-green-200' : 'text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200'}`}
+                                                                                >
+                                                                                    <Check size={16} /> {ov.is_default ? 'ברירת מחדל ✓' : 'הגדר כברירת מחדל'}
+                                                                                </button>
 
                                                                                 {/* Delete Button - Full Width */}
                                                                                 <button
