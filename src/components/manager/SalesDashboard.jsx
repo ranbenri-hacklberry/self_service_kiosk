@@ -6,10 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
 
 const SalesDashboard = () => {
-  console.log('🚀 SalesDashboard MOUNTED');
-  
   const { currentUser } = useAuth();
-  console.log('🚀 currentUser from useAuth:', currentUser);
   
   const [viewMode, setViewMode] = useState('daily'); // 'daily', 'weekly', 'monthly'
   const [currentSales, setCurrentSales] = useState([]); // Data for current period (Flattened Items)
@@ -151,35 +148,20 @@ const SalesDashboard = () => {
 
   const fetchSalesData = async () => {
     setLoading(true);
-    setSelectedGraphBar(null); // Reset filter on date change
+    setSelectedGraphBar(null);
     setError(null);
-    
-    console.log('📊 SalesDashboard: Fetching sales data...');
-    console.log('📊 currentUser:', currentUser);
-    console.log('📊 business_id:', currentUser?.business_id);
     
     try {
       const { currentStart, currentEnd, previousStart, previousEnd } = getDateRanges(viewMode, selectedDate);
-      console.log('📊 Date range:', { currentStart: currentStart.toISOString(), currentEnd: currentEnd.toISOString() });
 
       const fetchPeriod = async (start, end) => {
-        let query = supabase
-          .from('orders')
-          .select('id, order_number, customer_name, customer_phone, total_amount, created_at, order_items(quantity, price, menu_items(name, category, price))')
-          .gte('created_at', start.toISOString())
-          .lte('created_at', end.toISOString())
-          .neq('order_status', 'cancelled')
-          .order('created_at', { ascending: false });
+        // Use RPC function to bypass RLS
+        const { data, error } = await supabase.rpc('get_sales_data', {
+          p_business_id: currentUser?.business_id,
+          p_start_date: start.toISOString(),
+          p_end_date: end.toISOString()
+        });
         
-        // Filter by business_id if available
-        if (currentUser?.business_id) {
-          query = query.eq('business_id', currentUser.business_id);
-        }
-        
-        const { data, error } = await query;
-        
-        console.log('📊 Query result:', { ordersCount: data?.length, error });
-
         if (error) throw error;
 
         const flattened = [];
@@ -210,8 +192,8 @@ const SalesDashboard = () => {
       setPreviousSales(prev.flattened); // We only start flattened for prev comparison for now
 
     } catch (err) {
-      console.error('❌ Error fetching sales:', err);
-      setError('שגיאה בטעינת נתוני מכירות: ' + err.message);
+      console.error('Error fetching sales:', err);
+      setError('שגיאה בטעינת נתוני מכירות');
     } finally {
       setLoading(false);
     }
