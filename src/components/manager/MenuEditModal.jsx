@@ -217,32 +217,60 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 console.log('🔗 Linked group IDs:', [...linkedGroupIds]);
             }
 
-            // 2. Fetch ALL groups from the system
+            // 2. Fetch ALL groups from the system (Try without RLS first using .select())
             console.log('📋 Fetching all optiongroups...');
-            const { data: groups, error: groupsError } = await supabase.from('optiongroups')
-                .select(`*, is_food, is_drink, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
-                .order('name');
             
-            if (groupsError) {
-                console.error('❌ Error fetching optiongroups:', groupsError);
-                return;
+            // First, try to fetch groups that are specifically linked to this item
+            let relevantGroups = [];
+            
+            // Method A: Fetch groups by linked IDs directly
+            if (linkedGroupIds.size > 0) {
+                const linkedIdsArray = Array.from(linkedGroupIds);
+                console.log('📋 Fetching linked groups by IDs:', linkedIdsArray);
+                const { data: linkedGroups, error: linkedGroupsError } = await supabase.from('optiongroups')
+                    .select(`*, is_food, is_drink, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
+                    .in('id', linkedIdsArray);
+                
+                if (linkedGroupsError) {
+                    console.error('❌ Error fetching linked optiongroups:', linkedGroupsError);
+                } else {
+                    console.log('📋 Linked groups found:', linkedGroups?.length, linkedGroups?.map(g => g.name));
+                    relevantGroups = [...relevantGroups, ...(linkedGroups || [])];
+                }
             }
-            console.log('📋 Total groups in DB:', groups?.length);
-            console.log('📋 All groups:', groups?.map(g => ({id: g.id, name: g.name, menu_item_id: g.menu_item_id, optionvalues: g.optionvalues?.length})));
-
-            // Filter in memory to handle the OR condition effectively without complex RLS/query logic issues
-            const relevantGroups = groups?.filter(g => g.menu_item_id === item?.id || linkedGroupIds.has(g.id)) || [];
-            console.log('🎯 Relevant groups after filter:', relevantGroups.length, relevantGroups.map(g => ({id: g.id, name: g.name, menu_item_id: g.menu_item_id})));
-
-            setAllGroups(relevantGroups.map(g => ({ ...g, optionvalues: g.optionvalues?.sort((a, b) => (a.display_order || 0) - (b.display_order || 0)) || [] })));
-
-            // Allow selecting them all effectively since we are in "Private Mode" mostly
+            
+            // Method B: Fetch private groups owned by this item
             if (item?.id) {
-                // If it's a private group, it should be treated as selected
-                const combined = new Set([...linkedGroupIds, ...relevantGroups.filter(g => g.menu_item_id === item.id).map(g => g.id)]);
-                console.log('✅ Setting selectedGroupIds to:', [...combined]);
-                setSelectedGroupIds(combined);
+                console.log('📋 Fetching private groups for item:', item.id);
+                const { data: privateGroups, error: privateGroupsError } = await supabase.from('optiongroups')
+                    .select(`*, is_food, is_drink, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
+                    .eq('menu_item_id', item.id);
+                
+                if (privateGroupsError) {
+                    console.error('❌ Error fetching private optiongroups:', privateGroupsError);
+                } else {
+                    console.log('📋 Private groups found:', privateGroups?.length, privateGroups?.map(g => g.name));
+                    // Add only if not already in list (avoid duplicates)
+                    const existingIds = new Set(relevantGroups.map(g => g.id));
+                    relevantGroups = [...relevantGroups, ...(privateGroups || []).filter(g => !existingIds.has(g.id))];
+                }
             }
+            
+            console.log('📋 Total relevant groups:', relevantGroups.length, relevantGroups.map(g => ({id: g.id, name: g.name, menu_item_id: g.menu_item_id, optionvalues: g.optionvalues?.length})));
+
+            // Sort optionvalues and set allGroups
+            const processedGroups = relevantGroups.map(g => ({ 
+                ...g, 
+                optionvalues: g.optionvalues?.sort((a, b) => (a.display_order || 0) - (b.display_order || 0)) || [] 
+            }));
+            
+            setAllGroups(processedGroups);
+            console.log('✅ setAllGroups called with:', processedGroups.length, 'groups');
+
+            // All fetched groups should be selected (they're all relevant to this item)
+            const allGroupIds = new Set(processedGroups.map(g => g.id));
+            console.log('✅ Setting selectedGroupIds to:', [...allGroupIds]);
+            setSelectedGroupIds(allGroupIds);
         } catch (e) {
             console.error('❌ fetchModifiers error:', e);
         }
