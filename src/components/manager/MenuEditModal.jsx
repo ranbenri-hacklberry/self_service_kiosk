@@ -210,20 +210,29 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 console.log('🔗 Fetching linked groups for item:', item.id);
                 const { data: linked, error: linkedError } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', item.id);
                 console.log('🔗 Linked groups result:', linked, 'error:', linkedError);
+                if (linkedError) {
+                    console.error('❌ Error fetching menuitemoptions:', linkedError);
+                }
                 linked?.forEach(l => linkedGroupIds.add(l.group_id));
                 console.log('🔗 Linked group IDs:', [...linkedGroupIds]);
             }
 
-            // 2. Fetch groups (owned by this item OR linked)
+            // 2. Fetch ALL groups from the system
             console.log('📋 Fetching all optiongroups...');
             const { data: groups, error: groupsError } = await supabase.from('optiongroups')
-                .select(`*, is_food, is_drink, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity)`)
+                .select(`*, is_food, is_drink, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
                 .order('name');
-            console.log('📋 Groups fetched:', groups?.length, 'error:', groupsError);
+            
+            if (groupsError) {
+                console.error('❌ Error fetching optiongroups:', groupsError);
+                return;
+            }
+            console.log('📋 Total groups in DB:', groups?.length);
+            console.log('📋 All groups:', groups?.map(g => ({id: g.id, name: g.name, menu_item_id: g.menu_item_id, optionvalues: g.optionvalues?.length})));
 
             // Filter in memory to handle the OR condition effectively without complex RLS/query logic issues
             const relevantGroups = groups?.filter(g => g.menu_item_id === item?.id || linkedGroupIds.has(g.id)) || [];
-            console.log('🎯 Relevant groups found:', relevantGroups.length, relevantGroups.map(g => ({id: g.id, name: g.name, menu_item_id: g.menu_item_id})));
+            console.log('🎯 Relevant groups after filter:', relevantGroups.length, relevantGroups.map(g => ({id: g.id, name: g.name, menu_item_id: g.menu_item_id})));
 
             setAllGroups(relevantGroups.map(g => ({ ...g, optionvalues: g.optionvalues?.sort((a, b) => (a.display_order || 0) - (b.display_order || 0)) || [] })));
 
@@ -1503,6 +1512,13 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                 {/* Expanded Content */}
                                 <AnimatedSection show={showModifiersSection}>
                                     <div className="border-t border-gray-100 p-4 bg-white space-y-4">
+                                        {/* Debug Info */}
+                                        {process.env.NODE_ENV === 'development' && (
+                                            <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded-lg mb-2">
+                                                Debug: allGroups={allGroups.length}, selectedGroupIds={selectedGroupIds.size}, sortedGroups={sortedGroups.length}
+                                            </div>
+                                        )}
+                                        
                                         <label onClick={(e) => { e.preventDefault(); setFormData(p => ({ ...p, allow_notes: !p.allow_notes })); }} className="flex items-center gap-4 p-4 border border-gray-100 rounded-2xl cursor-pointer bg-gray-50/50 hover:bg-gray-50 transition-colors">
                                             <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${formData.allow_notes ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300 bg-white'}`}>
                                                 {formData.allow_notes && <Check size={16} strokeWidth={3} />}
@@ -1512,6 +1528,14 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                 <span className="text-xs text-gray-400">לקוחות יוכלו לכתוב בקשות מיוחדות</span>
                                             </div>
                                         </label>
+
+                                        {/* Empty State for No Groups */}
+                                        {sortedGroups.filter(g => selectedGroupIds.has(g.id)).length === 0 && (
+                                            <div className="text-center py-6 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                                                <p className="font-bold mb-1">אין תוספות מוגדרות</p>
+                                                <p className="text-sm">לחץ על הכפתור למטה להוספת תוספות חדשות</p>
+                                            </div>
+                                        )}
 
                                         {sortedGroups.filter(g => selectedGroupIds.has(g.id)).map(group => (
                                             <div key={group.id} className="border border-blue-100 rounded-2xl bg-white overflow-hidden">
