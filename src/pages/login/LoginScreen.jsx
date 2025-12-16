@@ -73,9 +73,9 @@ const LoginScreen = () => {
     };
 
     return (
-        <div className="h-screen h-dvh bg-slate-900 flex flex-col font-heebo overflow-auto" dir="rtl">
-            <div className="flex-1 flex items-center justify-center p-4 min-h-0">
-                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="min-h-screen bg-slate-900 font-heebo overflow-auto pt-8 pb-4 px-4" dir="rtl">
+            <div className="max-w-md mx-auto">
+                <div className="bg-white rounded-3xl shadow-2xl w-full overflow-hidden">
                     <div className="bg-slate-800 p-6 text-center text-white">
                         <h1 className="text-2xl font-black mb-1">כניסה למערכת</h1>
                         <p className="text-slate-300 text-sm">הזן פרטי התחברות</p>
