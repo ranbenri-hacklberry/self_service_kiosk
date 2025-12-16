@@ -73,32 +73,32 @@ const LoginScreen = () => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-900 font-heebo overflow-auto pt-8 pb-4 px-4" dir="rtl">
+        <div className="min-h-screen bg-slate-900 font-heebo overflow-auto pt-6 pb-4 px-4" dir="rtl">
             <div className="max-w-md mx-auto">
-                <div className="bg-white rounded-3xl shadow-2xl w-full overflow-hidden">
-                    <div className="bg-slate-800 p-6 text-center text-white">
-                        <h1 className="text-2xl font-black mb-1">כניסה למערכת</h1>
-                        <p className="text-slate-300 text-sm">הזן פרטי התחברות</p>
+                <div className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden">
+                    <div className="bg-slate-800 py-3 px-4 text-center text-white">
+                        <h1 className="text-xl font-black leading-tight">כניסה למערכת</h1>
+                        <p className="text-slate-300 text-xs">הזן פרטי התחברות</p>
                     </div>
 
-                    <div className="p-6">
+                    <div className="p-4">
                     {error && (
-                        <div className="mb-4 bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2">
-                            <AlertTriangle size={16} />
+                        <div className="mb-3 bg-red-50 border border-red-100 text-red-600 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-2">
+                            <AlertTriangle size={14} />
                             {error}
                         </div>
                     )}
 
-                    <form onSubmit={handleLogin} className="space-y-4">
+                    <form onSubmit={handleLogin} className="space-y-3">
                         <div>
-                            <label className="block text-slate-700 font-bold mb-1 text-sm">אימייל</label>
+                            <label className="block text-slate-700 font-bold mb-0.5 text-xs">אימייל</label>
                             <div className="relative">
-                                <User className="absolute top-1/2 -translate-y-1/2 right-3 text-slate-400 w-5 h-5" />
+                                <User className="absolute top-1/2 -translate-y-1/2 right-3 text-slate-400 w-4 h-4" />
                                 <input
                                     type="email"
                                     value={email}
                                     onChange={e => setEmail(e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pr-11 pl-4 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pr-10 pl-3 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400 text-sm"
                                     placeholder="your@email.com"
                                     required
                                     autoFocus
@@ -108,14 +108,14 @@ const LoginScreen = () => {
                         </div>
 
                         <div>
-                            <label className="block text-slate-700 font-bold mb-1 text-sm">סיסמה</label>
+                            <label className="block text-slate-700 font-bold mb-0.5 text-xs">סיסמה</label>
                             <div className="relative">
-                                <KeyRound className="absolute top-1/2 -translate-y-1/2 right-3 text-slate-400 w-5 h-5" />
+                                <KeyRound className="absolute top-1/2 -translate-y-1/2 right-3 text-slate-400 w-4 h-4" />
                                 <input
                                     type={showPassword ? "text" : "password"}
                                     value={password}
                                     onChange={e => setPassword(e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pr-11 pl-4 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400 font-sans"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pr-10 pl-3 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400 font-sans text-sm"
                                     placeholder="••••••••"
                                     required
                                     dir="ltr"
@@ -133,7 +133,7 @@ const LoginScreen = () => {
                         <button
                             type="submit"
                             disabled={isLoading}
-                            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-3 rounded-xl text-lg shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-2.5 rounded-lg text-base shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                         >
                             {isLoading ? (
                                 <Loader2 className="animate-spin w-6 h-6" />
