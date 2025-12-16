@@ -73,31 +73,32 @@ const LoginScreen = () => {
     };
 
     return (
-        <div className="min-h-screen min-h-dvh bg-slate-900 flex items-end sm:items-center justify-center p-4 pb-8 sm:pb-4 font-heebo" dir="rtl">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden mb-auto sm:mb-0 mt-auto">
-                <div className="bg-slate-800 p-8 text-center text-white">
-                    <h1 className="text-3xl font-black mb-2">כניסה למערכת</h1>
-                    <p className="text-slate-300">הזן פרטי התחברות</p>
-                </div>
+        <div className="h-screen h-dvh bg-slate-900 flex flex-col font-heebo overflow-auto" dir="rtl">
+            <div className="flex-1 flex items-center justify-center p-4 min-h-0">
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+                    <div className="bg-slate-800 p-6 text-center text-white">
+                        <h1 className="text-2xl font-black mb-1">כניסה למערכת</h1>
+                        <p className="text-slate-300 text-sm">הזן פרטי התחברות</p>
+                    </div>
 
-                <div className="p-8">
+                    <div className="p-6">
                     {error && (
-                        <div className="mb-6 bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
-                            AlertTriangle size={16}
+                        <div className="mb-4 bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2">
+                            <AlertTriangle size={16} />
                             {error}
                         </div>
                     )}
 
-                    <form onSubmit={handleLogin} className="space-y-6">
+                    <form onSubmit={handleLogin} className="space-y-4">
                         <div>
-                            <label className="block text-slate-700 font-bold mb-2 text-sm">אימייל</label>
+                            <label className="block text-slate-700 font-bold mb-1 text-sm">אימייל</label>
                             <div className="relative">
-                                <User className="absolute top-1/2 -translate-y-1/2 right-4 text-slate-400 w-5 h-5" />
+                                <User className="absolute top-1/2 -translate-y-1/2 right-3 text-slate-400 w-5 h-5" />
                                 <input
                                     type="email"
                                     value={email}
                                     onChange={e => setEmail(e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4 pr-12 pl-4 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pr-11 pl-4 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400"
                                     placeholder="your@email.com"
                                     required
                                     autoFocus
@@ -107,14 +108,14 @@ const LoginScreen = () => {
                         </div>
 
                         <div>
-                            <label className="block text-slate-700 font-bold mb-2 text-sm">סיסמה</label>
+                            <label className="block text-slate-700 font-bold mb-1 text-sm">סיסמה</label>
                             <div className="relative">
-                                <KeyRound className="absolute top-1/2 -translate-y-1/2 right-4 text-slate-400 w-5 h-5" />
+                                <KeyRound className="absolute top-1/2 -translate-y-1/2 right-3 text-slate-400 w-5 h-5" />
                                 <input
                                     type={showPassword ? "text" : "password"}
                                     value={password}
                                     onChange={e => setPassword(e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4 pr-12 pl-4 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400 font-sans"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pr-11 pl-4 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400 font-sans"
                                     placeholder="••••••••"
                                     required
                                     dir="ltr"
@@ -122,7 +123,7 @@ const LoginScreen = () => {
                                 <button
                                     type="button"
                                     onClick={() => setShowPassword(!showPassword)}
-                                    className="absolute top-1/2 -translate-y-1/2 left-4 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                                    className="absolute top-1/2 -translate-y-1/2 left-3 text-slate-400 hover:text-slate-600 text-xs font-bold"
                                 >
                                     {showPassword ? 'הסתר' : 'הצג'}
                                 </button>
@@ -132,7 +133,7 @@ const LoginScreen = () => {
                         <button
                             type="submit"
                             disabled={isLoading}
-                            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-4 rounded-xl text-lg shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-3 rounded-xl text-lg shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                         >
                             {isLoading ? (
                                 <Loader2 className="animate-spin w-6 h-6" />
@@ -144,6 +145,7 @@ const LoginScreen = () => {
                             )}
                         </button>
                     </form>
+                    </div>
                 </div>
             </div>
         </div>
