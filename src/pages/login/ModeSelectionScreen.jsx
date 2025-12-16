@@ -57,11 +57,11 @@ const ModeSelectionScreen = () => {
                         </button>
                     )}
 
-                    {/* 1. Manager Interface - Mobile & Desktop only (hidden on tablet) */}
+                    {/* 1. Manager Interface - Mobile & Desktop only (hidden on tablet up to 1536px) */}
                     {isManager && (
                         <button
                             onClick={() => handleModeSelect('manager')}
-                            className="md:hidden xl:block group relative bg-white rounded-2xl p-5 hover:bg-purple-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-100"
+                            className="lg:hidden 2xl:block group relative bg-white rounded-2xl p-5 hover:bg-purple-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-100"
                         >
                             <div className="absolute top-0 left-0 w-20 h-20 bg-purple-100 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
                             <div className="relative z-10">

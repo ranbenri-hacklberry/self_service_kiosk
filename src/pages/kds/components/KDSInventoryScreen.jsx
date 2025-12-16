@@ -326,7 +326,7 @@ const KDSInventoryScreen = () => {
 
     // Render Suppliers List (Right Column)
     const renderSuppliersList = () => (
-        <div className="h-full flex flex-col gap-3 overflow-y-auto p-2">
+        <div className="flex flex-col gap-3 overflow-y-auto p-2 pb-20">
             {supplierGroups.map(group => {
                 const isActive = selectedSupplierId === group.id;
                 return (
@@ -368,7 +368,7 @@ const KDSInventoryScreen = () => {
 
     // Render Items Grid (Left/Center Column)
     const renderItemsGrid = () => (
-        <div className="h-full overflow-y-auto p-2">
+        <div className="h-full min-h-0 overflow-y-auto p-2 pb-20">
             {!selectedSupplierId ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
                     <ArrowRight size={64} className="mb-6 animate-pulse" />
@@ -491,15 +491,17 @@ const KDSInventoryScreen = () => {
                             exit={{ opacity: 0 }}
                         >
                             {/* Right Column: Suppliers (1/3) */}
-                            <div className="w-1/3 border-l border-gray-200 bg-white h-full flex flex-col z-10 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">
-                                <div className="p-4 bg-gray-50/50 border-b border-gray-100">
+                            <div className="w-1/3 border-l border-gray-200 bg-white h-full min-h-0 flex flex-col z-10 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">
+                                <div className="p-4 bg-gray-50/50 border-b border-gray-100 shrink-0">
                                     <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">ספקים ({supplierGroups.length})</h3>
                                 </div>
-                                {renderSuppliersList()}
+                                <div className="flex-1 min-h-0">
+                                    {renderSuppliersList()}
+                                </div>
                             </div>
 
                             {/* Left/Center Column: Items (2/3) */}
-                            <div className="w-2/3 h-full bg-slate-50/50 p-4">
+                            <div className="w-2/3 h-full min-h-0 bg-slate-50/50 p-4">
                                 {renderItemsGrid()}
                             </div>
                         </motion.div>
