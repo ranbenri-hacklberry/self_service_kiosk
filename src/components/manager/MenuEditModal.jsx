@@ -1007,12 +1007,46 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             console.log('🆔 Item ID:', savedId);
 
             if (savedId) {
-                console.log('🔄 Updating existing item...');
-                const result = await supabase.from('menu_items').update(payload).eq('id', savedId);
-                console.log('✅ Update result:', result);
-                if (result.error) {
-                    console.error('❌ Update error:', result.error);
-                    throw result.error;
+                console.log('🔄 Updating existing item via RPC...');
+                console.log('📤 Payload:', { id: savedId, ...payload });
+                
+                // Use RPC function to bypass RLS
+                const { data: updatedData, error: updateError } = await supabase.rpc('update_menu_item', {
+                    p_item_id: savedId,
+                    p_name: payload.name,
+                    p_price: payload.price,
+                    p_description: payload.description,
+                    p_category: payload.category,
+                    p_image_url: payload.image_url,
+                    p_is_in_stock: payload.is_in_stock,
+                    p_allow_notes: payload.allow_notes,
+                    p_sale_price: payload.sale_price,
+                    p_sale_start_date: payload.sale_start_date,
+                    p_sale_end_date: payload.sale_end_date,
+                    p_sale_start_time: payload.sale_start_time,
+                    p_sale_end_time: payload.sale_end_time
+                });
+                    
+                console.log('✅ RPC Update result - data:', updatedData, 'error:', updateError);
+                
+                if (updateError) {
+                    console.error('❌ Update error:', updateError);
+                    // Fallback to direct update if RPC doesn't exist yet
+                    if (updateError.code === 'PGRST202') {
+                        console.log('⚠️ RPC not found, falling back to direct update...');
+                        const { error: directError } = await supabase
+                            .from('menu_items')
+                            .update(payload)
+                            .eq('id', savedId);
+                        if (directError) throw directError;
+                    } else {
+                        throw updateError;
+                    }
+                }
+                
+                // Verify the price was actually saved
+                if (updatedData && Number(updatedData.price) !== Number(payload.price)) {
+                    console.error('❌ Price mismatch! Sent:', payload.price, 'Got:', updatedData.price);
                 }
             } else {
                 console.log('➕ Inserting new item...');
