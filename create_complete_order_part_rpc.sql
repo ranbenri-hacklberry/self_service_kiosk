@@ -12,12 +12,14 @@ BEGIN
   IF p_keep_order_open THEN
     -- אם יש חלק מושהה, נחזיר את ההזמנה ל-in_progress (או נשאיר אותה חיה)
     UPDATE orders
-    SET order_status = 'in_progress'
+    SET order_status = 'in_progress',
+        ready_at = COALESCE(ready_at, NOW())  -- Ensure ready_at is set
     WHERE id = p_order_id;
   ELSE
     -- אם הכל נמסר, סגור את ההזמנה
     UPDATE orders
-    SET order_status = 'completed'
+    SET order_status = 'completed',
+        ready_at = COALESCE(ready_at, NOW())  -- Ensure ready_at is set
     WHERE id = p_order_id;
   END IF;
 END;
