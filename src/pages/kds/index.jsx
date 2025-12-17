@@ -15,6 +15,7 @@ import { useAuth } from '../../context/AuthContext';
 import { isDrink, isHotDrink, sortItems, groupOrderItems } from '../../utils/kdsUtils';
 import OrderCard from './components/OrderCard';
 import OrderEditModal from './components/OrderEditModal';
+import DateScroller from './components/DateScroller';
 import { useKDSData } from './hooks/useKDSData';
 
 const API_URL =
@@ -123,25 +124,7 @@ const Header = ({
           </button>
         </div>
 
-        {/* Date Picker - Only in History Mode */}
-        <AnimatePresence>
-          {viewMode === 'history' && (
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="flex items-center bg-slate-50 border border-slate-200 rounded-xl p-1 gap-2"
-            >
-              <button onClick={() => changeDate(-1)} className="p-1 hover:bg-white rounded-lg transition text-slate-500"><ChevronRight size={18} /></button>
-              <div className="flex items-center gap-2 px-2 text-sm font-bold text-slate-700 min-w-[120px] justify-center">
-                <Calendar size={14} className="text-slate-400" />
-                {selectedDate.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}
-                {isToday(selectedDate) && <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">היום</span>}
-              </div>
-              <button onClick={() => changeDate(1)} disabled={isToday(selectedDate)} className={`p-1 rounded-lg transition ${isToday(selectedDate) ? 'text-slate-300' : 'hover:bg-white text-slate-500'}`}><ChevronLeft size={18} /></button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Date Picker - REMOVED (Moved to footer) */}
       </div>
 
       <div className="flex items-center gap-3">
@@ -357,9 +340,13 @@ const KdsScreen = () => {
                       />
                     ))
                   )}
+                  ))}
                 </div>
               )}
             </div>
+
+            {/* New Animated Date Scroller */}
+            <DateScroller selectedDate={selectedDate} onSelectDate={setSelectedDate} />
           </div>
         )}
 
