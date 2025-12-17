@@ -953,14 +953,19 @@ export const useKDSData = () => {
                 .abortSignal(signal);
 
             if (!v2Error && v2Data) {
+                console.log('🔍 RAW HISTORY DATA:', v2Data.slice(0, 5)); // First 5 orders
+                console.log('🔍 REFUND CHECK:', v2Data.filter(o => o.is_refund || o.isRefund || o.refund_amount));
+
                 // Filter out cancelled orders (User Request: Hide cancelled orders)
                 // But keep refunded orders
                 historyData = v2Data.filter(o => {
                     const isCancelled = o.order_status === 'cancelled';
                     const isRefunded = o.is_refund || o.isRefund;
-                    return !isCancelled || isRefunded; // Keep refunded orders even if cancelled
+                    const hasRefundAmount = o.refund_amount > 0;
+                    return !isCancelled || isRefunded || hasRefundAmount;
                 });
 
+                console.log('🔍 FILTERED HISTORY DATA:', historyData.slice(0, 3));
                 usedRpc = true;
             } else {
                 if (v2Error.name !== 'AbortError') {

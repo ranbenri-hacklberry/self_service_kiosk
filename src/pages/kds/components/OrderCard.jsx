@@ -11,6 +11,17 @@ const PrepTimer = memo(({ order, isHistory, isReady }) => {
       const startStr = order.created_at;
       const endStr = order.ready_at;
 
+      if (isHistory) {
+        console.log('⏱️ PrepTimer Debug:', {
+          orderId: order.id,
+          startStr,
+          endStr,
+          hasStart: !!startStr,
+          hasEnd: !!endStr,
+          orderKeys: Object.keys(order)
+        });
+      }
+
       if (!startStr || !endStr) {
         setDuration('-');
         return;
@@ -27,6 +38,8 @@ const PrepTimer = memo(({ order, isHistory, isReady }) => {
       const diff = Math.max(0, end - start);
       const mins = Math.floor(diff / 60000);
       setDuration(`${mins}`); // Show only number - clearly minutes
+
+      if (isHistory) console.log(`✅ Duration calculated: ${mins} minutes`);
     };
 
     calculate();
