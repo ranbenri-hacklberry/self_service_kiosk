@@ -249,168 +249,162 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                 </div>
             )}
 
-            {/* Edit Button - Always visible */}
-            <div className="mt-3 pt-3 border-t border-gray-100">
-                <button
-                    onClick={() => setIsEditing(true)}
-                    className="w-full py-2 px-4 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2"
-                >
-                    <Edit2 size={16} />
-                    עריכת פרטי פריט
-                </button>
-            </div>
+            {/* Edit Button - Only when expanded */}
+            {isExpanded && (
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                    <button
+                        onClick={() => setIsEditing(true)}
+                        className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 rounded-lg font-bold text-sm transition-all flex items-center gap-2 border border-blue-100 hover:border-blue-200"
+                        title="עריכת פרטי פריט"
+                    >
+                        <Edit2 size={14} strokeWidth={2} />
+                        עריכת פרטים
+                    </button>
+                </div>
+            )}
         </div>
     );
 
-    // Edit Modal
+    // Edit Modal (Same as Add Item Modal)
     if (isEditing) {
         return (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsEditing(false)}>
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
-                    {/* Header */}
-                    <div className="p-6 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-blue-100 p-2 rounded-full">
-                                <Edit2 size={20} className="text-blue-600" />
-                            </div>
-                            <div>
-                                <h3 className="text-lg font-black text-blue-900">עריכת פריט מלאי</h3>
-                                <p className="text-sm text-blue-600">עדכן את פרטי הפריט</p>
-                            </div>
-                        </div>
+            <>
+                {/* Backdrop */}
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" onClick={() => setIsEditing(false)} />
+
+                {/* Bottom Modal */}
+                <motion.div
+                    initial={{ y: '100%' }}
+                    animate={{ y: 0 }}
+                    exit={{ y: '100%' }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                    className="fixed bottom-0 left-0 right-0 bg-white z-50 rounded-t-3xl shadow-2xl p-0 min-h-[70vh] flex flex-col max-h-[90vh]"
+                    onClick={e => e.stopPropagation()}
+                >
+                    {/* Modal Header */}
+                    <div className="p-6 pb-6 bg-white rounded-t-3xl border-b border-gray-50 shrink-0 relative">
                         <button
                             onClick={() => setIsEditing(false)}
-                            className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                            className="absolute top-6 right-6 w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition-colors"
                         >
                             <X size={20} />
                         </button>
+
+                        <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+                        <h3 className="text-2xl font-black text-slate-800 text-center">עריכת פריט מלאי</h3>
+                        <p className="text-sm text-gray-400 text-center font-bold mt-1">{item.name}</p>
                     </div>
 
-                    {/* Form Content */}
-                    <div className="p-6 space-y-4 max-h-96 overflow-y-auto">
-                        {/* Name */}
-                        <div>
-                            <label className="text-sm font-bold text-gray-600 mb-2 block">שם הפריט</label>
-                            <input
-                                type="text"
-                                value={editData.name}
-                                onChange={e => setEditData({ ...editData, name: e.target.value })}
-                                className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 focus:border-blue-500 outline-none font-bold"
-                                placeholder="שם הפריט..."
-                            />
-                        </div>
+                    {/* Scrollable Form Content */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-8">
 
-                        {/* Unit Type */}
-                        <div>
-                            <label className="text-sm font-bold text-gray-600 mb-2 block">סוג יחידה</label>
-                            <div className="grid grid-cols-2 gap-2">
+                        {/* 1. Basic Details */}
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-sm font-bold text-slate-500 mb-1 block">שם הפריט</label>
+                                <input
+                                    type="text"
+                                    value={editData.name}
+                                    onChange={e => setEditData({ ...editData, name: e.target.value })}
+                                    className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 focus:border-blue-500 outline-none font-bold text-xl text-center"
+                                    placeholder="שם הפריט..."
+                                />
+                            </div>
+
+                            {/* Type Selector (Tabs) */}
+                            <div className="bg-gray-100 p-1.5 rounded-2xl flex">
                                 <button
                                     onClick={() => setEditData({ ...editData, unit: 'יח׳', count_step: 1, min_order: 1, order_step: 1 })}
-                                    className={`p-3 rounded-xl font-bold text-sm transition-all ${
-                                        editData.unit === "יח׳" ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                    }`}
+                                    className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${editData.unit === 'יח׳' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                                 >
-                                    יחידה (יח׳)
+                                    פריט בודד (יח׳)
                                 </button>
                                 <button
                                     onClick={() => setEditData({ ...editData, unit: 'ק״ג', count_step: 0.01, min_order: 0.01, order_step: 0.01 })}
-                                    className={`p-3 rounded-xl font-bold text-sm transition-all ${
-                                        editData.unit === "ק״ג" ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                    }`}
+                                    className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${editData.unit === 'ק״ג' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                                 >
                                     משקל (ק״ג)
                                 </button>
                             </div>
                         </div>
 
-                        {/* Unit Weight (if unit) */}
-                        {editData.unit === "יח׳" && (
-                            <div>
-                                <label className="text-sm font-bold text-gray-600 mb-2 block">משקל יחידה (גרם)</label>
-                                <input
-                                    type="number"
-                                    value={editData.unit_weight_grams}
-                                    onChange={e => setEditData({ ...editData, unit_weight_grams: Number(e.target.value) })}
-                                    className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 focus:border-blue-500 outline-none font-bold"
-                                    placeholder="0"
+                        {/* 2. Configuration Pickers */}
+                        <div className="space-y-3">
+
+                            {/* Unit Weight (Only if Units) - e.g. "Pack of Cookies (200g)" */}
+                            {editData.unit === 'יח׳' && (
+                                <NumberPicker
+                                    label="משקל יחידה (גרם)"
+                                    value={editData.unit_weight_grams || 0}
+                                    onChange={v => setEditData({ ...editData, unit_weight_grams: v })}
+                                    unit="גרם"
+                                    stepSmall={10}
+                                    stepLarge={100}
                                 />
-                            </div>
-                        )}
+                            )}
 
-                        {/* Cost per Unit */}
-                        <div>
-                            <label className="text-sm font-bold text-gray-600 mb-2 block">מחיר ליחידה (₪)</label>
-                            <input
-                                type="number"
-                                step="0.01"
+                            {/* Count Step - Hidden for single units (always 1) */}
+                            {editData.unit !== 'יח׳' && (
+                                <NumberPicker
+                                    label="קפיצות ספירה"
+                                    value={editData.count_step}
+                                    onChange={v => setEditData({ ...editData, count_step: v })}
+                                    unit={editData.unit === 'ק״ג' ? 'גרם' : editData.unit}
+                                    stepSmall={editData.unit === 'ק״ג' ? 0.01 : 1}
+                                    stepLarge={editData.unit === 'ק״ג' ? 0.1 : 10}
+                                    format={v => editData.unit === 'ק״ג' ? (v * 1000).toFixed(0) : v}
+                                />
+                            )}
+
+                            {/* Cost per Unit */}
+                            <NumberPicker
+                                label="מחיר ליחידה"
                                 value={editData.cost_per_unit}
-                                onChange={e => setEditData({ ...editData, cost_per_unit: Number(e.target.value) })}
-                                className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 focus:border-blue-500 outline-none font-bold"
-                                placeholder="0.00"
+                                onChange={v => setEditData({ ...editData, cost_per_unit: v })}
+                                unit="₪"
+                                stepSmall={0.1}
+                                stepLarge={1}
                             />
-                        </div>
 
-                        {/* Count Step */}
-                        <div>
-                            <label className="text-sm font-bold text-gray-600 mb-2 block">צעד ספירה</label>
-                            <input
-                                type="number"
-                                step="0.01"
-                                value={editData.count_step}
-                                onChange={e => setEditData({ ...editData, count_step: Number(e.target.value) })}
-                                className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 focus:border-blue-500 outline-none font-bold"
-                                placeholder="1"
-                            />
-                        </div>
-
-                        {/* Min Order */}
-                        <div>
-                            <label className="text-sm font-bold text-gray-600 mb-2 block">מינימום הזמנה</label>
-                            <input
-                                type="number"
-                                step="0.01"
+                            {/* Min Order */}
+                            <NumberPicker
+                                label="מינימום הזמנה"
                                 value={editData.min_order}
-                                onChange={e => setEditData({ ...editData, min_order: Number(e.target.value) })}
-                                className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 focus:border-blue-500 outline-none font-bold"
-                                placeholder="1"
+                                onChange={v => setEditData({ ...editData, min_order: v })}
+                                unit={editData.unit}
+                                stepSmall={editData.unit === 'ק״ג' ? 0.01 : 1}
+                                stepLarge={editData.unit === 'ק״ג' ? 0.1 : 10}
                             />
-                        </div>
 
-                        {/* Order Step */}
-                        <div>
-                            <label className="text-sm font-bold text-gray-600 mb-2 block">צעד הזמנה</label>
-                            <input
-                                type="number"
-                                step="0.01"
+                            {/* Order Step */}
+                            <NumberPicker
+                                label="צעד הזמנה"
                                 value={editData.order_step}
-                                onChange={e => setEditData({ ...editData, order_step: Number(e.target.value) })}
-                                className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 focus:border-blue-500 outline-none font-bold"
-                                placeholder="1"
+                                onChange={v => setEditData({ ...editData, order_step: v })}
+                                unit={editData.unit}
+                                stepSmall={editData.unit === 'ק״ג' ? 0.01 : 1}
+                                stepLarge={editData.unit === 'ק״ג' ? 0.1 : 10}
                             />
                         </div>
                     </div>
 
-                    {/* Actions */}
-                    <div className="p-6 bg-gray-50 border-t border-gray-100 flex gap-3">
-                        <button
-                            onClick={() => setIsEditing(false)}
-                            className="flex-1 py-3 bg-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-300 transition-colors"
-                        >
-                            ביטול
-                        </button>
-                        <button
-                            onClick={async () => {
-                                if (onItemUpdate) {
-                                    await onItemUpdate(item.id, editData);
-                                }
-                                setIsEditing(false);
-                            }}
-                            className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                        >
-                            <Save size={16} />
-                            שמירה
-                        </button>
-                    </div>
+                    <div className="h-10"></div> {/* Bottom Spacer */}
+                </div>
+
+                {/* Fixed Footer Action */}
+                <div className="p-4 border-t border-gray-100 bg-white shrink-0">
+                    <button
+                        onClick={async () => {
+                            if (onItemUpdate) {
+                                await onItemUpdate(item.id, editData);
+                            }
+                            setIsEditing(false);
+                        }}
+                        className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xl shadow-xl shadow-slate-200 active:scale-[0.98] transition-all"
+                    >
+                        שמור שינויים
+                    </button>
+                </div>
                 </div>
             </div>
         );
@@ -498,6 +492,44 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                     <Edit2 size={16} />
                     עריכת פרטי פריט
                 </button>
+            </div>
+        </div>
+    );
+};
+
+// NumberPicker Component (Same as in InventoryScreen)
+const NumberPicker = ({ value, onChange, label, unit = '', stepSmall = 1, stepLarge = 10, format = (v) => v, min = 0 }) => {
+    const handleChange = (delta) => {
+        const next = Math.max(min, value + delta);
+        // Fix float precision issues
+        onChange(Number(next.toFixed(3)));
+    };
+
+    return (
+        <div className="bg-white rounded-xl border border-gray-100 p-2 shadow-sm flex items-center justify-between gap-2 h-16">
+            {/* Label */}
+            <label className="text-xs font-black text-gray-500 shrink-0 w-20 leading-3 whitespace-normal text-right pl-1 flex items-center h-full">
+                {label}
+            </label>
+
+            <div className="flex items-center gap-2 flex-1 justify-end h-full">
+                {/* Decrease (Horizontal Row) */}
+                <div className="flex gap-1 h-full items-center">
+                    <button onClick={() => handleChange(-stepLarge)} className="w-10 h-10 bg-red-50 text-red-600 rounded-lg font-bold text-xs flex items-center justify-center hover:bg-red-100 transition-colors active:scale-95 leading-none">-{stepLarge < 1 && unit === 'גרם' ? stepLarge * 1000 : stepLarge}</button>
+                    <button onClick={() => handleChange(-stepSmall)} className="w-10 h-10 bg-gray-50 text-gray-600 rounded-lg font-bold text-sm flex items-center justify-center hover:bg-gray-100 transition-colors active:scale-95 leading-none">-{stepSmall < 1 && unit === 'גרם' ? stepSmall * 1000 : stepSmall}</button>
+                </div>
+
+                {/* Value */}
+                <div className="min-w-[4rem] text-center flex flex-col justify-center">
+                    <div className="text-xl font-black text-slate-800 tracking-tight leading-none">{format(value)}</div>
+                    {unit && <div className="text-[10px] font-bold text-gray-400 mt-0.5">{unit}</div>}
+                </div>
+
+                {/* Increase (Horizontal Row) */}
+                <div className="flex gap-1 h-full items-center">
+                    <button onClick={() => handleChange(stepSmall)} className="w-10 h-10 bg-gray-50 text-gray-600 rounded-lg font-bold text-sm flex items-center justify-center hover:bg-gray-100 transition-colors active:scale-95 leading-none">+{stepSmall < 1 && unit === 'גרם' ? stepSmall * 1000 : stepSmall}</button>
+                    <button onClick={() => handleChange(stepLarge)} className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg font-bold text-xs flex items-center justify-center hover:bg-blue-100 transition-colors active:scale-95 leading-none mb-0">+{stepLarge < 1 && unit === 'גרם' ? stepLarge * 1000 : stepLarge}</button>
+                </div>
             </div>
         </div>
     );
