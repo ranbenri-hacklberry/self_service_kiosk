@@ -11,20 +11,36 @@ const PrepTimer = memo(({ order, isHistory, isReady }) => {
       const startStr = order.created_at;
       const endStr = order.ready_at;
 
+      // Debug for history
+      if (isHistory) {
+        console.log('🕐 PrepTimer Debug:', {
+          orderId: order.id,
+          created_at: startStr,
+          ready_at: endStr,
+          hasReadyAt: !!endStr
+        });
+      }
+
       if (!startStr || !endStr) {
-        setDuration('-'); return;
+        setDuration('-');
+        if (isHistory) console.log('❌ Missing data for duration calculation');
+        return;
       }
 
       const start = new Date(startStr).getTime();
       const end = new Date(endStr).getTime();
 
       if (isNaN(start) || isNaN(end)) {
-        setDuration('-'); return;
+        setDuration('-');
+        if (isHistory) console.log('❌ Invalid date format');
+        return;
       }
 
       const diff = Math.max(0, end - start);
       const mins = Math.floor(diff / 60000);
       setDuration(`${mins}ד`); // Show only minutes with Hebrew "ד" for דקות
+
+      if (isHistory) console.log(`✅ Duration calculated: ${mins} minutes`);
     };
 
     calculate();
