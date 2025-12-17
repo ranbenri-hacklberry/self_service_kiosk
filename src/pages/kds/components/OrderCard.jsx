@@ -58,9 +58,19 @@ const OrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPaymentColle
     // Debug log to inspect item structure
     if (idx === 0) console.log('KDS Item Debug:', { name: item.name, mods: item.modifiers, type: typeof item.name });
 
+    // Check if item is marked as early delivered
+    const isEarlyDelivered = item.is_early_delivered || false;
+
     return (
-      <div key={`${item.menuItemId}-${item.modsKey || ''}-${idx}`} className={`flex flex-col ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'}`}>
-        <div className="flex items-start gap-2">
+      <div key={`${item.menuItemId}-${item.modsKey || ''}-${idx}`} className={`flex flex-col ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered ? 'opacity-40' : ''}`}>
+        <div className="flex items-start gap-2 relative">
+          {/* Strikethrough overlay for early delivered items */}
+          {isEarlyDelivered && (
+            <div className="absolute inset-0 flex items-center pointer-events-none z-10">
+              <div className="w-full h-0.5 bg-gray-600 rounded-full" />
+            </div>
+          )}
+
           {/* Quantity Badge */}
           <span className={`flex items-center justify-center w-6 h-6 rounded-lg font-black text-base shadow-sm shrink-0 mt-0 ${item.quantity > 1 ? 'bg-orange-600 text-white ring-2 ring-orange-200' : (isDelayedCard ? 'bg-gray-300 text-gray-600' : 'bg-slate-900 text-white')
             }`}>
@@ -139,30 +149,14 @@ const OrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPaymentColle
     <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl p-3 mx-2 flex flex-col h-full font-heebo ${isDelayedCard ? 'bg-gray-50' : 'bg-white'} ${getStatusStyles(order.orderStatus)} border-x border-b border-gray-100`}>
 
       <div className="flex justify-between items-start mb-2 border-b border-gray-50 pb-1.5">
-        <div className="flex flex-col overflow-hidden">
-          {/* שם לקוח - ענק */}
+        <div className="flex flex-col overflow-hidden flex-1">
+          {/* שם לקוח */}
           <div className="flex items-center gap-2 w-full">
             <div className="flex-1 min-w-0 text-2xl font-black text-slate-900 leading-none tracking-tight truncate" title={order.customerName}>
               {order.customerName}
             </div>
-            {/* Edit Button - In Header */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                console.log('🔘 Edit button clicked for order:', order.id, 'originalOrderId:', order.originalOrderId);
-                if (onEditOrder) {
-                  onEditOrder(order);
-                } else {
-                  console.error('❌ onEditOrder prop is not defined!');
-                }
-              }}
-              className="p-1 rounded-full bg-gray-100 hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors shrink-0"
-              title="ערוך הזמנה"
-            >
-              <Edit size={14} strokeWidth={2.5} />
-            </button>
           </div>
-          {/* מספר הזמנה - קטן */}
+          {/* מספר הזמנה */}
           <div className="flex items-center gap-2 mt-1">
             <span className="text-xs font-bold text-gray-400">#{order.orderNumber}</span>
             {order.isSecondCourse && (
@@ -184,7 +178,23 @@ const OrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPaymentColle
           </div>
         </div>
 
+        {/* Edit Button + Time + Payment Status */}
         <div className="text-left flex flex-col items-end shrink-0 ml-2 gap-1">
+          {/* Edit Button - Compact */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onEditOrder) {
+                onEditOrder(order);
+              }
+            }}
+            className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 rounded-lg font-bold text-xs transition-all flex items-center gap-1 border border-blue-100 hover:border-blue-200"
+            title="ערוך הזמנה"
+          >
+            <Edit size={12} strokeWidth={2.5} />
+            עריכה
+          </button>
+
           <div className="flex items-center gap-1 text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded-md border border-gray-100">
             <Clock size={12} />
             <span className="text-xs font-mono font-bold">{order.timestamp}</span>
@@ -253,7 +263,7 @@ const OrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPaymentColle
             >
               <Trash2 size={20} />
             </button>
-            
+
             {/* כפתור תשלום */}
             <button
               disabled={isUpdating}

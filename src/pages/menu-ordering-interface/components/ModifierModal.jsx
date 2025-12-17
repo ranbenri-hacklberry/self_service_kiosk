@@ -4,7 +4,8 @@ import {
   Cloud, CloudOff, Thermometer, Flame, Droplets,
   Zap, Ban, Puzzle, ArrowUpFromLine, ArrowDownToLine, Blend, Gauge, Apple, Disc
 } from 'lucide-react';
-import { fetchManagerItemOptions } from '@/lib/managerApi';
+import { supabase } from '../../../lib/supabase';
+import { fetchManagerItemOptions, clearOptionsCache, normalizeOptionGroups } from '@/lib/managerApi';
 
 const formatPrice = (price = 0) => {
   const numPrice = Number(price);
@@ -65,6 +66,17 @@ const getIconForValue = (valueName, groupName) => {
   // Special icons
   if (name.includes('נטול')) return Ban;
   if (name.includes('מפורק')) return Puzzle;
+
+  // Food / Topping Fallbacks (catch-all if group name doesn't match)
+  if (name.includes('עגבנ')) return Apple;
+  if (name.includes('זית')) return Disc;
+  if (name.includes('בצל')) return Disc;
+  if (name.includes('פטריות')) return Disc;
+  if (name.includes('גבינה') || name.includes('בולגרית') || name.includes('פרוסה')) return Disc;
+  if (name.includes('טונה')) return Disc;
+  if (name.includes('תירס')) return Wheat;
+  if (name.includes('פלפל') || name.includes('חריף')) return Flame;
+  if (name.includes('ביצה')) return Disc;
 
   return Coffee;
 };
@@ -159,6 +171,8 @@ const ModifierModal = (props) => {
     }
 
     const loadOptions = async () => {
+      console.log('🏁 ModifierModal useEffect STARTED for:', selectedItem?.name, 'ID:', selectedItem?.id);
+
       try {
         setIsLoadingOptions(true);
         // Determine the correct ID to fetch options for
@@ -166,7 +180,9 @@ const ModifierModal = (props) => {
         // If it's a new item from menu, id is the menu_item_id.
         const targetItemId = selectedItem.menu_item_id || selectedItem.id;
 
-        // Check cache first
+        // LocalStorage cache check removed to prevent stale data issues
+
+        // Check cache (from props)
         if (props.optionsCache && props.optionsCache[targetItemId]) {
           console.log('⚡ Using Cached Options for:', selectedItem.name);
           const cachedOptions = props.optionsCache[targetItemId];
@@ -190,8 +206,63 @@ const ModifierModal = (props) => {
           return;
         }
 
-        console.log('🔄 Fetching Options from DB for:', selectedItem.name, 'ID:', targetItemId);
-        const fetchedOptions = await fetchManagerItemOptions(targetItemId);
+
+        console.log('🔄 Fetching Options from DB (Direct) for:', selectedItem.name, 'ID:', targetItemId);
+
+        // Fetch from Supabase Direct
+        let fetchedOptions = [];
+        try {
+          // 1. Get linked groups
+          const { data: linked } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', targetItemId);
+          const linkedIds = linked?.map(l => l.group_id) || [];
+
+          // 2. Query groups
+          // Combine: Private groups (menu_item_id match) OR Linked groups (id in linkedIds)
+          let query = supabase.from('optiongroups')
+            .select('*, optionvalues(*)')
+            .order('name');
+
+          const orCond = [`menu_item_id.eq.${targetItemId}`];
+          if (linkedIds.length > 0) {
+            orCond.push(`id.in.(${linkedIds.join(',')})`);
+          }
+          query = query.or(orCond.join(','));
+
+          const { data: rawGroups, error } = await query;
+
+          console.log('🔍 Modifier Debug:', {
+            itemId: targetItemId,
+            linkedGroupIds: linkedIds,
+            orCondition: orCond.join(','),
+            foundGroupsCount: rawGroups?.length || 0,
+            foundGroupsNames: rawGroups?.map(g => g.name)
+          });
+
+          if (error) {
+            console.warn("Supabase query error, retrying without OR if empty?");
+            throw error;
+          }
+
+          // Map min_selection to required AND optionvalues to values
+          const enhancedRawGroups = rawGroups?.map(g => ({
+            ...g,
+            values: g.optionvalues, // Fix: Map Supabase relation to expected key
+            is_required: g.is_required || (g.min_selection > 0) // Polyfill required
+          }));
+
+          console.log('🔍 Raw DB Values for first group:', enhancedRawGroups?.[0]?.values?.map(v => ({
+            name: v.value_name,
+            price: v.price,
+            price_adjustment: v.price_adjustment
+          })));
+
+          fetchedOptions = normalizeOptionGroups(enhancedRawGroups);
+        } catch (err) {
+          console.error('Supabase fetch failed:', err);
+          fetchedOptions = [];
+        }
+
+        // const fetchedOptions = await fetchManagerItemOptions(targetItemId);
 
         // Combine with injected extra groups (e.g. for Salad Prep)
         const allOptions = [...(fetchedOptions || []), ...(props.extraGroups || [])];
@@ -292,11 +363,17 @@ const ModifierModal = (props) => {
           }
         }
 
+        // --- FIXED DEFAULT LOGIC ---
         const defaultVal = group.values?.find(v => v.is_default) ||
-          group.values?.find(v => v.name?.includes('רגיל')) ||
-          group.values?.[0];
+          group.values?.find(v => v.name?.includes('רגיל'));
 
-        if (defaultVal) defaults[group.id] = String(defaultVal.id);
+        if (defaultVal) {
+          defaults[group.id] = String(defaultVal.id);
+        } else if (group.required) {
+          // Only auto-select first option if the group is REQUIRED
+          const firstVal = group.values?.[0];
+          if (firstVal) defaults[group.id] = String(firstVal.id);
+        }
       });
 
       setOptionSelections(defaults);
@@ -590,6 +667,7 @@ const ModifierModal = (props) => {
                         const IconComponent = getIconForValue(value.name, 'milk');
                         const isSelected = String(optionSelections[milkGroup.id]) === String(value.id);
                         const effectivePrice = value.priceAdjustment || 0;
+                        if (effectivePrice > 0) console.log(`🥛 Milk option price: ${value.name} = ${effectivePrice}`);
 
                         return (
                           <MilkCard
@@ -764,6 +842,7 @@ const ModifierModal = (props) => {
                       <h4 className="text-sm font-black text-slate-800 px-1">{group.name}</h4>
                       <div className={`grid gap-2 ${isMultipleSelect ? 'grid-cols-3' : visibleOptions.length <= 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
                         {visibleOptions.map(value => {
+                          const IconComponent = getIconForValue(value.name, group.name);
                           const valueIdStr = String(value.id);
                           let isSelected;
                           if (isMultipleSelect) {
@@ -776,6 +855,7 @@ const ModifierModal = (props) => {
                           }
 
                           const effectivePrice = value.priceAdjustment || 0;
+                          if (effectivePrice > 0) console.log(`🍕 Option price: ${value.name} (Group: ${group.name}) = ${effectivePrice}`);
 
                           return (
                             <button
@@ -790,14 +870,11 @@ const ModifierModal = (props) => {
                                 }
                               `}
                             >
-                              {(() => {
-                                const groupLower = (group.title || group.name || '').toLowerCase();
-                                const valueName = (value.name || value.value_name || '').toLowerCase();
-
-                                // Use emojis for toppings, icons for everything else
-                                const IconComponent = getIconForValue(value.name || value.value_name, group.title || group.name);
-                                return <IconComponent size={24} strokeWidth={isSelected ? 2.5 : 2} className={`transition-transform duration-200 ${isSelected ? "scale-110" : ""}`} />;
-                              })()}
+                              <IconComponent
+                                size={24}
+                                strokeWidth={isSelected ? 2.5 : 2}
+                                className={`transition-transform duration-200 ${isSelected ? "scale-110" : ""}`}
+                              />
                               <span className="text-sm text-center">{value.name || value.value_name}</span>
                               {effectivePrice > 0 && (
                                 <span className={`text-xs font-medium ${isSelected ? "text-orange-500" : "text-slate-400"}`}>

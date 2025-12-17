@@ -101,6 +101,15 @@ export const fetchManagerItemOptions = async (itemId: string | number): Promise<
   return normalized;
 };
 
+// Clear cache for a specific item or all items
+export const clearOptionsCache = (itemId?: string | number) => {
+  if (itemId) {
+    delete optionsCache[String(itemId)];
+  } else {
+    Object.keys(optionsCache).forEach(key => delete optionsCache[key]);
+  }
+};
+
 export const fetchInventoryItems = async () => {
   const { data, error } = await supabase
     .from('inventory_items')

@@ -27,7 +27,7 @@ const NewCustomerNameCollectionScreen = () => {
   const location = useLocation();
   const inputRef = useRef(null);
 
-  const { phoneNumber: phoneNumberFromState, customerId } = location?.state || {};
+  const { phoneNumber: phoneNumberFromState, customerId, returnToCart } = location?.state || {};
   const [resolvedPhoneNumber, setResolvedPhoneNumber] = useState(phoneNumberFromState || '');
 
   useEffect(() => {
@@ -138,7 +138,8 @@ const NewCustomerNameCollectionScreen = () => {
       navigate('/menu-ordering-interface', {
         state: {
           customer: customerData,
-          isNewCustomer: true
+          isNewCustomer: true,
+          isReturningAfterCustomerAdd: returnToCart === true
         }
       });
     } catch (err) {

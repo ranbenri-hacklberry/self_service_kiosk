@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock } from 'lucide-react';
+import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, UserPlus } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 // Utility function to shorten modifier names for display
@@ -136,19 +136,19 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay }) => {
 
             {/* Left Side: Actions */}
             <div className="flex items-center gap-2 pl-1">
-                {/* Delay Toggle Button - DISABLED FOR NOW */}
-                {/* {onToggleDelay && (
+                {/* Delay Toggle Button - ENABLED */}
+                {onToggleDelay && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onToggleDelay(item.id, item.signature); }}
                         className={`p-3 rounded-xl transition-all shrink-0 shadow-sm border active:scale-95 ${item.isDelayed
                             ? 'text-white bg-amber-500 border-amber-600 hover:bg-amber-600 shadow-amber-200'
                             : 'text-gray-400 bg-white border-gray-200 hover:text-amber-500 hover:bg-amber-50 hover:border-amber-200'
                             }`}
-                        title={item.isDelayed ? "הכן עכשיו" : "הגש אחר כך"}
+                        title={item.isDelayed ? "הכן עכשיו" : "הגש אחר כך (מנה שניה)"}
                     >
                         <Clock size={24} strokeWidth={2.5} className={item.isDelayed ? "fill-white/20" : ""} />
                     </button>
-                )} */}
+                )}
 
                 {onRemove && (
                     <button
@@ -170,6 +170,7 @@ const SmartCart = ({
     onEditItem,
     onInitiatePayment,
     onToggleDelay,
+    onAddCustomerDetails,
     className = '',
     isEditMode = false,
     editingOrderData,
@@ -299,6 +300,17 @@ const SmartCart = ({
     const showCredits = credits > 0;
     const progressToNext = points % 10;
 
+    // Helper to determine if we have a REAL customer (ignoring "Quick Order" placeholder)
+    const hasRealCustomer = customerName && customerName !== 'הזמנה מהירה';
+
+    // DEBUG: Check why button isn't showing
+    console.log('🛒 SmartCart Debug:', {
+        hasCustomerName: !!customerName,
+        customerName,
+        hasRealCustomer,
+        hasAddHandler: !!onAddCustomerDetails
+    });
+
     return (
         <div className={`flex flex-col h-full bg-white ${className}`}>
             {/* Header */}
@@ -310,12 +322,24 @@ const SmartCart = ({
                             <ShoppingBag className="w-5 h-5 text-orange-600" />
                         </div>
                         <div className="flex flex-col items-start gap-1">
+                            {/* Title Line */}
                             <h2 className="text-xl font-black text-gray-800 tracking-tight">
-                                {customerName || (orderNumber ? `#${orderNumber}` : 'הזמנה מהירה')}
+                                {hasRealCustomer ? customerName : (orderNumber ? `#${orderNumber}` : 'הזמנה מהירה')}
                             </h2>
 
-                            {/* Loyalty Badge - BELOW title */}
-                            {(() => {
+                            {/* Add Customer Details Button - Premium Style (Compact, Orange, No Icon) */}
+                            {!hasRealCustomer && onAddCustomerDetails && (
+                                <button
+                                    onClick={onAddCustomerDetails}
+                                    className="px-3 py-1.5 rounded-lg bg-orange-50 text-orange-700 border border-orange-100 shadow-sm hover:shadow-md hover:bg-orange-100 transition-all duration-200 active:scale-95 font-bold w-fit text-xs"
+                                    title="הוסף פרטי לקוח"
+                                >
+                                    הוסף פרטי לקוח
+                                </button>
+                            )}
+
+                            {/* Loyalty Badge - BELOW title - Only show when customer is identified */}
+                            {hasRealCustomer && (() => {
                                 // Calculate projected points
                                 let cartCoffeeCount = cartItems.reduce((sum, item) =>
                                     item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
@@ -410,7 +434,7 @@ const SmartCart = ({
                                 );
                             })()}
                         </div>
-                        {orderNumber && (
+                        {orderNumber && customerName && (
                             <div className="bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
                                 <span className="text-xs text-blue-600 font-bold block text-center leading-none mb-0.5">הזמנה</span>
                                 <span className="text-lg font-black text-blue-700 leading-none">#{orderNumber}</span>

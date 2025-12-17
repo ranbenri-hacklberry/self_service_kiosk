@@ -29,6 +29,25 @@ const MenuItemCard = ({ item, onAddToCart }) => {
 
 
 
+  // Helper to optimize image URLs (mainly for Unsplash)
+  const optimizeImageUrl = (url, width = 400) => {
+    if (!url) return null;
+    try {
+      if (url.includes('images.unsplash.com')) {
+        // Create a URL object to handle existing params robustly
+        const urlObj = new URL(url);
+        urlObj.searchParams.set('w', width);
+        urlObj.searchParams.set('q', '75'); // Slightly lower quality for better speed
+        urlObj.searchParams.set('auto', 'format');
+        urlObj.searchParams.set('fit', 'crop');
+        return urlObj.toString();
+      }
+    } catch (e) {
+      console.warn('Failed to optimize image URL:', url);
+    }
+    return url;
+  };
+
   return (
     <div
       onClick={handleClick}
@@ -44,7 +63,7 @@ const MenuItemCard = ({ item, onAddToCart }) => {
       {/* Item Image - Takes up remaining space */}
       <div className="flex-1 relative overflow-hidden bg-gray-50">
         <Image
-          src={item?.image}
+          src={optimizeImageUrl(item?.image)}
           alt={item?.name}
           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
         />

@@ -54,21 +54,42 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
         return false;
     }, []);
 
-    // Fetch menu items from Supabase
+    // Fetch menu items from Supabase with Caching
     const fetchMenuItems = useCallback(async () => {
+        const targetBusinessId = businessId || '11111111-1111-1111-1111-111111111111';
+        const CACHE_KEY = `menu_items_cache_${targetBusinessId}`;
+        const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+        // 1. Try to load from Cache first
+        try {
+            const cachedRaw = sessionStorage.getItem(CACHE_KEY);
+            if (cachedRaw) {
+                const cached = JSON.parse(cachedRaw);
+                const age = Date.now() - cached.timestamp;
+
+                if (age < CACHE_DURATION) {
+                    console.log('⚡ Using cached menu items');
+                    setRawMenuData(cached.data);
+                    setMenuLoading(false); // Show immediately
+                    return; // Skip network fetch if cache is fresh
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to read menu cache', e);
+        }
+
+        // 2. Network Fetch (if no cache or expired)
         try {
             setMenuLoading(true);
             setError(null);
 
-            // Default to Pilot Cafe if no business ID provided
-            const targetBusinessId = businessId || '11111111-1111-1111-1111-111111111111';
-
-            console.log('🍽️ Fetching menu items for business:', targetBusinessId);
+            console.log('🍽️ Fetching menu items from network for:', targetBusinessId);
 
             let query = supabase
                 .from('menu_items')
-                .select('*')
-                .eq('business_id', targetBusinessId)  // <--- FILTER ADDED
+                .select('id, name, price, category, image_url, is_hot_drink, kds_routing_logic, allow_notes, is_in_stock, description')
+                .eq('business_id', targetBusinessId)
+                .not('is_in_stock', 'eq', false)
                 .order('category', { ascending: true })
                 .order('name', { ascending: true });
 
@@ -78,11 +99,32 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
                 throw new Error(`Supabase error: ${fetchError.message}`);
             }
 
-            // Store raw data - transformation happens in useMemo below
-            setRawMenuData(data || []);
+            const cleanData = data || [];
+
+            // Update State
+            setRawMenuData(cleanData);
+
+            // Update Cache
+            try {
+                sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+                    timestamp: Date.now(),
+                    data: cleanData
+                }));
+            } catch (e) {
+                console.warn('Failed to save menu to cache', e);
+            }
+
         } catch (err) {
             console.error('Unexpected error:', err);
             setError('שגיאה בטעינת התפריט. אנא נסה שוב.');
+
+            // Fallback: Use expired cache if network fails
+            const cachedRaw = sessionStorage.getItem(CACHE_KEY);
+            if (cachedRaw) {
+                const cached = JSON.parse(cachedRaw);
+                setRawMenuData(cached.data);
+                console.log('⚠️ Network failed, using expired cache');
+            }
         } finally {
             setMenuLoading(false);
         }

@@ -142,7 +142,8 @@ export const useCart = (initialItems = []) => {
                         quantity: item.quantity,
                         signature: getCartItemSignature(updatedItem),
                         tempId: item.tempId || uuidv4(),
-                        isDelayed: item.isDelayed
+                        isDelayed: item.isDelayed,
+                        originalStatus: item.originalStatus // Preserve original backend status
                     };
                 }
                 return item;

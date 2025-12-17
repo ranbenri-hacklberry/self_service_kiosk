@@ -12,6 +12,7 @@ import StaffQuickAccessModal from '../../components/StaffQuickAccessModal';
 import { useAuth } from '../../context/AuthContext';
 import { isDrink, isHotDrink, sortItems, groupOrderItems } from '../../utils/kdsUtils';
 import OrderCard from './components/OrderCard';
+import OrderEditModal from './components/OrderEditModal';
 import { useKDSData } from './hooks/useKDSData';
 import KDSInventoryScreen from './components/KDSInventoryScreen';
 import TaskManagementView from '../../components/kds/TaskManagementView';
@@ -187,7 +188,7 @@ const KdsScreen = () => {
         .eq('is_active', true);
 
       console.log(`📋 Raw tasks fetched:`, rawTasks?.length || 0, 'Error:', error?.message || 'none');
-      
+
       // Filter by category client-side (to avoid Hebrew encoding issues)
       const allTasks = (rawTasks || []).filter(t => categoryList.includes(t.category));
       console.log(`📋 Filtered to categories ${categoryList.join(', ')}:`, allTasks.length);
@@ -216,7 +217,7 @@ const KdsScreen = () => {
         .from('task_completions')
         .select('recurring_task_id')
         .eq('completion_date', dateStr);
-      
+
       if (logsError) {
         console.warn('⚠️ Could not fetch task completions:', logsError.message);
       }
@@ -290,10 +291,10 @@ const KdsScreen = () => {
   useEffect(() => {
     if (viewMode === 'tasks_prep') {
       console.log('📋 Tasks view active, fetching all task types...');
-      
+
       // Always fetch prep tasks
       fetchPrepBatches();
-      
+
       // Logic: Opening starts 3 hours before 9:00 = 06:00.
       // Closing starts at 15:00.
       const isClosingPhase = currentHour >= 15; // 3 PM
@@ -343,16 +344,19 @@ const KdsScreen = () => {
 
   // renderInventoryOrdersView removed - replaced by KDSInventoryScreen component
 
+  // State for Order Edit Modal
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
   const handleEditOrder = (order) => {
-    console.log('🖊️ KDS: Editing order:', order);
-    console.log('🆔 KDS: Using order ID:', order.originalOrderId || order.id);
-    console.log('📋 KDS: Order object keys:', Object.keys(order));
-    navigate('/menu-ordering-interface', {
-      state: {
-        orderId: order.originalOrderId || order.id,
-        isEditMode: true
-      }
-    });
+    console.log('🖊️ KDS: Opening edit modal for order:', order);
+    setEditingOrder(order);
+    setIsEditModalOpen(true);
+  };
+
+  const handleCloseEditModal = () => {
+    setIsEditModalOpen(false);
+    setEditingOrder(null);
   };
 
   return (
@@ -380,7 +384,7 @@ const KdsScreen = () => {
                 בטיפול ({currentOrders.length})
               </div>
               <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-4 custom-scrollbar">
-                <div className="flex h-full flex-row-reverse justify-end gap-4 items-stretch">
+                <div className="flex h-full flex-row justify-start gap-4 items-stretch">
                   {currentOrders.map(order => (
                     <OrderCard
                       key={order.id} order={order}
@@ -403,7 +407,7 @@ const KdsScreen = () => {
                 מוכן למסירה ({completedOrders.length})
               </div>
               <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-4 custom-scrollbar">
-                <div className="flex h-full flex-row-reverse justify-end gap-4 items-stretch">
+                <div className="flex h-full flex-row justify-start gap-4 items-stretch">
                   {completedOrders.map(order => (
                     <OrderCard
                       key={order.id} order={order} isReady={true}
@@ -491,6 +495,14 @@ const KdsScreen = () => {
         <StaffQuickAccessModal
           isOpen={isStaffModalOpen}
           onClose={() => setIsStaffModalOpen(false)}
+        />
+
+        {/* Order Edit Modal */}
+        <OrderEditModal
+          isOpen={isEditModalOpen}
+          order={editingOrder}
+          onClose={handleCloseEditModal}
+          onRefresh={fetchOrders}
         />
       </div>
     </div>

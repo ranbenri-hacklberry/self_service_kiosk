@@ -3,6 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import { X, Save, Check, Trash2, Image as ImageIcon, Plus, Power, GripHorizontal, PlusCircle, Loader2, DollarSign, ChevronDown, CheckCircle, ArrowRight, Package, Minus, Search, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
+import { fetchManagerItemOptions, clearOptionsCache } from '@/lib/managerApi';
 
 // Reusable animated accordion section to prevent layout jumps
 const AnimatedSection = ({ show, children }) => (
@@ -153,7 +154,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         }
     }, [formData, components, deletedComponentIds, allGroups, deletedOptionIds]);
 
-    // Auto-Save Effect
+    // Auto-Save Effect - must listen to ALL data sources that can be dirty
     useEffect(() => {
         if (isDirty) {
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -162,7 +163,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             }, 2000); // 2s Auto-Save
         }
         return () => clearTimeout(saveTimeoutRef.current);
-    }, [formData, isDirty]);
+    }, [formData, isDirty, allGroups, components, deletedOptionIds, deletedComponentIds]);
 
 
     useEffect(() => {
@@ -203,74 +204,172 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const fetchModifiers = async () => {
         console.log('🔍 fetchModifiers called for item:', item?.id);
         try {
-            // Fetch groups that are either linked via menuitemoptions OR owned by this item (private groups)
-            // 1. Get linked group IDs
+            let relevantGroups = [];
             let linkedGroupIds = new Set();
+
+            // Method 0: Check localStorage cache first (workaround for RLS)
             if (item?.id) {
-                console.log('🔗 Fetching linked groups for item:', item.id);
-                const { data: linked, error: linkedError } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', item.id);
-                console.log('🔗 Linked groups result:', linked, 'error:', linkedError);
-                if (linkedError) {
-                    console.error('❌ Error fetching menuitemoptions:', linkedError);
+                try {
+                    // Check localStorage cache - DISABLED to force fresh fetch
+                    /*
+                    const cachedStr = localStorage.getItem(`modifiers_${menuItemId}`);
+                    if (cachedStr) {
+                        const cached = JSON.parse(cachedStr);
+                        if (cached && cached.timestamp > Date.now() - 1000 * 60 * 60) { // 1 hour cache
+                            console.log('📦 Using cached modifiers from localStorage:', cached.groups.length, 'groups');
+                            setAllGroups(cached.groups);
+                             // Auto-select linked groups
+                            const linked = new Set(cached.groups.map(g => g.id));
+                            setSelectedGroupIds(linked);
+                            setLoading(false);
+                            return;
+                        }
+                    }
+                    */
+                } catch (e) {
+                    console.warn('Could not read localStorage cache:', e);
                 }
-                linked?.forEach(l => linkedGroupIds.add(l.group_id));
-                console.log('🔗 Linked group IDs:', [...linkedGroupIds]);
             }
 
-            // 2. Fetch ALL groups from the system (Try without RLS first using .select())
-            console.log('📋 Fetching all optiongroups...');
-            
-            // First, try to fetch groups that are specifically linked to this item
-            let relevantGroups = [];
-            
-            // Method A: Fetch groups by linked IDs directly
-            if (linkedGroupIds.size > 0) {
-                const linkedIdsArray = Array.from(linkedGroupIds);
-                console.log('📋 Fetching linked groups by IDs:', linkedIdsArray);
-                const { data: linkedGroups, error: linkedGroupsError } = await supabase.from('optiongroups')
-                    .select(`*, is_food, is_drink, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
-                    .in('id', linkedIdsArray);
-                
-                if (linkedGroupsError) {
-                    console.error('❌ Error fetching linked optiongroups:', linkedGroupsError);
-                } else {
-                    console.log('📋 Linked groups found:', linkedGroups?.length, linkedGroups?.map(g => g.name));
-                    relevantGroups = [...relevantGroups, ...(linkedGroups || [])];
-                }
-            }
-            
-            // Method B: Fetch private groups owned by this item
+            // Method 1: Try Supabase FIRST (fresh data, no caching issues)
             if (item?.id) {
-                console.log('📋 Fetching private groups for item:', item.id);
-                const { data: privateGroups, error: privateGroupsError } = await supabase.from('optiongroups')
-                    .select(`*, is_food, is_drink, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
+                console.log('🔗 Fetching linked groups from Supabase for item:', item.id);
+                const { data: linked, error: linkError } = await supabase
+                    .from('menuitemoptions')
+                    .select('group_id')
+                    .eq('item_id', item.id);
+
+                if (linkError) {
+                    console.error('❌ Error fetching menuitemoptions:', linkError);
+                }
+
+                linked?.forEach(l => linkedGroupIds.add(l.group_id));
+                console.log('📋 Found linked group IDs:', Array.from(linkedGroupIds));
+
+                if (linkedGroupIds.size > 0) {
+                    // Try optiongroups first
+                    const { data: linkedGroups, error } = await supabase.from('optiongroups')
+                        .select(`*, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
+                        .in('id', Array.from(linkedGroupIds));
+
+                    if (error) {
+                        console.error('❌ Error fetching linked groups:', error);
+                    } else if (linkedGroups && linkedGroups.length > 0) {
+                        relevantGroups = linkedGroups;
+                    } else {
+                        // If optiongroups RLS blocks us, try optionvalues directly
+                        console.log('📋 Trying optionvalues directly...');
+                        const { data: directValues, error: valuesError } = await supabase.from('optionvalues')
+                            .select('*')
+                            .in('group_id', Array.from(linkedGroupIds));
+
+                        if (valuesError) {
+                            console.error('❌ Error fetching optionvalues:', valuesError);
+                        } else if (directValues && directValues.length > 0) {
+                            console.log('✅ Got optionvalues directly:', directValues.length);
+                            // Build groups from values
+                            const groupMap = new Map();
+                            for (const val of directValues) {
+                                if (!groupMap.has(val.group_id)) {
+                                    groupMap.set(val.group_id, {
+                                        id: val.group_id,
+                                        name: 'תוספות', // Default name
+                                        optionvalues: []
+                                    });
+                                }
+                                groupMap.get(val.group_id).optionvalues.push(val);
+                            }
+                            relevantGroups = Array.from(groupMap.values());
+                        }
+                    }
+                    console.log('📋 Supabase returned:', relevantGroups.length, 'groups');
+                }
+
+                // Also fetch private groups
+                const { data: privateGroups } = await supabase.from('optiongroups')
+                    .select(`*, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
                     .eq('menu_item_id', item.id);
-                
-                if (privateGroupsError) {
-                    console.error('❌ Error fetching private optiongroups:', privateGroupsError);
-                } else {
-                    console.log('📋 Private groups found:', privateGroups?.length, privateGroups?.map(g => g.name));
-                    // Add only if not already in list (avoid duplicates)
+
+                if (privateGroups?.length) {
+                    console.log('📋 Found private groups:', privateGroups.length);
                     const existingIds = new Set(relevantGroups.map(g => g.id));
-                    relevantGroups = [...relevantGroups, ...(privateGroups || []).filter(g => !existingIds.has(g.id))];
+                    relevantGroups = [...relevantGroups, ...privateGroups.filter(g => !existingIds.has(g.id))];
                 }
             }
-            
-            console.log('📋 Total relevant groups:', relevantGroups.length, relevantGroups.map(g => ({id: g.id, name: g.name, menu_item_id: g.menu_item_id, optionvalues: g.optionvalues?.length})));
+
+            // Method 2: If Supabase returned nothing, try external API as fallback
+            if (relevantGroups.length === 0 && item?.id) {
+                try {
+                    console.log('🌐 Supabase returned 0 groups, trying external API:', item.id);
+                    const apiGroups = await fetchManagerItemOptions(item.id);
+                    console.log('🌐 API returned:', apiGroups?.length, 'groups');
+
+                    if (apiGroups && apiGroups.length > 0) {
+                        // Get group IDs from API
+                        const groupIds = apiGroups.map(g => g.id);
+                        console.log('🔄 Re-fetching fresh optionvalues from Supabase for group IDs:', groupIds);
+
+                        // Fetch fresh data from Supabase using the API group IDs
+                        const { data: freshGroups, error: freshError } = await supabase.from('optiongroups')
+                            .select(`*, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
+                            .in('id', groupIds);
+
+                        if (freshError) {
+                            console.error('❌ Error fetching fresh groups:', freshError);
+                            // Fall back to API data if Supabase fails
+                            relevantGroups = apiGroups.map(g => ({
+                                id: g.id,
+                                name: g.title || g.name,
+                                is_food: g.category === 'food',
+                                is_drink: g.category === 'drink',
+                                optionvalues: (g.values || []).map(v => ({
+                                    id: v.id,
+                                    value_name: v.name,
+                                    price_adjustment: v.priceAdjustment || v.price || 0,
+                                    is_default: v.is_default,
+                                    display_order: 0
+                                }))
+                            }));
+                        } else if (freshGroups && freshGroups.length > 0) {
+                            console.log('✅ Got fresh data from Supabase:', freshGroups.length, 'groups');
+                            relevantGroups = freshGroups;
+                        } else {
+                            console.log('⚠️ Supabase returned empty, using API data');
+                            // Fall back to API data
+                            relevantGroups = apiGroups.map(g => ({
+                                id: g.id,
+                                name: g.title || g.name,
+                                is_food: g.category === 'food',
+                                is_drink: g.category === 'drink',
+                                optionvalues: (g.values || []).map(v => ({
+                                    id: v.id,
+                                    value_name: v.name,
+                                    price_adjustment: v.priceAdjustment || v.price || 0,
+                                    is_default: v.is_default,
+                                    display_order: 0
+                                }))
+                            }));
+                        }
+                        relevantGroups.forEach(g => linkedGroupIds.add(g.id));
+                    }
+                } catch (apiError) {
+                    console.warn('⚠️ API also failed:', apiError);
+                }
+            }
+
+            console.log('📋 Total relevant groups:', relevantGroups.length);
 
             // Sort optionvalues and set allGroups
-            const processedGroups = relevantGroups.map(g => ({ 
-                ...g, 
-                optionvalues: g.optionvalues?.sort((a, b) => (a.display_order || 0) - (b.display_order || 0)) || [] 
+            const processedGroups = relevantGroups.map(g => ({
+                ...g,
+                optionvalues: (g.optionvalues || []).sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
             }));
-            
+
             setAllGroups(processedGroups);
             console.log('✅ setAllGroups called with:', processedGroups.length, 'groups');
 
-            // All fetched groups should be selected (they're all relevant to this item)
-            const allGroupIds = new Set(processedGroups.map(g => g.id));
-            console.log('✅ Setting selectedGroupIds to:', [...allGroupIds]);
-            setSelectedGroupIds(allGroupIds);
+            // Auto-select linked groups
+            setSelectedGroupIds(new Set(processedGroups.map(g => g.id)));
         } catch (e) {
             console.error('❌ fetchModifiers error:', e);
         }
@@ -424,7 +523,13 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         })));
     };
 
-    // --- PICKER LOGIC ---
+    // Update group settings (min_select, max_select for required/multi-select)
+    const handleUpdateGroup = (groupId, updates) => {
+        setAllGroups(prev => prev.map(group =>
+            group.id === groupId ? { ...group, ...updates } : group
+        ));
+    };
+
     const openPickerForGroup = (groupId) => {
         setPickerMode('add_to_group');
         setPickerTargetGroupId(groupId);
@@ -835,8 +940,16 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         let activeRecipeId = selectedRecipeId;
         if (!activeRecipeId) {
             const { data: existing } = await supabase.from('recipes').select('id').eq('menu_item_id', menuItemId).maybeSingle();
-            if (existing) { activeRecipeId = existing.id; }
-            else { const { data } = await supabase.from('recipes').insert({ menu_item_id: menuItemId, name: 'Default' }).select().single(); activeRecipeId = data.id; }
+            if (existing) {
+                activeRecipeId = existing.id;
+            } else {
+                const { data, error } = await supabase.from('recipes').insert({ menu_item_id: menuItemId, preparation_quantity: 1 }).select().single();
+                if (error || !data) {
+                    console.warn('⚠️ Could not create recipe, skipping recipe data save:', error);
+                    return; // Skip saving recipe data if we can't create a recipe
+                }
+                activeRecipeId = data.id;
+            }
         }
         const idsToDelete = Array.from(deletedComponentIds).filter(id => typeof id === 'number');
         if (idsToDelete.length) await supabase.from('recipe_ingredients').delete().in('id', idsToDelete);
@@ -871,68 +984,99 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     };
 
     const saveOptionsData = async (menuItemId) => {
+        console.log('💾 saveOptionsData called, allGroups:', allGroups.length);
+
         // 1. Delete options marked for deletion
         const idsToDelete = Array.from(deletedOptionIds).filter(id => typeof id === 'number');
         if (idsToDelete.length) {
+            console.log('🗑️ Deleting options:', idsToDelete);
             await supabase.from('optionvalues').delete().in('id', idsToDelete);
         }
 
         // 2. Process all groups and their options
         for (const group of allGroups) {
+            console.log('📦 Processing group:', group.name, 'options:', group.optionvalues?.length);
+
             // If group is new (temp ID), insert it first
             let currentGroupId = group.id;
             if (typeof group.id === 'string' && group.id.startsWith('temp_')) {
                 const { data: newGroup, error: groupError } = await supabase.from('optiongroups').insert({
                     name: group.name,
                     menu_item_id: group.menu_item_id,
+                    is_required: group.is_required || false,
+                    is_multiple_select: group.is_multiple_select || false,
                     is_food: group.is_food,
                     is_drink: group.is_drink,
-                    min_select: group.min_select,
-                    max_select: group.max_select,
                     display_order: group.display_order
                 }).select().single();
                 if (groupError) { console.error('Error inserting new group:', groupError); continue; }
                 currentGroupId = newGroup.id;
             } else {
-                // Update existing group properties if needed (e.g., min_select, max_select)
-                await supabase.from('optiongroups').update({
+                // Update existing group properties
+                const { error: updateError } = await supabase.from('optiongroups').update({
                     name: group.name,
+                    is_required: group.is_required || false,
+                    is_multiple_select: group.is_multiple_select || false,
                     is_food: group.is_food,
                     is_drink: group.is_drink,
-                    min_select: group.min_select,
-                    max_select: group.max_select,
                     display_order: group.display_order
                 }).eq('id', currentGroupId);
+                if (updateError) console.error('❌ Error updating group:', updateError);
             }
 
             // Process options within this group
             for (const option of group.optionvalues || []) {
+                console.log('📝 Processing option:', option.value_name, 'price:', option.price_adjustment, 'id:', option.id);
+
                 if (typeof option.id === 'string' && option.id.startsWith('temp_')) {
                     // Insert new option
-                    await supabase.from('optionvalues').insert({
+                    const { error } = await supabase.from('optionvalues').insert({
                         group_id: currentGroupId,
                         value_name: option.value_name,
-                        price_adjustment: Number(option.price_adjustment),
+                        price_adjustment: Number(option.price_adjustment ?? option.priceAdjustment ?? option.price ?? 0),
                         is_default: option.is_default,
                         display_order: option.display_order,
                         inventory_item_id: option.inventory_item_id,
                         quantity: option.quantity
                     });
+                    if (error) console.error('❌ Error inserting option:', error);
+                    else console.log('✅ Inserted new option');
                 } else if (!deletedOptionIds.has(option.id)) {
-                    // Update existing option (if not marked for deletion)
-                    await supabase.from('optionvalues').update({
+                    // Update/Upsert existing option
+                    const finalPrice = Number(option.price_adjustment ?? option.priceAdjustment ?? option.price ?? 0);
+                    console.log(`💾 Upserting Option ${option.value_name} (ID: ${option.id}) with Price: ${finalPrice}`);
+
+                    const { error } = await supabase.from('optionvalues').upsert({
+                        id: option.id,
+                        group_id: currentGroupId,
                         value_name: option.value_name,
-                        price_adjustment: Number(option.price_adjustment),
+                        price_adjustment: finalPrice,
                         is_default: option.is_default,
                         display_order: option.display_order,
                         inventory_item_id: option.inventory_item_id,
                         quantity: option.quantity
-                    }).eq('id', option.id);
+                    });
+
+                    if (error) console.error('❌ Error upserting option:', error);
+                    else console.log(`✅ Upserted option: ${option.id}`);
                 }
             }
         }
         // Clear deletedOptionIds after successful save
         setDeletedOptionIds(new Set());
+        // Clear the API cache so next fetch gets fresh data from DB
+        clearOptionsCache(menuItemId);
+        // Cache the current state in localStorage (workaround for RLS blocking SELECT)
+        try {
+            localStorage.setItem(`modifiers_${menuItemId}`, JSON.stringify({
+                groups: allGroups,
+                timestamp: Date.now()
+            }));
+            console.log('💾 Cached modifiers to localStorage for item:', menuItemId);
+        } catch (e) {
+            console.warn('Could not cache to localStorage:', e);
+        }
+        console.log('💾 saveOptionsData completed');
     };
 
     const handleImageUpload = async (e) => { const file = e.target.files[0]; if (!file) return; try { const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${file.name.split('.').pop()}`; await supabase.storage.from('menu-images').upload(fileName, file); const { data } = supabase.storage.from('menu-images').getPublicUrl(fileName); setFormData(prev => ({ ...prev, image_url: data.publicUrl })); } catch (e) { alert('Upload failed'); } };
@@ -987,12 +1131,26 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             console.log('✅ Delete result:', deleteResult);
 
             if (selectedGroupIds.size > 0) {
-                const links = Array.from(selectedGroupIds).map(gid => ({ item_id: savedId, group_id: gid }));
-                console.log('🔗 Inserting new menuitemoptions:', links);
-                const insertResult = await supabase.from('menuitemoptions').insert(links);
-                console.log('✅ Insert result:', insertResult);
-                if (insertResult.error) {
-                    console.error('❌ Insert error:', insertResult.error);
+                // Filter out private groups that are already linked by ownership (menu_item_id)
+                // We only want to insert links for SHARED groups.
+                const links = Array.from(selectedGroupIds)
+                    .filter(gid => {
+                        const group = allGroups.find(g => g.id === gid);
+                        // If group is owned by this item, do NOT add to menuitemoptions (it's already linked).
+                        // If group is not owned (shared) or not found in local state, DO add it.
+                        return !group || String(group.menu_item_id) !== String(savedId);
+                    })
+                    .map(gid => ({ item_id: savedId, group_id: gid }));
+
+                if (links.length > 0) {
+                    console.log('🔗 Inserting new menuitemoptions (shared only):', links);
+                    const insertResult = await supabase.from('menuitemoptions').insert(links);
+                    console.log('✅ Insert result:', insertResult);
+                    if (insertResult.error) {
+                        console.error('❌ Insert error:', insertResult.error);
+                    }
+                } else {
+                    console.log('🔗 No shared groups to link (all selected groups are private).');
                 }
             } else {
                 console.log('⚠️ No selected groups to insert');
@@ -1032,9 +1190,19 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             setLastSavedTime(new Date());
             setIsDirty(false);
 
+            // Build the updated item for immediate UI update
+            const updatedItem = {
+                ...item,
+                id: savedId,
+                ...payload
+            };
+
             if (!silent) {
                 setSaveBanner({ name: payload.name });
-                setTimeout(() => { onSave?.(); onClose(); }, 1000);
+                setTimeout(() => { onSave?.(updatedItem); onClose(); }, 1000);
+            } else {
+                // Silent save - still update parent with new data for immediate UI sync
+                onSave?.(updatedItem);
             }
         } catch (e) { console.error(e); if (!silent) alert('שגיאה בשמירה'); }
         finally { setLoading(false); setIsSaving(false); }
@@ -1546,7 +1714,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                 Debug: allGroups={allGroups.length}, selectedGroupIds={selectedGroupIds.size}, sortedGroups={sortedGroups.length}
                                             </div>
                                         )}
-                                        
+
                                         <label onClick={(e) => { e.preventDefault(); setFormData(p => ({ ...p, allow_notes: !p.allow_notes })); }} className="flex items-center gap-4 p-4 border border-gray-100 rounded-2xl cursor-pointer bg-gray-50/50 hover:bg-gray-50 transition-colors">
                                             <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${formData.allow_notes ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300 bg-white'}`}>
                                                 {formData.allow_notes && <Check size={16} strokeWidth={3} />}
@@ -1589,6 +1757,28 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                             </button>
                                                         )}
                                                     </div>
+                                                </div>
+
+                                                {/* Group Settings Row - Re-added with verified columns */}
+                                                <div className="flex items-center gap-4 px-4 py-2 bg-gray-50/50 border-b border-gray-100">
+                                                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={group.is_required || false}
+                                                            onChange={(e) => handleUpdateGroup(group.id, { is_required: e.target.checked })}
+                                                            className="w-4 h-4 accent-blue-600 rounded"
+                                                        />
+                                                        <span className="text-xs font-bold text-gray-600">חובה לבחור</span>
+                                                    </label>
+                                                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={group.is_multiple_select || false}
+                                                            onChange={(e) => handleUpdateGroup(group.id, { is_multiple_select: e.target.checked })}
+                                                            className="w-4 h-4 accent-blue-600 rounded"
+                                                        />
+                                                        <span className="text-xs font-bold text-gray-600">אפשר כמה בחירות</span>
+                                                    </label>
                                                 </div>
 
                                                 <div className="space-y-2 p-3">
@@ -1697,8 +1887,26 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                                                         );
                                                                                     })()}
 
+                                                                                    {/* Default Option Checkbox */}
+                                                                                    <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${ov.is_default ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-100 hover:bg-white'}`}>
+                                                                                        <div className="relative flex items-center mt-0.5">
+                                                                                            <input
+                                                                                                type="checkbox"
+                                                                                                checked={ov.is_default || false}
+                                                                                                onChange={(e) => handleUpdateOption(ov.id, { is_default: e.target.checked })}
+                                                                                                className="peer w-4 h-4 accent-blue-600 rounded bg-white border-gray-300"
+                                                                                            />
+                                                                                        </div>
+                                                                                        <div className="flex flex-col">
+                                                                                            <span className={`text-xs font-bold ${ov.is_default ? 'text-blue-700' : 'text-gray-700'}`}>ברירת מחדל</span>
+                                                                                            <span className="text-[10px] text-gray-400 leading-tight mt-0.5">
+                                                                                                {ov.is_default ? 'תוספת זו נבחרת אוטומטית' : 'הלקוח יבחר ידנית'}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    </label>
+
                                                                                     {/* Replacement Checkbox - Original Design */}
-                                                                                    <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all flex-1 ${ov.is_replacement ? 'bg-teal-50 border-teal-200' : 'bg-gray-50 border-gray-100 hover:bg-white'}`}>
+                                                                                    <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${ov.is_replacement ? 'bg-teal-50 border-teal-200' : 'bg-gray-50 border-gray-100 hover:bg-white'}`}>
                                                                                         <div className="relative flex items-center mt-0.5">
                                                                                             <input
                                                                                                 type="checkbox"

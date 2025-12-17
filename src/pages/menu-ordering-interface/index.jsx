@@ -103,13 +103,88 @@ const MenuOrderingInterface = () => {
     }
   }, [location.state]);
 
+  // --- Restore Cart State after adding customer mid-order ---
+  useEffect(() => {
+    const pendingCartStateRaw = sessionStorage.getItem('pendingCartState');
+    if (pendingCartStateRaw) {
+      try {
+        console.log('🔄 Restoring cart state after customer identification...');
+        const pendingCartState = JSON.parse(pendingCartStateRaw);
+
+        // Restore cart items
+        if (pendingCartState.cartItems && pendingCartState.cartItems.length > 0) {
+          cartSetItems(pendingCartState.cartItems);
+          console.log('🛒 Restored cart items:', pendingCartState.cartItems.length);
+        }
+
+        // Restore modifier options cache
+        // modifierOptionsCache restoration removed to ensure fresh prices
+
+        // Restore edit mode if applicable
+        if (pendingCartState.isEditMode && pendingCartState.editingOrderData) {
+          setIsEditMode(true);
+          setEditingOrderData(pendingCartState.editingOrderData);
+        }
+
+        // Clear the pending state
+        sessionStorage.removeItem('pendingCartState');
+        console.log('✅ Cart state restored successfully');
+
+        // Update currentCustomer from localStorage (should be set by phone/name screens)
+        const storedCustomer = localStorage.getItem('currentCustomer');
+        if (storedCustomer) {
+          const customer = JSON.parse(storedCustomer);
+          setCurrentCustomer(customer);
+          console.log('👤 Updated customer:', customer.name);
+        }
+      } catch (error) {
+        console.error('❌ Error restoring cart state:', error);
+        sessionStorage.removeItem('pendingCartState');
+      }
+    }
+
+    // --- CLEANUP SCRIPT FOR DUPLICATE LINKS (ITEMS 7, 8, 9) ---
+    const runCleanup = async () => {
+      const targetIds = [7, 8, 9];
+      console.log('🧹 RUNNING DUPLICATE CHECK & CLEANUP FOR:', targetIds);
+
+      for (const itemId of targetIds) {
+        // 1. Get groups that are OWNED by this item
+        const { data: ownedGroups } = await supabase.from('optiongroups').select('id, name').eq('menu_item_id', itemId);
+
+        if (ownedGroups && ownedGroups.length > 0) {
+          for (const group of ownedGroups) {
+            // 2. Check if this owned group is ALSO linked in menuitemoptions
+            const { data: links } = await supabase.from('menuitemoptions')
+              .select('id')
+              .eq('item_id', itemId)
+              .eq('group_id', group.id);
+
+            if (links && links.length > 0) {
+              console.log(`⚠️ Found DUPLICATE link for group "${group.name}" (ID: ${group.id}) on item ${itemId}. Removing link...`);
+              // 3. Delete the redundant link
+              await supabase.from('menuitemoptions')
+                .delete()
+                .eq('item_id', itemId)
+                .eq('group_id', group.id);
+              console.log('✅ Link removed. Now strictly private.');
+            }
+          }
+        }
+      }
+      console.log('🏁 Cleanup finished.');
+    };
+    runCleanup();
+    // -------------------------------------------------------------
+  }, []);
+
   const fetchOrderForEditing = async (orderId) => {
     try {
       setIsLoading(true);
 
       // Validate orderId format
       console.log('🔍 Fetching order for editing, ID:', orderId, 'Type:', typeof orderId);
-      
+
       if (!orderId || typeof orderId !== 'string') {
         console.error('❌ Invalid orderId:', orderId);
         throw new Error('מזהה הזמנה לא תקין');
@@ -135,7 +210,12 @@ const MenuOrderingInterface = () => {
       if (order?.order_items) {
         console.log('📦 Fetched Order Items from DB:', order.order_items.length);
         console.log('💰 Fetched Order Total:', order.total_amount);
-        console.log('📦 Items details:', order.order_items.map(i => ({ id: i.id, name: i.menu_items?.name })));
+        console.log('📦 Items details:', order.order_items.map(i => ({
+          id: i.id,
+          name: i.menu_items?.name,
+          course_stage: i.course_stage,
+          item_status: i.item_status
+        })));
       }
 
       if (error) {
@@ -150,6 +230,40 @@ const MenuOrderingInterface = () => {
 
       console.log('✅ Order fetched successfully:', order.id);
 
+      // WORKAROUND: Fetch course_stage AND item_status directly from table because RPC likely misses it or returns stale data
+      let itemsStageMap = {};
+      let itemsStatusMap = {};
+
+      try {
+        const { data: rawItemsData } = await supabase
+          .from('order_items')
+          .select('id, course_stage, item_status')
+          .eq('order_id', cleanOrderId);
+
+        if (rawItemsData) {
+          rawItemsData.forEach(item => {
+            itemsStageMap[item.id] = item.course_stage;
+            itemsStatusMap[item.id] = item.item_status;
+          });
+          console.log('Data fetched directly:', { stages: itemsStageMap, statuses: itemsStatusMap });
+        }
+      } catch (e) {
+        console.error('Failed to fetch stages directly:', e);
+      }
+
+      // Merge stage info into RPC result
+      if (order.order_items) {
+        order.order_items.forEach(item => {
+          if (itemsStageMap[item.id] !== undefined) {
+            item.course_stage = itemsStageMap[item.id];
+          }
+          // Override status if we have fresh data
+          if (itemsStatusMap[item.id] !== undefined) {
+            item.item_status = itemsStatusMap[item.id];
+          }
+        });
+      }
+
       // Set customer if exists
       if (order.customer_phone) {
         const { data: customer, error: customerError } = await supabase
@@ -157,7 +271,7 @@ const MenuOrderingInterface = () => {
           .select('*')
           .eq('phone', order.customer_phone)
           .maybeSingle(); // Changed from .single() to avoid PGRST116
-        
+
         if (customerError) {
           console.warn('⚠️ Customer fetch warning:', customerError);
         }
@@ -247,6 +361,7 @@ const MenuOrderingInterface = () => {
             selectedOptions: selectedOptions,
             notes: item.notes,
             isDelayed: item.course_stage === 2, // Restore the flag!
+            originalStatus: item.item_status, // Keep track of backend status (e.g. in_progress)
             tempId: uuidv4() // Ensure stable ID for React keys
           };
         });
@@ -1014,6 +1129,28 @@ const MenuOrderingInterface = () => {
     setShowPaymentModal(true);
   };
 
+  // Handler for adding customer details mid-order
+  const handleAddCustomerDetails = () => {
+    console.log('👤 Adding customer details mid-order...');
+
+    // Save current cart state to sessionStorage
+    const cartState = {
+      cartItems: cartItems,
+      cartHistory: cartHistory,
+      editingOrderData: editingOrderData,
+      isEditMode: isEditMode
+      // modifierOptionsCache removed to ensure fresh data on return
+    };
+    sessionStorage.setItem('pendingCartState', JSON.stringify(cartState));
+
+    // Navigate to phone input screen with returnToCart flag
+    navigate('/customer-phone-input-screen', {
+      state: {
+        returnToCart: true
+      }
+    });
+  };
+
   // Handle payment selection and order creation
   const handlePaymentSelect = async (orderData) => {
     console.log('🚀 ========== START handlePaymentSelect ==========');
@@ -1134,6 +1271,17 @@ const MenuOrderingInterface = () => {
 
           const orderItemId = isUUID(item.id) ? item.id : null;
 
+          const finalStatus = item.isDelayed
+            ? (item.originalStatus === 'in_progress' ? 'in_progress' : 'pending')
+            : 'in_progress';
+
+          console.log('🛡️ Save Status Check:', {
+            name: item.name,
+            isDelayed: item.isDelayed,
+            originalStatus: item.originalStatus,
+            finalStatus
+          });
+
           return {
             item_id: itemId, // menu_item_id (integer)
             order_item_id: orderItemId, // UUID for existing item, null for new items
@@ -1146,7 +1294,8 @@ const MenuOrderingInterface = () => {
               ...((item.custom_note || item.mods?.custom_note) ? [`__NOTE__:${item.custom_note || item.mods.custom_note}`] : [])
             ],
             notes: item.notes || null,
-            item_status: item.isDelayed ? 'pending' : 'in_progress'
+            item_status: finalStatus,
+            course_stage: item.isDelayed ? 2 : 1
           };
         });
 
@@ -1203,7 +1352,8 @@ const MenuOrderingInterface = () => {
               ...((item.custom_note || item.mods?.custom_note) ? [`__NOTE__:${item.custom_note || item.mods.custom_note}`] : [])
             ],
             notes: item.notes || null,
-            item_status: item.isDelayed ? 'pending' : 'in_progress'
+            item_status: item.isDelayed ? 'pending' : 'in_progress',
+            course_stage: item.isDelayed ? 2 : 1
           };
         });
         cancelledItems = [];   // לא רלוונטי
@@ -1629,6 +1779,7 @@ const MenuOrderingInterface = () => {
               onEditItem={handleEditCartItem}
               onInitiatePayment={handleInitiatePayment}
               onToggleDelay={handleToggleDelay}
+              onAddCustomerDetails={handleAddCustomerDetails}
               orderNumber={isEditMode && editingOrderData?.orderNumber ? editingOrderData.orderNumber : null}
               isEditMode={isEditMode}
               editingOrderData={editingOrderData}
@@ -1670,8 +1821,9 @@ const MenuOrderingInterface = () => {
             setSelectedItemForMod(null);
           }}
           onAddItem={handleAddItemWithModifiers}
-          optionsCache={modifierOptionsCache}
-          onCacheUpdate={setModifierOptionsCache}
+          // Caching disabled to fix price sync issues
+          // optionsCache={modifierOptionsCache}
+          // onCacheUpdate={setModifierOptionsCache}
           // Prevent auto-add for food items OR items with allow_notes enabled so user can add notes
           allowAutoAdd={!isFoodItem(selectedItemForMod) && selectedItemForMod?.allow_notes === false}
           // Inject extra options for Salads (CONDITIONAL logic)

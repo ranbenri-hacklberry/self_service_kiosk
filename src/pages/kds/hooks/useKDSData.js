@@ -3,6 +3,7 @@ import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../context/AuthContext';
 import { sendSms } from '../../../services/smsService';
 import { groupOrderItems } from '../../../utils/kdsUtils';
+import { v4 as uuidv4 } from 'uuid';
 
 export const useKDSData = () => {
     const { currentUser } = useAuth();
@@ -56,16 +57,116 @@ export const useKDSData = () => {
 
             console.log(`📦 [useKDSData] Total orders fetched: ${ordersData?.length || 0}`);
 
+            // WORKAROUND: The RPC might filter out 'ready' items from 'in_progress' orders.
+            // We need to fetch 'ready' items manually for these orders to show split courses in "Completed".
+            if (ordersData && ordersData.length > 0) {
+                const orderIds = ordersData.map(o => o.id);
+                try {
+                    const { data: readyItems } = await supabase
+                        .from('order_items')
+                        .select('id, mods, notes, item_status, course_stage, quantity, order_id, menu_items!inner(name, price, kds_routing_logic, is_prep_required)')
+                        .in('order_id', orderIds)
+                        .in('item_status', ['ready', 'completed']); // Fetch both ready and completed items
+
+                    if (readyItems && readyItems.length > 0) {
+                        // Merge ready items into active orders
+                        ordersData.forEach(order => {
+                            // Only add if not already present
+                            // Note: order.order_items is the property name here based on common usage above
+                            if (!order.order_items) order.order_items = [];
+
+                            const missingItems = readyItems.filter(ri =>
+                                ri.order_id === order.id &&
+                                !order.order_items.some(oi => oi.id === ri.id)
+                            );
+
+                            if (missingItems.length > 0) {
+                                console.log(`🧩 Merging ${missingItems.length} missing ready items into order ${order.id}`);
+
+                                // Map using the joined menu_items data
+                                const mappedItems = missingItems.map(mi => ({
+                                    ...mi,
+                                    // Ensure menu_items structure matches what the processing loop expects
+                                    menu_items: mi.menu_items || { name: 'Unknown', price: 0 },
+                                    course_stage: mi.course_stage,
+                                    item_status: 'ready'
+                                }));
+
+                                order.order_items = [...order.order_items, ...mappedItems];
+                            }
+                        });
+                    }
+                } catch (mergeErr) {
+                    console.error('Error merging ready items:', mergeErr);
+                }
+            }
+
+            // FAILSAFE: Fetch recently completed orders (last 60 mins) to prevent them from disappearing
+            // This handles cases where 'complete_order_part_v2' closes the order despite our flag,
+            // or if the order was legitimately completed but we still want to show it in 'Ready' for a bit.
+            try {
+                const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+                // We need to match the structure of 'get_kds_orders' RPC result roughly
+                const { data: recentCompleted } = await supabase
+                    .from('orders')
+                    .select(`
+                        id, order_number, customer_name, customer_phone, is_paid, total_amount, paid_amount, created_at, fired_at, ready_at, order_status,
+                        order_items (
+                            id, quantity, item_status, course_stage, price, mods, notes, item_fired_at,
+                            menu_items (id, name, price, kds_routing_logic, is_prep_required)
+                        )
+                    `)
+                    .eq('order_status', 'completed')
+                    .gt('updated_at', oneHourAgo)
+                    .order('updated_at', { ascending: false });
+
+                if (recentCompleted && recentCompleted.length > 0) {
+                    console.log(`🛡️ Failsafe: Found ${recentCompleted.length} recent completed orders`);
+
+                    // Merge into ordersData, avoiding duplicates
+                    if (!ordersData) ordersData = [];
+                    const existingIds = new Set(ordersData.map(o => o.id));
+
+                    const mappedRecent = recentCompleted.filter(o => !existingIds.has(o.id)).map(o => {
+                        // Ensure order_items structure is compatible
+                        // The direct select returns menu_items object inside.
+                        // Our processing loop expects it.
+                        return o;
+                    });
+
+                    ordersData = [...ordersData, ...mappedRecent];
+                }
+            } catch (failsafeErr) {
+                console.error('Error fetching recent completed orders:', failsafeErr);
+            }
+
             const processedOrders = [];
 
             (ordersData || []).forEach(order => {
-                // SAFETY CHECK: If order is completed AND paid, skip it immediately.
-                if (order.order_status === 'completed' && order.is_paid) return;
+                // SAFETY CHECK: If order is completed, only show if it was updated recently.
+                // This prevents old history (paid or unpaid) from cluttering the KDS active view.
+                if (order.order_status === 'completed') {
+                    const updatedTime = new Date(order.updated_at || order.created_at).getTime();
+                    const now = Date.now();
+                    const diff = now - updatedTime;
+                    const maxAge = 60 * 60 * 1000;
+
+                    // DEBUG LOG for filtering
+                    if (diff > maxAge) {
+                        // console.log(`🗑️ Filtering old completed order ${order.id.slice(0, 6)}: Age ${Math.round(diff/1000/60)} mins`);
+                        return;
+                    } else {
+                        console.log(`✅ Keeping recent completed order ${order.id.slice(0, 6)}: Age ${Math.round(diff / 1000 / 60)} mins`);
+                    }
+                }
 
                 // Filter items logic
                 const rawItems = (order.order_items || [])
                     .filter(item => {
-                        if (item.item_status === 'cancelled' || item.item_status === 'completed' || !item.menu_items?.name) return false;
+                        // Allow 'completed' items to pass (they will be shown as Ready)
+                        // Only filter cancelled or missing name
+                        if (item.item_status === 'cancelled' || !item.menu_items?.name) return false;
 
                         const kdsLogic = item.menu_items.kds_routing_logic;
                         const isPrepRequired = item.menu_items.is_prep_required;
@@ -162,7 +263,8 @@ export const useKDSData = () => {
                             category: category,
                             modsKey: modsKey, // מפתח לאיחוד פריטים זהים
                             course_stage: item.course_stage || 1,
-                            item_fired_at: item.item_fired_at
+                            item_fired_at: item.item_fired_at,
+                            is_early_delivered: item.is_early_delivered || false
                         };
 
                     });
@@ -239,7 +341,9 @@ export const useKDSData = () => {
 
                     const hasHeldItems = stageItems.some(i => i.status === 'held' || i.status === 'pending');
                     const hasActiveItems = stageItems.some(i => i.status === 'in_progress' || i.status === 'new');
-                    const allReady = stageItems.every(i => i.status === 'ready');
+                    // Treat 'completed' items as ready for KDS display purposes (so they appear in the bottom section)
+                    const allReady = stageItems.every(i => i.status === 'ready' || i.status === 'completed' || i.status === 'cancelled');
+                    // Note: If all are cancelled, it might also be 'ready' (done), or filtered out earlier. Assuming mixed cancelled/ready is ready.
 
                     let cardType, cardStatus;
                     if (allReady) {
@@ -276,13 +380,37 @@ export const useKDSData = () => {
 
             // Sort current
             current.sort((a, b) => {
+                // Sort by fired_at time (effective start time)
+                // If not fired yet (null), use creation timestamp
+
+                // Note: a.fired_at is a string from DB, a.timestamp is a localized string formatted above!
+                // We need the raw ISO timestamp for sorting accurately.
+                // Fortunately, we can grab it from order.created_at or similar if we preserved it, 
+                // but wait - processedOrders object has 'fired_at' which acts as the source of truth here.
+                // Let's rely on 'fired_at' being set correctly in the mapping loop.
+
+                const getSortTime = (o) => {
+                    if (o.fired_at) return new Date(o.fired_at).getTime();
+                    // Fallback to parsing the localized timestamp is bad. 
+                    // Let's use the ID timestamp if possible or better yet, ensure raw timestamp is passed.
+                    // Actually, let's fix the mapping to include rawTimestamp.
+                    return 0;
+                };
+
+                // Better approach: Use the raw values which we have in specific fields
+                // In mapping loop: fired_at: stageItems[0]?.item_fired_at || order.created_at
+
+                const timeA = new Date(a.fired_at).getTime();
+                const timeB = new Date(b.fired_at).getTime();
+
+                if (Math.abs(timeA - timeB) > 1000) { // If distinct times (>1s diff)
+                    return timeA - timeB;
+                }
+
+                // If times are roughly same (e.g. initial load), put Stage 2 after Stage 1 (Left of it in RTL)
                 const stageA = a.courseStage || 1;
                 const stageB = b.courseStage || 1;
-                if (stageA !== stageB) return stageA - stageB;
-
-                const timeA = new Date(a.timestamp).getTime();
-                const timeB = new Date(b.timestamp).getTime();
-                return timeA - timeB;
+                return stageA - stageB;
             });
 
             // Completed/Ready Section
@@ -339,14 +467,38 @@ export const useKDSData = () => {
     };
 
     const updateOrderStatus = async (orderId, currentStatus) => {
+        console.log('🔄 updateOrderStatus called:', { orderId, currentStatus });
         try {
             if (currentStatus === 'undo_ready') {
-                const realOrderId = typeof orderId === 'string' && orderId.endsWith('-ready') ? orderId.replace('-ready', '') : orderId;
-                const { error } = await supabase.rpc('update_order_status', {
-                    p_order_id: realOrderId, // Ensure UUID
-                    p_status: 'in_progress'
-                });
-                if (error) throw error;
+                // Find the specific card/order-part in completedOrders
+                const orderPart = completedOrders.find(o => o.id === orderId);
+                const realOrderId = typeof orderId === 'string' ? orderId.replace(/-stage-\d+/, '').replace('-ready', '') : orderId;
+
+                if (orderPart && orderPart.items && orderPart.items.length > 0) {
+                    // Collect specific item IDs from this card
+                    const itemIdsToRevert = orderPart.items.flatMap(i => i.ids || [i.id]);
+
+                    console.log('↺ Reverting specific items to in_progress:', itemIdsToRevert);
+
+                    // Use fire_items_v2 to set these specific items to 'in_progress'
+                    // This prevents touching other items (like held Course 2 items)
+                    const { error } = await supabase.rpc('fire_items_v2', {
+                        p_order_id: realOrderId,
+                        p_item_ids: itemIdsToRevert
+                    });
+
+                    if (error) throw error;
+                } else {
+                    // Fallback (unsafe): Update whole order if we can't find specific items
+                    // This creates the bug, but better than doing nothing if state is elusive
+                    console.warn('⚠️ Could not find items for undo, reverting entire order status (unsafe)');
+                    const { error } = await supabase.rpc('update_order_status', {
+                        p_order_id: realOrderId,
+                        p_status: 'in_progress'
+                    });
+                    if (error) throw error;
+                }
+
                 await fetchOrders();
                 return;
             }
@@ -366,9 +518,7 @@ export const useKDSData = () => {
                     handleSendSms(orderId, order.customerName, order.customerPhone);
                 }
             } else if (statusLower === 'ready') {
-                const realOrderId = typeof orderId === 'string' && orderId.endsWith('-ready')
-                    ? orderId.replace('-ready', '')
-                    : orderId;
+                const realOrderId = typeof orderId === 'string' ? orderId.replace(/-stage-\d+/, '').replace('-ready', '') : orderId;
 
                 const hasActiveOrDelayedParts = currentOrders.some(o =>
                     (o.type === 'delayed' || o.type === 'active') &&
@@ -388,8 +538,8 @@ export const useKDSData = () => {
                 });
 
                 if (error) throw error;
-
-                setLastAction({ orderId: realOrderId, previousStatus: 'ready' });
+                // Capture IDs for precise undo
+                setLastAction({ orderId: realOrderId, previousStatus: 'ready', itemIds: itemIds });
                 await fetchOrders();
                 return;
 
@@ -399,11 +549,36 @@ export const useKDSData = () => {
             }
 
             if (nextStatus === 'ready') {
-                const { error } = await supabase.rpc('mark_order_ready_v2', {
-                    p_order_id: orderId
-                });
-                if (error) throw error;
-                setLastAction({ orderId, previousStatus: 'in_progress' });
+                const realOrderId = typeof orderId === 'string' ? orderId.replace(/-stage-\d+/, '').replace('-ready', '') : orderId;
+
+                // Collect item IDs from the specific card we are marking ready
+                // We need to find the card in currentOrders
+                const card = currentOrders.find(o => o.id === orderId);
+                let itemIdsToReady = [];
+                if (card && card.items) {
+                    itemIdsToReady = card.items.flatMap(i => i.ids || [i.id]);
+                }
+
+                if (itemIdsToReady.length > 0) {
+                    // Direct update blocked by RLS, using complete_order_part_v2 RPC instead
+                    // Always keep order open when marking ready, so it stays in KDS "Ready" view (bottom)
+                    // It will only be closed when moved to "Delivered/Archive"
+                    const { error } = await supabase.rpc('complete_order_part_v2', {
+                        p_order_id: String(realOrderId).trim(),
+                        p_item_ids: itemIdsToReady,
+                        p_keep_order_open: true
+                    });
+                    if (error) throw error;
+                } else {
+                    // Fallback (unsafe) if we can't find items
+                    console.warn('⚠️ Could not find items for ready mark, falling back to whole order (unsafe)');
+                    const { error } = await supabase.rpc('mark_order_ready_v2', {
+                        p_order_id: realOrderId
+                    });
+                    if (error) throw error;
+                }
+
+                setLastAction({ orderId: realOrderId, previousStatus: 'in_progress', itemIds: itemIdsToReady });
             } else {
                 // CHANGED: Use supabase directly
                 const { error } = await supabase
@@ -487,11 +662,54 @@ export const useKDSData = () => {
         if (!lastAction) return;
         setIsLoading(true);
         try {
-            const { error } = await supabase.rpc('update_order_status', {
-                p_order_id: lastAction.orderId,
-                p_status: lastAction.previousStatus
-            });
-            if (error) throw error;
+            // Targeted Undo using specific Item IDs
+            if (lastAction.itemIds && lastAction.itemIds.length > 0) {
+                console.log('↺ Targeted Undo:', lastAction);
+
+                if (lastAction.previousStatus === 'ready') {
+                    // Revert from Completed -> Ready
+                    // Retrieve realOrderId from stored orderId (which implies stripping suffix if present, though lastAction.orderId should be clean usually)
+                    // But safe to clean again just in case
+                    const realOrderId = typeof lastAction.orderId === 'string'
+                        ? lastAction.orderId.replace(/-stage-\d+/, '').replace('-ready', '')
+                        : lastAction.orderId;
+
+                    // Determine keep_open. If returning to READY, usually keeps open if not fully fully archived. 
+                    // Let's assume false or calculate? Since we can't easily calculating from here without full state, 
+                    // Let's use false because Ready usually means "Done with kitchen".
+                    // HOWEVER, if we have other active items, we might need true.
+                    // Ideally we should know. But complete_order_part_v2 is forgiving.
+                    const { error } = await supabase.rpc('complete_order_part_v2', {
+                        p_order_id: String(realOrderId).trim(),
+                        p_item_ids: lastAction.itemIds,
+                        p_keep_order_open: true // Must keep open to show in Ready section
+                    });
+                    if (error) throw error;
+                } else if (lastAction.previousStatus === 'in_progress') {
+                    // Revert from Ready -> In Progress
+                    const { error } = await supabase.rpc('fire_items_v2', {
+                        p_order_id: lastAction.orderId,
+                        p_item_ids: lastAction.itemIds
+                    });
+                    if (error) throw error;
+                } else {
+                    // Fallback for other statuses
+                    const { error } = await supabase.rpc('update_order_status', {
+                        p_order_id: lastAction.orderId,
+                        p_status: lastAction.previousStatus
+                    });
+                    if (error) throw error;
+                }
+            } else {
+                // Legacy / Fallback for whole order undo
+                console.warn('⚠️ Legacy Undo (Whole Order) for:', lastAction.orderId);
+                const { error } = await supabase.rpc('update_order_status', {
+                    p_order_id: lastAction.orderId,
+                    p_status: lastAction.previousStatus
+                });
+                if (error) throw error;
+            }
+
             setLastAction(null);
             await fetchOrders();
         } catch (err) {
@@ -518,7 +736,7 @@ export const useKDSData = () => {
             });
 
             if (error) throw error;
-            
+
             await fetchOrders();
         } catch (err) {
             console.error('❌ Error confirming payment:', err);
@@ -553,7 +771,7 @@ export const useKDSData = () => {
                 .eq('id', cleanOrderId);
 
             if (error) throw error;
-            
+
             // Also cancel all order items
             await supabase
                 .from('order_items')
@@ -621,7 +839,7 @@ export const useKDSData = () => {
         // Generate or retrieve device ID
         let deviceId = localStorage.getItem('kds_device_id');
         if (!deviceId) {
-            deviceId = 'kds_' + crypto.randomUUID();
+            deviceId = 'kds_' + uuidv4();
             localStorage.setItem('kds_device_id', deviceId);
         }
 
@@ -657,7 +875,7 @@ export const useKDSData = () => {
             try {
                 const ip = await fetchIp();
                 const screenRes = `${window.screen.width}x${window.screen.height}`;
-                const payload = { 
+                const payload = {
                     p_business_id: currentUser.business_id,
                     p_device_id: deviceId,
                     p_device_type: 'kds',
@@ -678,8 +896,8 @@ export const useKDSData = () => {
                 console.warn('⚠️ Device heartbeat failed:', err.message);
                 // Fallback to old heartbeat
                 try {
-                    await supabase.rpc('send_kds_heartbeat', { 
-                        p_business_id: currentUser.business_id 
+                    await supabase.rpc('send_kds_heartbeat', {
+                        p_business_id: currentUser.business_id
                     });
                 } catch (e) {
                     console.error('❌ All heartbeats failed');
@@ -691,7 +909,7 @@ export const useKDSData = () => {
         fetchIp().then(() => {
             sendHeartbeat(); // Initial call after IP is fetched
         });
-        
+
         const interval = setInterval(sendHeartbeat, 30000); // Every 30 seconds
 
         return () => clearInterval(interval);

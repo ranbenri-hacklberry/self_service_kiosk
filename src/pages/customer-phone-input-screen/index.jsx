@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { House } from 'lucide-react';
+import { House, WifiOff, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase'; // IMPORTED
 import { useAuth } from '../../context/AuthContext'; // IMPORTED
 
@@ -13,6 +13,7 @@ const CustomerPhoneInputScreen = () => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showNetworkError, setShowNetworkError] = useState(false);
   const [currentCustomer, setCurrentCustomer] = useState(null);
   const inputRef = useRef(null);
   const navigate = useNavigate();
@@ -49,8 +50,19 @@ const CustomerPhoneInputScreen = () => {
       return data;
     } catch (err) {
       console.error('Lookup error:', err);
+      // Check for network errors
+      if (err.message.includes('Load failed') || err.message.includes('Network') || err.message.includes('Failed to fetch')) {
+        setShowNetworkError(true);
+        // We re-throw or handle null return to stop flow
+        return null;
+      }
       throw new Error('שגיאה בחיפוש לקוח: ' + err.message);
     }
+  };
+
+  const handleRetailRetry = () => {
+    setShowNetworkError(false);
+    handleContinue();
   };
 
   const handlePhysicalInputChange = (inputValue) => {
@@ -85,6 +97,8 @@ const CustomerPhoneInputScreen = () => {
   }, []);
 
   const handleKeypadPress = (value) => {
+    if (showNetworkError) return; // Block input if error modal is open
+
     inputRef?.current?.focus?.();
     setError(''); // Clear error on typing
 
@@ -126,13 +140,21 @@ const CustomerPhoneInputScreen = () => {
 
     setIsLoading(true);
     setError('');
+    setShowNetworkError(false);
 
     try {
       const data = await handleIdentifyAndGreet(cleanPhone);
 
+      // Null means handled elsewhere (e.g. network error)
+      if (data === null) {
+        setIsLoading(false);
+        return;
+      }
+
       console.log('מה API:', data?.customer);
 
       if (!data) {
+        setIsLoading(false);
         return;
       }
 
@@ -151,25 +173,42 @@ const CustomerPhoneInputScreen = () => {
 
       localStorage.setItem('currentCustomer', JSON.stringify(customer));
 
+      // Check if we're returning to the cart after adding customer mid-order
+      const isReturnToCart = location.state?.returnToCart === true;
+
       if (data?.isNewCustomer) {
         navigate('/new-customer-name-collection-screen', {
           state: {
             phoneNumber: cleanPhone,
-            customerId: data?.customer?.id
+            customerId: data?.customer?.id,
+            returnToCart: isReturnToCart
           }
         });
       } else {
-        navigate('/returning-customer-welcome-screen', {
-          state: {
-            customer: customer,
-            isReturningCustomer: true,
-            cupsCollected: customer?.loyalty_coffee_count || 0
-          }
-        });
+        // Returning customer - if returnToCart, go directly to menu
+        if (isReturnToCart) {
+          navigate('/menu-ordering-interface', {
+            state: {
+              customer: customer,
+              isReturningCustomer: true
+            }
+          });
+        } else {
+          navigate('/returning-customer-welcome-screen', {
+            state: {
+              customer: customer,
+              isReturningCustomer: true,
+              cupsCollected: customer?.loyalty_coffee_count || 0
+            }
+          });
+        }
       }
     } catch (err) {
       console.error('Error identifying customer:', err);
-      setError(err?.message || 'אירעה שגיאה. אנא נסה שוב.');
+      // If it's the specific network error we already handled, don't show generic error
+      if (!showNetworkError) {
+        setError(err?.message || 'אירעה שגיאה. אנא נסה שוב.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -177,10 +216,12 @@ const CustomerPhoneInputScreen = () => {
 
   const handleAnonymousEntry = () => {
     localStorage.removeItem('currentCustomer');
+    const isReturnToCart = location.state?.returnToCart === true;
     navigate('/new-customer-name-collection-screen', {
       state: {
         phoneNumber: null,
-        customerId: 'anonymous'
+        customerId: 'anonymous',
+        returnToCart: isReturnToCart
       }
     });
   };
@@ -203,6 +244,38 @@ const CustomerPhoneInputScreen = () => {
         <House size={20} className="text-slate-700" />
       </button>
 
+      {/* Network Error Modal */}
+      {showNetworkError && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden text-center p-8 space-y-6">
+            <div className="mx-auto w-20 h-20 bg-red-100 rounded-full flex items-center justify-center text-red-500 mb-4">
+              <WifiOff size={40} strokeWidth={2.5} />
+            </div>
+
+            <div>
+              <h3 className="text-2xl font-black text-gray-900 mb-2">אין חיבור אינטרנט</h3>
+              <p className="text-gray-500 font-medium">נראה שהחיבור לרשת אבד. אנא בדוק את החיבור ונסה שוב.</p>
+            </div>
+
+            <div className="pt-2">
+              <button
+                onClick={handleRetailRetry}
+                className="w-full py-4 bg-slate-900 text-white rounded-xl font-bold text-lg hover:bg-slate-800 transition shadow-lg flex items-center justify-center gap-2"
+              >
+                <RefreshCw size={20} />
+                נסה שוב
+              </button>
+              <button
+                onClick={() => setShowNetworkError(false)}
+                className="mt-4 text-gray-400 font-medium text-sm hover:text-gray-600"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="bg-white rounded-3xl shadow-sm border border-gray-200 p-4 w-full max-w-[400px] flex flex-col items-center space-y-2">
 
         {/* Hidden Input for Keyboard Handling */}
@@ -214,6 +287,7 @@ const CustomerPhoneInputScreen = () => {
           value={phoneNumber}
           readOnly
           onKeyDown={(event) => {
+            if (showNetworkError) return;
             if (event?.key === 'Enter') {
               event.preventDefault();
               handleContinue();

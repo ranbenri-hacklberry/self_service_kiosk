@@ -295,7 +295,22 @@ const MenuDisplay = () => {
             <MenuEditModal
               item={selectedItem}
               onClose={() => setSelectedItem(null)}
-              onSave={fetchItems}
+              onSave={(updatedItem) => {
+                if (updatedItem) {
+                  // Immediate local update
+                  setItems(prev => {
+                    const exists = prev.find(i => i.id === updatedItem.id);
+                    if (exists) {
+                      return prev.map(i => i.id === updatedItem.id ? updatedItem : i);
+                    } else {
+                      return [...prev, updatedItem];
+                    }
+                  });
+                } else {
+                  // Fallback: full refetch
+                  fetchItems();
+                }
+              }}
             />
           </Suspense>
         )}
