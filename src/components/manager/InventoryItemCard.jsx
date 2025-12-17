@@ -3,6 +3,8 @@ import { Package, ChevronDown, ChevronUp, History, CheckCircle2, Minus, Plus, Sh
 
 const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, draftOrderQty = 0 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
+
+    console.log('🎯 InventoryItemCard render:', { itemId: item.id, isExpanded });
     // Reduce height by 20% -> Use tighter vertical padding in main container
     const [currentStock, setCurrentStock] = useState(Number(item.current_stock) || 0);
     const [orderQty, setOrderQty] = useState(draftOrderQty);
@@ -253,7 +255,10 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
             {isExpanded && (
                 <div className="mt-3 pt-3 border-t border-gray-100">
                     <button
-                        onClick={() => setIsEditing(true)}
+                        onClick={() => {
+                            console.log('🎯 Edit button clicked for item:', item.id);
+                            setIsEditing(true);
+                        }}
                         className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 rounded-lg font-bold text-sm transition-all flex items-center gap-2 border border-blue-100 hover:border-blue-200"
                         title="עריכת פרטי פריט"
                     >
