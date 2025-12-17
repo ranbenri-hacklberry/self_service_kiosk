@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import { Clock, Edit, RotateCcw, Flame, Trash2 } from 'lucide-react';
 import { sortItems, getModColor } from '../../../utils/kdsUtils';
 
@@ -7,60 +7,27 @@ const PrepTimer = memo(({ order, isHistory, isReady }) => {
 
   useEffect(() => {
     const calculate = () => {
-      const startStr = order.fired_at || order.created_at || order.timestamp;
-      if (!startStr) {
-        setDuration('-'); return;
-      }
-      // Parse start time safely
-      const start = new Date(startStr).getTime();
-      if (isNaN(start)) {
+      // Simple calculation: ready_at - created_at
+      const startStr = order.created_at;
+      const endStr = order.ready_at;
+
+      if (!startStr || !endStr) {
         setDuration('-'); return;
       }
 
-      let end = Date.now();
-      if (isHistory || isReady) {
-        if (order.ready_at) {
-          end = new Date(order.ready_at).getTime();
-        } else if (order.updated_at) {
-          // Fallback to updated_at if ready_at missing
-          end = new Date(order.updated_at).getTime();
-        } else {
-          // fallback for history w/o ready_at?
-          // keep end as now? No, history is static.
-          // If ready_at missing, we can't show duration.
-          if (isHistory) { setDuration('-'); return; }
-        }
+      const start = new Date(startStr).getTime();
+      const end = new Date(endStr).getTime();
+
+      if (isNaN(start) || isNaN(end)) {
+        setDuration('-'); return;
       }
 
       const diff = Math.max(0, end - start);
       const mins = Math.floor(diff / 60000);
-      const secs = Math.floor((diff % 60000) / 1000);
-      setDuration(`${mins}:${secs.toString().padStart(2, '0')}`);
+      setDuration(`${mins}ד`); // Show only minutes with Hebrew "ד" for דקות
     };
 
     calculate();
-    if (isHistory && duration === '-') {
-      console.log('📜 History Timer Debug:', {
-        id: order.id,
-        created_at: order.created_at,
-        fired_at: order.fired_at,
-        ready_at: order.ready_at,
-        updated_at: order.updated_at,
-        startStr: order.fired_at || order.created_at || order.timestamp
-      });
-    }
-
-    if (!isHistory && !isReady) {
-      const interval = setInterval(calculate, 1000);
-      return () => {
-        clearInterval(interval);
-        // Cleanup duration state when component unmounts
-        setDuration('-');
-      };
-    } else {
-      // Cleanup when timer is no longer needed
-      setDuration('-');
-    }
   }, [order, isHistory, isReady]);
 
   return (
