@@ -12,7 +12,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
     const [isEditing, setIsEditing] = useState(false);
     const [editData, setEditData] = useState({
         name: item.name || '',
-        unit: item.unit || 'יח׳',
+        unit: item.unit || "יח׳",
         cost_per_unit: item.cost_per_unit || 0,
         count_step: item.count_step || 1,
         unit_weight_grams: item.unit_weight_grams || 0,
@@ -33,7 +33,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
     const unitLower = (item.unit || '').trim().toLowerCase();
 
     // 1. Check if strict Unit item (Integer only)
-    const isUnitItem = ['unit', 'יח׳', 'יחידה', 'item', 'piece'].some(u => unitLower === u || unitLower.startsWith(u)); // Flexible match
+    const isUnitItem = ['unit', "יח׳", 'יחידה', 'item', 'piece'].some(u => unitLower === u || unitLower.startsWith(u)); // Flexible match
 
     // 2. Count Step
     // Unit items -> Integer only (Step 1)
@@ -154,7 +154,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                     </div>
                     <div className="flex flex-col min-w-0 justify-center">
                         <h3 className="font-black text-gray-800 text-lg truncate leading-tight">{item.name}</h3>
-                        <span className="text-[11px] font-bold text-gray-400">{item.unit || 'יח׳'}</span>
+                        <span className="text-[11px] font-bold text-gray-400">{item.unit || "יח׳"}</span>
                     </div>
                 </div>
 
@@ -314,14 +314,14 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                             {/* Type Selector (Tabs) */}
                             <div className="bg-gray-100 p-1.5 rounded-2xl flex">
                                 <button
-                                    onClick={() => setEditData({ ...editData, unit: 'יח׳', count_step: 1, min_order: 1, order_step: 1 })}
-                                    className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${editData.unit === 'יח׳' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                    onClick={() => setEditData({ ...editData, unit: "יח׳", count_step: 1, min_order: 1, order_step: 1 })}
+                                    className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${editData.unit === "יח׳" ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                                 >
                                     פריט בודד (יח׳)
                                 </button>
                                 <button
-                                    onClick={() => setEditData({ ...editData, unit: 'ק״ג', count_step: 0.01, min_order: 0.01, order_step: 0.01 })}
-                                    className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${editData.unit === 'ק״ג' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                    onClick={() => setEditData({ ...editData, unit: "ק״ג", count_step: 0.01, min_order: 0.01, order_step: 0.01 })}
+                                    className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${editData.unit === "ק״ג" ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                                 >
                                     משקל (ק״ג)
                                 </button>
@@ -332,7 +332,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                         <div className="space-y-3">
 
                             {/* Unit Weight (Only if Units) - e.g. "Pack of Cookies (200g)" */}
-                            {editData.unit === 'יח׳' && (
+                            {editData.unit === "יח׳" && (
                                 <NumberPicker
                                     label="משקל יחידה (גרם)"
                                     value={editData.unit_weight_grams || 0}
@@ -344,15 +344,15 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                             )}
 
                             {/* Count Step - Hidden for single units (always 1) */}
-                            {editData.unit !== 'יח׳' && (
+                            {editData.unit !== "יח׳" && (
                                 <NumberPicker
                                     label="קפיצות ספירה"
                                     value={editData.count_step}
                                     onChange={v => setEditData({ ...editData, count_step: v })}
-                                    unit={editData.unit === 'ק״ג' ? 'גרם' : editData.unit}
-                                    stepSmall={editData.unit === 'ק״ג' ? 0.01 : 1}
-                                    stepLarge={editData.unit === 'ק״ג' ? 0.1 : 10}
-                                    format={v => editData.unit === 'ק״ג' ? (v * 1000).toFixed(0) : v}
+                                    unit={editData.unit === "ק״ג" ? "גרם" : editData.unit}
+                                    stepSmall={editData.unit === "ק״ג" ? 0.01 : 1}
+                                    stepLarge={editData.unit === "ק״ג" ? 0.1 : 10}
+                                    format={v => editData.unit === "ק״ג" ? (v * 1000).toFixed(0) : v}
                                 />
                             )}
 
@@ -372,8 +372,8 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                                 value={editData.min_order}
                                 onChange={v => setEditData({ ...editData, min_order: v })}
                                 unit={editData.unit}
-                                stepSmall={editData.unit === 'ק״ג' ? 0.01 : 1}
-                                stepLarge={editData.unit === 'ק״ג' ? 0.1 : 10}
+                                                                stepSmall={editData.unit === "ק״ג" ? 0.01 : 1}
+                                stepLarge={editData.unit === "ק״ג" ? 0.1 : 10}
                             />
 
                             {/* Order Step */}
@@ -382,8 +382,8 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                                 value={editData.order_step}
                                 onChange={v => setEditData({ ...editData, order_step: v })}
                                 unit={editData.unit}
-                                stepSmall={editData.unit === 'ק״ג' ? 0.01 : 1}
-                                stepLarge={editData.unit === 'ק״ג' ? 0.1 : 10}
+                                                                stepSmall={editData.unit === "ק״ג" ? 0.01 : 1}
+                                stepLarge={editData.unit === "ק״ג" ? 0.1 : 10}
                             />
                         </div>
                     </div>
