@@ -405,8 +405,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                         שמור שינויים
                     </button>
                 </div>
-                </div>
-            </div>
+            </motion.div>
         );
     }
 
