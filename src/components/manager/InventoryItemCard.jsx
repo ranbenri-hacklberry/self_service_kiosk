@@ -514,8 +514,8 @@ const NumberPicker = ({ value, onChange, label, unit = '', stepSmall = 1, stepLa
             <div className="flex items-center gap-2 flex-1 justify-end h-full">
                 {/* Decrease (Horizontal Row) */}
                 <div className="flex gap-1 h-full items-center">
-                    <button onClick={() => handleChange(-stepLarge)} className="w-10 h-10 bg-red-50 text-red-600 rounded-lg font-bold text-xs flex items-center justify-center hover:bg-red-100 transition-colors active:scale-95 leading-none">-{stepLarge < 1 && unit === 'גרם' ? stepLarge * 1000 : stepLarge}</button>
-                    <button onClick={() => handleChange(-stepSmall)} className="w-10 h-10 bg-gray-50 text-gray-600 rounded-lg font-bold text-sm flex items-center justify-center hover:bg-gray-100 transition-colors active:scale-95 leading-none">-{stepSmall < 1 && unit === 'גרם' ? stepSmall * 1000 : stepSmall}</button>
+                    <button onClick={() => handleChange(-stepLarge)} className="w-10 h-10 bg-red-50 text-red-600 rounded-lg font-bold text-xs flex items-center justify-center hover:bg-red-100 transition-colors active:scale-95 leading-none">-{stepLarge < 1 && unit === "גרם" ? stepLarge * 1000 : stepLarge}</button>
+                    <button onClick={() => handleChange(-stepSmall)} className="w-10 h-10 bg-gray-50 text-gray-600 rounded-lg font-bold text-sm flex items-center justify-center hover:bg-gray-100 transition-colors active:scale-95 leading-none">-{stepSmall < 1 && unit === "גרם" ? stepSmall * 1000 : stepSmall}</button>
                 </div>
 
                 {/* Value */}
@@ -526,8 +526,8 @@ const NumberPicker = ({ value, onChange, label, unit = '', stepSmall = 1, stepLa
 
                 {/* Increase (Horizontal Row) */}
                 <div className="flex gap-1 h-full items-center">
-                    <button onClick={() => handleChange(stepSmall)} className="w-10 h-10 bg-gray-50 text-gray-600 rounded-lg font-bold text-sm flex items-center justify-center hover:bg-gray-100 transition-colors active:scale-95 leading-none">+{stepSmall < 1 && unit === 'גרם' ? stepSmall * 1000 : stepSmall}</button>
-                    <button onClick={() => handleChange(stepLarge)} className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg font-bold text-xs flex items-center justify-center hover:bg-blue-100 transition-colors active:scale-95 leading-none mb-0">+{stepLarge < 1 && unit === 'גרם' ? stepLarge * 1000 : stepLarge}</button>
+                    <button onClick={() => handleChange(stepSmall)} className="w-10 h-10 bg-gray-50 text-gray-600 rounded-lg font-bold text-sm flex items-center justify-center hover:bg-gray-100 transition-colors active:scale-95 leading-none">+{stepSmall < 1 && unit === "גרם" ? stepSmall * 1000 : stepSmall}</button>
+                    <button onClick={() => handleChange(stepLarge)} className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg font-bold text-xs flex items-center justify-center hover:bg-blue-100 transition-colors active:scale-95 leading-none mb-0">+{stepLarge < 1 && unit === "גרם" ? stepLarge * 1000 : stepLarge}</button>
                 </div>
             </div>
         </div>
