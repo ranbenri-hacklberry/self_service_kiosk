@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Clock, Edit, RotateCcw, Flame, Trash2 } from 'lucide-react';
 import { sortItems, getModColor } from '../../../utils/kdsUtils';
 
@@ -85,8 +85,9 @@ const OrderCard = ({
 }) => {
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Memoized handlers to prevent unnecessary re-renders
-  const handleMainAction = useCallback((e) => {
+
+  // פונקציה לטיפול בלחיצה על הכפתור הראשי
+  const handleMainAction = (e) => {
     e.stopPropagation();
     if (isUpdating) return;
 
@@ -100,15 +101,15 @@ const OrderCard = ({
       // אם בהכנה - סמן כמוכן
       onOrderStatusUpdate(order.id, 'done');
     }
-  }, [isUpdating, isReady, order.id, orderStatusLower, onOrderStatusUpdate]);
+  };
 
-  const handleCardClick = useCallback(() => {
+  const handleCardClick = () => {
     // בלחיצה על הכרטיס - פתח עריכה (אם לא היסטוריה)
     // אם היסטוריה - כרגע לא עושה כלום או פותח מודל צפייה
     if (!isHistory) {
       if (onEditOrder) onEditOrder(order);
     }
-  }, [isHistory, order, onEditOrder]);
+  };
 
   /* ============================================================
      Single Column Layout Forced (User Request)
@@ -552,4 +553,4 @@ const OrderCard = ({
   );
 };
 
-export default memo(OrderCard);
+export default OrderCard;

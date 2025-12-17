@@ -708,4 +708,4 @@ const KDSInventoryScreen = ({ onExit }) => {
     );
 };
 
-export default memo(KDSInventoryScreen);
+export default KDSInventoryScreen;

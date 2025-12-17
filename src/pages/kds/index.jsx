@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -232,13 +232,6 @@ const KdsScreen = () => {
 
   const navigate = useNavigate();
 
-  // Memoized order grouping for better performance
-  const { currentOrders: memoizedCurrentOrders, completedOrders: memoizedCompletedOrders } = useMemo(() => {
-    return {
-      currentOrders: currentOrders || [],
-      completedOrders: completedOrders || []
-    };
-  }, [currentOrders, completedOrders]);
 
   // Load History Effect with AbortController
   useEffect(() => {
@@ -323,11 +316,11 @@ const KdsScreen = () => {
             {/* חצי עליון: בטיפול (50%) */}
             <div className="flex-1 border-b-4 border-gray-200 relative bg-slate-100/50 flex flex-col min-h-0">
               <div className="absolute top-3 right-4 bg-white/90 border border-gray-200 px-3 py-1 rounded-full text-xs font-bold text-slate-600 z-10 shadow-sm">
-                בטיפול ({memoizedCurrentOrders.length})
+                בטיפול ({currentOrders.length})
               </div>
               <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-4 custom-scrollbar">
                 <div className="flex h-full flex-row justify-start gap-4 items-stretch">
-                  {memoizedCurrentOrders.map(order => (
+                  {currentOrders.map(order => (
                     <OrderCard
                       key={order.id} order={order}
                       onOrderStatusUpdate={updateOrderStatus}
@@ -346,11 +339,11 @@ const KdsScreen = () => {
             {/* חצי תחתון: מוכן (50%) */}
             <div className="flex-1 relative bg-green-50/30 flex flex-col min-h-0">
               <div className="absolute top-3 right-4 bg-green-100 border border-green-200 px-3 py-1 rounded-full text-xs font-bold text-green-700 z-10 shadow-sm">
-                מוכן למסירה ({memoizedCompletedOrders.length})
+                מוכן למסירה ({completedOrders.length})
               </div>
               <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-4 custom-scrollbar">
                 <div className="flex h-full flex-row justify-start gap-4 items-stretch">
-                  {memoizedCompletedOrders.map(order => (
+                  {completedOrders.map(order => (
                     <OrderCard
                       key={order.id} order={order} isReady={true}
                       onOrderStatusUpdate={updateOrderStatus}
@@ -495,10 +488,4 @@ const KdsScreen = () => {
   );
 };
 
-const KdsScreenWithErrorBoundary = () => (
-  <KDSErrorBoundary>
-    <KdsScreen />
-  </KDSErrorBoundary>
-);
-
-export default KdsScreenWithErrorBoundary;
+export default KdsScreen;

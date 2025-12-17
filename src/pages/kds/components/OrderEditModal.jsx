@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Check, Edit } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
@@ -307,4 +307,4 @@ const OrderEditModal = ({
     );
 };
 
-export default memo(OrderEditModal);
+export default OrderEditModal;
