@@ -3,13 +3,6 @@ import { Package, ChevronDown, ChevronUp, History, CheckCircle2, Minus, Plus, Sh
 
 const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, draftOrderQty = 0 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
-
-    console.log('🎯 InventoryItemCard render:', { itemId: item.id, isExpanded, isEditing });
-
-    // Debug isEditing changes
-    useEffect(() => {
-        console.log('🎯 isEditing changed to:', isEditing, 'for item:', item.id);
-    }, [isEditing]);
     // Reduce height by 20% -> Use tighter vertical padding in main container
     const [currentStock, setCurrentStock] = useState(Number(item.current_stock) || 0);
     const [orderQty, setOrderQty] = useState(draftOrderQty);
@@ -17,6 +10,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
 
     // Edit mode state
     const [isEditing, setIsEditing] = useState(false);
+
     const [editData, setEditData] = useState({
         name: item.name || '',
         unit: item.unit || "יח׳",
@@ -260,12 +254,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
             {isExpanded && (
                 <div className="mt-3 pt-3 border-t border-gray-100">
                     <button
-                        onClick={() => {
-                            console.log('🎯 Edit button clicked for item:', item.id);
-                            console.log('🎯 Before setIsEditing, current value:', isEditing);
-                            setIsEditing(true);
-                            console.log('🎯 After setIsEditing call');
-                        }}
+                        onClick={() => setIsEditing(true)}
                         className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 rounded-lg font-bold text-sm transition-all flex items-center gap-2 border border-blue-100 hover:border-blue-200"
                         title="עריכת פרטי פריט"
                     >
@@ -278,10 +267,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
     );
 
     // Edit Modal (Same as Add Item Modal)
-    console.log('🎯 Edit modal check:', { isEditing, itemId: item.id });
-
     if (isEditing) {
-        console.log('🎯 Showing edit modal for item:', item.id);
         return (
             <div>
                 {/* Backdrop */}
@@ -299,10 +285,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                     {/* Modal Header */}
                     <div className="p-6 pb-6 bg-white rounded-t-3xl border-b border-gray-50 shrink-0 relative">
                         <button
-                            onClick={() => {
-                                console.log('🎯 Close modal clicked for item:', item.id);
-                                setIsEditing(false);
-                            }}
+                            onClick={() => setIsEditing(false)}
                             className="absolute top-6 right-6 w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition-colors"
                         >
                             <X size={20} />
