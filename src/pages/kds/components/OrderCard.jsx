@@ -284,9 +284,6 @@ const OrderCard = ({
               <Clock size={12} />
               <span className="font-mono dir-ltr text-[10px]">{order.timestamp}</span>
             </div>
-
-            {/* PrepTimer - Show for ready orders (both active "ready" and history) */}
-            {isReady && <PrepTimer order={order} isHistory={isHistory} isReady={isReady} />}
           </div>
 
           {/* Row 2: Payment/Refund Status */}
