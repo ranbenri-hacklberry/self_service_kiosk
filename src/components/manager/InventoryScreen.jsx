@@ -254,6 +254,54 @@ const InventoryScreen = () => {
     }
   };
 
+  const handleItemUpdate = async (itemId, updateData) => {
+    try {
+      setLoading(true);
+
+      const { error } = await supabase
+        .from('inventory_items')
+        .update({
+          name: updateData.name,
+          unit: updateData.unit,
+          cost_per_unit: updateData.cost_per_unit,
+          count_step: updateData.count_step,
+          unit_weight_grams: updateData.unit_weight_grams,
+          min_order: updateData.min_order,
+          order_step: updateData.order_step,
+          updated_at: new Date()
+        })
+        .eq('id', itemId);
+
+      if (error) throw error;
+
+      // Refresh items
+      await fetchItems();
+
+      // Show success message
+      setConfirmModal({
+        isOpen: true,
+        title: 'הצלחה!',
+        message: 'פרטי הפריט עודכנו בהצלחה',
+        variant: 'success',
+        confirmText: 'אישור',
+        onConfirm: () => setConfirmModal(prev => ({ ...prev, isOpen: false }))
+      });
+
+    } catch (err) {
+      console.error('Error updating item:', err);
+      setConfirmModal({
+        isOpen: true,
+        title: 'שגיאה',
+        message: 'לא הצלחנו לעדכן את פרטי הפריט. אנא נסה שוב.',
+        variant: 'danger',
+        confirmText: 'אישור',
+        onConfirm: () => setConfirmModal(prev => ({ ...prev, isOpen: false }))
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCopyAndFinish = async () => {
     if (!successData) return;
     try {
@@ -526,7 +574,7 @@ const InventoryScreen = () => {
                 transition={{ duration: 0.2 }}
                 className="h-full overflow-y-auto p-4"
               >
-                <div className="space-y-3 max-w-2xl mx-auto pb-20">
+                <div className="space-y-3 max-w-lg mx-auto pb-20">
                   {itemsForSelectedSupplier.length === 0 ? (
                     <div className="text-center py-20 text-gray-400">
                       <p>לא נמצאו פריטים עבור ספק זה</p>
@@ -540,6 +588,7 @@ const InventoryScreen = () => {
                         draftOrderQty={draftOrders[item.id]?.qty || 0}
                         onStockChange={handleStockUpdate}
                         onOrderChange={(itemId, val) => handleOrderChange(itemId, val, item)}
+                        onItemUpdate={handleItemUpdate}
                       />
                     ))
                   )}
