@@ -101,10 +101,14 @@ const Header = ({
 
   return (
     <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-2 flex justify-between items-center border-b border-gray-200 font-heebo">
-      <div className="flex items-center gap-6">
-        {/* Title */}
-        <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
-          <LayoutGrid className="text-blue-600" />
+      <div className="flex items-center gap-4">
+        {/* Home Button (Moved Here) */}
+        <button onClick={handleExit} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition">
+          <House size={18} />
+        </button>
+
+        {/* Title (Icon Removed) */}
+        <h1 className="text-xl font-black text-slate-800">
           מסך מטבח
         </h1>
 
@@ -142,9 +146,7 @@ const Header = ({
           <RotateCcw size={18} />
         </button>
 
-        <button onClick={handleExit} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition">
-          <House size={18} />
-        </button>
+
 
         <button onClick={handleNewOrder} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition shadow-sm text-sm font-bold">
           <Plus size={16} /> הזמנה
@@ -192,16 +194,30 @@ const KdsScreen = () => {
 
   const navigate = useNavigate();
 
-  // Load History Effect
+  // Load History Effect with AbortController
   useEffect(() => {
     if (viewMode === 'history') {
+      const controller = new AbortController();
       const loadHistory = async () => {
         setIsHistoryLoading(true);
-        const data = await fetchHistoryOrders(selectedDate);
-        setHistoryOrders(data || []);
-        setIsHistoryLoading(false);
+        try {
+          // Pass signal to hook
+          const data = await fetchHistoryOrders(selectedDate, controller.signal);
+          if (!controller.signal.aborted) {
+            setHistoryOrders(data || []);
+          }
+        } catch (err) {
+          if (err.name !== 'AbortError') console.error("History load error", err);
+        } finally {
+          if (!controller.signal.aborted) setIsHistoryLoading(false);
+        }
       };
+
       loadHistory();
+
+      return () => {
+        controller.abort();
+      };
     }
   }, [viewMode, selectedDate, fetchHistoryOrders]);
 
@@ -303,7 +319,7 @@ const KdsScreen = () => {
             </div>
           </div>
         ) : (
-          <div className="flex-1 relative bg-purple-50/30 flex flex-col min-h-0">
+          <div className="flex-1 relative bg-purple-50/30 flex flex-col min-h-0 pb-safe">
             {/* History Toolbar / Badge */}
             <div className="absolute top-3 right-4 bg-purple-100 border border-purple-200 px-3 py-1 rounded-full text-xs font-bold text-purple-700 z-10 shadow-sm flex items-center gap-2">
               <History size={12} />
@@ -311,7 +327,7 @@ const KdsScreen = () => {
             </div>
 
             {/* History List - Horizontal Scroll similar to active */}
-            <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-4 custom-scrollbar">
+            <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-20 custom-scrollbar">
               {isHistoryLoading ? (
                 <div className="h-full w-full flex items-center justify-center text-purple-400 gap-2">
                   <RefreshCw className="animate-spin" /> טוען היסטוריה...
@@ -326,7 +342,7 @@ const KdsScreen = () => {
                   ) : (
                     historyOrders.map(order => (
                       <OrderCard
-                        key={order.id}
+                        key={`${order.id}-${selectedDate.toISOString().split('T')[0]}`} // Unique Mapping Key
                         order={order}
                         isHistory={true} // New Prop
                         isReady={order.order_status === 'completed'} // Reuse styling
@@ -340,7 +356,7 @@ const KdsScreen = () => {
                       />
                     ))
                   )}
-                  ))}
+
                 </div>
               )}
             </div>

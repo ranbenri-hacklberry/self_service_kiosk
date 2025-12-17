@@ -43,6 +43,42 @@ const DateScroller = ({ selectedDate, onSelectDate }) => {
         }
     };
 
+    // 4. Scroll Detection (Auto-Select on Stop)
+    const handleScroll = (e) => {
+        if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+
+        // Debounce: Wait for scroll to stop before selecting
+        scrollTimeout.current = setTimeout(() => {
+            findAndSelectCenterDate();
+        }, 100);
+    };
+
+    const scrollTimeout = useRef(null);
+
+    const findAndSelectCenterDate = () => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const center = container.getBoundingClientRect().left + (container.clientWidth / 2);
+        let closestDate = null;
+        let minDiff = Infinity;
+
+        Array.from(container.children).forEach((child, idx) => {
+            const rect = child.getBoundingClientRect();
+            const childCenter = rect.left + (rect.width / 2);
+            const diff = Math.abs(center - childCenter);
+            if (diff < minDiff) {
+                minDiff = diff;
+                closestDate = dates[idx];
+            }
+        });
+
+        if (closestDate && (!selectedDate || closestDate.getTime() !== selectedDate.getTime())) {
+            onSelectDate(closestDate);
+        }
+    };
+
+
     // 4. Select Handler
     const handleItemClick = (date, index) => {
         onSelectDate(date);
@@ -62,15 +98,18 @@ const DateScroller = ({ selectedDate, onSelectDate }) => {
             <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-white via-white/80 to-transparent z-20 pointer-events-none"></div>
             <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-white via-white/80 to-transparent z-20 pointer-events-none"></div>
 
-            {/* CONTAINER */}
+            {/* CONTAINER - Enable Snap */}
             <div
                 ref={containerRef}
-                className="flex items-center w-full h-full overflow-x-auto hide-scrollbar"
+                className="flex items-center w-full h-full overflow-x-auto hide-scrollbar snap-x snap-mandatory"
                 // Center padding allows first/last items to reach middle
-                style={{ paddingInline: 'calc(50% - 50px)' }}
+                style={{ paddingInline: 'calc(50% - 50px)', scrollBehavior: 'smooth' }}
                 dir="rtl"
+                onScroll={handleScroll}
             >
                 {dates.map((date, idx) => {
+                    // Loose comparison for highlighting while scrolling might be tricky if state lags,
+                    // but 'selectedDate' updates on stop.
                     const isSelectedDate = date.toDateString() === selectedDate.toDateString();
                     const isToday = date.toDateString() === new Date().toDateString();
 
@@ -78,14 +117,13 @@ const DateScroller = ({ selectedDate, onSelectDate }) => {
                         <button
                             key={idx}
                             style={{ width: ITEM_WIDTH, minWidth: ITEM_WIDTH }}
-                            onClick={() => handleItemClick(date, idx)}
-                            // DESIGN UPDATE:
-                            // 1. No opacity change (always 100 or near 100).
-                            // 2. Scale: Selected = 1.1, Unselected = 0.85 (Make difference clear)
-                            // 3. Font weight changes.
-                            className={`flex flex-col items-center justify-center transition-all duration-300 transform outline-none
+                            // Snap alignment key:
+                            className={`snap-center flex flex-col items-center justify-center transition-all duration-300 transform outline-none
                     ${isSelectedDate ? 'scale-110 z-10' : 'scale-85 hover:scale-90 text-slate-500'}
                 `}
+                            onClick={() => {
+                                handleItemClick(date, idx);
+                            }}
                         >
                             <div className={`h-20 flex flex-col items-center justify-center rounded-xl px-2 transition-colors`}>
                                 <span className={`text-sm font-medium ${isSelectedDate ? 'text-blue-600' : 'text-slate-400'}`}>

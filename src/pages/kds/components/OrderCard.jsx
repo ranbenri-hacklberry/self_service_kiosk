@@ -304,7 +304,7 @@ const OrderCard = ({
             {/* Static Timestamp (Received Time) */}
             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-bold h-6 shadow-sm transition-colors bg-gray-50 border-gray-200 text-gray-500">
               <Clock size={12} />
-              <span className="font-mono dir-ltr">{order.timestamp}</span>
+              <span className="font-mono dir-ltr text-[10px]">{order.timestamp}</span>
             </div>
           </div>
 
@@ -435,25 +435,17 @@ const OrderCard = ({
             {isHistory && (
               <div className="mt-4 mb-3 pt-3 border-t border-gray-100 flex flex-col gap-2 text-sm text-gray-700 font-medium">
 
-                {/* Prep Time Duration (Instead of Received) */}
-                <div className="flex justify-between items-center text-base">
-                  <span className="font-bold text-gray-800">משך הכנה:</span>
-                  <span className="font-mono text-slate-900 dir-ltr font-black text-lg">
-                    {(() => {
-                      const start = order.created_at || order.createdAt || order.timestamp;
-                      const end = order.ready_at || order.readyAt || order.updated_at || order.updatedAt; // Fallback
-
-                      if (!start || !end) return '-';
-
-                      const diff = new Date(end) - new Date(start);
-                      if (isNaN(diff)) return '-';
-
-                      const minutes = Math.floor(diff / 60000);
-                      const seconds = Math.floor((diff % 60000) / 1000);
-                      return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-                    })()} דק'
-                  </span>
+                {/* Prep Time Duration */}
+                <div className="flex justify-between items-center py-2 px-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <Clock size={18} className="text-slate-400" />
+                    <span className="font-bold text-slate-700">משך הכנה כולל:</span>
+                  </div>
+                  {/* Reuse PrepTimer for consistent calculation */}
+                  <PrepTimer order={order} isHistory={true} isReady={true} />
                 </div>
+
+
 
                 {/* Ready/End Time */}
                 {(order.ready_at || order.updated_at) && (
@@ -543,9 +535,10 @@ const OrderCard = ({
               </div>
             )}
           </>
-        )}
-      </div>
-    </div>
+        )
+        }
+      </div >
+    </div >
   );
 };
 
