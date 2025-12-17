@@ -17,6 +17,8 @@ import ReturningCustomerWelcomeScreen from './pages/returning-customer-welcome-s
 import DataManagerInterface from './pages/data-manager-interface';
 import SuperAdminDashboard from './pages/super-admin';
 import ManagerKDS from './components/manager/ManagerKDS';
+import InventoryPage from './pages/inventory';
+import PrepPage from './pages/prep';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -25,13 +27,13 @@ const ProtectedRoute = ({ children }) => {
   const location = useLocation();
 
   useEffect(() => {
-    console.log('🔐 ProtectedRoute check:', { 
-      isLoading, 
-      hasUser: !!currentUser, 
-      deviceMode, 
-      path: location.pathname 
+    console.log('🔐 ProtectedRoute check:', {
+      isLoading,
+      hasUser: !!currentUser,
+      deviceMode,
+      path: location.pathname
     });
-    
+
     if (!isLoading) {
       if (!currentUser) {
         console.log('🚫 No user, redirecting to login');
@@ -90,6 +92,18 @@ const AppRoutes = () => {
       <Route path="/mobile-kds" element={
         <ProtectedRoute>
           <ManagerKDS />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/inventory" element={
+        <ProtectedRoute>
+          <InventoryPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/prep" element={
+        <ProtectedRoute>
+          <PrepPage />
         </ProtectedRoute>
       } />
 

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { Search, Truck, Plus, X, ArrowRight, Package, Save, Check, RefreshCw, ChevronLeft, Trash2, Edit2, AlertTriangle, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { Search, Truck, Plus, X, ArrowRight, Package, Save, Check, RefreshCw, ChevronLeft, Trash2, Edit2, AlertTriangle, ChevronDown, ChevronUp, Clock, House } from 'lucide-react';
 import ConfirmationModal from '../../../components/ui/ConfirmationModal';
 
 /**
@@ -12,7 +12,7 @@ import ConfirmationModal from '../../../components/ui/ConfirmationModal';
  * - Left (2/3): Items Grid (2 columns)
  */
 
-const KDSInventoryScreen = () => {
+const KDSInventoryScreen = ({ onExit }) => {
     const { currentUser } = useAuth();
     // Tabs: 'counts' | 'incoming'
     const [activeTab, setActiveTab] = useState('counts');
@@ -447,33 +447,46 @@ const KDSInventoryScreen = () => {
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-heebo" dir="rtl">
-            {/* Header & Tabs */}
-            <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-3 flex justify-between items-center border-b border-gray-200">
-                <div className="flex items-center gap-4">
-                    <h2 className="text-2xl font-black text-slate-800">ניהול מלאי</h2>
+            {/* Header & Tabs - Single Line Layout */}
+            <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-3 flex items-center justify-between border-b border-gray-200 gap-6">
+
+                {/* Right Side Group: Home | Title | Search */}
+                <div className="flex items-center gap-4 flex-1">
+                    {onExit && (
+                        <button
+                            onClick={onExit}
+                            className="p-2 -mr-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                            title="יציאה למסך הראשי"
+                        >
+                            <House size={22} />
+                        </button>
+                    )}
+
+                    <h2 className="text-2xl font-black text-slate-800 shrink-0 ml-4">ניהול מלאי</h2>
 
                     {/* Search Bar - Global */}
-                    <div className="relative w-64 mr-6">
+                    <div className="relative w-full max-w-sm">
                         <Search className="absolute top-1/2 -translate-y-1/2 right-3 text-gray-400 w-4 h-4" />
                         <input
                             type="text"
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             placeholder="חיפוש מהיר..."
-                            className="w-full pl-4 pr-10 py-2.5 rounded-xl bg-gray-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm transition-all"
+                            className="w-full pl-4 pr-10 py-2.5 rounded-xl bg-gray-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm transition-all shadow-sm"
                         />
                     </div>
                 </div>
 
-                <div className="flex bg-gray-100 p-1 rounded-xl">
-                    <button onClick={() => setActiveTab('counts')} className={`px-5 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${activeTab === 'counts' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                {/* Left Side: Tabs / Actions */}
+                <div className="flex bg-gray-100 p-1 rounded-xl shrink-0">
+                    <button onClick={() => setActiveTab('counts')} className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${activeTab === 'counts' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                         <Package size={18} /> ספירה ודיווח
                     </button>
-                    <button onClick={() => setActiveTab('incoming')} className={`px-5 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${activeTab === 'incoming' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                    <button onClick={() => setActiveTab('incoming')} className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${activeTab === 'incoming' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                         <Truck size={18} /> משלוחים בדרך
                         {incomingOrders.length > 0 && <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-xs">{incomingOrders.length}</span>}
                     </button>
-                    <button onClick={fetchData} className="px-3 text-gray-400 hover:text-blue-500 transition ml-1">
+                    <button onClick={fetchData} className="px-3 text-gray-400 hover:text-blue-500 transition ml-1" title="רענן נתונים">
                         <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
                     </button>
                 </div>

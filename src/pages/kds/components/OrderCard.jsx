@@ -1,16 +1,74 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Clock, Edit, RotateCcw, Flame, Trash2 } from 'lucide-react';
 import { sortItems, getModColor } from '../../../utils/kdsUtils';
 
-const OrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPaymentCollected, onFireItems, onEditOrder, onCancelOrder }) => {
+const PrepTimer = ({ order, isHistory, isReady }) => {
+  const [duration, setDuration] = useState('-');
+
+  useEffect(() => {
+    const calculate = () => {
+      const startStr = order.fired_at || order.created_at || order.timestamp;
+      if (!startStr) {
+        setDuration('-'); return;
+      }
+      // Parse start time safely
+      const start = new Date(startStr).getTime();
+      if (isNaN(start)) {
+        setDuration('-'); return;
+      }
+
+      let end = Date.now();
+      if (isHistory || isReady) {
+        if (order.ready_at) {
+          end = new Date(order.ready_at).getTime();
+        } else if (order.updated_at) {
+          // Fallback to updated_at if ready_at missing
+          end = new Date(order.updated_at).getTime();
+        } else {
+          // fallback for history w/o ready_at?
+          // keep end as now? No, history is static.
+          // If ready_at missing, we can't show duration.
+          if (isHistory) { setDuration('-'); return; }
+        }
+      }
+
+      const diff = Math.max(0, end - start);
+      const mins = Math.floor(diff / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      setDuration(`${mins}:${secs.toString().padStart(2, '0')}`);
+    };
+
+    calculate();
+    if (!isHistory && !isReady) {
+      const interval = setInterval(calculate, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [order, isHistory, isReady]);
+
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-base font-bold h-7 shadow-sm transition-colors bg-white border-gray-200 text-gray-700">
+      <Clock size={14} className={!isHistory && !isReady ? 'animate-pulse text-blue-600' : ''} />
+      <span className="font-mono dir-ltr">{duration}</span>
+    </div>
+  );
+};
+
+const OrderCard = ({
+  order,
+  isReady = false,
+  isHistory = false,
+  onOrderStatusUpdate,
+  onPaymentCollected,
+  onFireItems,
+  onEditOrder,
+  onCancelOrder
+}) => {
   const [isUpdating, setIsUpdating] = useState(false);
 
   /* ============================================================
-     ⚠️ CRITICAL: DO NOT CHANGE THIS THRESHOLD! ⚠️
-     When more than 4 items, split into 2 columns (not scroll!)
-     This has been reset multiple times - DO NOT REVERT!
+     Single Column Layout Forced (User Request)
      ============================================================ */
-  const isLargeOrder = order.items?.length > 4;
+  const isLargeOrder = !isHistory && order.items && order.items.length > 4; // 2-col for Active only
   const isDelayedCard = order.type === 'delayed';
   const isUnpaidDelivered = order.type === 'unpaid_delivered';
 
@@ -146,7 +204,7 @@ const OrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPaymentColle
   };
 
   return (
-    <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl p-3 mx-2 flex flex-col h-full font-heebo ${isDelayedCard ? 'bg-gray-50' : 'bg-white'} ${getStatusStyles(order.orderStatus)} border-x border-b border-gray-100`}>
+    <div className={`kds-card ${isLargeOrder ? 'w-[600px]' : 'w-[300px]'} flex-shrink-0 rounded-2xl p-3 mx-2 flex flex-col h-full font-heebo ${isDelayedCard ? 'bg-gray-50' : 'bg-white'} ${getStatusStyles(order.orderStatus)} border-x border-b border-gray-100`}>
 
       <div className="flex justify-between items-start mb-2 border-b border-gray-50 pb-1.5">
         <div className="flex flex-col overflow-hidden flex-1">
@@ -178,31 +236,48 @@ const OrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPaymentColle
           </div>
         </div>
 
-        {/* Edit Button + Time + Payment Status */}
-        <div className="text-left flex flex-col items-end shrink-0 ml-2 gap-1">
-          {/* Edit Button - Compact */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onEditOrder) {
-                onEditOrder(order);
-              }
-            }}
-            className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 rounded-lg font-bold text-xs transition-all flex items-center gap-1 border border-blue-100 hover:border-blue-200"
-            title="ערוך הזמנה"
-          >
-            <Edit size={12} strokeWidth={2.5} />
-            עריכה
-          </button>
+        {/* Edit Button + Time (Row 1) & Payment Status (Row 2) */}
+        <div className="text-left flex flex-col items-end shrink-0 ml-2 gap-1.5">
 
-          <div className="flex items-center gap-1 text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded-md border border-gray-100">
-            <Clock size={12} />
-            <span className="text-xs font-mono font-bold">{order.timestamp}</span>
+          {/* Row 1: Edit + Time */}
+          <div className="flex items-center gap-2">
+            {/* Edit Button - Compact */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onEditOrder) {
+                  onEditOrder(order);
+                }
+              }}
+              className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 rounded-lg font-bold text-xs transition-all flex items-center gap-1 border border-blue-100 hover:border-blue-200 h-6"
+              title="ערוך הזמנה"
+            >
+              <Edit size={12} strokeWidth={2.5} />
+              עריכה
+            </button>
+
+            {/* Static Timestamp (Received Time) */}
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-bold h-6 shadow-sm transition-colors bg-gray-50 border-gray-200 text-gray-500">
+              <Clock size={12} />
+              <span className="font-mono dir-ltr">{order.timestamp}</span>
+            </div>
           </div>
-          {!order.isPaid ? (
-            <span className="text-[10px] font-black bg-red-100 text-red-600 px-2 py-0.5 rounded">לא שולם</span>
+
+          {/* Row 2: Payment/Refund Status */}
+          {(order.is_refund || order.isRefund) ? (
+            <div className="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded-md border border-gray-200 h-5 flex items-center font-bold text-[10px]">
+              {Number(order.refund_amount || order.refundAmount) >= Number(order.totalAmount || order.total) ? 'זיכוי מלא' : 'זיכוי חלקי'}
+            </div>
           ) : (
-            <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded">שולם</span>
+            !order.isPaid ? (
+              <div className="bg-red-50 text-red-600 px-1.5 py-0.5 rounded-md border border-red-100 h-5 flex items-center font-bold text-[10px]">
+                לא שולם
+              </div>
+            ) : (
+              <div className="bg-green-50 text-green-700 px-1.5 py-0.5 rounded-md border border-green-100 h-5 flex items-center font-bold text-[10px]">
+                שולם
+              </div>
+            )
           )}
         </div>
       </div>
@@ -309,61 +384,120 @@ const OrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPaymentColle
             <span>{isUpdating ? 'שולח...' : 'הכן עכשיו!'}</span>
           </button>
         ) : (
-          // כרטיסים פעילים (הכנה / מוכן) - שורה אחת בלבד!
-          <div className="flex items-stretch gap-2 mt-auto h-14 w-full">
+          /* Not Delayed -> History or Active */
+          <>
+            {/* History Details (Timestamps & Payment) */}
+            {isHistory && (
+              <div className="mt-4 mb-3 pt-3 border-t border-gray-100 flex flex-col gap-2 text-sm text-gray-700 font-medium">
 
-            {/* כפתור חזרה - רק במוכן */}
-            {isReady && (
-              <button
-                disabled={isUpdating}
-                onClick={async (e) => {
-                  e.stopPropagation(); setIsUpdating(true);
-                  try { await onOrderStatusUpdate(order.id, 'undo_ready'); }
-                  finally { setIsUpdating(false); }
-                }}
-                className="w-14 h-14 bg-gray-200 border-2 border-gray-300 rounded-xl shadow-sm flex items-center justify-center text-gray-700 hover:text-gray-900 hover:bg-gray-300 shrink-0 active:scale-95 transition-all"
-                title="החזר להכנה"
-              >
-                <RotateCcw size={24} />
-              </button>
+                {/* Prep Time Duration (Instead of Received) */}
+                <div className="flex justify-between items-center text-base">
+                  <span className="font-bold text-gray-800">משך הכנה:</span>
+                  <span className="font-mono text-slate-900 dir-ltr font-black text-lg">
+                    {(() => {
+                      const start = order.created_at || order.createdAt || order.timestamp;
+                      const end = order.ready_at || order.readyAt || order.updated_at || order.updatedAt; // Fallback
+
+                      if (!start || !end) return '-';
+
+                      const diff = new Date(end) - new Date(start);
+                      if (isNaN(diff)) return '-';
+
+                      const minutes = Math.floor(diff / 60000);
+                      const seconds = Math.floor((diff % 60000) / 1000);
+                      return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                    })()} דק'
+                  </span>
+                </div>
+
+                {/* Ready/End Time */}
+                {(order.ready_at || order.updated_at) && (
+                  <div className="flex justify-between items-center text-sm text-gray-500">
+                    <span>שעת סיום:</span>
+                    <span className="font-mono dir-ltr">
+                      {new Date(order.ready_at || order.updated_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center mt-1 pt-2 border-t border-dashed border-gray-200 text-base">
+                  <span>סה"כ שולם:</span>
+                  <span className="font-black text-gray-900">₪{order.totalAmount?.toLocaleString()}</span>
+                </div>
+              </div>
             )}
 
-            {/* כפתור ראשי */}
-            <button
-              disabled={isUpdating}
-              onClick={async () => {
-                setIsUpdating(true);
-                try { await onOrderStatusUpdate(order.id, order.orderStatus); }
-                finally { setIsUpdating(false); }
-              }}
-              className={`flex-1 rounded-xl font-black text-xl shadow-sm active:scale-[0.98] transition-all flex items-center justify-center ${actionBtnColor} ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {isUpdating ? 'מעדכן...' : nextStatusLabel}
-            </button>
+            {isHistory ? (
+              // History View Bottom Actions (Subtle Edit Button)
+              <div className="flex items-center justify-center mt-auto h-12 w-full">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onEditOrder) onEditOrder(order);
+                  }}
+                  className="w-full py-2 bg-slate-100 text-slate-500 rounded-lg text-sm font-bold border border-slate-200 hover:bg-slate-200 hover:text-slate-700 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Edit size={16} />
+                  צפייה / זיכוי
+                </button>
+              </div>
+            ) : (
+              // Active Cards (Updates/Ready)
+              <div className="flex items-stretch gap-2 mt-auto h-14 w-full">
 
-            {/* כפתור תשלום - בצד שמאל (אם לא שולם) */}
-            {!order.isPaid && (
-              <button
-                disabled={isUpdating}
-                onClick={async () => {
-                  if (onPaymentCollected) {
-                    setIsUpdating(true); await onPaymentCollected(order); setIsUpdating(false);
-                  }
-                }}
-                className="w-14 h-14 bg-white border-2 border-amber-400 rounded-xl shadow-sm flex items-center justify-center hover:bg-amber-50 shrink-0 relative overflow-visible active:scale-95 transition-all"
-              >
-                <img
-                  src="https://gxzsxvbercpkgxraiaex.supabase.co/storage/v1/object/public/Photos/cashregister.jpg"
-                  alt="קופה"
-                  className="w-8 h-8 object-contain"
-                />
-                {/* Badge בפינה ימנית עליונה - בולט החוצה */}
-                <span className="absolute -top-2 -right-3 bg-red-500 text-white text-[11px] font-bold px-2 py-1 rounded-full shadow-md ring-2 ring-white">
-                  ₪{order.totalAmount?.toFixed(0)}
-                </span>
-              </button>
+                {/* Undo Button - Only for Ready */}
+                {isReady && (
+                  <button
+                    disabled={isUpdating}
+                    onClick={async (e) => {
+                      e.stopPropagation(); setIsUpdating(true);
+                      try { await onOrderStatusUpdate(order.id, 'undo_ready'); }
+                      finally { setIsUpdating(false); }
+                    }}
+                    className="w-14 h-14 bg-gray-200 border-2 border-gray-300 rounded-xl shadow-sm flex items-center justify-center text-gray-700 hover:text-gray-900 hover:bg-gray-300 shrink-0 active:scale-95 transition-all"
+                    title="החזר להכנה"
+                  >
+                    <RotateCcw size={24} />
+                  </button>
+                )}
+
+                {/* Main Action Button */}
+                <button
+                  disabled={isUpdating}
+                  onClick={async () => {
+                    setIsUpdating(true);
+                    try { await onOrderStatusUpdate(order.id, order.orderStatus); }
+                    finally { setIsUpdating(false); }
+                  }}
+                  className={`flex-1 rounded-xl font-black text-xl shadow-sm active:scale-[0.98] transition-all flex items-center justify-center ${actionBtnColor} ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {isUpdating ? 'מעדכן...' : nextStatusLabel}
+                </button>
+
+                {/* Payment Button - Left side if not paid */}
+                {!order.isPaid && (
+                  <button
+                    disabled={isUpdating}
+                    onClick={async () => {
+                      if (onPaymentCollected) {
+                        setIsUpdating(true); await onPaymentCollected(order); setIsUpdating(false);
+                      }
+                    }}
+                    className="w-14 h-14 bg-white border-2 border-amber-400 rounded-xl shadow-sm flex items-center justify-center hover:bg-amber-50 shrink-0 relative overflow-visible active:scale-95 transition-all"
+                  >
+                    <img
+                      src="https://gxzsxvbercpkgxraiaex.supabase.co/storage/v1/object/public/Photos/cashregister.jpg"
+                      alt="קופה"
+                      className="w-8 h-8 object-contain"
+                    />
+                    <span className="absolute -top-2 -right-3 bg-red-500 text-white text-[11px] font-bold px-2 py-1 rounded-full shadow-md ring-2 ring-white">
+                      ₪{order.totalAmount?.toFixed(0)}
+                    </span>
+                  </button>
+                )}
+              </div>
             )}
-          </div>
+          </>
         )}
       </div>
     </div>

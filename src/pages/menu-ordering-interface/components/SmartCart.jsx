@@ -55,7 +55,7 @@ const getModColor = (text) => {
 };
 
 // Memoized CartItem to prevent unnecessary re-renders
-const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay }) => {
+const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrictedMode }) => {
     const cleanName = item.name ? item.name.replace(/<[^>]+>/g, '').trim() : '';
 
     // Parse modifiers for display - remove duplicates
@@ -93,8 +93,8 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay }) => {
 
     return (
         <div
-            onClick={() => onEdit?.(item)}
-            className={`group flex items-center justify-between bg-white p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer gap-3 ${item.isDelayed ? 'bg-amber-50/50' : ''}`}
+            onClick={() => !isRestrictedMode && onEdit?.(item)}
+            className={`group flex items-center justify-between bg-white p-3 border-b border-gray-100 transition-colors gap-3 ${item.isDelayed ? 'bg-amber-50/50' : ''} ${!isRestrictedMode ? 'hover:bg-gray-50 cursor-pointer' : ''}`}
         >
             {/* Right Side: Quantity + Name + Mods */}
             <div className="flex-1 flex flex-col items-start min-w-0">
@@ -107,7 +107,7 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay }) => {
                     <span className={`font-bold text-base truncate leading-tight ${item.isDelayed ? 'text-amber-800' : 'text-gray-800'}`}>
                         {cleanName}
                     </span>
-                    {onEdit && (
+                    {onEdit && !isRestrictedMode && (
                         <Edit2 size={14} className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                     )}
                     <span className="font-mono font-bold text-gray-900 text-base shrink-0 mr-auto">
@@ -136,8 +136,8 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay }) => {
 
             {/* Left Side: Actions */}
             <div className="flex items-center gap-2 pl-1">
-                {/* Delay Toggle Button - ENABLED */}
-                {onToggleDelay && (
+                {/* Delay Toggle Button */}
+                {onToggleDelay && !isRestrictedMode && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onToggleDelay(item.id, item.signature); }}
                         className={`p-3 rounded-xl transition-all shrink-0 shadow-sm border active:scale-95 ${item.isDelayed
@@ -181,7 +181,8 @@ const SmartCart = ({
     loyaltyPoints = 0,
     loyaltyFreeCoffees = 0,
     cartHistory = [],
-    orderNumber, // Kept orderNumber as it's used in the component
+    orderNumber,
+    isRestrictedMode = false // New prop
 }) => {
 
     // --- Calculations ---

@@ -93,15 +93,43 @@ const MenuOrderingInterface = () => {
   });
 
   // --- Edit Mode Logic ---
+  const [isRestrictedMode, setIsRestrictedMode] = useState(false);
+
+  // --- Edit Mode Logic ---
   useEffect(() => {
-    console.log('🔄 MenuOrderingInterface mounted, location.state:', location.state);
-    if (location.state?.isEditMode && location.state?.orderId) {
-      console.log('✏️ Entering Edit Mode for Order:', location.state.orderId);
+    console.log('🔄 MenuOrderingInterface mounted, location:', location);
+
+    // Check URL params first (prio 1), then location.state (prio 2)
+    const params = new URLSearchParams(location.search);
+    const urlEditId = params.get('editOrderId');
+    const stateEditId = location.state?.orderId;
+    const targetOrderId = urlEditId || stateEditId;
+
+    if (targetOrderId) {
+      console.log('✏️ Entering Edit Mode for Order:', targetOrderId);
       setIsEditMode(true);
       sessionStorage.setItem(ORDER_ORIGIN_STORAGE_KEY, 'kds'); // Ensure return to KDS
-      fetchOrderForEditing(location.state.orderId);
+
+      // Check for restricted mode flag in session storage
+      try {
+        const storedEditDataRaw = sessionStorage.getItem('editOrderData');
+        if (storedEditDataRaw) {
+          const storedEditData = JSON.parse(storedEditDataRaw);
+          // Verify ID matches
+          if (String(storedEditData.id) === String(targetOrderId)) {
+            if (storedEditData.restrictedMode) {
+              console.log('🔒 Restricted Edit Mode Active (History)');
+              setIsRestrictedMode(true);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error reading editOrderData:', e);
+      }
+
+      fetchOrderForEditing(targetOrderId);
     }
-  }, [location.state]);
+  }, [location.state, location.search]);
 
   // --- Restore Cart State after adding customer mid-order ---
   useEffect(() => {
@@ -626,6 +654,12 @@ const MenuOrderingInterface = () => {
 
   // Handle adding item to cart
   const handleAddToCart = (item) => {
+    if (isRestrictedMode) {
+      console.log('🚫 Adding items disabled in Restricted Mode');
+      // Optional: Add toast notification here
+      return;
+    }
+
     const normalizedOptions = normalizeSelectedOptions(item?.selectedOptions || []);
 
     // Determine if we should open the Modifier Modal
@@ -1759,7 +1793,7 @@ const MenuOrderingInterface = () => {
           </div>
 
           {/* Menu Grid - Scrollable Area */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
+          <div className={`flex-1 overflow-y-auto custom-scrollbar ${isRestrictedMode ? 'opacity-50 pointer-events-none' : ''}`}>
             <MenuGrid
               items={filteredItems}
               groupedItems={groupedItems}
@@ -1791,6 +1825,7 @@ const MenuOrderingInterface = () => {
               loyaltyFreeCoffees={loyaltyFreeCoffees}
               finalTotal={finalTotal}
               cartHistory={cartHistory}
+              isRestrictedMode={isRestrictedMode}
             />
           </div>
         </div>

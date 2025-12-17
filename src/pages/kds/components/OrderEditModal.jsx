@@ -12,6 +12,7 @@ const OrderEditModal = ({
     order,
     onClose,
     onRefresh,
+    isHistoryMode = false // New prop
 }) => {
     const [items, setItems] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -171,7 +172,8 @@ const OrderEditModal = ({
                 originalTotal: totalToUse,
                 originalPaidAmount: order.paidAmount || totalToUse,
                 items: itemsToUse,
-                originalItems: itemsToUse
+                originalItems: itemsToUse,
+                restrictedMode: isHistoryMode // Pass restriction flag
             };
 
             console.log('📝 Opening full editor with data:', {
@@ -179,7 +181,8 @@ const OrderEditModal = ({
                 totalAmount: editData.totalAmount,
                 originalPaidAmount: editData.originalPaidAmount,
                 itemsCount: editData.items.length,
-                calculatedTotal
+                calculatedTotal,
+                restrictedMode: isHistoryMode
             });
 
             // Store in sessionStorage for the menu-ordering-interface to pick up

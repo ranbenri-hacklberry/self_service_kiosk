@@ -915,6 +915,186 @@ export const useKDSData = () => {
         return () => clearInterval(interval);
     }, [currentUser]);
 
+    const fetchHistoryOrders = useCallback(async (date) => {
+        try {
+            setIsLoading(true);
+            const businessId = currentUser?.business_id;
+
+            // 1. Fetch Option Map
+            const { data: allOptionValues } = await supabase
+                .from('optionvalues')
+                .select('id, value_name');
+
+            const optionMap = new Map();
+            allOptionValues?.forEach(ov => {
+                optionMap.set(String(ov.id), ov.value_name);
+                optionMap.set(ov.id, ov.value_name);
+            });
+
+            // 2. Date Range (Local Day)
+            const startOfDay = new Date(date);
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date(date);
+            endOfDay.setHours(23, 59, 59, 999);
+
+            console.log('📜 Fetching history for:', startOfDay.toLocaleString(), 'to', endOfDay.toLocaleString());
+            let historyData = [];
+            let usedRpc = false;
+
+            // 1. Try RPC V2 (Preferred)
+            const { data: v2Data, error: v2Error } = await supabase.rpc('get_kds_history_orders_v2', {
+                p_start_date: startOfDay.toISOString(),
+                p_end_date: endOfDay.toISOString(),
+                p_business_id: businessId || null
+            });
+
+            if (!v2Error && v2Data) {
+                historyData = v2Data;
+                usedRpc = true;
+                console.log('✅ Fetched history via RPC V2');
+            } else {
+                console.warn('⚠️ RPC V2 failed/missing, trying V1...', v2Error?.message);
+
+                // 2. Try RPC V1 (Backup)
+                const { data: v1Data, error: v1Error } = await supabase.rpc('get_kds_history_orders', {
+                    p_start_date: startOfDay.toISOString(),
+                    p_end_date: endOfDay.toISOString(),
+                    p_business_id: businessId || null
+                });
+
+                if (!v1Error && v1Data) {
+                    historyData = v1Data;
+                    usedRpc = true;
+                    console.log('✅ Fetched history via RPC V1');
+                } else {
+                    console.warn('⚠️ RPC V1 also failed', v1Error?.message);
+                }
+            }
+
+            if (!usedRpc) {
+                console.log('⚠️ Using Direct Query Fallback for History (RLS/Enum risks)');
+                // Fallback: Direct Query (Minimal Safe Fields)
+                let query = supabase
+                    .from('orders')
+                    .select(`
+                        id, order_number, created_at, updated_at, order_status, is_paid, is_refund, refund_amount, customer_name,
+                        order_items (
+                            id, quantity, item_status, price, mods, notes,
+                            menu_items (id, name, price)
+                        )
+                    `)
+                    .gte('created_at', startOfDay.toISOString())
+                    .lte('created_at', endOfDay.toISOString())
+                    .in('order_status', ['completed', 'cancelled']) // We do checking here
+                    .order('created_at', { ascending: false });
+
+                if (businessId) {
+                    query = query.eq('business_id', businessId);
+                }
+
+                const { data, error } = await query;
+                if (error) {
+                    console.error('❌ History Fetch Error (Direct):', error);
+                    // If direct query fails, we return empty list but don't crash
+                } else {
+                    historyData = data || [];
+                }
+            }
+
+            console.log(`📜 Processing ${historyData.length} records...`);
+
+            console.log(`📜 History fetched: ${historyData.length} records`);
+
+            // 3. Process Items (Normalize Structure and Parse Mods)
+            const processedHistory = historyData.map(order => {
+                const items = (order.order_items || [])
+                    .map(item => {
+                        let modsArray = [];
+                        if (item.mods) {
+                            try {
+                                const parsed = typeof item.mods === 'string' ? JSON.parse(item.mods) : item.mods;
+                                if (Array.isArray(parsed)) {
+                                    modsArray = parsed.map(m => {
+                                        if (typeof m === 'object' && m?.value_name) return m.value_name;
+                                        return optionMap.get(String(m)) || String(m);
+                                    }).filter(m => m && !m.toLowerCase().includes('default') && m !== 'רגיל' && !String(m).includes('KDS_OVERRIDE'));
+                                }
+                            } catch (e) { /* ignore */ }
+                        }
+
+                        if (item.notes) {
+                            modsArray.push({ name: item.notes, is_note: true });
+                        }
+
+                        const structuredModifiers = modsArray.map(mod => {
+                            if (typeof mod === 'object' && mod.is_note) {
+                                return { text: mod.name, color: 'mod-color-purple', isNote: true };
+                            }
+                            const modName = typeof mod === 'string' ? mod : (mod.name || String(mod));
+                            let color = 'mod-color-gray';
+                            if (modName.includes('סויה')) color = 'mod-color-lightgreen';
+                            else if (modName.includes('שיבולת')) color = 'mod-color-beige';
+                            else if (modName.includes('שקדים')) color = 'mod-color-lightyellow';
+                            else if (modName.includes('נטול')) color = 'mod-color-blue';
+                            else if (modName.includes('רותח')) color = 'mod-color-red';
+                            else if (modName.includes('קצף') && !modName.includes('בלי')) color = 'mod-color-foam-up';
+                            else if (modName.includes('בלי קצף')) color = 'mod-color-foam-none';
+                            return { text: modName, color: color, isNote: false };
+                        });
+
+                        const itemName = item.menu_items?.name || 'פריט';
+                        const itemPrice = item.menu_items?.price || 0;
+                        const category = item.menu_items?.category || '';
+                        const modsKey = modsArray.map(m => typeof m === 'object' ? m.name : m).sort().join('|');
+
+                        return {
+                            id: item.id,
+                            menuItemId: item.menu_items?.id,
+                            name: itemName,
+                            modifiers: structuredModifiers,
+                            quantity: item.quantity,
+                            status: item.item_status,
+                            price: itemPrice,
+                            category: category,
+                            modsKey: modsKey,
+                            course_stage: item.course_stage || 1,
+                            item_fired_at: item.item_fired_at,
+                            is_early_delivered: item.is_early_delivered || false
+                        };
+                    });
+
+                // Group similar items for cleaner display
+                const groupedItems = groupOrderItems(items);
+                const unpaidAmount = (order.total_amount || 0) - (order.paid_amount || 0);
+
+                return {
+                    id: order.id,
+                    orderNumber: order.order_number || `#${order.id?.slice(0, 8) || 'N/A'} `,
+                    customerName: order.customer_name || 'אורח',
+                    customerPhone: order.customer_phone,
+                    isPaid: order.is_paid,
+                    totalAmount: unpaidAmount > 0 ? unpaidAmount : order.total_amount,
+                    paidAmount: order.paid_amount || 0,
+                    fullTotalAmount: order.total_amount,
+                    timestamp: new Date(order.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+                    fired_at: order.fired_at,
+                    ready_at: order.ready_at,
+                    order_status: order.order_status,
+                    items: groupedItems,
+                    type: 'history'
+                };
+            });
+
+            return processedHistory;
+
+        } catch (err) {
+            console.error('Error fetching history:', err);
+            return [];
+        } finally {
+            setIsLoading(false);
+        }
+    }, [currentUser?.business_id]);
+
     return {
         currentOrders,
         completedOrders,
@@ -927,6 +1107,7 @@ export const useKDSData = () => {
         setErrorModal,
         isSendingSms,
         fetchOrders,
+        fetchHistoryOrders, // New export
         updateOrderStatus,
         handleFireItems,
         handleReadyItems,

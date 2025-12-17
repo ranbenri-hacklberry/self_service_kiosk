@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
   LayoutGrid, Package, Plus, RotateCcw,
   Clock, CreditCard, ChefHat, CheckCircle, List,
-  Check, AlertTriangle, X, RefreshCw, Flame, Edit, ChevronRight, House
+  Check, AlertTriangle, X, RefreshCw, Flame, Edit, ChevronRight, House,
+  Calendar, ChevronLeft, History
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { sendSms } from '../../services/smsService';
@@ -14,8 +16,6 @@ import { isDrink, isHotDrink, sortItems, groupOrderItems } from '../../utils/kds
 import OrderCard from './components/OrderCard';
 import OrderEditModal from './components/OrderEditModal';
 import { useKDSData } from './hooks/useKDSData';
-import KDSInventoryScreen from './components/KDSInventoryScreen';
-import TaskManagementView from '../../components/kds/TaskManagementView';
 
 const API_URL =
   (import.meta.env.VITE_MANAGER_API_URL ||
@@ -64,7 +64,16 @@ transform: scale(1.02);
 
 // --- רכיבים ---
 
-const Header = ({ onRefresh, lastUpdated, viewMode, setViewMode, onUndoLastAction, canUndo, currentUser }) => {
+// --- רכיבים ---
+
+
+
+// --- רכיבים ---
+
+const Header = ({
+  onRefresh, lastUpdated, onUndoLastAction, canUndo,
+  viewMode, setViewMode, selectedDate, setSelectedDate
+}) => {
   const navigate = useNavigate();
 
   const handleNewOrder = () => {
@@ -76,29 +85,63 @@ const Header = ({ onRefresh, lastUpdated, viewMode, setViewMode, onUndoLastActio
     navigate('/mode-selection');
   };
 
-  const tabs = [
-    { id: 'kds', label: 'מטבח', icon: LayoutGrid },
-    { id: 'orders_inventory', label: 'מלאי', icon: Package },
-    { id: 'tasks_prep', label: 'משימות', icon: List },
-  ];
+  const changeDate = (days) => {
+    const newDate = new Date(selectedDate);
+    newDate.setDate(newDate.getDate() + days);
+    setSelectedDate(newDate);
+  };
+
+  const isToday = (date) => {
+    const today = new Date();
+    return date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear();
+  };
 
   return (
     <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-2 flex justify-between items-center border-b border-gray-200 font-heebo">
-      <div className="flex items-center gap-4">
-        <div className="flex bg-gray-100 p-1 rounded-xl">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setViewMode(tab.id)}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${viewMode === tab.id
-                ? 'bg-white text-blue-600 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
-                }`}
-            >
-              <tab.icon size={16} /> {tab.label}
-            </button>
-          ))}
+      <div className="flex items-center gap-6">
+        {/* Title */}
+        <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
+          <LayoutGrid className="text-blue-600" />
+          מסך מטבח
+        </h1>
+
+        {/* View Mode Toggle */}
+        <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1">
+          <button
+            onClick={() => setViewMode('active')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${viewMode === 'active' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            <LayoutGrid size={16} /> פעיל
+          </button>
+          <button
+            onClick={() => setViewMode('history')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${viewMode === 'history' ? 'bg-white shadow-sm text-purple-600' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            <History size={16} /> היסטוריה
+          </button>
         </div>
+
+        {/* Date Picker - Only in History Mode */}
+        <AnimatePresence>
+          {viewMode === 'history' && (
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="flex items-center bg-slate-50 border border-slate-200 rounded-xl p-1 gap-2"
+            >
+              <button onClick={() => changeDate(-1)} className="p-1 hover:bg-white rounded-lg transition text-slate-500"><ChevronRight size={18} /></button>
+              <div className="flex items-center gap-2 px-2 text-sm font-bold text-slate-700 min-w-[120px] justify-center">
+                <Calendar size={14} className="text-slate-400" />
+                {selectedDate.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}
+                {isToday(selectedDate) && <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">היום</span>}
+              </div>
+              <button onClick={() => changeDate(1)} disabled={isToday(selectedDate)} className={`p-1 rounded-lg transition ${isToday(selectedDate) ? 'text-slate-300' : 'hover:bg-white text-slate-500'}`}><ChevronLeft size={18} /></button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <div className="flex items-center gap-3">
@@ -128,6 +171,7 @@ const Header = ({ onRefresh, lastUpdated, viewMode, setViewMode, onUndoLastActio
   );
 };
 
+
 // --- לוגיקה ראשית ---
 
 const KdsScreen = () => {
@@ -144,6 +188,7 @@ const KdsScreen = () => {
     setErrorModal,
     isSendingSms,
     fetchOrders,
+    fetchHistoryOrders, // New
     updateOrderStatus,
     handleFireItems,
     handleReadyItems,
@@ -152,206 +197,57 @@ const KdsScreen = () => {
     handleCancelOrder
   } = useKDSData();
 
-  const [viewMode, setViewMode] = useState('kds'); // 'kds' | 'orders_inventory' | 'tasks_prep'
+  const [viewMode, setViewMode] = useState('active'); // 'active' | 'history'
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [historyOrders, setHistoryOrders] = useState([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+
   const [selectedOrderForPayment, setSelectedOrderForPayment] = useState(null);
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
-
-  // States for tasks and inventory views
-  const [tasksSubTab, setTasksSubTab] = useState('prep'); // 'opening' | 'prep' | 'closing'
-  /* inventorySubTab, supplierOrders, inventoryCounts removed */
-  const [openingTasks, setOpeningTasks] = useState([]);
-  const [prepBatches, setPrepBatches] = useState([]);
-  const [closingTasks, setClosingTasks] = useState([]);
-  const [currentHour, setCurrentHour] = useState(new Date().getHours());
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const navigate = useNavigate();
+
+  // Load History Effect
+  useEffect(() => {
+    if (viewMode === 'history') {
+      const loadHistory = async () => {
+        setIsHistoryLoading(true);
+        const data = await fetchHistoryOrders(selectedDate);
+        setHistoryOrders(data || []);
+        setIsHistoryLoading(false);
+      };
+      loadHistory();
+    }
+  }, [viewMode, selectedDate, fetchHistoryOrders]);
+
 
   const handlePaymentCollected = (order) => {
     setSelectedOrderForPayment(order);
   };
 
-
-  // Unified Task Fetching
-  const fetchTasksByCategory = async (categories, targetSetter) => {
-    try {
-      const todayIdx = new Date().getDay();
-      const dateStr = new Date().toISOString().split('T')[0];
-
-      // Support single category or array of categories
-      const categoryList = Array.isArray(categories) ? categories : [categories];
-      console.log(`📋 Fetching tasks for categories:`, categoryList);
-
-      // 1. Fetch ALL active recurring tasks, then filter client-side
-      const { data: rawTasks, error } = await supabase
-        .from('recurring_tasks')
-        .select('*')
-        .eq('is_active', true);
-
-      console.log(`📋 Raw tasks fetched:`, rawTasks?.length || 0, 'Error:', error?.message || 'none');
-
-      // Filter by category client-side (to avoid Hebrew encoding issues)
-      const allTasks = (rawTasks || []).filter(t => categoryList.includes(t.category));
-      console.log(`📋 Filtered to categories ${categoryList.join(', ')}:`, allTasks.length);
-
-      if (error) throw error;
-
-      // 2. Filter by Schedule (Client-side)
-      const scheduled = (allTasks || []).filter(t => {
-        const schedule = t.weekly_schedule || {};
-        // Legacy support: if no schedule, rely on day_of_week check or show everyday if day_of_week is null?
-        // If new schedule exists:
-        if (Object.keys(schedule).length > 0) {
-          const config = schedule[todayIdx];
-          return config && config.qty > 0;
-        }
-        // Legacy fallback (simple day_of_week int)
-        if (t.day_of_week !== null && t.day_of_week !== undefined) {
-          return t.day_of_week === todayIdx;
-        }
-        // Default: show everyday if no constraints?
-        return true;
-      });
-
-      // 3. Fetch logs specifically for today to exclude completed
-      const { data: logs, error: logsError } = await supabase
-        .from('task_completions')
-        .select('recurring_task_id')
-        .eq('completion_date', dateStr);
-
-      if (logsError) {
-        console.warn('⚠️ Could not fetch task completions:', logsError.message);
-      }
-
-      console.log(`📋 Completed tasks today:`, logs?.length || 0);
-
-      const completedSet = new Set(logs?.map(l => l.recurring_task_id));
-
-      // 4. Map to display format
-      const final = scheduled
-        .filter(t => !completedSet.has(t.id))
-        .map(t => {
-          const config = (t.weekly_schedule || {})[todayIdx] || {};
-          return {
-            id: t.id,
-            name: t.name,
-            description: t.description || t.menu_item?.description,
-            image_url: t.image_url || t.menu_item?.image_url,
-            target_qty: config.qty || t.quantity, // Prioritize daily schedule
-            logic_type: config.mode || t.logic_type || 'fixed',
-            category: t.category,
-            due_time: t.due_time || '08:00',
-            is_recurring: true
-          };
-        });
-
-      console.log(`📋 Final tasks to display:`, final.length, final.map(t => t.name));
-
-      // Update state using the provided setter
-      if (targetSetter) {
-        targetSetter(final);
-      }
-
-    } catch (err) {
-      console.error(`Error fetching tasks:`, err);
-    }
-  };
-
-  // Category mappings - support both Hebrew and English
-  const fetchOpeningTasks = () => fetchTasksByCategory(['פתיחה', 'opening'], setOpeningTasks);
-  const fetchPrepBatches = () => fetchTasksByCategory(['prep', 'הכנה'], setPrepBatches);
-  const fetchClosingTasks = () => fetchTasksByCategory(['סגירה', 'closing'], setClosingTasks);
-
-
-  // --- Task Operations ---
-
-  const handleCompleteTask = async (task) => {
-    // Optimistic Update - handle both Hebrew and English categories
-    const cat = task.category;
-    if (cat === 'opening' || cat === 'פתיחה') setOpeningTasks(p => p.filter(t => t.id !== task.id));
-    if (cat === 'prep' || cat === 'הכנה') setPrepBatches(p => p.filter(t => t.id !== task.id));
-    if (cat === 'closing' || cat === 'סגירה') setClosingTasks(p => p.filter(t => t.id !== task.id));
-
-    try {
-      if (task.is_recurring) {
-        const { error } = await supabase.from('task_completions').insert({
-          recurring_task_id: task.id,
-          business_id: currentUser?.business_id,
-          quantity_produced: task.target_qty,
-          completion_date: new Date().toISOString().split('T')[0],
-          completed_by: currentUser?.id
-        });
-        if (error) throw error;
-      }
-    } catch (e) {
-      console.error("Task completion failed:", e);
-    }
-  };
-
-  // Fetch based on Time Phase (Auto-Switch)
-  useEffect(() => {
-    if (viewMode === 'tasks_prep') {
-      console.log('📋 Tasks view active, fetching all task types...');
-
-      // Always fetch prep tasks
-      fetchPrepBatches();
-
-      // Logic: Opening starts 3 hours before 9:00 = 06:00.
-      // Closing starts at 15:00.
-      const isClosingPhase = currentHour >= 15; // 3 PM
-
-      if (isClosingPhase) {
-        fetchClosingTasks();
-      } else {
-        fetchOpeningTasks();
-      }
-    }
-  }, [viewMode, currentHour]);
-
-  // Update current hour every minute
-  useEffect(() => {
-    const updateHour = () => {
-      setCurrentHour(new Date().getHours());
-    };
-    const interval = setInterval(updateHour, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Render tasks view (Auto Phase)
-  const renderTasksPrepView = () => {
-    // Current Phase Logic
-    const isClosingPhase = currentHour >= 15;
-    const title = isClosingPhase ? 'משימות סגירה' : 'משימות פתיחה';
-    const activeList = isClosingPhase ? closingTasks : openingTasks;
-
-    return (
-      <div className="flex flex-col h-full bg-slate-50 p-4">
-        {/* Info Badge */}
-        <div className="flex justify-center mb-4">
-          <span className={`px-4 py-1 rounded-full text-xs font-bold flex items-center gap-2 shadow-sm border ${isClosingPhase ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-orange-50 text-orange-700 border-orange-100'}`}>
-            <Clock size={12} />
-            {isClosingPhase ? 'נוהל סגירה פעיל (החל מ-15:00)' : 'נוהל פתיחה פעיל (עד 15:00)'}
-          </span>
-        </div>
-
-        <TaskManagementView
-          tasks={activeList}
-          onComplete={handleCompleteTask}
-          title={title}
-        />
-      </div>
-    );
-  };
-
-  // renderInventoryOrdersView removed - replaced by KDSInventoryScreen component
-
-  // State for Order Edit Modal
-  const [editingOrder, setEditingOrder] = useState(null);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-
   const handleEditOrder = (order) => {
-    console.log('🖊️ KDS: Opening edit modal for order:', order);
-    setEditingOrder(order);
-    setIsEditModalOpen(true);
+    // Determine restricted mode (History or Completed)
+    const isRestricted = viewMode === 'history' || order.order_status === 'completed' || order.order_status === 'cancelled';
+
+    if (isRestricted) {
+      console.log('🖊️ KDS: Navigating to RESTRICTED edit order (History):', order.id);
+      // Save minimal data to session storage to pass context
+      const editData = {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        restrictedMode: true
+      };
+      sessionStorage.setItem('editOrderData', JSON.stringify(editData));
+      sessionStorage.setItem('order_origin', 'kds');
+      // Navigate directly to cart
+      navigate(`/menu-ordering-interface?editOrderId=${order.id}`);
+    } else {
+      console.log('🖊️ KDS: Opening Edit Modal for Active Order:', order.id);
+      setEditingOrder(order);
+      setIsEditModalOpen(true);
+    }
   };
 
   const handleCloseEditModal = () => {
@@ -363,20 +259,21 @@ const KdsScreen = () => {
     <div className="h-screen w-screen bg-gray-900 flex items-center justify-center p-4 font-heebo overflow-hidden" dir="rtl">
       <style>{kdsStyles}</style>
 
-      {/* מסגרת מלאה (ללא הגבלת רוחב מלאכותית כדי למלא את האייפד) */}
+      {/* מסגרת מלאה */}
       <div className="bg-slate-50 w-full h-full rounded-[24px] overflow-hidden shadow-2xl flex flex-col relative ring-4 ring-gray-800">
         <Header
           onRefresh={fetchOrders}
           lastUpdated={lastUpdated}
-          viewMode={viewMode}
-          setViewMode={setViewMode}
-          onOpenStaffMenu={() => setIsStaffModalOpen(true)}
           onUndoLastAction={handleUndoLastAction}
           canUndo={!!lastAction}
-          currentUser={currentUser}
+          viewMode={viewMode}
+          setViewMode={setViewMode}
+          selectedDate={selectedDate}
+          setSelectedDate={setSelectedDate}
         />
 
-        {viewMode === 'kds' ? (
+        {/* View Content */}
+        {viewMode === 'active' ? (
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* חצי עליון: בטיפול (50%) */}
             <div className="flex-1 border-b-4 border-gray-200 relative bg-slate-100/50 flex flex-col min-h-0">
@@ -422,11 +319,51 @@ const KdsScreen = () => {
               </div>
             </div>
           </div>
-        ) : viewMode === 'tasks_prep' ? (
-          renderTasksPrepView()
         ) : (
-          <KDSInventoryScreen />
+          <div className="flex-1 relative bg-purple-50/30 flex flex-col min-h-0">
+            {/* History Toolbar / Badge */}
+            <div className="absolute top-3 right-4 bg-purple-100 border border-purple-200 px-3 py-1 rounded-full text-xs font-bold text-purple-700 z-10 shadow-sm flex items-center gap-2">
+              <History size={12} />
+              היסטוריית הזמנות ({historyOrders.length})
+            </div>
+
+            {/* History List - Horizontal Scroll similar to active */}
+            <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-4 custom-scrollbar">
+              {isHistoryLoading ? (
+                <div className="h-full w-full flex items-center justify-center text-purple-400 gap-2">
+                  <RefreshCw className="animate-spin" /> טוען היסטוריה...
+                </div>
+              ) : (
+                <div className="flex h-full flex-row justify-start gap-4 items-stretch">
+                  {historyOrders.length === 0 ? (
+                    <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 opacity-60 ml-20">
+                      <History size={48} className="mb-2" />
+                      <p>אין הזמנות לתאריך זה</p>
+                    </div>
+                  ) : (
+                    historyOrders.map(order => (
+                      <OrderCard
+                        key={order.id}
+                        order={order}
+                        isHistory={true} // New Prop
+                        isReady={order.order_status === 'completed'} // Reuse styling
+                        onOrderStatusUpdate={() => { }} // No Action
+                        onPaymentCollected={() => { }} // No Action
+                        onFireItems={() => { }} // No Action
+                        onReadyItems={() => { }} // No Action
+                        onEditOrder={handleEditOrder} // Allow Edit (Restricted)
+                        onCancelOrder={() => { }} // No Action
+                        onRefresh={() => { }}
+                      />
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         )}
+
+
 
         {/* SMS Toast Notification */}
         {smsToast && (
