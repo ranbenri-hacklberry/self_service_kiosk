@@ -949,7 +949,8 @@ export const useKDSData = () => {
             });
 
             if (!v2Error && v2Data) {
-                historyData = v2Data;
+                // Filter out cancelled orders (User Request: Hide cancelled orders)
+                historyData = v2Data.filter(o => o.order_status !== 'cancelled');
                 usedRpc = true;
                 console.log('✅ Fetched history via RPC V2');
             } else {
@@ -963,7 +964,8 @@ export const useKDSData = () => {
                 });
 
                 if (!v1Error && v1Data) {
-                    historyData = v1Data;
+                    // Filter out cancelled orders
+                    historyData = v1Data.filter(o => o.order_status !== 'cancelled');
                     usedRpc = true;
                     console.log('✅ Fetched history via RPC V1');
                 } else {
@@ -985,7 +987,7 @@ export const useKDSData = () => {
                     `)
                     .gte('created_at', startOfDay.toISOString())
                     .lte('created_at', endOfDay.toISOString())
-                    .in('order_status', ['completed', 'cancelled']) // We do checking here
+                    .in('order_status', ['completed']) // Removed 'cancelled'
                     .order('created_at', { ascending: false });
 
                 if (businessId) {

@@ -212,9 +212,12 @@ const SmartCart = ({
     const priceDifference = effectiveTotal - originalPaidAmount;
 
     // --- Status Logic ---
+    // --- Status Logic ---
     const isRefund = isEditMode && originalIsPaid && priceDifference < 0;
     const isAdditionalCharge = isEditMode && originalIsPaid && priceDifference > 0;
     const isNoChange = isEditMode && originalIsPaid && priceDifference === 0;
+    // New: Cancel Order if Unpaid + Empty
+    const isCancelOrder = isEditMode && !originalIsPaid && cartItems.length === 0;
 
     console.log('🛒 SmartCart Debug:', {
         isEditMode,
@@ -223,11 +226,12 @@ const SmartCart = ({
         effectiveTotal,
         priceDifference,
         isRefund,
+        isCancelOrder,
         cartItemsCount: cartItems.length
     });
 
-    // אפשר לחיצה אם זה זיכוי (גם אם העגלה ריקה) או אם יש פריטים
-    const isDisabled = disabled || (cartItems.length === 0 && !isRefund);
+    // אפשר לחיצה אם זה זיכוי (גם אם העגלה ריקה) או אם יש פריטים או אם זה ביטול הזמנה
+    const isDisabled = disabled || (cartItems.length === 0 && !isRefund && !isCancelOrder);
 
     // DEBUG: Log status decision values
     console.log('🎯 SmartCart Status Decision:', {
@@ -235,6 +239,7 @@ const SmartCart = ({
         isRefund,
         isAdditionalCharge,
         isNoChange,
+        isCancelOrder,
         isEditMode,
         originalIsPaid,
         priceDifference
@@ -249,6 +254,15 @@ const SmartCart = ({
             buttonColor: 'bg-gray-200 text-gray-400 cursor-not-allowed',
             icon: ShoppingBag,
             amount: null
+        };
+
+        if (isCancelOrder) return {
+            text: 'בטל הזמנה',
+            subtext: 'העגלה ריקה - ביטול ימחק את ההזמנה',
+            color: 'bg-red-50 border-red-100',
+            buttonColor: 'bg-red-500 hover:bg-red-600 text-white shadow-red-200',
+            amount: null,
+            icon: Trash2
         };
 
         if (isRefund) return {

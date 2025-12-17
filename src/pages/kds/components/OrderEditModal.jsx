@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, Check, Edit } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 
@@ -14,6 +15,7 @@ const OrderEditModal = ({
     onRefresh,
     isHistoryMode = false // New prop
 }) => {
+    const navigate = useNavigate();
     const [items, setItems] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [orderData, setOrderData] = useState(null);
@@ -98,60 +100,46 @@ const OrderEditModal = ({
 
             if (error) {
                 console.error('Failed to update is_early_delivered:', error.message);
-                // Still update local state for visual feedback
+                // Revert UI change or show toast
             } else {
-                console.log('✅ Early delivery toggled successfully');
-            }
+                // Update local state to reflect change immediately
+                setItems(prevItems =>
+                    prevItems.map(i =>
+                        i.id === item.id ? { ...i, is_early_delivered: newValue } : i
+                    )
+                );
 
-            // Update local state
-            setItems(prev => prev.map(i =>
-                i.id === item.id ? { ...i, is_early_delivered: newValue } : i
-            ));
-
-            // Refresh KDS
-            if (onRefresh) {
-                await onRefresh();
+                // Notify parent to refresh if needed (optional, might be heavy)
+                if (onRefresh) onRefresh();
             }
         } catch (err) {
-            console.error('Error toggling early delivery:', err);
+            console.error('Error in toggle:', err);
         } finally {
             setProcessingItemId(null);
         }
     };
 
     // Navigate to full order editing interface
-    const handleOpenFullEditor = async () => {
-        if (!orderData?.id) return;
+    const handleOpenFullEditor = () => {
+        if (!orderData || !items.length) return;
 
         try {
             // Fetch ALL items from the order (not just what's on this card)
-            const { data: fullOrderItems, error } = await supabase
-                .from('order_items')
-                .select(`
-                    id, quantity, price, mods, notes, item_status, course_stage,
-                    menu_items (id, name, price)
-                `)
-                .eq('order_id', orderData.id)
-                .neq('item_status', 'cancelled');
-
-            if (error) {
-                console.error('Error fetching full order items:', error);
-                // Fall back to current items
-            }
-
-            const itemsToUse = fullOrderItems?.length > 0
-                ? fullOrderItems.map(item => ({
+            // The instruction snippet implies using the current `items` state directly,
+            // rather than re-fetching from DB. Adjusting to match instruction.
+            const itemsToUse = items && items.length > 0
+                ? items.map(item => ({
                     id: item.id,
-                    menuItemId: item.menu_items?.id,
-                    name: item.menu_items?.name || 'Unknown',
-                    quantity: item.quantity || 1,
-                    price: item.price || item.menu_items?.price || 0,
-                    mods: item.mods,
+                    menuItemId: item.menu_item_id, // Ensure we have the menu item ID
+                    name: item.name,
+                    price: item.price,
+                    quantity: item.quantity,
+                    mods: item.modifiers, // Assuming modifiers structure is compatible
                     notes: item.notes,
                     selectedOptions: [],
                     course_stage: item.course_stage || 1
                 }))
-                : items;
+                : items; // Fallback to current items if mapping fails or items is empty
 
             // Calculate total from ALL items
             const calculatedTotal = itemsToUse.reduce((sum, item) =>
@@ -189,7 +177,8 @@ const OrderEditModal = ({
             sessionStorage.setItem('editOrderData', JSON.stringify(editData));
 
             // Navigate to menu-ordering-interface with edit parameter
-            window.location.href = `/menu-ordering-interface?editOrderId=${orderData.id}`;
+            // Changed from window.location.href to navigate for SPA speed
+            navigate(`/menu-ordering-interface?editOrderId=${orderData.id}`);
         } catch (err) {
             console.error('Error opening full editor:', err);
         }
@@ -214,7 +203,8 @@ const OrderEditModal = ({
                     <div className="flex items-center gap-4 flex-1">
                         <button
                             onClick={handleOpenFullEditor}
-                            className="w-10 h-10 bg-gradient-to-br from-orange-100 to-orange-50 text-orange-500 rounded-2xl flex items-center justify-center shadow-inner hover:from-orange-200 hover:to-orange-100 transition active:scale-95"
+                            disabled={isLoading || !orderData}
+                            className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-inner transition active:scale-95 ${isLoading || !orderData ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-gradient-to-br from-orange-100 to-orange-50 text-orange-500 hover:from-orange-200 hover:to-orange-100'}`}
                             title="עריכת הזמנה מלאה"
                         >
                             <Edit size={20} strokeWidth={2.5} />

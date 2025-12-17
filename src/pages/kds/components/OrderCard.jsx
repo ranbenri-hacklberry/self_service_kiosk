@@ -39,6 +39,17 @@ const PrepTimer = ({ order, isHistory, isReady }) => {
     };
 
     calculate();
+    if (isHistory && duration === '-') {
+      console.log('📜 History Timer Debug:', {
+        id: order.id,
+        created_at: order.created_at,
+        fired_at: order.fired_at,
+        ready_at: order.ready_at,
+        updated_at: order.updated_at,
+        startStr: order.fired_at || order.created_at || order.timestamp
+      });
+    }
+
     if (!isHistory && !isReady) {
       const interval = setInterval(calculate, 1000);
       return () => clearInterval(interval);
@@ -72,8 +83,8 @@ const OrderCard = ({
   const isDelayedCard = order.type === 'delayed';
   const isUnpaidDelivered = order.type === 'unpaid_delivered';
 
-  // הגדרת רוחב: 280px לרגיל, 450px לגדול (לשני טורים)
-  const cardWidthClass = isLargeOrder ? 'w-[450px]' : 'w-[280px]';
+  // הגדרת רוחב: 280px לרגיל, 420px לגדול (לבקשת המשתמש - המידה המקורית הרצויה)
+  const cardWidthClass = isLargeOrder ? 'w-[420px]' : 'w-[280px]';
 
   const getStatusStyles = (status) => {
     if (isDelayedCard) return 'border-t-[6px] border-slate-400 shadow-inner bg-slate-200/90 opacity-95';
@@ -98,8 +109,42 @@ const OrderCard = ({
   const actionBtnColor = isReady
     ? 'bg-slate-900 text-white hover:bg-slate-800'
     : (orderStatusLower === 'new' || orderStatusLower === 'pending'
-      ? 'bg-slate-800 text-white hover:bg-slate-700'
-      : 'bg-green-600 text-white hover:bg-green-700');
+      ? 'bg-green-500 text-white hover:bg-green-600 shadow-green-200'
+      : 'bg-green-500 text-white hover:bg-green-600 shadow-green-200');
+
+  // פונקציה לטיפול בלחיצה על הכפתור הראשי
+  const handleMainAction = (e) => {
+    e.stopPropagation();
+    if (isUpdating) return;
+
+    if (isReady) {
+      // אם כבר מוכן - העבר להיסטוריה (נמסר)
+      onOrderStatusUpdate(order.id, 'completed');
+    } else if (orderStatusLower === 'new' || orderStatusLower === 'pending') {
+      // אם חדש - התחל הכנה
+      onOrderStatusUpdate(order.id, 'in_progress');
+    } else {
+      // אם בהכנה - סמן כמוכן
+      onOrderStatusUpdate(order.id, 'done');
+    }
+  };
+
+  const handleCardClick = () => {
+    // בלחיצה על הכרטיס - פתח עריכה (אם לא היסטוריה)
+    // אם היסטוריה - כרגע לא עושה כלום או פותח מודל צפייה
+    if (!isHistory) {
+      if (onEditOrder) onEditOrder(order);
+    }
+  };
+
+
+  const getModColor = (modName) => {
+    if (['חלב שיבולת', 'חלב סויה', 'חלב שקדים', 'שיבולת', 'סויה', 'שקדים'].some(x => modName.includes(x))) return 'bg-purple-100 text-purple-700 border-purple-200';
+    if (['דל שומן', 'דל'].some(x => modName.includes(x))) return 'bg-blue-100 text-blue-700 border-blue-200';
+    if (['חזק', 'תוספת אספרסו'].some(x => modName.includes(x))) return 'bg-orange-100 text-orange-700 border-orange-200';
+    if (['בלי', 'ללא'].some(x => modName.includes(x))) return 'bg-red-100 text-red-700 border-red-200';
+    return 'bg-slate-100 text-slate-700 border-slate-200';
+  };
 
   // Unified sorted list for all orders
   const unifiedItems = sortItems(order.items || []);
@@ -204,7 +249,7 @@ const OrderCard = ({
   };
 
   return (
-    <div className={`kds-card ${isLargeOrder ? 'w-[600px]' : 'w-[300px]'} flex-shrink-0 rounded-2xl p-3 mx-2 flex flex-col h-full font-heebo ${isDelayedCard ? 'bg-gray-50' : 'bg-white'} ${getStatusStyles(order.orderStatus)} border-x border-b border-gray-100`}>
+    <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl p-3 mx-2 flex flex-col h-full font-heebo ${isDelayedCard ? 'bg-gray-50' : 'bg-white'} ${getStatusStyles(order.orderStatus)} border-x border-b border-gray-100`}>
 
       <div className="flex justify-between items-start mb-2 border-b border-gray-50 pb-1.5">
         <div className="flex flex-col overflow-hidden flex-1">

@@ -552,11 +552,28 @@ const MenuOrderingInterface = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const editOrderId = urlParams.get('editOrderId');
 
+    // Safety Check: Redirect if ID is explicitly "undefined" string
+    if (editOrderId === 'undefined' || editOrderId === 'null') {
+      console.error('❌ Detected invalid editOrderId in URL:', editOrderId);
+      navigate(currentUser?.business_id ? '/kds' : '/'); // Fallback logic
+      return;
+    }
+
     if (editOrderId) {
       const editData = sessionStorage.getItem('editOrderData');
       if (editData) {
         try {
           const parsedData = JSON.parse(editData);
+
+          if (!parsedData || !parsedData.id || parsedData.id === 'undefined') {
+            console.error('❌ Computed invalid order data from session:', parsedData);
+            sessionStorage.removeItem('editOrderData');
+            alert('נתוני הזמנה לא תקינים. חוזר למסך ראשי.');
+            navigate('/kds');
+            return;
+          }
+
+          console.log('✅ Loaded Edit Order Data Validated:', parsedData.id);
           setIsEditMode(true);
           setEditingOrderData(parsedData);
 
@@ -1136,7 +1153,48 @@ const MenuOrderingInterface = () => {
   }, [cartTotal, loyaltyDiscount]);
 
   // Updated handleInitiatePayment to show payment modal
-  const handleInitiatePayment = () => {
+  const handleInitiatePayment = async () => {
+    // 1. Check for Cancel Order (Edit Mode + Unpaid + Empty Cart)
+    const isCancelOrder = isEditMode && editingOrderData && !editingOrderData.isPaid && cartItems.length === 0;
+
+    if (isCancelOrder) {
+      const orderId = editingOrderData?.id;
+      if (!orderId || orderId === 'undefined' || orderId === 'null') {
+        console.error('❌ Cannot cancel order: Invalid ID', orderId);
+        alert('שגיאה: מספר הזמנה לא תקין. אנא חזור למסך המטבח.');
+        navigate('/kds');
+        return;
+      }
+
+      if (window.confirm('האם אתה בטוח שברצונך לבטל את ההזמנה? פעולה זו תמחק את ההזמנה לצמיתות.')) {
+        try {
+          setIsProcessingOrder(true);
+
+          // Attempt Secure Delete RPC first (Better for permissions/integrity)
+          const { error: rpcError } = await supabase.rpc('delete_order_secure', { p_order_id: orderId });
+
+          if (rpcError) {
+            console.warn('⚠️ Secure Delete RPC failed/missing, trying direct delete:', rpcError);
+            // Fallback: Direct Delete
+            const { error: deleteError } = await supabase
+              .from('orders')
+              .delete()
+              .eq('id', orderId);
+
+            if (deleteError) throw deleteError;
+          }
+
+          console.log('✅ Order cancelled/deleted successfully');
+          handleCloseConfirmation(); // Clears cart and navigates back
+        } catch (err) {
+          console.error('❌ Failed to cancel order:', err);
+          alert('שגיאה בביטול ההזמנה: ' + (err.message || 'Unknown error'));
+          setIsProcessingOrder(false);
+        }
+      }
+      return;
+    }
+
     if (isEditMode) {
       const originalTotal = editingOrderData?.originalTotal || 0;
       const priceDifference = finalTotal - originalTotal;
@@ -1155,10 +1213,13 @@ const MenuOrderingInterface = () => {
 
     const originalTotalForRefund = editingOrderData?.originalTotal || 0;
     const isRefund = isEditMode && editingOrderData?.isPaid && (finalTotal < originalTotalForRefund);
+    const isUnpaidUpdate = isEditMode && !editingOrderData?.isPaid; // Allow update for unpaid orders
 
-    // Allow if refund, even if cart is empty or total is 0
-    if ((cartItems?.length === 0 && !isRefund) || (finalTotal <= 0 && !isRefund && loyaltyDiscount === 0)) {
-      return;
+    // Allow if refund OR unpaid update, even if cart is empty or total is 0
+    // But if cart is empty and unpaid, we handled it above (Cancel).
+    // If cart is NOT empty but unpaid, we allow.
+    if ((cartItems?.length === 0 && !isRefund) || (finalTotal <= 0 && !isRefund && !isUnpaidUpdate && loyaltyDiscount === 0)) {
+      if (!isUnpaidUpdate) return;
     }
     setShowPaymentModal(true);
   };

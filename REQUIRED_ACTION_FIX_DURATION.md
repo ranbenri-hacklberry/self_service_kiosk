@@ -1,7 +1,7 @@
-# Required Action: Fix Prep Duration in History
+# Required Action: Fix Prep Duration & Refund Status
 
-To fix the "Empty" or "-" preparation duration in KDS History, you MUST update the database helper function.
-This update ensures checking `updated_at` time effectively if `ready_at` is missing for older orders.
+To fix the "Empty" preparation duration and enable "Refund" status display in KDS History, you MUST update the database helper function.
+This update ensures checking `updated_at` time and fetching `refund_amount` columns.
 
 ### 1. Open Supabase Dashboard
 Go to your Supabase project -> **SQL Editor**.
