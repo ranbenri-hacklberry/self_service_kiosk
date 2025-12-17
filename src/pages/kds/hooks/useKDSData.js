@@ -953,8 +953,11 @@ export const useKDSData = () => {
                 .abortSignal(signal);
 
             if (!v2Error && v2Data) {
+                console.log(`📜 RPC V2 returned ${v2Data.length} total orders`);
                 // Filter out cancelled orders (User Request: Hide cancelled orders)
                 historyData = v2Data.filter(o => o.order_status !== 'cancelled');
+                console.log(`📜 After filtering cancelled: ${historyData.length} orders`);
+                console.log(`📜 Refund orders in data:`, v2Data.filter(o => o.is_refund).length);
                 usedRpc = true;
                 console.log(`✅ Fetched ${historyData.length} records via RPC V2`);
             } else {
@@ -984,6 +987,7 @@ export const useKDSData = () => {
                 // Note: Direct fallback is risky for performance anyway.
             }
 
+            console.log(`📜 Raw history data:`, historyData?.slice(0, 3)); // Debug first 3 orders
             console.log(`📜 Processing ${historyData.length} records...`);
 
             console.log(`📜 History fetched: ${historyData.length} records`);
