@@ -105,6 +105,7 @@ export const AuthProvider = ({ children }) => {
   const value = {
     user,
     userProfile,
+    currentUser: user, // Alias for backward compatibility
     loading,
     profileLoading,
     signIn,

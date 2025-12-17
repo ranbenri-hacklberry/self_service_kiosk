@@ -6,7 +6,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
 
 const SalesDashboard = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, isAuthenticated } = useAuth();
+
+  console.log('🔍 SalesDashboard Debug:', {
+    currentUser,
+    isAuthenticated,
+    user: currentUser,
+    userProfile: currentUser?.user_metadata
+  });
   
   const [viewMode, setViewMode] = useState('daily'); // 'daily', 'weekly', 'monthly'
   const [currentSales, setCurrentSales] = useState([]); // Data for current period (Flattened Items)
@@ -155,6 +162,13 @@ const SalesDashboard = () => {
       const { currentStart, currentEnd, previousStart, previousEnd } = getDateRanges(viewMode, selectedDate);
 
       const fetchPeriod = async (start, end) => {
+        console.log('🔍 Calling get_sales_data RPC:', {
+          business_id: currentUser?.business_id,
+          start_date: start.toISOString(),
+          end_date: end.toISOString(),
+          user: currentUser
+        });
+
         // Use RPC function to bypass RLS
         const { data, error } = await supabase.rpc('get_sales_data', {
           p_business_id: currentUser?.business_id,
