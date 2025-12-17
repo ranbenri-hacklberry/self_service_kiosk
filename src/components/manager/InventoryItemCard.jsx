@@ -4,7 +4,12 @@ import { Package, ChevronDown, ChevronUp, History, CheckCircle2, Minus, Plus, Sh
 const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, draftOrderQty = 0 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
 
-    console.log('🎯 InventoryItemCard render:', { itemId: item.id, isExpanded });
+    console.log('🎯 InventoryItemCard render:', { itemId: item.id, isExpanded, isEditing });
+
+    // Debug isEditing changes
+    useEffect(() => {
+        console.log('🎯 isEditing changed to:', isEditing, 'for item:', item.id);
+    }, [isEditing]);
     // Reduce height by 20% -> Use tighter vertical padding in main container
     const [currentStock, setCurrentStock] = useState(Number(item.current_stock) || 0);
     const [orderQty, setOrderQty] = useState(draftOrderQty);
@@ -257,7 +262,9 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                     <button
                         onClick={() => {
                             console.log('🎯 Edit button clicked for item:', item.id);
+                            console.log('🎯 Before setIsEditing, current value:', isEditing);
                             setIsEditing(true);
+                            console.log('🎯 After setIsEditing call');
                         }}
                         className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 rounded-lg font-bold text-sm transition-all flex items-center gap-2 border border-blue-100 hover:border-blue-200"
                         title="עריכת פרטי פריט"
