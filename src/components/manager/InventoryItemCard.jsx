@@ -268,7 +268,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
     // Edit Modal (Same as Add Item Modal)
     if (isEditing) {
         return (
-            <>
+            <div>
                 {/* Backdrop */}
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" onClick={() => setIsEditing(false)} />
 
@@ -406,6 +406,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                     </button>
                 </div>
             </motion.div>
+            </div>
         );
     }
 
