@@ -307,7 +307,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                                 <button
                                     onClick={() => setEditData({ ...editData, unit: 'יח׳', count_step: 1, min_order: 1, order_step: 1 })}
                                     className={`p-3 rounded-xl font-bold text-sm transition-all ${
-                                        editData.unit === 'יח׳ ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                        editData.unit === "יח׳" ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                     }`}
                                 >
                                     יחידה (יח׳)
@@ -315,7 +315,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                                 <button
                                     onClick={() => setEditData({ ...editData, unit: 'ק״ג', count_step: 0.01, min_order: 0.01, order_step: 0.01 })}
                                     className={`p-3 rounded-xl font-bold text-sm transition-all ${
-                                        editData.unit === 'ק״ג' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                        editData.unit === "ק״ג" ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                     }`}
                                 >
                                     משקל (ק״ג)
