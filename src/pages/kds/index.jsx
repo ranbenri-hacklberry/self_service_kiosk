@@ -365,8 +365,6 @@ const KdsScreen = () => {
               היסטוריית הזמנות ({historyOrders.length})
             </div>
 
-            {console.log('📜 History render debug:', { historyOrdersCount: historyOrders.length, isHistoryLoading, selectedDate })}
-
             {/* History List - Horizontal Scroll similar to active */}
             <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-20 custom-scrollbar">
               {isHistoryLoading ? (
