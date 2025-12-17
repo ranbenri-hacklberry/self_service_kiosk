@@ -248,17 +248,17 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                     </div>
                 </div>
             )}
-        </div>
 
-        {/* Edit Button - Always visible */}
-        <div className="mt-3 pt-3 border-t border-gray-100">
-            <button
-                onClick={() => setIsEditing(true)}
-                className="w-full py-2 px-4 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2"
-            >
-                <Edit2 size={16} />
-                עריכת פרטי פריט
-            </button>
+            {/* Edit Button - Always visible */}
+            <div className="mt-3 pt-3 border-t border-gray-100">
+                <button
+                    onClick={() => setIsEditing(true)}
+                    className="w-full py-2 px-4 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                >
+                    <Edit2 size={16} />
+                    עריכת פרטי פריט
+                </button>
+            </div>
         </div>
     );
 
