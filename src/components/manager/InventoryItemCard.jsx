@@ -271,7 +271,10 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
     );
 
     // Edit Modal (Same as Add Item Modal)
+    console.log('🎯 Edit modal check:', { isEditing, itemId: item.id });
+
     if (isEditing) {
+        console.log('🎯 Showing edit modal for item:', item.id);
         return (
             <div>
                 {/* Backdrop */}
@@ -289,7 +292,10 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                     {/* Modal Header */}
                     <div className="p-6 pb-6 bg-white rounded-t-3xl border-b border-gray-50 shrink-0 relative">
                         <button
-                            onClick={() => setIsEditing(false)}
+                            onClick={() => {
+                                console.log('🎯 Close modal clicked for item:', item.id);
+                                setIsEditing(false);
+                            }}
                             className="absolute top-6 right-6 w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition-colors"
                         >
                             <X size={20} />
