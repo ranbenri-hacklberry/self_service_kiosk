@@ -441,6 +441,30 @@ const OrderCard = ({
                   <span>סה"כ שולם:</span>
                   <span className="font-black text-gray-900">₪{order.totalAmount?.toLocaleString()}</span>
                 </div>
+
+                {/* Refund Status for History */}
+                {(order.is_refund || order.isRefund) && (
+                  <div className="flex justify-between items-center mt-1 text-sm">
+                    <span className="text-gray-600">סטטוס זיכוי:</span>
+                    <span className={`px-2 py-1 rounded-md font-bold text-xs ${
+                      Number(order.refund_amount || order.refundAmount) >= Number(order.totalAmount || order.total)
+                        ? 'bg-red-100 text-red-700 border border-red-200'
+                        : 'bg-orange-100 text-orange-700 border border-orange-200'
+                    }`}>
+                      {Number(order.refund_amount || order.refundAmount) >= Number(order.totalAmount || order.total)
+                        ? 'זיכוי מלא'
+                        : 'זיכוי חלקי'}
+                    </span>
+                  </div>
+                )}
+
+                {/* Refund Amount for History */}
+                {(order.is_refund || order.isRefund) && (order.refund_amount || order.refundAmount) && (
+                  <div className="flex justify-between items-center mt-1 text-sm">
+                    <span className="text-gray-600">סכום זיכוי:</span>
+                    <span className="font-black text-red-600">-₪{Number(order.refund_amount || order.refundAmount).toLocaleString()}</span>
+                  </div>
+                )}
               </div>
             )}
 
