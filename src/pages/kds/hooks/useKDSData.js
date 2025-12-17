@@ -953,10 +953,6 @@ export const useKDSData = () => {
                 .abortSignal(signal);
 
             if (!v2Error && v2Data) {
-                console.log(`📜 RPC V2 returned ${v2Data.length} total orders`);
-                console.log(`📜 All order statuses:`, [...new Set(v2Data.map(o => o.order_status))]);
-                console.log(`📜 Refund orders in raw data:`, v2Data.filter(o => o.is_refund || o.isRefund).length);
-
                 // Filter out cancelled orders (User Request: Hide cancelled orders)
                 // But keep refunded orders
                 historyData = v2Data.filter(o => {
@@ -965,10 +961,7 @@ export const useKDSData = () => {
                     return !isCancelled || isRefunded; // Keep refunded orders even if cancelled
                 });
 
-                console.log(`📜 After filtering: ${historyData.length} orders`);
-                console.log(`📜 Refund orders in filtered data:`, historyData.filter(o => o.is_refund || o.isRefund).length);
                 usedRpc = true;
-                console.log(`✅ Fetched ${historyData.length} records via RPC V2`);
             } else {
                 if (v2Error.name !== 'AbortError') {
                     console.warn('⚠️ RPC V2 failed/missing, trying V1...', v2Error?.message);
@@ -985,7 +978,12 @@ export const useKDSData = () => {
                     .abortSignal(signal);
 
                 if (!v1Error && v1Data) {
-                    historyData = v1Data.filter(o => o.order_status !== 'cancelled');
+                    // Filter out cancelled orders but keep refunded ones
+                    historyData = v1Data.filter(o => {
+                        const isCancelled = o.order_status === 'cancelled';
+                        const isRefunded = o.is_refund || o.isRefund;
+                        return !isCancelled || isRefunded;
+                    });
                     usedRpc = true;
                 }
             }
@@ -996,10 +994,6 @@ export const useKDSData = () => {
                 // Note: Direct fallback is risky for performance anyway.
             }
 
-            console.log(`📜 Raw history data:`, historyData?.slice(0, 3)); // Debug first 3 orders
-            console.log(`📜 Processing ${historyData.length} records...`);
-
-            console.log(`📜 History fetched: ${historyData.length} records`);
 
             // 3. Process Items (Normalize Structure and Parse Mods)
             const processedHistory = historyData.map(order => {
