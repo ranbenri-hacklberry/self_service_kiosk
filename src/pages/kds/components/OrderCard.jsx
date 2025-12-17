@@ -11,8 +11,20 @@ const PrepTimer = memo(({ order, isHistory, isReady }) => {
       const startStr = order.created_at;
       const endStr = order.ready_at;
 
+      // Debug only for history
+      if (isHistory) {
+        console.log('🎯 PrepTimer History Debug:', {
+          orderId: order.id,
+          created_at: startStr,
+          ready_at: endStr,
+          hasCreatedAt: !!startStr,
+          hasReadyAt: !!endStr
+        });
+      }
+
       if (!startStr || !endStr) {
         setDuration('-');
+        if (isHistory) console.log('❌ Missing created_at or ready_at');
         return;
       }
 
@@ -21,12 +33,15 @@ const PrepTimer = memo(({ order, isHistory, isReady }) => {
 
       if (isNaN(start) || isNaN(end)) {
         setDuration('-');
+        if (isHistory) console.log('❌ Invalid date format');
         return;
       }
 
       const diff = Math.max(0, end - start);
       const mins = Math.floor(diff / 60000);
       setDuration(`${mins}ד`); // Show only minutes with Hebrew "ד" for דקות
+
+      if (isHistory) console.log(`✅ History Duration: ${mins} minutes`);
     };
 
     calculate();
