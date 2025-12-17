@@ -1060,6 +1060,7 @@ export const useKDSData = () => {
                     paidAmount: order.paid_amount || 0,
                     fullTotalAmount: order.total_amount,
                     timestamp: new Date(order.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+                    created_at: order.created_at, // Add this for PrepTimer calculation
                     fired_at: order.fired_at,
                     ready_at: order.ready_at,
                     order_status: order.order_status,
