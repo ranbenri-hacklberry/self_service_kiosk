@@ -389,23 +389,22 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                     </div>
 
                     <div className="h-10"></div> {/* Bottom Spacer */}
-                </div>
 
-                {/* Fixed Footer Action */}
-                <div className="p-4 border-t border-gray-100 bg-white shrink-0">
-                    <button
-                        onClick={async () => {
-                            if (onItemUpdate) {
-                                await onItemUpdate(item.id, editData);
-                            }
-                            setIsEditing(false);
-                        }}
-                        className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xl shadow-xl shadow-slate-200 active:scale-[0.98] transition-all"
-                    >
-                        שמור שינויים
-                    </button>
-                </div>
-            </motion.div>
+                    {/* Fixed Footer Action */}
+                    <div className="p-4 border-t border-gray-100 bg-white shrink-0">
+                        <button
+                            onClick={async () => {
+                                if (onItemUpdate) {
+                                    await onItemUpdate(item.id, editData);
+                                }
+                                setIsEditing(false);
+                            }}
+                            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xl shadow-xl shadow-slate-200 active:scale-[0.98] transition-all"
+                        >
+                            שמור שינויים
+                        </button>
+                    </div>
+                </motion.div>
             </div>
         );
     }
