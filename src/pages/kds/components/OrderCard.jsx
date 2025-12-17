@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo, useCallback } from 'react';
 import { Clock, Edit, RotateCcw, Flame, Trash2 } from 'lucide-react';
 import { sortItems, getModColor } from '../../../utils/kdsUtils';
 
-const PrepTimer = ({ order, isHistory, isReady }) => {
+const PrepTimer = memo(({ order, isHistory, isReady }) => {
   const [duration, setDuration] = useState('-');
 
   useEffect(() => {
@@ -52,7 +52,14 @@ const PrepTimer = ({ order, isHistory, isReady }) => {
 
     if (!isHistory && !isReady) {
       const interval = setInterval(calculate, 1000);
-      return () => clearInterval(interval);
+      return () => {
+        clearInterval(interval);
+        // Cleanup duration state when component unmounts
+        setDuration('-');
+      };
+    } else {
+      // Cleanup when timer is no longer needed
+      setDuration('-');
     }
   }, [order, isHistory, isReady]);
 
@@ -62,7 +69,9 @@ const PrepTimer = ({ order, isHistory, isReady }) => {
       <span className="font-mono dir-ltr">{duration}</span>
     </div>
   );
-};
+});
+
+PrepTimer.displayName = 'PrepTimer';
 
 const OrderCard = ({
   order,
@@ -75,6 +84,31 @@ const OrderCard = ({
   onCancelOrder
 }) => {
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // Memoized handlers to prevent unnecessary re-renders
+  const handleMainAction = useCallback((e) => {
+    e.stopPropagation();
+    if (isUpdating) return;
+
+    if (isReady) {
+      // אם כבר מוכן - העבר להיסטוריה (נמסר)
+      onOrderStatusUpdate(order.id, 'completed');
+    } else if (orderStatusLower === 'new' || orderStatusLower === 'pending') {
+      // אם חדש - התחל הכנה
+      onOrderStatusUpdate(order.id, 'in_progress');
+    } else {
+      // אם בהכנה - סמן כמוכן
+      onOrderStatusUpdate(order.id, 'done');
+    }
+  }, [isUpdating, isReady, order.id, orderStatusLower, onOrderStatusUpdate]);
+
+  const handleCardClick = useCallback(() => {
+    // בלחיצה על הכרטיס - פתח עריכה (אם לא היסטוריה)
+    // אם היסטוריה - כרגע לא עושה כלום או פותח מודל צפייה
+    if (!isHistory) {
+      if (onEditOrder) onEditOrder(order);
+    }
+  }, [isHistory, order, onEditOrder]);
 
   /* ============================================================
      Single Column Layout Forced (User Request)
@@ -112,30 +146,6 @@ const OrderCard = ({
       ? 'bg-green-500 text-white hover:bg-green-600 shadow-green-200'
       : 'bg-green-500 text-white hover:bg-green-600 shadow-green-200');
 
-  // פונקציה לטיפול בלחיצה על הכפתור הראשי
-  const handleMainAction = (e) => {
-    e.stopPropagation();
-    if (isUpdating) return;
-
-    if (isReady) {
-      // אם כבר מוכן - העבר להיסטוריה (נמסר)
-      onOrderStatusUpdate(order.id, 'completed');
-    } else if (orderStatusLower === 'new' || orderStatusLower === 'pending') {
-      // אם חדש - התחל הכנה
-      onOrderStatusUpdate(order.id, 'in_progress');
-    } else {
-      // אם בהכנה - סמן כמוכן
-      onOrderStatusUpdate(order.id, 'done');
-    }
-  };
-
-  const handleCardClick = () => {
-    // בלחיצה על הכרטיס - פתח עריכה (אם לא היסטוריה)
-    // אם היסטוריה - כרגע לא עושה כלום או פותח מודל צפייה
-    if (!isHistory) {
-      if (onEditOrder) onEditOrder(order);
-    }
-  };
 
 
   const getModColor = (modName) => {
@@ -158,8 +168,8 @@ const OrderCard = ({
   const leftColItems = isLargeOrder ? unifiedItems.slice(4) : [];
 
   const renderItemRow = (item, idx, isLarge) => {
-    // Debug log to inspect item structure
-    if (idx === 0) console.log('KDS Item Debug:', { name: item.name, mods: item.modifiers, type: typeof item.name });
+    // Debug log to inspect item structure (disabled for performance)
+    // if (idx === 0) console.log('KDS Item Debug:', { name: item.name, mods: item.modifiers, type: typeof item.name });
 
     // Check if item is marked as early delivered
     const isEarlyDelivered = item.is_early_delivered || false;
@@ -542,4 +552,4 @@ const OrderCard = ({
   );
 };
 
-export default OrderCard;
+export default memo(OrderCard);

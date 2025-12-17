@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -17,6 +17,44 @@ import OrderCard from './components/OrderCard';
 import OrderEditModal from './components/OrderEditModal';
 import DateScroller from './components/DateScroller';
 import { useKDSData } from './hooks/useKDSData';
+
+// Simple Error Boundary for KDS
+class KDSErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('KDS Error Boundary caught an error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-screen w-screen bg-gray-900 flex items-center justify-center p-4 font-heebo">
+          <div className="bg-slate-50 w-full max-w-md rounded-[24px] overflow-hidden shadow-2xl flex flex-col items-center justify-center p-8 text-center">
+            <AlertTriangle size={48} className="text-red-500 mb-4" />
+            <h2 className="text-2xl font-black text-slate-800 mb-2">שגיאה במסך מטבח</h2>
+            <p className="text-slate-600 mb-6">אירעה שגיאה בלתי צפויה. אנא רענן את הדף.</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition"
+            >
+              רענן דף
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 const API_URL =
   (import.meta.env.VITE_MANAGER_API_URL ||
@@ -194,6 +232,14 @@ const KdsScreen = () => {
 
   const navigate = useNavigate();
 
+  // Memoized order grouping for better performance
+  const { currentOrders: memoizedCurrentOrders, completedOrders: memoizedCompletedOrders } = useMemo(() => {
+    return {
+      currentOrders: currentOrders || [],
+      completedOrders: completedOrders || []
+    };
+  }, [currentOrders, completedOrders]);
+
   // Load History Effect with AbortController
   useEffect(() => {
     if (viewMode === 'history') {
@@ -277,11 +323,11 @@ const KdsScreen = () => {
             {/* חצי עליון: בטיפול (50%) */}
             <div className="flex-1 border-b-4 border-gray-200 relative bg-slate-100/50 flex flex-col min-h-0">
               <div className="absolute top-3 right-4 bg-white/90 border border-gray-200 px-3 py-1 rounded-full text-xs font-bold text-slate-600 z-10 shadow-sm">
-                בטיפול ({currentOrders.length})
+                בטיפול ({memoizedCurrentOrders.length})
               </div>
               <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-4 custom-scrollbar">
                 <div className="flex h-full flex-row justify-start gap-4 items-stretch">
-                  {currentOrders.map(order => (
+                  {memoizedCurrentOrders.map(order => (
                     <OrderCard
                       key={order.id} order={order}
                       onOrderStatusUpdate={updateOrderStatus}
@@ -300,11 +346,11 @@ const KdsScreen = () => {
             {/* חצי תחתון: מוכן (50%) */}
             <div className="flex-1 relative bg-green-50/30 flex flex-col min-h-0">
               <div className="absolute top-3 right-4 bg-green-100 border border-green-200 px-3 py-1 rounded-full text-xs font-bold text-green-700 z-10 shadow-sm">
-                מוכן למסירה ({completedOrders.length})
+                מוכן למסירה ({memoizedCompletedOrders.length})
               </div>
               <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-4 custom-scrollbar">
                 <div className="flex h-full flex-row justify-start gap-4 items-stretch">
-                  {completedOrders.map(order => (
+                  {memoizedCompletedOrders.map(order => (
                     <OrderCard
                       key={order.id} order={order} isReady={true}
                       onOrderStatusUpdate={updateOrderStatus}
@@ -449,4 +495,10 @@ const KdsScreen = () => {
   );
 };
 
-export default KdsScreen;
+const KdsScreenWithErrorBoundary = () => (
+  <KDSErrorBoundary>
+    <KdsScreen />
+  </KDSErrorBoundary>
+);
+
+export default KdsScreenWithErrorBoundary;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Check, Edit } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
@@ -24,7 +24,7 @@ const OrderEditModal = ({
     const loadItemsFromOrder = () => {
         if (!order) return;
 
-        console.log('📦 Loading items from order card:', order.id);
+        // console.log('📦 Loading items from order card:', order.id);
 
         // Get the real order ID (strip any suffixes)
         const realOrderId = (order.originalOrderId || order.id || '')
@@ -67,7 +67,7 @@ const OrderEditModal = ({
         }) || [];
 
         const activeItems = cardItems.filter(i => i.status !== 'cancelled');
-        console.log('📋 Loaded items from card:', activeItems.length, activeItems);
+        // console.log('📋 Loaded items from card:', activeItems.length, activeItems);
         setItems(activeItems);
         setIsLoading(false);
     };
@@ -90,7 +90,7 @@ const OrderEditModal = ({
         const newValue = !item.is_early_delivered;
 
         try {
-            console.log('🔄 Toggling early delivery:', item.id, '->', newValue);
+            // console.log('🔄 Toggling early delivery:', item.id, '->', newValue);
 
             // Use RPC to bypass RLS
             const { error } = await supabase.rpc('toggle_early_delivered', {
@@ -307,4 +307,4 @@ const OrderEditModal = ({
     );
 };
 
-export default OrderEditModal;
+export default memo(OrderEditModal);

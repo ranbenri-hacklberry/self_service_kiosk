@@ -55,7 +55,7 @@ export const useKDSData = () => {
 
             if (error) throw error;
 
-            console.log(`📦 [useKDSData] Total orders fetched: ${ordersData?.length || 0}`);
+            // console.log(`📦 [useKDSData] Total orders fetched: ${ordersData?.length || 0}`);
 
             // WORKAROUND: The RPC might filter out 'ready' items from 'in_progress' orders.
             // We need to fetch 'ready' items manually for these orders to show split courses in "Completed".
@@ -81,7 +81,7 @@ export const useKDSData = () => {
                             );
 
                             if (missingItems.length > 0) {
-                                console.log(`🧩 Merging ${missingItems.length} missing ready items into order ${order.id}`);
+                                // console.log(`🧩 Merging ${missingItems.length} missing ready items into order ${order.id}`);
 
                                 // Map using the joined menu_items data
                                 const mappedItems = missingItems.map(mi => ({
@@ -122,7 +122,7 @@ export const useKDSData = () => {
                     .order('updated_at', { ascending: false });
 
                 if (recentCompleted && recentCompleted.length > 0) {
-                    console.log(`🛡️ Failsafe: Found ${recentCompleted.length} recent completed orders`);
+                    // console.log(`🛡️ Failsafe: Found ${recentCompleted.length} recent completed orders`);
 
                     // Merge into ordersData, avoiding duplicates
                     if (!ordersData) ordersData = [];
@@ -157,7 +157,7 @@ export const useKDSData = () => {
                         // console.log(`🗑️ Filtering old completed order ${order.id.slice(0, 6)}: Age ${Math.round(diff/1000/60)} mins`);
                         return;
                     } else {
-                        console.log(`✅ Keeping recent completed order ${order.id.slice(0, 6)}: Age ${Math.round(diff / 1000 / 60)} mins`);
+                        // console.log(`✅ Keeping recent completed order ${order.id.slice(0, 6)}: Age ${Math.round(diff / 1000 / 60)} mins`);
                     }
                 }
 
@@ -792,10 +792,10 @@ export const useKDSData = () => {
         }
     };
 
-    // Polling
+    // Polling (Reduced from 10s to 30s for better performance)
     useEffect(() => {
         fetchOrders(); // Initial fetch
-        const interval = setInterval(fetchOrders, 10000);
+        const interval = setInterval(fetchOrders, 30000); // Every 30 seconds
         return () => clearInterval(interval);
     }, [fetchOrders]);
 

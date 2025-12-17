@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -708,4 +708,4 @@ const KDSInventoryScreen = ({ onExit }) => {
     );
 };
 
-export default KDSInventoryScreen;
+export default memo(KDSInventoryScreen);
