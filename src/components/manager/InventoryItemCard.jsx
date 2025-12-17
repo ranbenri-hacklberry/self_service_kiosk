@@ -324,7 +324,7 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, d
                         </div>
 
                         {/* Unit Weight (if unit) */}
-                        {editData.unit === 'יח׳' && (
+                        {editData.unit === "יח׳" && (
                             <div>
                                 <label className="text-sm font-bold text-gray-600 mb-2 block">משקל יחידה (גרם)</label>
                                 <input
