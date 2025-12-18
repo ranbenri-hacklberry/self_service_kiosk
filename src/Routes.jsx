@@ -27,36 +27,59 @@ const ProtectedRoute = ({ children }) => {
   const location = useLocation();
 
   useEffect(() => {
+    // Only run redirects when loading is complete
+    if (isLoading) return;
+
     console.log('🔐 ProtectedRoute check:', {
-      isLoading,
       hasUser: !!currentUser,
+      userName: currentUser?.name,
       deviceMode,
       path: location.pathname
     });
 
-    if (!isLoading) {
-      if (!currentUser) {
-        console.log('🚫 No user, redirecting to login');
-        navigate('/login');
-      } else if (!deviceMode && location.pathname !== '/mode-selection') {
-        // If logged in but no mode selected, force selection
-        console.log('⚠️ No device mode, redirecting to mode-selection');
-        navigate('/mode-selection');
-      } else if (location.pathname === '/' && deviceMode) {
-        // Redirect root path based on device mode
-        console.log('🏠 Redirecting root based on mode:', deviceMode);
-        if (deviceMode === 'kds') {
-          navigate('/kds');
-        } else if (deviceMode === 'manager') {
-          navigate('/data-manager-interface');
-        }
-        // For 'kiosk' mode, stay on CustomerPhoneInputScreen (default)
-      }
+    if (!currentUser) {
+      console.log('🚫 No user, redirecting to login');
+      navigate('/login', { replace: true });
+      return;
     }
-  }, [currentUser, deviceMode, isLoading, navigate, location]);
 
-  if (isLoading) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">טוען...</div>;
+    // User is logged in - check mode
+    if (!deviceMode && location.pathname !== '/mode-selection') {
+      // Logged in but no mode - must select mode first
+      console.log('⚠️ No device mode selected, redirecting to mode-selection');
+      navigate('/mode-selection', { replace: true });
+      return;
+    }
+
+    // Handle root path redirect based on mode
+    if (location.pathname === '/' && deviceMode) {
+      console.log('🏠 At root with mode:', deviceMode);
+      if (deviceMode === 'kds') {
+        navigate('/kds', { replace: true });
+      } else if (deviceMode === 'manager') {
+        navigate('/data-manager-interface', { replace: true });
+      }
+      // For 'kiosk' mode, stay on CustomerPhoneInputScreen
+    }
+  }, [currentUser, deviceMode, isLoading, navigate, location.pathname]);
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white gap-4" dir="rtl">
+        <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+        <p className="text-lg font-bold">טוען...</p>
+      </div>
+    );
+  }
+
+  // No user - null will be shown briefly before redirect
   if (!currentUser) return null;
+
+  // No mode selected and not on mode-selection page - show loading briefly
+  if (!deviceMode && location.pathname !== '/mode-selection') {
+    return null;
+  }
 
   return children;
 };

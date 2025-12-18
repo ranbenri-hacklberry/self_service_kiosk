@@ -10,6 +10,7 @@ export const AuthProvider = ({ children }) => {
     // Load state from localStorage on mount with expiration check
     useEffect(() => {
         const checkAuth = () => {
+            console.log('🔐 AuthContext: Checking stored session...');
             const storedSession = localStorage.getItem('kiosk_user');
             const storedTime = localStorage.getItem('kiosk_auth_time');
             const storedMode = localStorage.getItem('kiosk_mode');
@@ -18,25 +19,37 @@ export const AuthProvider = ({ children }) => {
                 const now = Date.now();
                 // 18 hours expiration (Daily login requirement)
                 const hoursPassed = (now - parseInt(storedTime)) / (1000 * 60 * 60);
+                console.log('🔐 Session age:', hoursPassed.toFixed(2), 'hours');
 
                 if (hoursPassed < 18) {
                     try {
                         const sessionUser = JSON.parse(storedSession);
                         setCurrentUser(sessionUser);
+                        console.log('✅ Session restored for:', sessionUser?.name);
+                        
+                        // Only restore mode if session is valid
+                        if (storedMode) {
+                            setDeviceMode(storedMode);
+                            console.log('✅ Device mode restored:', storedMode);
+                        }
                     } catch (e) {
                         console.error('Failed to parse session user', e);
                         localStorage.removeItem('kiosk_user');
                         localStorage.removeItem('kiosk_auth_time');
+                        localStorage.removeItem('kiosk_mode');
                     }
                 } else {
-                    // Session expired
+                    // Session expired - clear EVERYTHING including mode
+                    console.log('⏰ Session expired, clearing all auth data');
                     localStorage.removeItem('kiosk_user');
                     localStorage.removeItem('kiosk_auth_time');
+                    localStorage.removeItem('kiosk_mode');
+                    // Don't restore mode for expired sessions!
                 }
-            }
-
-            if (storedMode) {
-                setDeviceMode(storedMode);
+            } else {
+                // No session - also clear mode to prevent stale mode
+                console.log('🔐 No session found');
+                localStorage.removeItem('kiosk_mode');
             }
 
             setIsLoading(false);

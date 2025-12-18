@@ -20,15 +20,28 @@ const LoginScreen = () => {
         setIsLoading(true);
         setError('');
 
+        // Timeout protection - 15 seconds max
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('TIMEOUT')), 15000);
+        });
+
         try {
-            // Find employee by Email
-            const { data: employees, error: fetchError } = await supabase
+            // Find employee by Email with timeout
+            const queryPromise = supabase
                 .from('employees')
                 .select('*')
                 .eq('email', email.trim().toLowerCase())
                 .limit(1);
 
-            if (fetchError) throw fetchError;
+            const { data: employees, error: fetchError } = await Promise.race([
+                queryPromise,
+                timeoutPromise
+            ]);
+
+            if (fetchError) {
+                console.error('Supabase error:', fetchError);
+                throw fetchError;
+            }
 
             if (!employees || employees.length === 0) {
                 setError('אימייל לא נמצא במערכת');
@@ -41,8 +54,6 @@ const LoginScreen = () => {
 
             // Check Password (or PIN as fallback)
             if (employee.password_hash) {
-                // In a real app, compare hash. For this demo/legacy, we might check direct equality if stored plain, or PIN
-                // Assuming 'password_hash' stores the password for now as per previous 'ManagerAuthenticationScreen' logic
                 isValid = (employee.password_hash === password) || (employee.pin_code === password);
             } else {
                 isValid = employee.pin_code === password;
@@ -54,19 +65,26 @@ const LoginScreen = () => {
                 return;
             }
 
-            // Success
+            // Success - login and navigate
+            console.log('✅ Login successful for:', employee.name);
             login(employee);
 
-            // Clock In Check currently removed from UI to simplify, or could be auto-triggered
-            try {
-                await clockEvent(employee.id, 'clock_in');
-            } catch (e) { console.log('Auto clock-in optional', e) }
+            // Clock In (optional, don't block on failure)
+            clockEvent(employee.id, 'clock_in').catch(e => 
+                console.log('Auto clock-in optional:', e)
+            );
 
             navigate('/mode-selection');
 
         } catch (err) {
             console.error('Login error:', err);
-            setError('שגיאה בהתחברות לשירות');
+            if (err.message === 'TIMEOUT') {
+                setError('הזמן הקצוב עבר - בדוק את החיבור לאינטרנט');
+            } else if (err.message?.includes('Load failed') || err.message?.includes('fetch')) {
+                setError('בעיית חיבור - בדוק את הרשת');
+            } else {
+                setError('שגיאה בהתחברות לשירות');
+            }
         } finally {
             setIsLoading(false);
         }
