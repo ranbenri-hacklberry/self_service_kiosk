@@ -1366,9 +1366,19 @@ const MenuOrderingInterface = () => {
 
           const orderItemId = isUUID(item.id) ? item.id : null;
 
-          const finalStatus = item.isDelayed
-            ? (item.originalStatus === 'in_progress' ? 'in_progress' : 'pending')
-            : 'in_progress';
+          // CRITICAL FIX: Preserve status if item is already ready or completed
+          // to prevent overwriting KDS work while editing.
+          let finalStatus = item.originalStatus || (item.isDelayed ? 'pending' : 'in_progress');
+
+          // Only force 'in_progress' for new items or items that were modified 
+          // (if we want to be safe, but for now let's just preserve 'ready' and 'completed')
+          if (item.originalStatus === 'ready' || item.originalStatus === 'completed' || item.originalStatus === 'cancelled') {
+            finalStatus = item.originalStatus;
+          } else if (item.isDelayed) {
+            finalStatus = (item.originalStatus === 'in_progress' ? 'in_progress' : 'pending');
+          } else if (!item.originalStatus) {
+            finalStatus = 'in_progress';
+          }
 
           console.log('🛡️ Save Status Check:', {
             name: item.name,

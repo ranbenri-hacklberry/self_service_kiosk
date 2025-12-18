@@ -7,29 +7,35 @@ const PrepTimer = memo(({ order, isHistory, isReady }) => {
 
   useEffect(() => {
     const calculate = () => {
-      // Simple calculation: ready_at - created_at
-      const startStr = order.created_at;
+      // Use fired_at for accuracy, fall back to created_at if not fired
+      const startStr = order.fired_at || order.created_at;
       const endStr = order.ready_at;
 
-      if (!startStr || !endStr) {
+      if (!startStr) {
         setDuration('-');
         return;
       }
 
       const start = new Date(startStr).getTime();
-      const end = new Date(endStr).getTime();
+      const end = endStr ? new Date(endStr).getTime() : Date.now();
 
-      if (isNaN(start) || isNaN(end)) {
+      if (isNaN(start)) {
         setDuration('-');
         return;
       }
 
       const diff = Math.max(0, end - start);
       const mins = Math.floor(diff / 60000);
-      setDuration(`${mins}`); // Show only number - clearly minutes
+      setDuration(`${mins}`);
     };
 
     calculate();
+    // For active orders, update every minute
+    let interval;
+    if (!isReady && !isHistory) {
+      interval = setInterval(calculate, 60000);
+    }
+    return () => clearInterval(interval);
   }, [order, isHistory, isReady]);
 
   return (
@@ -91,7 +97,7 @@ const OrderCard = ({
   const cardWidthClass = isLargeOrder ? 'w-[420px]' : 'w-[280px]';
 
   const getStatusStyles = (status) => {
-    if (isDelayedCard) return 'border-t-[6px] border-slate-400 shadow-inner bg-slate-200/90 opacity-95';
+    if (isDelayedCard) return 'border-t-[6px] border-slate-400 shadow-inner bg-slate-100 opacity-90 grayscale-[0.3]';
     if (isUnpaidDelivered) return 'border-t-[6px] border-blue-500 shadow-md animate-strong-pulse bg-blue-50/30';
 
     const statusLower = (status || '').toLowerCase();
@@ -254,8 +260,14 @@ const OrderCard = ({
               </span>
             )}
             {isDelayedCard && (
-              <span className="bg-gray-200 text-gray-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-gray-300">
-                בהמתנה
+              <span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-slate-300 flex items-center gap-1">
+                <Clock size={10} />
+                ממתין ל-'אש'
+              </span>
+            )}
+            {!order.customerPhone && (
+              <span className="bg-gray-100 text-gray-400 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-gray-200">
+                ללא טלפון
               </span>
             )}
           </div>
@@ -438,19 +450,18 @@ const OrderCard = ({
                 )}
 
                 <div className="flex justify-between items-center mt-1 pt-2 border-t border-dashed border-gray-200 text-base">
-                  <span>סה"כ שולם:</span>
-                  <span className="font-black text-gray-900">₪{order.totalAmount?.toLocaleString()}</span>
+                  <span>סה"כ הזמנה:</span>
+                  <span className="font-black text-gray-900">₪{order.fullTotalAmount?.toLocaleString() || order.totalAmount?.toLocaleString()}</span>
                 </div>
 
                 {/* Refund Status for History */}
                 {(order.is_refund || order.isRefund) && (
                   <div className="flex justify-between items-center mt-1 text-sm">
                     <span className="text-gray-600">סטטוס זיכוי:</span>
-                    <span className={`px-2 py-1 rounded-md font-bold text-xs ${
-                      Number(order.refund_amount || order.refundAmount) >= Number(order.totalAmount || order.total)
-                        ? 'bg-red-100 text-red-700 border border-red-200'
-                        : 'bg-orange-100 text-orange-700 border border-orange-200'
-                    }`}>
+                    <span className={`px-2 py-1 rounded-md font-bold text-xs ${Number(order.refund_amount || order.refundAmount) >= Number(order.totalAmount || order.total)
+                      ? 'bg-red-100 text-red-700 border border-red-200'
+                      : 'bg-orange-100 text-orange-700 border border-orange-200'
+                      }`}>
                       {Number(order.refund_amount || order.refundAmount) >= Number(order.totalAmount || order.total)
                         ? 'זיכוי מלא'
                         : 'זיכוי חלקי'}

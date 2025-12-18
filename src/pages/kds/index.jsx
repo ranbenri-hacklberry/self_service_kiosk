@@ -166,7 +166,14 @@ const Header = ({
           </button>
         </div>
 
-        {/* Date Picker - REMOVED (Moved to footer) */}
+        {/* Refresh Button */}
+        <button
+          onClick={onRefresh}
+          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition"
+          title="רענן הזמנות"
+        >
+          <RefreshCw size={18} />
+        </button>
       </div>
 
       <div className="flex items-center gap-3">

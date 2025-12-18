@@ -46,8 +46,9 @@ BEGIN
             v_qty_to_deduct := v_ing.quantity_used * v_order_item.quantity;
 
             -- Deduct from Inventory (Strict Business Check)
+            -- FIX: Use GREATEST(0, ...) to prevent breaking the "no negative stock" constraint
             UPDATE inventory_items 
-            SET current_stock = current_stock - v_qty_to_deduct
+            SET current_stock = GREATEST(0, current_stock - v_qty_to_deduct)
             WHERE id = v_ing.inventory_item_id 
               AND business_id = p_business_id;
         END LOOP;
@@ -86,8 +87,9 @@ BEGIN
                     END IF;
 
                     -- Deduct
+                    -- FIX: Use GREATEST(0, ...) to prevent breaking the "no negative stock" constraint
                     UPDATE inventory_items 
-                    SET current_stock = current_stock - v_qty_to_deduct
+                    SET current_stock = GREATEST(0, current_stock - v_qty_to_deduct)
                     WHERE id = v_mod.inventory_item_id 
                       AND business_id = p_business_id;
                       

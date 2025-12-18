@@ -435,12 +435,16 @@ export const useKDSData = () => {
     }, [currentUser]); // Added currentUser to dependency array
 
     const handleSendSms = async (orderId, customerName, phone) => {
-        if (!phone) return;
+        // Fast exit if no phone or obvious guest/placeholder name
+        if (!phone || !phone.match(/^\d+$/) || phone.length < 9) {
+            console.log('⏭️ Skipping SMS: Invalid or missing phone number');
+            return;
+        }
 
         setIsSendingSms(true);
         setErrorModal(null);
 
-        const message = `היי ${customerName}, ההזמנה שלכם מוכנה! 🎉, מוזמנים לעגלה לאסוף אותה`;
+        const message = `היי ${customerName || 'אורח'}, ההזמנה שלכם מוכנה! 🎉, מוזמנים לעגלה לאסוף אותה`;
 
         const result = await sendSms(phone, message);
 
@@ -792,10 +796,10 @@ export const useKDSData = () => {
         }
     };
 
-    // Polling (Reduced from 10s to 30s for better performance)
+    // Polling (Reduced from 30s to 5s for better responsiveness)
     useEffect(() => {
         fetchOrders(); // Initial fetch
-        const interval = setInterval(fetchOrders, 30000); // Every 30 seconds
+        const interval = setInterval(fetchOrders, 5000); // Every 5 seconds
         return () => clearInterval(interval);
     }, [fetchOrders]);
 
