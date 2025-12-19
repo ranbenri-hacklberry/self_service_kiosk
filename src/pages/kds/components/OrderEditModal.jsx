@@ -22,11 +22,8 @@ const OrderEditModal = ({
     const [processingItemId, setProcessingItemId] = useState(null);
 
     const loadItemsFromOrder = () => {
-        if (!order) return;
+        if (!order || !order.items) return;
 
-        // console.log('📦 Loading items from order card:', order.id);
-
-        // Get the real order ID (strip any suffixes)
         const realOrderId = (order.originalOrderId || order.id || '')
             .toString()
             .replace(/-stage-\d+/, '')
@@ -39,35 +36,38 @@ const OrderEditModal = ({
             is_paid: order.isPaid
         });
 
-        // Use items from the card directly (flatten grouped items)
-        const cardItems = order.items?.flatMap(item => {
-            if (item.ids && item.ids.length > 0) {
-                // For grouped items, create individual entries
-                return item.ids.map((id, idx) => ({
+        // 1. Flatten items: Each ID in 'ids' becomes an individual row
+        const flattened = [];
+        const seenIds = new Set();
+
+        order.items.forEach(item => {
+            const itemIds = item.ids && item.ids.length > 0 ? item.ids : [item.id];
+
+            itemIds.forEach(id => {
+                // De-duplication check: Skip if we already added this specific item ID
+                if (id && seenIds.has(id)) return;
+                if (id) seenIds.add(id);
+
+                flattened.push({
                     id: id,
+                    menu_item_id: item.menu_item_id || item.menuItemId,
                     name: item.name,
-                    quantity: idx === 0 ? item.quantity : 1,
+                    quantity: 1, // Individual toggle mode
                     price: item.price || 0,
                     status: item.status,
                     course_stage: item.course_stage || 1,
                     is_early_delivered: item.is_early_delivered || false,
-                    modifiers: item.modifiers
-                }));
-            }
-            return [{
-                id: item.id || item.ids?.[0],
-                name: item.name,
-                quantity: item.quantity || 1,
-                price: item.price || 0,
-                status: item.status,
-                course_stage: item.course_stage || 1,
-                is_early_delivered: item.is_early_delivered || false,
-                modifiers: item.modifiers
-            }];
-        }) || [];
+                    modifiers: item.modifiers,
+                    notes: item.notes
+                });
+            });
+        });
 
-        const activeItems = cardItems.filter(i => i.status !== 'cancelled');
-        // console.log('📋 Loaded items from card:', activeItems.length, activeItems);
+        // 2. Filter out cancelled and sort by name
+        const activeItems = flattened
+            .filter(i => i.status !== 'cancelled')
+            .sort((a, b) => a.name.localeCompare(b.name));
+
         setItems(activeItems);
         setIsLoading(false);
     };

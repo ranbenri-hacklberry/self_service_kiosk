@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { Clock, Edit, RotateCcw, Flame, Trash2 } from 'lucide-react';
-import { sortItems, getModColor } from '../../../utils/kdsUtils';
+import { sortItems } from '../../../utils/kdsUtils';
+import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
 const PrepTimer = memo(({ order, isHistory, isReady }) => {
   const [duration, setDuration] = useState('-');
@@ -89,12 +90,8 @@ const OrderCard = ({
   /* ============================================================
      Single Column Layout Forced (User Request)
      ============================================================ */
-  const isLargeOrder = !isHistory && order.items && order.items.length > 4; // 2-col for Active only
   const isDelayedCard = order.type === 'delayed';
   const isUnpaidDelivered = order.type === 'unpaid_delivered';
-
-  // הגדרת רוחב: 280px לרגיל, 420px לגדול (לבקשת המשתמש - המידה המקורית הרצויה)
-  const cardWidthClass = isLargeOrder ? 'w-[420px]' : 'w-[280px]';
 
   const getStatusStyles = (status) => {
     if (isDelayedCard) return 'border-t-[6px] border-slate-400 shadow-inner bg-slate-100 opacity-90 grayscale-[0.3]';
@@ -136,12 +133,38 @@ const OrderCard = ({
   const unifiedItems = sortItems(order.items || []);
 
   /* ============================================================
-     ⚠️ CRITICAL: TWO COLUMN SPLIT LOGIC - DO NOT CHANGE! ⚠️
-     Right column gets first 4 items, left column gets rest.
-     This prevents scrolling in cards - items WRAP to 2nd column.
+     ⚠️ CRITICAL: TWO COLUMN SPLIT LOGIC ⚠️
+     Limit 5 ROWS per column. 
+     One item = 1 row (if 0-1 visible mods) or 2 rows (if 2+ mods).
      ============================================================ */
-  const rightColItems = isLargeOrder ? unifiedItems.slice(0, 4) : [];
-  const leftColItems = isLargeOrder ? unifiedItems.slice(4) : [];
+  const getItemRows = (item) => {
+    if (!item.modifiers) return 1;
+    const visibleModsCount = item.modifiers.filter(m => getShortName(m.text || m.valueName || m) !== null).length;
+    if (visibleModsCount <= 1) return 1;
+    return 2;
+  };
+
+  const totalRows = unifiedItems.reduce((acc, item) => acc + getItemRows(item), 0);
+  const isLargeOrder = !isHistory && totalRows > 5;
+
+  const rightColItems = [];
+  const leftColItems = [];
+
+  if (isLargeOrder) {
+    let currentRows = 0;
+    unifiedItems.forEach(item => {
+      const rows = getItemRows(item);
+      if (currentRows + rows <= 5) {
+        rightColItems.push(item);
+        currentRows += rows;
+      } else {
+        leftColItems.push(item);
+      }
+    });
+  }
+
+  // הגדרת רוחב: 280px לרגיל, 420px לגדול (לבקשת המשתמש - המידה המקורית הרצויה)
+  const cardWidthClass = isLargeOrder ? 'w-[420px]' : 'w-[280px]';
 
   const renderItemRow = (item, idx, isLarge) => {
     // Debug log to inspect item structure (disabled for performance)
@@ -152,7 +175,7 @@ const OrderCard = ({
 
     return (
       <div key={`${item.menuItemId}-${item.modsKey || ''}-${idx}`} className={`flex flex-col ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered ? 'opacity-40' : ''}`}>
-        <div className="flex items-start gap-2 relative">
+        <div className="flex items-start gap-[5px] relative">
           {/* Strikethrough overlay for early delivered items */}
           {isEarlyDelivered && (
             <div className="absolute inset-0 flex items-center pointer-events-none z-10">
@@ -170,64 +193,83 @@ const OrderCard = ({
              ⚠️ CRITICAL: MODIFIERS MUST WRAP! ⚠️
              Use flex flex-wrap so mods go to next line, NOT get cut off!
              ============================================================ */ }
-          <div className="flex-1 pt-0 min-w-0 pr-2">
-            <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
-              {/* Item Name */}
-              <span className={`font-bold ${item.quantity > 1 ? 'text-orange-700' : 'text-gray-900'}`}>
-                {item.name}
-              </span>
-
-              {/* Modifiers - Wrapping */}
-              {(() => {
-                if (!item.modifiers || item.modifiers.length === 0) return null;
-
-                // 1. Sort Modifiers
-                const sortedMods = [...item.modifiers].sort((a, b) => {
-                  const textA = String(a.text || '').toLowerCase();
-                  const textB = String(b.text || '').toLowerCase();
-
-                  // Priority 1: Decaf (נטול)
-                  const isDecafA = textA.includes('נטול');
-                  const isDecafB = textB.includes('נטול');
-                  if (isDecafA && !isDecafB) return -1;
-                  if (!isDecafA && isDecafB) return 1;
-
-                  // Priority 2: Milk (Soy/Oat/Almond)
-                  const isMilkA = textA.includes('סויה') || textA.includes('שיבולת') || textA.includes('שקדים');
-                  const isMilkB = textB.includes('סויה') || textB.includes('שיבולת') || textB.includes('שקדים');
-                  if (isMilkA && !isMilkB) return -1;
-                  if (!isMilkA && isMilkB) return 1;
-
-                  return 0;
-                });
-
-                return sortedMods.map((mod, i) => {
-                  const originalText = String(mod.text || '');
-                  let displayText = originalText;
-
-                  // 2. Shorten Text Logic
-                  if (originalText.includes('בלי קצף') || originalText.includes('ללא קצף')) {
-                    displayText = 'קצף'; // For strikethrough
-                  } else if (originalText.includes('נטול קפאין')) {
-                    displayText = 'נטול';
-                  } else if (originalText.includes('חלב סויה')) {
-                    displayText = 'סויה';
-                  } else if (originalText.includes('חלב שיבולת')) {
-                    displayText = 'שיבולת';
-                  } else if (originalText.includes('חלב שקדים')) {
-                    displayText = 'שקדים';
-                  } else if (originalText.includes('פחות קצף')) {
-                    displayText = 'פחות קצף';
-                  }
-
-                  return (
-                    <span key={i} className={`mod-label ${getModColor(originalText)}`}>
-                      {displayText}
+          <div className="flex-1 pt-0 min-w-0 pr-0">
+            {/* ============================================================
+               ⚠️ CRITICAL: MODIFIER WRAPPING ⚠️
+               If 2+ mods, first mod stays on row 1, rest go to row 2.
+               ============================================================ */}
+            {(() => {
+              if (!item.modifiers || item.modifiers.length === 0) {
+                return (
+                  <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
+                    <span className={`font-bold ${item.quantity > 1 ? 'text-orange-700' : 'text-gray-900'}`}>
+                      {item.name}
                     </span>
-                  );
-                });
-              })()}
-            </div>
+                  </div>
+                );
+              }
+
+              // 1. Sort Modifiers (using the same logic as before)
+              const sortedMods = [...item.modifiers].sort((a, b) => {
+                const textA = String(a.text || '').toLowerCase();
+                const textB = String(b.text || '').toLowerCase();
+                const isDecafA = textA.includes('נטול');
+                const isDecafB = textB.includes('נטול');
+                if (isDecafA && !isDecafB) return -1;
+                if (!isDecafA && isDecafB) return 1;
+                const isMilkA = textA.includes('סויה') || textA.includes('שיבולת') || textA.includes('שקדים');
+                const isMilkB = textB.includes('סויה') || textB.includes('שיבולת') || textB.includes('שקדים');
+                if (isMilkA && !isMilkB) return -1;
+                if (!isMilkA && isMilkB) return 1;
+                return 0;
+              });
+
+              // 2. Filter out hidden mods (defaults) and get short names
+              const visibleMods = sortedMods
+                .map(mod => ({ ...mod, shortName: getShortName(mod.text) }))
+                .filter(mod => mod.shortName !== null);
+
+              if (visibleMods.length === 0) {
+                return (
+                  <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
+                    <span className={`font-bold ${item.quantity > 1 ? 'text-orange-700' : 'text-gray-900'}`}>
+                      {item.name}
+                    </span>
+                  </div>
+                );
+              }
+
+              const renderModLabel = (mod, i) => {
+                const displayText = mod.shortName;
+                const colorClass = getModColorClass(mod.text, displayText);
+                return (
+                  <span key={i} className={`mod-label ${colorClass}`}>
+                    {displayText}
+                  </span>
+                );
+              };
+
+              const row1Mods = visibleMods.slice(0, 2);
+              const remainingMods = visibleMods.slice(2);
+
+              return (
+                <div className="flex flex-col">
+                  {/* Row 1: Item Name + Up to 2 Mods */}
+                  <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
+                    <span className={`font-bold ${item.quantity > 1 ? 'text-orange-700' : 'text-gray-900'}`}>
+                      {item.name}
+                    </span>
+                    {row1Mods.map((mod, i) => renderModLabel(mod, i))}
+                  </div>
+                  {/* Row 2: Remaining Mods */}
+                  {remainingMods.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1 text-right leading-snug mt-0.5 ml-0">
+                      {remainingMods.map((mod, i) => renderModLabel(mod, i + 2))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -235,9 +277,9 @@ const OrderCard = ({
   };
 
   return (
-    <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl p-3 mx-2 flex flex-col h-full font-heebo ${isDelayedCard ? 'bg-gray-50' : 'bg-white'} ${getStatusStyles(order.orderStatus)} border-x border-b border-gray-100`}>
+    <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl px-[5px] py-3 mx-2 flex flex-col h-full font-heebo ${isDelayedCard ? 'bg-gray-50' : 'bg-white'} ${getStatusStyles(order.orderStatus)} border-x border-b border-gray-100`}>
 
-      <div className="flex justify-between items-start mb-2 border-b border-gray-50 pb-1.5">
+      <div className="flex justify-between items-start mb-1 border-b border-gray-50 pb-1">
         <div className="flex flex-col overflow-hidden flex-1">
           {/* שם לקוח */}
           <div className="flex items-center gap-2 w-full">
@@ -245,9 +287,9 @@ const OrderCard = ({
               {order.customerName}
             </div>
           </div>
-          {/* מספר הזמנה */}
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs font-bold text-gray-400">#{order.orderNumber}</span>
+          {/* מספר הזמנה (Removed per user request) */}
+          <div className="flex items-center gap-2 mt-0.5">
+            {/* <span className="text-xs font-bold text-gray-400">#{order.orderNumber}</span> */}
             {order.isSecondCourse && (
               <span className="bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-purple-200">
                 מנה שניה
@@ -300,22 +342,7 @@ const OrderCard = ({
             </div>
           </div>
 
-          {/* Row 2: Payment/Refund Status */}
-          {(order.is_refund || order.isRefund) ? (
-            <div className="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded-md border border-gray-200 h-5 flex items-center font-bold text-[10px]">
-              {Number(order.refund_amount || order.refundAmount) >= Number(order.totalAmount || order.total) ? 'זיכוי מלא' : 'זיכוי חלקי'}
-            </div>
-          ) : (
-            !order.isPaid ? (
-              <div className="bg-red-50 text-red-600 px-1.5 py-0.5 rounded-md border border-red-100 h-5 flex items-center font-bold text-[10px]">
-                לא שולם
-              </div>
-            ) : (
-              <div className="bg-green-50 text-green-700 px-1.5 py-0.5 rounded-md border border-green-100 h-5 flex items-center font-bold text-[10px]">
-                שולם
-              </div>
-            )
-          )}
+          {/* Row 2: (Removed Paid Status per user request) */}
         </div>
       </div>
 
@@ -495,7 +522,7 @@ const OrderCard = ({
               </div>
             ) : (
               // Active Cards (Updates/Ready)
-              <div className="flex items-stretch gap-2 mt-auto h-14 w-full">
+              <div className="flex items-stretch gap-2 mt-auto h-11 w-full text-sm">
 
                 {/* Undo Button - Only for Ready */}
                 {isReady && (
@@ -506,10 +533,10 @@ const OrderCard = ({
                       try { await onOrderStatusUpdate(order.id, 'undo_ready'); }
                       finally { setIsUpdating(false); }
                     }}
-                    className="w-14 h-14 bg-gray-200 border-2 border-gray-300 rounded-xl shadow-sm flex items-center justify-center text-gray-700 hover:text-gray-900 hover:bg-gray-300 shrink-0 active:scale-95 transition-all"
+                    className="w-11 h-11 bg-gray-200 border-2 border-gray-300 rounded-xl shadow-sm flex items-center justify-center text-gray-700 hover:text-gray-900 hover:bg-gray-300 shrink-0 active:scale-95 transition-all"
                     title="החזר להכנה"
                   >
-                    <RotateCcw size={24} />
+                    <RotateCcw size={20} />
                   </button>
                 )}
 
@@ -521,7 +548,7 @@ const OrderCard = ({
                     try { await onOrderStatusUpdate(order.id, order.orderStatus); }
                     finally { setIsUpdating(false); }
                   }}
-                  className={`flex-1 rounded-xl font-black text-xl shadow-sm active:scale-[0.98] transition-all flex items-center justify-center ${actionBtnColor} ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`flex-1 rounded-xl font-black text-lg shadow-sm active:scale-[0.98] transition-all flex items-center justify-center ${actionBtnColor} ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {isUpdating ? 'מעדכן...' : nextStatusLabel}
                 </button>
@@ -535,14 +562,14 @@ const OrderCard = ({
                         setIsUpdating(true); await onPaymentCollected(order); setIsUpdating(false);
                       }
                     }}
-                    className="w-14 h-14 bg-white border-2 border-amber-400 rounded-xl shadow-sm flex items-center justify-center hover:bg-amber-50 shrink-0 relative overflow-visible active:scale-95 transition-all"
+                    className="w-11 h-11 bg-white border-2 border-amber-400 rounded-xl shadow-sm flex items-center justify-center hover:bg-amber-50 shrink-0 relative overflow-visible active:scale-95 transition-all"
                   >
                     <img
                       src="https://gxzsxvbercpkgxraiaex.supabase.co/storage/v1/object/public/Photos/cashregister.jpg"
                       alt="קופה"
-                      className="w-8 h-8 object-contain"
+                      className="w-7 h-7 object-contain"
                     />
-                    <span className="absolute -top-2 -right-3 bg-red-500 text-white text-[11px] font-bold px-2 py-1 rounded-full shadow-md ring-2 ring-white">
+                    <span className="absolute -top-1.5 -right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md ring-1 ring-white">
                       ₪{order.totalAmount?.toFixed(0)}
                     </span>
                   </button>

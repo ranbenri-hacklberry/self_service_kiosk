@@ -83,9 +83,8 @@ export const groupOrderItems = (items) => {
     const map = new Map();
 
     items.forEach(item => {
-        // מפתח ייחודי: ID המנה + מחרוזת המודים הממוינת + סטטוס
-        // משתמשים ב-modsKey במקום name כדי לאחד פריטים זהים עם אותם מודים
-        const key = `${item.menuItemId}| ${item.modsKey || ''}| ${item.status} `;
+        // מפתח ייחודי: ID המנה + מחרוזת המודים הממוינת + סטטוס + האם יצא מוקדם
+        const key = `${item.menuItemId}|${item.modsKey || ''}|${item.status}|${item.is_early_delivered || false}`;
 
         if (map.has(key)) {
             const existing = map.get(key);

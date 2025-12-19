@@ -1,57 +1,13 @@
 import React, { useMemo } from 'react';
 import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, UserPlus } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-
-// Utility function to shorten modifier names for display
-const shortenModifierName = (name) => {
-    if (!name) return '';
-    const str = String(name);
-    // Foam modifiers - keep only "קצף" with arrow
-    if (str.includes('הרבה קצף')) return 'קצף ↑';
-    if (str.includes('מעט קצף')) return 'קצף ↓';
-    if (str.includes('בלי קצף')) return 'ללא קצף';
-    // Milk types
-    if (str.includes('שיבולת שועל')) return 'שיבולת';
-    // Return original if no match
-    return str;
-};
+import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
 const formatPrice = (price = 0) => {
     // מחזיר רק את המספר ללא סימן שקל - בטוח מ-NaN
     const num = Number(price);
     if (isNaN(num)) return '0';
     return new Intl.NumberFormat('he-IL', { maximumFractionDigits: 0 }).format(num);
-};
-
-const getModColor = (text) => {
-    if (!text) return 'mod-color-gray';
-    const t = String(text).trim().toLowerCase();
-
-    // הסרות / בלי - בודקים ראשון כי 'ללא קצף' כולל גם 'קצף'
-    if (t.includes('בלי') || t.includes('ללא') || t.includes('הורד'))
-        return 'mod-color-red';
-
-    // תוספות / אקסטרה / בצד / קצף (כולל קצף ↑ וקצף ↓)
-    if (t.includes('תוספת') || t.includes('אקסטרה') || t.includes('בצד') || t.includes('קצף'))
-        return 'mod-color-lightgreen';
-
-    // סוגי חלב
-    if (t.includes('סויה') || t.includes('שיבולת שועל') || t.includes('שיבולת'))
-        return 'mod-color-soy-oat';
-    if (t.includes('שקדים'))
-        return 'mod-color-almond';
-    if (t.includes('נטול') || t.includes('דקף') || t.includes('ללא לקטוז'))
-        return 'mod-color-lactose-free';
-
-    // טמפרטורה וחוזק
-    if (t.includes('רותח') || t.includes('חם מאוד'))
-        return 'mod-color-extra-hot';
-    if (t.includes('חזק') || t.includes('כפול'))
-        return 'mod-color-strong';
-    if (t.includes('חלש') || t.includes('קל'))
-        return 'mod-color-light';
-
-    return 'mod-color-gray';
 };
 
 // Memoized CartItem to prevent unnecessary re-renders
@@ -94,13 +50,13 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrict
     return (
         <div
             onClick={() => !isRestrictedMode && onEdit?.(item)}
-            className={`group flex items-center justify-between bg-white p-3 border-b border-gray-100 transition-colors gap-3 ${item.isDelayed ? 'bg-amber-50/50' : ''} ${!isRestrictedMode ? 'hover:bg-gray-50 cursor-pointer' : ''}`}
+            className={`group flex items-center justify-between bg-white px-[5px] py-3 border-b border-gray-100 transition-colors gap-[5px] ${item.isDelayed ? 'bg-amber-50/50' : ''} ${!isRestrictedMode ? 'hover:bg-gray-50 cursor-pointer' : ''}`}
         >
             {/* Right Side: Quantity + Name + Mods */}
             <div className="flex-1 flex flex-col items-start min-w-0">
-                <div className="flex items-center gap-2 w-full">
+                <div className="flex items-center gap-[5px] w-full">
                     {item.quantity > 1 && (
-                        <span className="bg-orange-100 text-orange-700 text-xs font-bold px-1.5 rounded border border-orange-200 shrink-0">
+                        <span className="bg-orange-100 text-orange-700 text-xs font-bold px-1 rounded border border-orange-200 shrink-0">
                             x{item.quantity}
                         </span>
                     )}
@@ -118,11 +74,15 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrict
                 {/* Mods in a single line if possible */}
                 {mods.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1 pr-0.5">
-                        {mods.map((mod, i) => (
-                            <span key={i} className={`mod-label ${getModColor(mod)}`} title={mod}>
-                                {shortenModifierName(mod)}
-                            </span>
-                        ))}
+                        {mods.map((mod, i) => {
+                            const shortName = getShortName(mod);
+                            if (!shortName) return null; // Hide default mods
+                            return (
+                                <span key={i} className={`mod-label ${getModColorClass(mod, shortName)}`} title={mod}>
+                                    {shortName}
+                                </span>
+                            );
+                        })}
                     </div>
                 )}
 
