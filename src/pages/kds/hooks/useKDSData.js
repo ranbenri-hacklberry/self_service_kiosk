@@ -291,6 +291,7 @@ export const useKDSData = () => {
                     timestamp: new Date(order.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
                     fired_at: order.fired_at,
                     ready_at: order.ready_at,
+                    updated_at: order.updated_at,
                 };
 
                 // SPECIAL CASE: Unpaid Delivered Orders
@@ -1075,6 +1076,7 @@ export const useKDSData = () => {
                     created_at: order.created_at, // Add this for PrepTimer calculation
                     fired_at: order.fired_at,
                     ready_at: order.ready_at,
+                    updated_at: order.updated_at,
                     order_status: order.order_status,
                     items: groupedItems,
                     type: 'history'
@@ -1083,11 +1085,37 @@ export const useKDSData = () => {
 
             return processedHistory;
 
-        } catch (err) {
-            console.error('Error fetching history:', err);
-            return [];
         } finally {
             setIsLoading(false);
+        }
+    }, [currentUser?.business_id]);
+
+    const findNearestActiveDate = useCallback(async (fromDate) => {
+        try {
+            const businessId = currentUser?.business_id;
+            if (!businessId) return null;
+
+            // Start of the day we're looking before
+            const startOfFromDate = new Date(fromDate);
+            startOfFromDate.setHours(0, 0, 0, 0);
+
+            const { data, error } = await supabase
+                .from('orders')
+                .select('created_at')
+                .eq('business_id', businessId)
+                .lt('created_at', startOfFromDate.toISOString())
+                .eq('order_status', 'completed') // חיפוש רק של הזמנות שהושלמו (היסטוריה)
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (error) throw error;
+            if (data && data.length > 0) {
+                return new Date(data[0].created_at);
+            }
+            return null;
+        } catch (err) {
+            console.error('Error finding nearest active date:', err);
+            return null;
         }
     }, [currentUser?.business_id]);
 
@@ -1103,7 +1131,8 @@ export const useKDSData = () => {
         setErrorModal,
         isSendingSms,
         fetchOrders,
-        fetchHistoryOrders, // New export
+        fetchHistoryOrders,
+        findNearestActiveDate, // Exported
         updateOrderStatus,
         handleFireItems,
         handleReadyItems,

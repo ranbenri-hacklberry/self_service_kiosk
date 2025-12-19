@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, UserPlus } from 'lucide-react';
+import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, UserPlus, Check } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
@@ -190,8 +190,16 @@ const SmartCart = ({
         cartItemsCount: cartItems.length
     });
 
-    // אפשר לחיצה אם זה זיכוי (גם אם העגלה ריקה) או אם יש פריטים או אם זה ביטול הזמנה
-    const isDisabled = disabled || (cartItems.length === 0 && !isRefund && !isCancelOrder);
+    // האם בוצע שינוי כלשהו מאז פתיחת העריכה?
+    const hasChanges = cartHistory.length > 0;
+
+    // מצב שבו אין שינוי במחיר בעריכה
+    const isNoPriceChange = isEditMode && priceDifference === 0;
+
+    // אפשר לחיצה אם זה זיכוי, אם זה ביטול, או אם יש שינוי כלשהו (גם אם המחיר לא השתנה אבל יש היסטוריה)
+    const isDisabled = disabled ||
+        (cartItems.length === 0 && !isRefund && !isCancelOrder) ||
+        (isEditMode && isNoPriceChange && !hasChanges);
 
     // DEBUG: Log status decision values
     console.log('🎯 SmartCart Status Decision:', {
@@ -207,7 +215,8 @@ const SmartCart = ({
 
     // --- UI Config ---
     const statusConfig = useMemo(() => {
-        if (isDisabled) return {
+        // עגלה ריקה באמת (לא בעריכה של הזמנה קיימת)
+        if (cartItems.length === 0 && !isEditMode) return {
             text: 'העגלה ריקה',
             subtext: 'הוסף פריטים כדי להמשיך',
             color: 'bg-gray-100 text-gray-400',
@@ -243,13 +252,15 @@ const SmartCart = ({
             icon: CreditCard
         };
 
-        if (isNoChange && isEditMode) return {
-            text: 'עדכון הזמנה',
-            subtext: 'ללא שינוי במחיר',
-            color: 'bg-gray-50 border-gray-200',
-            buttonColor: 'bg-slate-800 hover:bg-slate-900 text-white',
-            amount: null,
-            icon: Edit2
+        if (isNoPriceChange && isEditMode) return {
+            text: originalIsPaid ? 'שולם' : 'עדכון הזמנה',
+            subtext: hasChanges ? 'לחץ לשמירת שינויים' : 'ללא שינוי במחיר',
+            color: 'bg-white',
+            buttonColor: hasChanges
+                ? 'bg-orange-500 hover:bg-orange-600 text-white shadow-orange-200'
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed',
+            amount: effectiveTotal,
+            icon: originalIsPaid ? Check : Edit2
         };
 
         return {
@@ -260,7 +271,7 @@ const SmartCart = ({
             amount: effectiveTotal,
             icon: ArrowRight
         };
-    }, [isDisabled, isRefund, isAdditionalCharge, isNoChange, isEditMode, priceDifference, effectiveTotal, itemCount, editingOrderData, originalIsPaid, originalTotal]);
+    }, [isDisabled, isRefund, isAdditionalCharge, isNoPriceChange, isEditMode, priceDifference, effectiveTotal, itemCount, editingOrderData, originalIsPaid, originalTotal, cartItems.length, hasChanges]);
 
     const handleAction = () => {
         if (!isDisabled && onInitiatePayment) {
@@ -430,19 +441,6 @@ const SmartCart = ({
                 </div>
             </div>
 
-            {/* Status Banner (for Edit Mode) - only show if cart has items */}
-            {isEditMode && cartItems.length > 0 && (
-                <div className={`p-3 rounded-xl border ${statusConfig.color} flex items-center gap-3 mx-4 mt-4`}>
-                    <div className={`p-2 rounded-full bg-white shadow-sm`}>
-                        <statusConfig.icon size={18} className={isRefund ? 'text-red-500' : 'text-blue-600'} />
-                    </div>
-                    <div>
-                        <p className="font-bold text-sm text-gray-800">{statusConfig.text}</p>
-                        <p className="text-xs text-gray-500">{statusConfig.subtext}</p>
-                    </div>
-                </div>
-            )
-            }
 
             {/* Cart Items */}
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">

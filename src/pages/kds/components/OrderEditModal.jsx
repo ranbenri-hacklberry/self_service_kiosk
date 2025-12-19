@@ -130,7 +130,8 @@ const OrderEditModal = ({
             const itemsToUse = items && items.length > 0
                 ? items.map(item => ({
                     id: item.id,
-                    menuItemId: item.menu_item_id, // Ensure we have the menu item ID
+                    menu_item_id: item.menu_item_id || item.menuItemId, // Support both standard formats
+                    menuItemId: item.menu_item_id || item.menuItemId,    // Ensure camelCase also exists
                     name: item.name,
                     price: item.price,
                     quantity: item.quantity,

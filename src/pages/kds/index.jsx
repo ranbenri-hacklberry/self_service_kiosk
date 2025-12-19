@@ -110,7 +110,7 @@ transform: scale(1.02);
 // --- רכיבים ---
 
 const Header = ({
-  onRefresh, lastUpdated, onUndoLastAction, canUndo,
+  onRefresh, isLoading, lastUpdated, onUndoLastAction, canUndo,
   viewMode, setViewMode, selectedDate, setSelectedDate
 }) => {
   const navigate = useNavigate();
@@ -169,10 +169,11 @@ const Header = ({
         {/* Refresh Button */}
         <button
           onClick={onRefresh}
-          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition"
+          disabled={isLoading}
+          className={`p-2 rounded-xl transition ${isLoading ? 'text-blue-400 bg-blue-50' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`}
           title="רענן הזמנות"
         >
-          <RefreshCw size={18} />
+          <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
         </button>
       </div>
 
@@ -218,7 +219,8 @@ const KdsScreen = () => {
     setErrorModal,
     isSendingSms,
     fetchOrders,
-    fetchHistoryOrders, // New
+    fetchHistoryOrders,
+    findNearestActiveDate,
     updateOrderStatus,
     handleFireItems,
     handleReadyItems,
@@ -236,8 +238,18 @@ const KdsScreen = () => {
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-
   const navigate = useNavigate();
+
+  // Manual refresh trigger for history
+  const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
+
+  const handleRefresh = async () => {
+    console.log('🔄 Manual refresh triggered');
+    fetchOrders(); // Always refresh active orders
+    if (viewMode === 'history') {
+      setHistoryRefreshTrigger(prev => prev + 1);
+    }
+  };
 
 
   // Load History Effect with AbortController
@@ -250,6 +262,15 @@ const KdsScreen = () => {
           // Pass signal to hook
           const data = await fetchHistoryOrders(selectedDate, controller.signal);
           if (!controller.signal.aborted) {
+            // If data is empty, try to find the nearest date with orders
+            if ((!data || data.length === 0)) {
+              const nearestDate = await findNearestActiveDate(selectedDate);
+              if (nearestDate && !controller.signal.aborted) {
+                console.log('📅 jumping back to nearest date with orders:', nearestDate);
+                setSelectedDate(nearestDate);
+                return; // Effect will re-run with new selectedDate
+              }
+            }
             setHistoryOrders(data || []);
           }
         } catch (err) {
@@ -265,7 +286,7 @@ const KdsScreen = () => {
         controller.abort();
       };
     }
-  }, [viewMode, selectedDate, fetchHistoryOrders]);
+  }, [viewMode, selectedDate, fetchHistoryOrders, findNearestActiveDate, historyRefreshTrigger]);
 
 
   const handlePaymentCollected = (order) => {
@@ -307,7 +328,8 @@ const KdsScreen = () => {
       {/* מסגרת מלאה */}
       <div className="bg-slate-50 w-full h-full rounded-[24px] overflow-hidden shadow-2xl flex flex-col relative ring-4 ring-gray-800">
         <Header
-          onRefresh={fetchOrders}
+          onRefresh={handleRefresh}
+          isLoading={isLoading || isHistoryLoading}
           lastUpdated={lastUpdated}
           onUndoLastAction={handleUndoLastAction}
           canUndo={!!lastAction}

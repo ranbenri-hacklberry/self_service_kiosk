@@ -20,18 +20,26 @@ const DateScroller = ({ selectedDate, onSelectDate }) => {
         setDates(tempDates);
     }, []);
 
-    // 2. Initial Center
+    // 2. Initial Center & External Selection Changes
+    const isManualScroll = useRef(false);
+
     useEffect(() => {
         if (dates.length > 0 && containerRef.current) {
+            // Find current selected index
             const index = dates.findIndex(d =>
-                d.getDate() === selectedDate.getDate() &&
-                d.getMonth() === selectedDate.getMonth() &&
-                d.getFullYear() === selectedDate.getFullYear()
+                d.toDateString() === selectedDate.toDateString()
             );
             const targetIndex = index === -1 ? 0 : index;
-            scrollToIndex(targetIndex, 'auto');
+
+            // If this change came from outside (not manual scroll), scroll to it smoothly
+            if (!isManualScroll.current) {
+                scrollToIndex(targetIndex, 'smooth');
+            }
+
+            // Reset flag after any change
+            isManualScroll.current = false;
         }
-    }, [dates.length]);
+    }, [selectedDate, dates.length]);
 
     // 3. Scroll Helper
     const scrollToIndex = (index, behavior = 'smooth') => {
@@ -74,8 +82,13 @@ const DateScroller = ({ selectedDate, onSelectDate }) => {
         });
 
         if (closestDate && (!selectedDate || closestDate.getTime() !== selectedDate.getTime())) {
+            isManualScroll.current = true;
             onSelectDate(closestDate);
         }
+    };
+
+    const handleManualInteraction = () => {
+        isManualScroll.current = true;
     };
 
 
@@ -106,6 +119,9 @@ const DateScroller = ({ selectedDate, onSelectDate }) => {
                 style={{ paddingInline: 'calc(50% - 50px)', scrollBehavior: 'smooth' }}
                 dir="rtl"
                 onScroll={handleScroll}
+                onTouchStart={handleManualInteraction}
+                onMouseDown={handleManualInteraction}
+                onWheel={handleManualInteraction}
             >
                 {dates.map((date, idx) => {
                     // Loose comparison for highlighting while scrolling might be tricky if state lags,

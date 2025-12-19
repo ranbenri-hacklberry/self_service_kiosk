@@ -176,9 +176,10 @@ const ModifierModal = (props) => {
       try {
         setIsLoadingOptions(true);
         // Determine the correct ID to fetch options for
-        // If it's an existing order item, it has a menu_item_id property.
-        // If it's a new item from menu, id is the menu_item_id.
-        const targetItemId = selectedItem.menu_item_id || selectedItem.id;
+        // 1. menu_item_id - Standard backend format
+        // 2. menuItemId - KDS frontend format 
+        // 3. id - Item template ID or order item UUID fallback
+        const targetItemId = selectedItem.menu_item_id || selectedItem.menuItemId || selectedItem.id;
 
         // LocalStorage cache check removed to prevent stale data issues
 

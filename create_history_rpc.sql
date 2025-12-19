@@ -33,7 +33,7 @@ BEGIN
     o.is_paid,
     o.created_at,
     o.fired_at,
-    o.ready_at,
+    COALESCE(o.ready_at, o.updated_at) AS ready_at,
     o.updated_at,
     o.is_refund,
     o.refund_amount,

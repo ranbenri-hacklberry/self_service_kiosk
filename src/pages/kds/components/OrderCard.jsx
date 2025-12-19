@@ -8,19 +8,23 @@ const PrepTimer = memo(({ order, isHistory, isReady }) => {
 
   useEffect(() => {
     const calculate = () => {
-      // Use fired_at for accuracy, fall back to created_at if not fired
-      const startStr = order.fired_at || order.created_at;
+      // ספירה מרגע ההזמנה המקורי (Created At) ועד למוכן (Ready At)
+      const startStr = order.created_at;
       const endStr = order.ready_at;
 
-      if (!startStr) {
-        setDuration('-');
-        return;
+      const start = new Date(startStr).getTime();
+      let end;
+
+      if (endStr) {
+        end = new Date(endStr).getTime();
+      } else if (isReady || isHistory) {
+        // Fallback to updated_at for completed orders if ready_at is missing
+        end = order.updated_at ? new Date(order.updated_at).getTime() : null;
+      } else {
+        end = Date.now();
       }
 
-      const start = new Date(startStr).getTime();
-      const end = endStr ? new Date(endStr).getTime() : Date.now();
-
-      if (isNaN(start)) {
+      if (isNaN(start) || !end) {
         setDuration('-');
         return;
       }

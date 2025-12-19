@@ -41,7 +41,7 @@ BEGIN
   ELSE
     UPDATE orders
     SET order_status = 'completed',
-        completed_at = NOW()
+        ready_at = NOW()
     WHERE id = p_order_id;
   END IF;
 END;
