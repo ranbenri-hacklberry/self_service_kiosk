@@ -17,7 +17,7 @@ BEGIN
     -- Update Stock: Add ordered quantity to current stock
     UPDATE inventory_items
     SET 
-      current_stock = COALESCE(current_stock, 0) + v_item.quantity,
+      current_stock = GREATEST(0, COALESCE(current_stock, 0) + v_item.quantity),
       last_updated = NOW()
     WHERE id = v_item.inventory_item_id;
   END LOOP;
