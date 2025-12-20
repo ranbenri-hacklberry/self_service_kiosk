@@ -4,6 +4,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { Search, Truck, Plus, X, ArrowRight, Package, Save, Check, RefreshCw, ChevronLeft, Trash2, Edit2, AlertTriangle, ChevronDown, ChevronUp, Clock, House } from 'lucide-react';
 import ConfirmationModal from '../../../components/ui/ConfirmationModal';
+import ConnectionStatusBar from '../../../components/ConnectionStatusBar';
+import MiniMusicPlayer from '../../../components/music/MiniMusicPlayer';
 
 /**
  * KDS Inventory Screen - Redesigned Layout
@@ -450,8 +452,13 @@ const KDSInventoryScreen = ({ onExit }) => {
             {/* Header & Tabs - Single Line Layout */}
             <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-3 flex items-center justify-between border-b border-gray-200 gap-6">
 
-                {/* Right Side Group: Home | Title | Search */}
+                {/* Right Side Group: Connection | Home | Title | Search */}
                 <div className="flex items-center gap-4 flex-1">
+                    <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
+                        <MiniMusicPlayer />
+                        <ConnectionStatusBar isIntegrated={true} />
+                    </div>
+
                     {onExit && (
                         <button
                             onClick={onExit}

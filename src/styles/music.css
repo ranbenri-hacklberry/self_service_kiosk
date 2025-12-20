@@ -636,7 +636,8 @@
 /* Split screen layout for iPad */
 .music-split-layout {
   display: flex;
-  height: 100vh;
+  height: 100%;
+  flex: 1;
   overflow: hidden;
 }
 

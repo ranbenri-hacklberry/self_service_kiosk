@@ -9,6 +9,8 @@ import ItemDetails from '@/components/manager/ItemDetails';
 import InventoryScreen from '@/components/manager/InventoryScreen';
 import SalesDashboard from '@/components/manager/SalesDashboard';
 import TasksManager from '@/components/manager/TasksManager';
+import ConnectionStatusBar from '../../components/ConnectionStatusBar';
+import MiniMusicPlayer from '../../components/music/MiniMusicPlayer';
 import { useAuth } from '@/context/AuthContext';
 
 const ManagerDashboard = () => {
@@ -143,11 +145,17 @@ const ManagerDashboard = () => {
 
   return (
     <div className="h-screen flex flex-col bg-gray-100" dir="rtl">
-      {/* ... (Header remains same) */}
+      {/* Header */}
       <header className={`text-white p-2 shadow-md shrink-0 z-20 relative ${isImpersonating ? 'bg-slate-800' : 'bg-blue-600'}`}>
         <div className="flex items-center justify-between max-w-7xl mx-auto w-full">
-          {/* ... (Header content) */}
+          {/* Right Side Group: Connection Status & Logo/Title (if any) & Logout */}
           <div className="flex items-center gap-3">
+            {/* Mini Player & Connection Group */}
+            <div className="flex items-center gap-3 bg-white/10 p-1 px-2 rounded-2xl border border-white/10">
+              <MiniMusicPlayer />
+              <ConnectionStatusBar isIntegrated={true} />
+            </div>
+            
             <button
               onClick={() => setShowLogoutConfirm(true)}
               className={`flex flex-col items-center justify-center w-14 h-14 rounded-xl transition-all text-xs font-bold gap-1 border shadow-sm ${isImpersonating
@@ -170,7 +178,7 @@ const ManagerDashboard = () => {
           </div>
 
           {/* Left Side: Navigation Tabs (Visual Left in RTL) */}
-          <div className="flex items-center gap-1 overflow-x-auto hide-scrollbar">
+          <div className="flex items-center gap-1 overflow-x-auto hide-scrollbar mr-10">
             {[
               { id: 'sales', label: 'מכירות', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /><path d="m9 16 2 2 4-4" /></svg> },
               { id: 'menu', label: 'תפריט', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" /><path d="M7 2v20" /><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" /></svg> },

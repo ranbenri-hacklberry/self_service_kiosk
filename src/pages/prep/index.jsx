@@ -4,6 +4,8 @@ import { House, RotateCcw, List, CheckCircle, Sunrise, Sunset, Utensils } from '
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import TaskManagementView from '../../components/kds/TaskManagementView';
+import ConnectionStatusBar from '../../components/ConnectionStatusBar';
+import MiniMusicPlayer from '../../components/music/MiniMusicPlayer';
 
 const PrepPage = () => {
     const navigate = useNavigate();
@@ -127,6 +129,11 @@ const PrepPage = () => {
             {/* Header */}
             <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-4 flex justify-between items-center border-b border-gray-200 font-heebo">
                 <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
+                        <MiniMusicPlayer />
+                        <ConnectionStatusBar isIntegrated={true} />
+                    </div>
+                    
                     <button onClick={handleExit} className="p-2 -mr-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition">
                         <House size={24} />
                     </button>

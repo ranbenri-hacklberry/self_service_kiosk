@@ -1,17 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Music, Disc, ListMusic, Search, Upload, RefreshCw,
     ArrowRight, Sparkles, User, Play, FolderOpen, Heart,
-    Pause, SkipForward, SkipBack, Trash2
+    Pause, SkipForward, SkipBack, Trash2, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MusicProvider, useMusic } from '@/context/MusicContext';
+import { useMusic } from '@/context/MusicContext';
 import { useAlbums } from '@/hooks/useAlbums';
 import { useAuth } from '@/context/AuthContext';
 import AlbumCard from '@/components/music/AlbumCard';
 import VinylTurntable from '@/components/music/VinylTurntable';
 import SongRow from '@/components/music/SongRow';
+import MiniMusicPlayer from '../../components/music/MiniMusicPlayer';
+import ConnectionStatusBar from '../../components/ConnectionStatusBar';
 import AlbumView from './components/AlbumView';
 import PlaylistBuilder from './components/PlaylistBuilder';
 import DirectoryScanner from './components/DirectoryScanner';
@@ -28,6 +30,32 @@ const TABS = [
 const MusicPageContent = () => {
     const navigate = useNavigate();
     const { currentUser } = useAuth();
+    
+    // Permission check: Only Managers and Admins
+    const isManager = currentUser?.access_level === 'Admin' || 
+                      currentUser?.access_level === 'Manager' || 
+                      currentUser?.is_admin;
+
+    if (!isManager) {
+        return (
+            <div className="min-h-screen music-gradient-dark flex flex-col items-center justify-center p-6 text-center" dir="rtl">
+                <div className="music-glass p-8 rounded-3xl max-w-md border border-red-500/30">
+                    <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <X className="w-10 h-10 text-red-400" />
+                    </div>
+                    <h2 className="text-white text-2xl font-black mb-4">גישה נדחתה</h2>
+                    <p className="text-white/60 mb-8">אין לך הרשאות מתאימות לגישה למערכת המוזיקה. דף זה מיועד למנהלים בלבד.</p>
+                    <button 
+                        onClick={() => navigate('/mode-selection')}
+                        className="w-full py-4 music-gradient-purple text-white font-bold rounded-2xl hover:scale-[1.02] transition-transform shadow-lg"
+                    >
+                        חזרה לתפריט ראשי
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     const {
         albums,
         artists,
@@ -52,7 +80,8 @@ const MusicPageContent = () => {
         togglePlay,
         handleNext,
         handlePrevious,
-        playlist
+        playlist,
+        rateSong
     } = useMusic();
 
     const [activeTab, setActiveTab] = useState('albums');
@@ -157,41 +186,134 @@ const MusicPageContent = () => {
 
     // Handle rating
     const handleRate = async (songId, rating) => {
-        const ok = await rateSong(songId, rating);
+        // Find the song to get current rating
+        const songToUpdate = currentAlbumSongs.find(s => s.id === songId) || 
+                            favoriteSongs.find(s => s.id === songId);
+        
+        const currentRating = songToUpdate?.myRating || 0;
+        
+        // Toggle logic: if same rating, set to 0 (remove)
+        const finalRating = currentRating === rating ? 0 : rating;
+
+        console.log('🎵 handleRate toggle:', { songId, current: currentRating, requested: rating, final: finalRating });
+        
+        const ok = await rateSong(songId, finalRating);
         if (!ok) return;
 
         // Optimistic UI update
-        setCurrentAlbumSongs(prev => prev.map(s => s.id === songId ? { ...s, myRating: rating } : s));
+        setCurrentAlbumSongs(prev => prev.map(s => s.id === songId ? { ...s, myRating: finalRating } : s));
         setFavoriteSongs(prev => {
             const exists = prev.some(s => s.id === songId);
-            if (rating === 5) {
+            if (finalRating === 5) {
                 if (exists) return prev.map(s => s.id === songId ? { ...s, myRating: 5 } : s);
                 const src = currentAlbumSongs.find(s => s.id === songId);
                 return src ? [{ ...src, myRating: 5 }, ...prev] : prev;
             }
-            if (rating === 1) {
-                // remove from favorites if disliked
+            if (finalRating === 1 || finalRating === 0) {
+                // remove from favorites if disliked or removed
                 return prev.filter(s => s.id !== songId);
             }
             return prev;
         });
+
+        // Refresh from server after a short delay
+        setTimeout(async () => {
+            try {
+                if (selectedAlbum) {
+                    if (selectedAlbum.isPlaylist) {
+                        const songs = await fetchPlaylistSongs(selectedAlbum.id);
+                        setCurrentAlbumSongs(songs);
+                    } else {
+                        const songs = await fetchAlbumSongs(selectedAlbum.id);
+                        setCurrentAlbumSongs(songs);
+                    }
+                }
+                // Refresh favorites if we're on that tab
+                if (activeTab === 'favorites') {
+                    await loadFavorites();
+                }
+            } catch (err) {
+                console.error('Error refreshing after rating:', err);
+            }
+        }, 500);
     };
+
+    // Load favorites
+    const loadFavorites = useCallback(async () => {
+        const songs = await fetchFavoritesSongs();
+        setFavoriteSongs(songs || []);
+    }, [fetchFavoritesSongs]);
 
     // Load favorites when opening the favorites tab
     useEffect(() => {
         if (activeTab !== 'favorites') return;
-        (async () => {
-            const songs = await fetchFavoritesSongs();
-            setFavoriteSongs(songs || []);
-        })();
-    }, [activeTab, fetchFavoritesSongs]);
+        loadFavorites();
+    }, [activeTab, loadFavorites]);
 
     // Get songs to display (current album or playlist)
     const displaySongs = currentAlbumSongs.length > 0 ? currentAlbumSongs : playlist;
 
     return (
-        <div className="min-h-screen music-gradient-dark" dir="rtl">
-            <div className="music-split-layout">
+        <div className="min-h-screen music-gradient-dark flex flex-col" dir="rtl">
+            {/* Full Width Header */}
+            <header className="flex items-center justify-between p-4 border-b border-white/10 bg-black/20 backdrop-blur-md z-10">
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={handleExit}
+                        className="w-10 h-10 rounded-full music-glass flex items-center justify-center"
+                    >
+                        <ArrowRight className="w-5 h-5 text-white" />
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                        <Music className="w-6 h-6 text-purple-400" />
+                        <h1 className="text-white text-xl font-bold">מוזיקה</h1>
+                    </div>
+
+                    {/* Mini Player & Connection Group */}
+                    <div className="hidden lg:flex items-center gap-3 bg-white/5 p-1 px-2 rounded-2xl border border-white/10">
+                        <MiniMusicPlayer />
+                        <ConnectionStatusBar isIntegrated={true} />
+                    </div>
+                </div>
+
+                {/* Search */}
+                <div className="flex-1 max-w-md mx-4">
+                    <div className="relative">
+                        <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="חפש אלבומים, אמנים..."
+                            className="w-full bg-white/10 border border-white/10 rounded-xl py-2 pr-10 pl-4
+                                   text-white placeholder-white/40 focus:outline-none focus:border-purple-500"
+                        />
+                    </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setShowScanner(true)}
+                        className="w-10 h-10 rounded-full music-glass flex items-center justify-center"
+                        title="סרוק ספרייה"
+                    >
+                        <FolderOpen className="w-5 h-5 text-white" />
+                    </button>
+
+                    <button
+                        onClick={refreshAll}
+                        className={`w-10 h-10 rounded-full music-glass flex items-center justify-center
+                               ${isLoading ? 'animate-spin' : ''}`}
+                        title="רענן"
+                    >
+                        <RefreshCw className="w-5 h-5 text-white" />
+                    </button>
+                </div>
+            </header>
+
+            <div className="music-split-layout flex-1">
                 {/* Right side - Vinyl Turntable */}
                 <div className="music-split-right">
                     <div className="flex flex-col items-center justify-center h-full">
@@ -242,58 +364,6 @@ const MusicPageContent = () => {
 
                 {/* Left side - Song list / Albums */}
                 <div className="music-split-left flex flex-col">
-                    {/* Header */}
-                    <header className="flex items-center justify-between p-4 border-b border-white/10 flex-shrink-0">
-                        <div className="flex items-center gap-4">
-                            <button
-                                onClick={handleExit}
-                                className="w-10 h-10 rounded-full music-glass flex items-center justify-center"
-                            >
-                                <ArrowRight className="w-5 h-5 text-white" />
-                            </button>
-
-                            <div className="flex items-center gap-2">
-                                <Music className="w-6 h-6 text-purple-400" />
-                                <h1 className="text-white text-xl font-bold">מוזיקה</h1>
-                            </div>
-                        </div>
-
-                        {/* Search */}
-                        <div className="flex-1 max-w-md mx-4">
-                            <div className="relative">
-                                <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
-                                <input
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="חפש אלבומים, אמנים..."
-                                    className="w-full bg-white/10 border border-white/10 rounded-xl py-2 pr-10 pl-4
-                                   text-white placeholder-white/40 focus:outline-none focus:border-purple-500"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setShowScanner(true)}
-                                className="w-10 h-10 rounded-full music-glass flex items-center justify-center"
-                                title="סרוק ספרייה"
-                            >
-                                <FolderOpen className="w-5 h-5 text-white" />
-                            </button>
-
-                            <button
-                                onClick={refreshAll}
-                                className={`w-10 h-10 rounded-full music-glass flex items-center justify-center
-                               ${isLoading ? 'animate-spin' : ''}`}
-                                title="רענן"
-                            >
-                                <RefreshCw className="w-5 h-5 text-white" />
-                            </button>
-                        </div>
-                    </header>
-
                     {/* Content area */}
                     <div className="flex-1 overflow-y-auto music-scrollbar">
                         {/* Backend/Supabase misconfiguration banner */}
@@ -579,13 +649,9 @@ const MusicPageContent = () => {
     );
 };
 
-// Wrap with MusicProvider
+// Export without wrapper (wrapper moved to Routes.jsx)
 const MusicPage = () => {
-    return (
-        <MusicProvider>
-            <MusicPageContent />
-        </MusicProvider>
-    );
+    return <MusicPageContent />;
 };
 
 export default MusicPage;

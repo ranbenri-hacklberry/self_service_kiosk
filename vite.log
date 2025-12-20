@@ -1,0 +1,158 @@
+
+> self-service-kiosk@2.0.0 dev
+> vite --host --port 4028
+
+
+  VITE v5.0.0  ready in 328 ms
+
+  ➜  Local:   http://localhost:4028/
+  ➜  Network: http://10.39.127.3:4028/
+10:44:04 AM [vite] hmr update /src/context/ConnectionContext.jsx, /src/styles/tailwind.css
+10:44:04 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+10:44:04 AM [vite] hmr invalidate /src/context/ConnectionContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+10:44:04 AM [vite] page reload src/context/ConnectionContext.jsx (circular imports)
+10:44:04 AM [vite] hmr invalidate /src/context/ConnectionContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+10:44:04 AM [vite] page reload src/context/ConnectionContext.jsx (circular imports)
+10:48:56 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+10:49:29 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+11:15:23 AM [vite] hmr update /src/context/MusicContext.jsx, /src/styles/tailwind.css
+11:15:24 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+11:15:24 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
+11:15:24 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+11:15:24 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
+11:15:37 AM [vite] hmr update /src/context/MusicContext.jsx, /src/styles/tailwind.css
+11:15:37 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+11:15:37 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
+11:15:37 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+11:15:37 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
+11:16:59 AM [vite] hmr update /src/context/MusicContext.jsx, /src/styles/tailwind.css
+11:16:59 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+11:16:59 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
+11:16:59 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+11:16:59 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
+11:17:11 AM [vite] hmr update /src/context/MusicContext.jsx, /src/styles/tailwind.css
+11:17:11 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+11:17:11 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
+11:17:11 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+11:17:11 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
+11:17:39 AM [vite] hmr update /src/context/MusicContext.jsx, /src/styles/tailwind.css
+11:17:39 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+11:17:39 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
+11:17:39 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+11:17:39 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
+11:23:57 AM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
+11:24:04 AM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
+11:24:30 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+11:24:46 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+11:27:28 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
+11:27:40 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
+11:28:04 AM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
+11:28:04 AM [vite] hmr update /src/pages/kds/components/KDSMusicPlayer.jsx, /src/styles/tailwind.css
+11:28:04 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+11:28:04 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
+11:41:19 AM [vite] hmr update /src/pages/kds/components/KDSMusicPlayer.jsx, /src/styles/tailwind.css
+11:41:59 AM [vite] page reload src/components/music/MiniMusicPlayer.jsx
+11:41:59 AM [vite] Pre-transform error: Failed to resolve import "./components/KDSMusicPlayer" from "src/pages/kds/index.jsx". Does the file exist?
+11:41:59 AM [vite] Pre-transform error: Failed to resolve import "./components/KDSMusicPlayer" from "src/pages/kds/index.jsx". Does the file exist?
+11:41:59 AM [vite] Internal server error: Failed to resolve import "./components/KDSMusicPlayer" from "src/pages/kds/index.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/src/pages/kds/index.jsx:19:27
+  50 |  import OrderEditModal from "./components/OrderEditModal";
+  51 |  import DateScroller from "./components/DateScroller";
+  52 |  import KDSMusicPlayer from "./components/KDSMusicPlayer";
+     |                              ^
+  53 |  import { useKDSData } from "./hooks/useKDSData";
+  54 |  class KDSErrorBoundary extends React.Component {
+      at formatError (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:61701:46)
+      at TransformContext.error (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:61695:19)
+      at normalizeUrl (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:59988:33)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:60138:47
+      at async Promise.all (index 16)
+      at async TransformContext.transform (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:60059:13)
+      at async Object.transform (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:61996:30)
+      at async loadAndTransform (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:47780:29)
+      at async viteTransformMiddleware (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:57379:32)
+11:42:00 AM [vite] Internal server error: Failed to resolve import "./components/KDSMusicPlayer" from "src/pages/kds/index.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/src/pages/kds/index.jsx:19:27
+  50 |  import OrderEditModal from "./components/OrderEditModal";
+  51 |  import DateScroller from "./components/DateScroller";
+  52 |  import KDSMusicPlayer from "./components/KDSMusicPlayer";
+     |                              ^
+  53 |  import { useKDSData } from "./hooks/useKDSData";
+  54 |  class KDSErrorBoundary extends React.Component {
+      at formatError (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:61701:46)
+      at TransformContext.error (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:61695:19)
+      at normalizeUrl (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:59988:33)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:60138:47
+      at async Promise.all (index 16)
+      at async TransformContext.transform (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:60059:13)
+      at async Object.transform (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:61996:30)
+      at async loadAndTransform (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:47780:29)
+      at async viteTransformMiddleware (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:57379:32)
+11:42:07 AM [vite] page reload src/pages/kds/index.jsx
+11:42:14 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
+11:42:42 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+11:43:09 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+11:43:49 AM [vite] hmr update /src/styles/music.css
+11:44:05 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
+11:44:05 AM [vite] hmr update /src/components/music/MiniMusicPlayer.jsx, /src/styles/tailwind.css
+11:44:05 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+11:44:05 AM [vite] hmr update /src/styles/music.css
+11:46:40 AM [vite] hmr update /src/components/ConnectionStatusBar.jsx, /src/styles/tailwind.css
+11:46:53 AM [vite] hmr update /src/components/ConnectionStatusBar.jsx, /src/styles/tailwind.css
+11:47:18 AM [vite] hmr update /src/App.jsx, /src/styles/tailwind.css
+11:47:44 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
+11:47:58 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
+11:48:05 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+11:48:14 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+11:48:43 AM [vite] hmr update /src/components/music/MiniMusicPlayer.jsx, /src/styles/tailwind.css
+11:49:11 AM [vite] hmr update /src/pages/data-manager-interface/index.jsx, /src/styles/tailwind.css
+11:49:35 AM [vite] hmr update /src/pages/data-manager-interface/index.jsx, /src/styles/tailwind.css
+11:50:08 AM [vite] hmr update /src/pages/kds/components/KDSInventoryScreen.jsx, /src/styles/tailwind.css
+11:50:16 AM [vite] hmr update /src/pages/kds/components/KDSInventoryScreen.jsx, /src/styles/tailwind.css
+11:52:02 AM [vite] hmr update /src/pages/prep/index.jsx, /src/styles/tailwind.css
+11:52:09 AM [vite] hmr update /src/pages/prep/index.jsx, /src/styles/tailwind.css
+11:52:27 AM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
+11:52:46 AM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
+11:53:36 AM [vite] hmr update /src/components/music/MiniMusicPlayer.jsx, /src/styles/tailwind.css
+11:54:03 AM [vite] hmr update /src/components/ConnectionStatusBar.jsx, /src/styles/tailwind.css
+11:54:47 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
+11:55:29 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+11:56:09 AM [vite] hmr update /src/pages/data-manager-interface/index.jsx, /src/styles/tailwind.css
+11:56:44 AM [vite] hmr update /src/pages/data-manager-interface/index.jsx, /src/styles/tailwind.css
+11:56:53 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+11:57:24 AM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
+11:57:53 AM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
+11:58:01 AM [vite] hmr update /src/pages/kds/components/KDSInventoryScreen.jsx, /src/styles/tailwind.css
+11:58:36 AM [vite] hmr update /src/pages/kds/components/KDSInventoryScreen.jsx, /src/styles/tailwind.css
+11:59:12 AM [vite] hmr update /src/pages/prep/index.jsx, /src/styles/tailwind.css
+11:59:44 AM [vite] hmr update /src/pages/prep/index.jsx, /src/styles/tailwind.css
+12:02:32 PM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
+12:03:09 PM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
+12:03:48 PM [vite] hmr update /src/pages/data-manager-interface/index.jsx, /src/styles/tailwind.css
+12:04:30 PM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+12:04:53 PM [vite] hmr update /src/pages/kds/components/KDSInventoryScreen.jsx, /src/styles/tailwind.css
+12:05:16 PM [vite] hmr update /src/pages/prep/index.jsx, /src/styles/tailwind.css
+12:05:34 PM [vite] hmr update /src/components/ConnectionStatusBar.jsx, /src/styles/tailwind.css
+12:05:34 PM [vite] hmr update /src/components/music/MiniMusicPlayer.jsx, /src/styles/tailwind.css
+12:05:34 PM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
+12:05:34 PM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
+12:05:34 PM [vite] hmr update /src/pages/data-manager-interface/index.jsx, /src/styles/tailwind.css
+12:05:34 PM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
+12:05:34 PM [vite] hmr update /src/pages/kds/components/KDSInventoryScreen.jsx, /src/styles/tailwind.css
+12:05:34 PM [vite] hmr update /src/pages/prep/index.jsx, /src/styles/tailwind.css
+12:27:36 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
+12:30:22 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
+12:30:59 PM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
+12:32:02 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
+12:32:39 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
+12:33:19 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
+12:34:07 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
+12:35:10 PM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
+12:36:04 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
+12:36:45 PM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
+12:37:03 PM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
+12:37:03 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css

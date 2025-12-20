@@ -111,6 +111,19 @@ export const MusicProvider = ({ children }) => {
     const playSong = useCallback(async (song, playlistSongs = null) => {
         if (!song) return;
 
+        // Never play disliked songs
+        if ((song.myRating || 0) === 1) {
+            console.log('🎵 playSong: skipping disliked song:', song.title);
+            // If we have a playlist, move to next
+            if (playlistSongs || playlist.length > 0) {
+                // If playlistSongs is provided, we need to update our local state first
+                if (playlistSongs) setPlaylist(playlistSongs);
+                // Call handleNext (wrapped in timeout to avoid recursion issues)
+                setTimeout(() => handleNextRef.current(), 100);
+            }
+            return;
+        }
+
         setIsLoading(true);
 
         try {
@@ -241,9 +254,35 @@ export const MusicProvider = ({ children }) => {
             return;
         }
 
+        const isDislikedSong = (s) => (s?.myRating || 0) === 1;
+
         let prevIndex = playlistIndex - 1;
         if (prevIndex < 0) {
             prevIndex = repeat === 'all' ? playlist.length - 1 : 0;
+        }
+
+        // Skip disliked songs (backwards scan)
+        let guard = 0;
+        while (guard < playlist.length && isDislikedSong(playlist[prevIndex])) {
+            prevIndex -= 1;
+            if (prevIndex < 0) {
+                if (repeat === 'all') prevIndex = playlist.length - 1;
+                else {
+                    // Start of playlist reached and it's disliked
+                    prevIndex = 0; 
+                    // If even the first one is disliked, we stop or find first playable
+                    if (isDislikedSong(playlist[0])) {
+                        let firstPlayable = playlist.findIndex(s => !isDislikedSong(s));
+                        if (firstPlayable === -1) {
+                            setIsPlaying(false);
+                            return;
+                        }
+                        prevIndex = firstPlayable;
+                    }
+                    break;
+                }
+            }
+            guard += 1;
         }
 
         setPlaylistIndex(prevIndex);
@@ -257,7 +296,11 @@ export const MusicProvider = ({ children }) => {
 
     // Rate a song (like/dislike only) - use backend service to bypass RLS
     const rateSong = useCallback(async (songId, rating) => {
-        if (!currentUser || !songId) return;
+        console.log('🎵 rateSong called:', { songId, rating, currentUser: currentUser?.id });
+        if (!currentUser || !songId) {
+            console.log('🎵 rateSong: missing user or songId');
+            return false;
+        }
 
         try {
             const response = await fetch(`${MUSIC_API_URL}/music/rate`, {
@@ -275,6 +318,19 @@ export const MusicProvider = ({ children }) => {
             if (!response.ok || !result?.success) {
                 throw new Error(result?.message || 'Failed to rate song');
             }
+
+            // Update current playlist and current song with the new rating
+            setPlaylist(prev => prev.map(s => s.id === songId ? { ...s, myRating: rating } : s));
+            if (currentSong?.id === songId) {
+                setCurrentSong(prev => ({ ...prev, myRating: rating }));
+                
+                // If the current song was just disliked, skip to next
+                if (rating === 1) {
+                    console.log('🎵 rateSong: current song disliked, skipping...');
+                    handleNext();
+                }
+            }
+
             return true;
         } catch (error) {
             console.error('Error rating song:', error);

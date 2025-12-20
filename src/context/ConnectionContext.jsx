@@ -35,14 +35,20 @@ export const ConnectionProvider = ({ children }) => {
 
         // Check Local (Docker) - simple health check
         try {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), 2000);
+            
             const response = await fetch(`${LOCAL_SUPABASE_URL}/rest/v1/`, {
-                method: 'HEAD',
+                method: 'GET', // HEAD sometimes causes issues with some proxies
                 headers: {
                     'apikey': import.meta.env.VITE_LOCAL_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0'
                 },
-                signal: AbortSignal.timeout(3000)
-            });
-            localOk = response.ok || response.status === 400; // 400 means API is up but needs table
+                signal: controller.signal,
+                mode: 'cors'
+            }).catch(() => ({ ok: false }));
+            
+            clearTimeout(id);
+            localOk = response && (response.ok || response.status === 400);
         } catch {
             localOk = false;
         }

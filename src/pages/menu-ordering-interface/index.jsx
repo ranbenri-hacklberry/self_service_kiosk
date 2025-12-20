@@ -9,11 +9,13 @@ import PaymentSelectionModal from './components/PaymentSelectionModal';
 import ModifierModal from './components/ModifierModal';
 import SaladPrepDecision from './components/SaladPrepDecision';
 import MTOQuickNotesModal from './components/MTOQuickNotesModal';
-import OrderConfirmationModal from '../../components/ui/OrderConfirmationModal';
-import { addCoffeePurchase, getLoyaltyCount, handleLoyaltyAdjustment, getLoyaltyRedemptionForOrder } from "../../lib/loyalty";
-import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../context/AuthContext';
-import Icon from '../../components/AppIcon';
+import OrderConfirmationModal from '@/components/ui/OrderConfirmationModal';
+import { addCoffeePurchase, getLoyaltyCount, handleLoyaltyAdjustment, getLoyaltyRedemptionForOrder } from "@/lib/loyalty";
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
+import ConnectionStatusBar from '@/components/ConnectionStatusBar';
+import MiniMusicPlayer from '@/components/music/MiniMusicPlayer';
+import Icon from '@/components/AppIcon';
 // Custom hooks
 import { useMenuItems, useLoyalty, useCart } from './hooks';
 
@@ -1832,22 +1834,27 @@ const MenuOrderingInterface = () => {
       {/* Top Navigation Bar */}
       <div className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 sticky top-0 z-30 shadow-sm">
 
-        {/* Right Side: Back Button */}
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-2 rounded-xl transition-all font-bold"
-        >
-          <Icon name="ArrowRight" size={20} />
-          <span>חזור</span>
-        </button>
+        {/* Right Side Group (RTL): Back Button */}
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-2 rounded-xl transition-all font-bold"
+          >
+            <Icon name="ArrowRight" size={20} />
+            <span>חזור</span>
+          </button>
+        </div>
 
-        {/* Center/Left: Logo or Title (Optional) */}
+        {/* Center: Mini Player & Connection Group */}
+        <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
+          <MiniMusicPlayer />
+          <ConnectionStatusBar isIntegrated={true} />
+        </div>
+
+        {/* Left Side Group (RTL): Logo or Title */}
         <div className="text-xl font-black text-slate-800 tracking-tight">
           iCaffe Kiosk
         </div>
-
-        {/* Left Side: Placeholder or User Info */}
-        <div className="w-20"></div>
       </div>
 
       {/* Main Content - Menu (Right) and Cart (Left) */}

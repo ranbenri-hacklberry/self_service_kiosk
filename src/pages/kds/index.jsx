@@ -16,6 +16,8 @@ import { isDrink, isHotDrink, sortItems, groupOrderItems } from '../../utils/kds
 import OrderCard from './components/OrderCard';
 import OrderEditModal from './components/OrderEditModal';
 import DateScroller from './components/DateScroller';
+import MiniMusicPlayer from '../../components/music/MiniMusicPlayer';
+import ConnectionStatusBar from '../../components/ConnectionStatusBar';
 import { useKDSData } from './hooks/useKDSData';
 
 // Simple Error Boundary for KDS
@@ -140,11 +142,6 @@ const Header = ({
   return (
     <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-2 flex justify-between items-center border-b border-gray-200 font-heebo">
       <div className="flex items-center gap-4">
-        {/* Home Button (Moved Here) */}
-        <button onClick={handleExit} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition">
-          <House size={18} />
-        </button>
-
         {/* Title (Icon Removed) */}
         <h1 className="text-xl font-black text-slate-800">
           מסך מטבח
@@ -175,6 +172,12 @@ const Header = ({
         >
           <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
         </button>
+
+        {/* Mini Music Player Group */}
+        <div className="flex items-center gap-2 bg-slate-50/50 p-1 rounded-2xl border border-slate-100">
+          <MiniMusicPlayer />
+          <ConnectionStatusBar isIntegrated={true} />
+        </div>
       </div>
 
       <div className="flex items-center gap-3">
@@ -192,7 +195,10 @@ const Header = ({
           <RotateCcw size={18} />
         </button>
 
-
+        {/* Home Button (Back to Right Group) */}
+        <button onClick={handleExit} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition">
+          <House size={18} />
+        </button>
 
         <button onClick={handleNewOrder} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition shadow-sm text-sm font-bold">
           <Plus size={16} /> הזמנה

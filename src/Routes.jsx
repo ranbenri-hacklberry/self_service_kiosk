@@ -1,9 +1,10 @@
 import React, { useEffect } from "react";
-import { BrowserRouter, Routes as RouterRoutes, Route, useNavigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes as RouterRoutes, Route, useNavigate, useLocation, Navigate } from "react-router-dom";
 import ScrollToTop from "@/components/ScrollToTop";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import NotFound from "@/pages/NotFound";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { MusicProvider } from "@/context/MusicContext";
 
 // Pages
 import LoginScreen from "@/pages/login/LoginScreen";
@@ -23,9 +24,20 @@ import MusicPage from './pages/music';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
-  const { currentUser, deviceMode, isLoading } = useAuth();
+  const { currentUser, deviceMode: stateMode, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Use state mode or fallback to localStorage for immediate transitions
+  const deviceMode = stateMode || localStorage.getItem('kiosk_mode');
+
+  console.log('🛡️ ProtectedRoute Check:', { 
+    path: location.pathname, 
+    hasUser: !!currentUser, 
+    stateMode, 
+    deviceMode,
+    isLoading 
+  });
 
   // Show loading state
   if (isLoading) {
@@ -37,31 +49,27 @@ const ProtectedRoute = ({ children }) => {
     );
   }
 
-  // CRITICAL: If no user, redirect to login immediately - don't show any protected content
+  // CRITICAL: If no user, redirect to login
   if (!currentUser) {
-    console.log('🚫 ProtectedRoute: No user, redirecting to login immediately');
-    navigate('/login', { replace: true });
-    return null;
+    console.log('🚫 ProtectedRoute: No user, redirecting to login');
+    return <Navigate to="/login" replace />;
   }
 
   // User is logged in - check mode
   if (!deviceMode && location.pathname !== '/mode-selection') {
-    // Logged in but no mode - must select mode first
-    console.log('⚠️ ProtectedRoute: No device mode selected, redirecting to mode-selection');
-    navigate('/mode-selection', { replace: true });
-    return null;
+    console.log('⚠️ ProtectedRoute: No device mode, redirecting to mode-selection');
+    return <Navigate to="/mode-selection" replace />;
   }
 
   // Handle root path redirect based on mode
   if (location.pathname === '/' && deviceMode) {
     console.log('🏠 ProtectedRoute: At root with mode:', deviceMode);
     if (deviceMode === 'kds') {
-      navigate('/kds', { replace: true });
+      return <Navigate to="/kds" replace />;
     } else if (deviceMode === 'manager') {
-      navigate('/data-manager-interface', { replace: true });
+      return <Navigate to="/data-manager-interface" replace />;
     }
-    // For 'kiosk' mode, stay on CustomerPhoneInputScreen
-    return null;
+    // For 'kiosk' mode, let it fall through and render children (CustomerPhoneInputScreen)
   }
 
   console.log('✅ ProtectedRoute: Access granted for path:', location.pathname);
@@ -69,6 +77,7 @@ const ProtectedRoute = ({ children }) => {
 };
 
 const AppRoutes = () => {
+  console.log('🚀 AppRoutes component rendering...');
   return (
     <RouterRoutes>
       {/* Public Routes */}
@@ -154,8 +163,10 @@ const Routes = () => {
     <BrowserRouter>
       <ErrorBoundary>
         <AuthProvider>
-          <ScrollToTop />
-          <AppRoutes />
+          <MusicProvider>
+            <ScrollToTop />
+            <AppRoutes />
+          </MusicProvider>
         </AuthProvider>
       </ErrorBoundary>
     </BrowserRouter>

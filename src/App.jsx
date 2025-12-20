@@ -6,7 +6,6 @@ import ConnectionStatusBar from "@/components/ConnectionStatusBar";
 function App() {
   return (
     <ConnectionProvider>
-      <ConnectionStatusBar />
       <Routes />
     </ConnectionProvider>
   );

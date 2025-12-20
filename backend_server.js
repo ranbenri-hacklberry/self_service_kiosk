@@ -47,6 +47,8 @@ if (LOCAL_URL && LOCAL_KEY) {
 
 if (!supabase) {
     console.error("⚠️ WARNING: No Supabase client available! Server in limited mode.");
+} else {
+    console.log("✅ Supabase client ready for operations");
 }
 
 // === HYBRID AUTH MIDDLEWARE ===
@@ -1129,6 +1131,7 @@ app.post("/music/scan", async (req, res) => {
 
         let saved = null;
         if (saveToDb) {
+            console.log('🎯 Starting saveToDb process...');
             if (!supabase) {
                 console.error("⚠️ Cannot save scan results - missing Supabase credentials (SUPABASE_URL / SUPABASE_SERVICE_KEY)");
                 // Still return scan results so UI can show library immediately
@@ -1161,12 +1164,36 @@ app.post("/music/scan", async (req, res) => {
 
             // 1) Artists
             const artistRows = artists.map(a => ({ name: a.name, folder_path: a.folder_path || null }));
+            console.log(`💾 Inserting ${artistRows.length} artists...`);
             if (artistRows.length > 0) {
-                const { error: artistUpsertError } = await supabase
-                    .from('music_artists')
-                    .upsert(artistRows, { onConflict: 'name', ignoreDuplicates: false });
+                // First try upsert, if fails try insert ignore
+                let artistUpsertError = null;
+                try {
+                    const { error } = await supabase
+                        .from('music_artists')
+                        .upsert(artistRows, { onConflict: 'name', ignoreDuplicates: false });
+                    artistUpsertError = error;
+                } catch (e) {
+                    console.log('Upsert failed, trying insert...');
+                }
+
                 if (artistUpsertError) {
-                    console.error('Artist upsert error:', artistUpsertError);
+                    console.log('Trying individual inserts...');
+                    for (const artist of artistRows) {
+                        try {
+                            const { error } = await supabase
+                                .from('music_artists')
+                                .insert(artist);
+                            if (error && !error.message?.includes('duplicate key')) {
+                                console.error('❌ Artist insert error:', error);
+                            }
+                        } catch (e) {
+                            // Ignore duplicate key errors
+                        }
+                    }
+                    console.log('✅ Artists processed');
+                } else {
+                    console.log('✅ Artists upserted successfully');
                 }
             }
 
@@ -1189,12 +1216,36 @@ app.post("/music/scan", async (req, res) => {
                     cover_url: a.cover_path || null
                 }));
 
+            console.log(`💾 Inserting ${albumRows.length} albums...`);
             if (albumRows.length > 0) {
-                const { error: albumUpsertError } = await supabase
-                    .from('music_albums')
-                    .upsert(albumRows, { onConflict: 'name,artist_id', ignoreDuplicates: false });
+                // Try upsert first, then individual inserts
+                let albumUpsertError = null;
+                try {
+                    const { error } = await supabase
+                        .from('music_albums')
+                        .upsert(albumRows, { onConflict: 'name,artist_id', ignoreDuplicates: false });
+                    albumUpsertError = error;
+                } catch (e) {
+                    console.log('Upsert failed, trying individual inserts...');
+                }
+
                 if (albumUpsertError) {
-                    console.error('Album upsert error:', albumUpsertError);
+                    console.log('Trying individual album inserts...');
+                    for (const album of albumRows) {
+                        try {
+                            const { error } = await supabase
+                                .from('music_albums')
+                                .insert(album);
+                            if (error && !error.message?.includes('duplicate key')) {
+                                console.error('❌ Album insert error:', error);
+                            }
+                        } catch (e) {
+                            // Ignore duplicate key errors
+                        }
+                    }
+                    console.log('✅ Albums processed');
+                } else {
+                    console.log('✅ Albums upserted successfully');
                 }
             }
 
@@ -1218,6 +1269,7 @@ app.post("/music/scan", async (req, res) => {
             // 3) Songs (chunked)
             const CHUNK_SIZE = 200;
             let savedSongs = 0;
+            console.log(`💾 Upserting ${songs.length} songs in chunks of ${CHUNK_SIZE}...`);
 
             for (let i = 0; i < songs.length; i += CHUNK_SIZE) {
                 const chunk = songs.slice(i, i + CHUNK_SIZE);
@@ -1234,14 +1286,39 @@ app.post("/music/scan", async (req, res) => {
 
                 if (rows.length === 0) continue;
 
-                const { error: songUpsertError } = await supabase
-                    .from('music_songs')
-                    .upsert(rows, { onConflict: 'file_path', ignoreDuplicates: false });
+                console.log(`💾 Inserting chunk ${Math.floor(i/CHUNK_SIZE) + 1} (${rows.length} songs)...`);
+                // Try upsert first, then individual inserts
+                let songUpsertError = null;
+                try {
+                    const { error } = await supabase
+                        .from('music_songs')
+                        .upsert(rows, { onConflict: 'file_path', ignoreDuplicates: false });
+                    songUpsertError = error;
+                } catch (e) {
+                    console.log('Upsert failed for songs, trying individual inserts...');
+                }
 
                 if (songUpsertError) {
-                    console.error('Song upsert error:', songUpsertError);
+                    console.log('Trying individual song inserts...');
+                    for (const song of rows) {
+                        try {
+                            const { error } = await supabase
+                                .from('music_songs')
+                                .insert(song);
+                            if (error && !error.message?.includes('duplicate key')) {
+                                console.error('❌ Song insert error:', error);
+                            } else {
+                                savedSongs++;
+                            }
+                        } catch (e) {
+                            // Ignore duplicate key errors
+                            savedSongs++;
+                        }
+                    }
+                    console.log(`✅ Chunk processed: ${savedSongs}/${songs.length} songs`);
                 } else {
                     savedSongs += rows.length;
+                    console.log(`✅ Chunk saved: ${savedSongs}/${songs.length} songs`);
                 }
             }
 
@@ -1535,24 +1612,88 @@ app.post("/music/smart-playlist", ensureSupabase, async (req, res) => {
 app.post("/music/rate", ensureSupabase, async (req, res) => {
     try {
         const { songId, employeeId, rating, businessId } = req.body || {};
+        console.log('🎵 /music/rate called:', { songId, employeeId, rating, businessId });
+
         if (!songId || !employeeId) {
             return res.status(400).json({ success: false, message: 'Missing songId or employeeId' });
         }
-        if (![1, 5].includes(rating)) {
-            return res.status(400).json({ success: false, message: 'Invalid rating (must be 1 or 5)' });
+        if (![0, 1, 5].includes(rating)) {
+            return res.status(400).json({ success: false, message: 'Invalid rating (must be 0, 1 or 5)' });
         }
 
-        const { error } = await supabase
-            .from('music_ratings')
-            .upsert({
-                song_id: songId,
-                employee_id: employeeId,
-                rating,
-                business_id: businessId || null,
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'song_id,employee_id', ignoreDuplicates: false });
+        // If rating is 0, delete the record
+        if (rating === 0) {
+            console.log('🗑️ Removing rating for song:', songId);
+            const { error: deleteError } = await supabase
+                .from('music_ratings')
+                .delete()
+                .eq('song_id', songId)
+                .eq('employee_id', employeeId);
+            
+            if (deleteError) throw deleteError;
+            console.log('✅ Rating removed successfully');
+            return res.json({ success: true });
+        }
 
-        if (error) throw error;
+        // Try upsert, if fails because of missing constraint, try manual flow
+        try {
+            const { error } = await supabase
+                .from('music_ratings')
+                .upsert({
+                    song_id: songId,
+                    employee_id: employeeId,
+                    rating,
+                    business_id: businessId || null,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'song_id,employee_id', ignoreDuplicates: false });
+
+            if (!error) {
+                console.log('✅ Rating saved via upsert');
+                return res.json({ success: true });
+            }
+            
+            if (error.code !== '42P10') { // 42P10 is missing unique constraint
+                throw error;
+            }
+            
+            console.log('⚠️ Missing unique constraint for upsert, trying manual update/insert...');
+        } catch (e) {
+            console.log('⚠️ Upsert failed, falling back to manual update/insert...');
+        }
+
+        // Fallback: Manual check then update or insert
+        const { data: existing } = await supabase
+            .from('music_ratings')
+            .select('id')
+            .eq('song_id', songId)
+            .eq('employee_id', employeeId)
+            .maybeSingle();
+
+        if (existing) {
+            const { error: updateError } = await supabase
+                .from('music_ratings')
+                .update({ 
+                    rating, 
+                    updated_at: new Date().toISOString() 
+                })
+                .eq('id', existing.id);
+            
+            if (updateError) throw updateError;
+            console.log('✅ Rating updated manually');
+        } else {
+            const { error: insertError } = await supabase
+                .from('music_ratings')
+                .insert({
+                    song_id: songId,
+                    employee_id: employeeId,
+                    rating,
+                    business_id: businessId || null
+                });
+            
+            if (insertError) throw insertError;
+            console.log('✅ Rating inserted manually');
+        }
+
         res.json({ success: true });
     } catch (err) {
         console.error('Error rating song:', err);
