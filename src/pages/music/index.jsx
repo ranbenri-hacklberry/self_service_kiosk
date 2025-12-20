@@ -2,13 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Music, Disc, ListMusic, Search, Upload, RefreshCw,
-    ArrowRight, Settings, Sparkles, User, Play, FolderOpen,
-    Pause, SkipForward, SkipBack, Volume2, Trash2
+    ArrowRight, Sparkles, User, Play, FolderOpen, Heart,
+    Pause, SkipForward, SkipBack, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MusicProvider, useMusic } from '@/context/MusicContext';
 import { useAlbums } from '@/hooks/useAlbums';
-import { useRatings } from '@/hooks/useRatings';
 import { useAuth } from '@/context/AuthContext';
 import AlbumCard from '@/components/music/AlbumCard';
 import VinylTurntable from '@/components/music/VinylTurntable';
@@ -23,6 +22,7 @@ const TABS = [
     { id: 'albums', label: 'אלבומים', icon: Disc },
     { id: 'artists', label: 'אמנים', icon: User },
     { id: 'playlists', label: 'פלייליסטים', icon: ListMusic },
+    { id: 'favorites', label: 'מועדפים', icon: Heart },
 ];
 
 const MusicPageContent = () => {
@@ -33,16 +33,18 @@ const MusicPageContent = () => {
         artists,
         playlists,
         isLoading,
+        error,
+        isMusicDriveConnected,
+        checkMusicDriveConnection,
         refreshAll,
         scanMusicDirectory,
         fetchAlbumSongs,
         fetchPlaylists,
         fetchPlaylistSongs,
+        fetchFavoritesSongs,
         deletePlaylist,
-        removePlaylistSong,
-        addSongToPlaylist
+        generateSmartPlaylist
     } = useAlbums();
-    const { generateSmartPlaylist, rateSong, getTopRatedSongs } = useRatings();
     const {
         currentSong,
         playSong,
@@ -59,6 +61,7 @@ const MusicPageContent = () => {
     const [showPlaylistBuilder, setShowPlaylistBuilder] = useState(false);
     const [showScanner, setShowScanner] = useState(false);
     const [currentAlbumSongs, setCurrentAlbumSongs] = useState([]);
+    const [favoriteSongs, setFavoriteSongs] = useState([]);
 
     // Handle delete playlist
     const handleDeletePlaylist = async (e, playlistId) => {
@@ -115,8 +118,9 @@ const MusicPageContent = () => {
         setSelectedAlbum({ ...album, isPlaylist: false });
         const songs = await fetchAlbumSongs(album.id);
         setCurrentAlbumSongs(songs);
-        if (songs.length > 0) {
-            playSong(songs[0], songs);
+        const playable = (songs || []).filter(s => (s?.myRating || 0) !== 1);
+        if (playable.length > 0) {
+            playSong(playable[0], playable);
         }
     };
 
@@ -125,8 +129,9 @@ const MusicPageContent = () => {
         setSelectedAlbum({ ...playlist, isPlaylist: true, artist: { name: 'פלייליסט חכם' } });
         const songs = await fetchPlaylistSongs(playlist.id);
         setCurrentAlbumSongs(songs);
-        if (songs.length > 0) {
-            playSong(songs[0], songs);
+        const playable = (songs || []).filter(s => (s?.myRating || 0) !== 1);
+        if (playable.length > 0) {
+            playSong(playable[0], playable);
         }
     };
 
@@ -143,59 +148,43 @@ const MusicPageContent = () => {
 
     // Handle song play
     const handleSongPlay = (song) => {
-        playSong(song, currentAlbumSongs.length > 0 ? currentAlbumSongs : playlist);
-    };
-
-    // Handle rating with Replace Logic
-    const handleRate = async (songId, rating) => {
-        await rateSong(songId, rating);
-
-        // If Dislike (1) and currently viewing a Smart Playlist
-        if (rating === 1 && selectedAlbum?.isPlaylist) {
-            // 1. Find the song entry to remove
-            const songIndex = currentAlbumSongs.findIndex(s => s.id === songId);
-            const songToRemove = currentAlbumSongs[songIndex];
-
-            if (songToRemove?.playlist_entry_id) {
-                // Optimistic UI Update: Remove immediately
-                const newSongsList = currentAlbumSongs.filter(s => s.id !== songId);
-                setCurrentAlbumSongs(newSongsList);
-
-                // Background operations
-                await removePlaylistSong(songToRemove.playlist_entry_id);
-
-                // 2. Find a replacement song
-                // Get songs similar to playlist criteria (re-using getTopRatedSongs logic)
-                // We use the same filter_min_rating from the playlist or default to 3.5
-                const minRating = selectedAlbum.filter_min_rating || 3.5;
-                const artistIds = selectedAlbum.filter_artists;
-
-                // Fetch potential replacements (limit 50 to have variety)
-                const candidates = await useRatings().getTopRatedSongs({
-                    minRating,
-                    artistIds,
-                    limit: 50
-                });
-
-                // Find one that isn't already in the list
-                const existingIds = new Set(newSongsList.map(s => s.id));
-                const replacement = candidates.find(s => !existingIds.has(s.id) && s.id !== songId);
-
-                if (replacement) {
-                    // Add to backend
-                    const newEntry = await addSongToPlaylist(selectedAlbum.id, replacement.id);
-
-                    if (newEntry) {
-                        // Add to UI
-                        setCurrentAlbumSongs(prev => [...prev, {
-                            ...replacement,
-                            playlist_entry_id: newEntry.id
-                        }]);
-                    }
-                }
-            }
+        // Never play disliked songs
+        if ((song?.myRating || 0) === 1) {
+            return;
         }
+        playSong(song, currentAlbumSongs);
     };
+
+    // Handle rating
+    const handleRate = async (songId, rating) => {
+        const ok = await rateSong(songId, rating);
+        if (!ok) return;
+
+        // Optimistic UI update
+        setCurrentAlbumSongs(prev => prev.map(s => s.id === songId ? { ...s, myRating: rating } : s));
+        setFavoriteSongs(prev => {
+            const exists = prev.some(s => s.id === songId);
+            if (rating === 5) {
+                if (exists) return prev.map(s => s.id === songId ? { ...s, myRating: 5 } : s);
+                const src = currentAlbumSongs.find(s => s.id === songId);
+                return src ? [{ ...src, myRating: 5 }, ...prev] : prev;
+            }
+            if (rating === 1) {
+                // remove from favorites if disliked
+                return prev.filter(s => s.id !== songId);
+            }
+            return prev;
+        });
+    };
+
+    // Load favorites when opening the favorites tab
+    useEffect(() => {
+        if (activeTab !== 'favorites') return;
+        (async () => {
+            const songs = await fetchFavoritesSongs();
+            setFavoriteSongs(songs || []);
+        })();
+    }, [activeTab, fetchFavoritesSongs]);
 
     // Get songs to display (current album or playlist)
     const displaySongs = currentAlbumSongs.length > 0 ? currentAlbumSongs : playlist;
@@ -307,6 +296,18 @@ const MusicPageContent = () => {
 
                     {/* Content area */}
                     <div className="flex-1 overflow-y-auto music-scrollbar">
+                        {/* Backend/Supabase misconfiguration banner */}
+                        {error && String(error).includes('Missing Supabase Credentials') && (
+                            <div className="p-4">
+                                <div className="music-glass rounded-2xl p-4 border border-red-500/30">
+                                    <p className="text-white font-bold mb-1">שרת המוזיקה לא מוגדר</p>
+                                    <p className="text-white/60 text-sm">
+                                        חסרים משתני סביבה בשרת: <span className="font-mono">SUPABASE_URL</span> ו-<span className="font-mono">SUPABASE_SERVICE_KEY</span>.
+                                        בלי זה לא ניתן לשמור/לקרוא את ספריית המוזיקה.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
                         {selectedAlbum ? (
                             /* Selected album - show song list */
                             <div className="p-4">
@@ -366,6 +367,21 @@ const MusicPageContent = () => {
                                             <div className="col-span-full flex items-center justify-center py-12">
                                                 <div className="w-8 h-8 border-3 border-purple-500/20 border-t-purple-500 rounded-full animate-spin" />
                                             </div>
+                                        ) : !isMusicDriveConnected ? (
+                                            <div className="col-span-full text-center py-12">
+                                                <div className="w-16 h-16 rounded-full bg-red-500/20 mb-4 flex items-center justify-center mx-auto">
+                                                    <Disc className="w-8 h-8 text-red-400" />
+                                                </div>
+                                                <p className="text-white/60 text-lg mb-2">כונן המוזיקה לא מחובר</p>
+                                                <p className="text-white/40 text-sm mb-4">חבר את דיסק Ran1 למחשב כדי לגשת למוזיקה</p>
+                                                <button
+                                                    onClick={checkMusicDriveConnection}
+                                                    className="px-6 py-3 bg-white/10 hover:bg-white/20 rounded-xl text-white font-medium transition-colors"
+                                                >
+                                                    <RefreshCw className="w-5 h-5 inline-block ml-2" />
+                                                    בדוק שוב
+                                                </button>
+                                            </div>
                                         ) : filteredAlbums.length === 0 ? (
                                             <div className="col-span-full text-center py-12">
                                                 <Disc className="w-16 h-16 text-white/20 mx-auto mb-4" />
@@ -391,10 +407,50 @@ const MusicPageContent = () => {
                                     </div>
                                 )}
 
+                                {/* Favorites */}
+                                {activeTab === 'favorites' && (
+                                    <div className="space-y-1">
+                                        {favoriteSongs.length === 0 ? (
+                                            <div className="text-center py-12">
+                                                <Heart className="w-16 h-16 text-white/20 mx-auto mb-4" />
+                                                <p className="text-white/40 text-lg mb-1">אין מועדפים עדיין</p>
+                                                <p className="text-white/30 text-sm">לחץ על 👍 ליד שיר כדי להוסיף למועדפים</p>
+                                            </div>
+                                        ) : (
+                                            favoriteSongs.map((song, index) => (
+                                                <SongRow
+                                                    key={song.id}
+                                                    song={song}
+                                                    index={index}
+                                                    isPlaying={isPlaying}
+                                                    isCurrentSong={currentSong?.id === song.id}
+                                                    onPlay={(s) => playSong(s, favoriteSongs.filter(x => (x?.myRating || 0) !== 1))}
+                                                    onRate={handleRate}
+                                                />
+                                            ))
+                                        )}
+                                    </div>
+                                )}
+
                                 {/* Artists grid */}
                                 {activeTab === 'artists' && (
                                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                                        {filteredArtists.map(artist => (
+                                        {!isMusicDriveConnected ? (
+                                            <div className="col-span-full text-center py-12">
+                                                <div className="w-16 h-16 rounded-full bg-red-500/20 mb-4 flex items-center justify-center mx-auto">
+                                                    <User className="w-8 h-8 text-red-400" />
+                                                </div>
+                                                <p className="text-white/60 text-lg mb-2">כונן המוזיקה לא מחובר</p>
+                                                <p className="text-white/40 text-sm mb-4">חבר את דיסק Ran1 למחשב כדי לגשת למוזיקה</p>
+                                                <button
+                                                    onClick={checkMusicDriveConnection}
+                                                    className="px-6 py-3 bg-white/10 hover:bg-white/20 rounded-xl text-white font-medium transition-colors"
+                                                >
+                                                    <RefreshCw className="w-5 h-5 inline-block ml-2" />
+                                                    בדוק שוב
+                                                </button>
+                                            </div>
+                                        ) : filteredArtists.map(artist => (
                                             <motion.div
                                                 key={artist.id}
                                                 whileHover={{ scale: 1.05 }}
@@ -412,8 +468,25 @@ const MusicPageContent = () => {
                                 {/* Playlists */}
                                 {activeTab === 'playlists' && (
                                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                                        {/* Create New Playlist Card */}
-                                        <motion.div
+                                        {!isMusicDriveConnected && filteredPlaylists.length === 0 ? (
+                                            <div className="col-span-full text-center py-12">
+                                                <div className="w-16 h-16 rounded-full bg-red-500/20 mb-4 flex items-center justify-center mx-auto">
+                                                    <ListMusic className="w-8 h-8 text-red-400" />
+                                                </div>
+                                                <p className="text-white/60 text-lg mb-2">כונן המוזיקה לא מחובר</p>
+                                                <p className="text-white/40 text-sm mb-4">חבר את דיסק Ran1 למחשב כדי לגשת למוזיקה ולפלייליסטים</p>
+                                                <button
+                                                    onClick={checkMusicDriveConnection}
+                                                    className="px-6 py-3 bg-white/10 hover:bg-white/20 rounded-xl text-white font-medium transition-colors"
+                                                >
+                                                    <RefreshCw className="w-5 h-5 inline-block ml-2" />
+                                                    בדוק שוב
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                {/* Create New Playlist Card */}
+                                                <motion.div
                                             whileHover={{ scale: 1.02 }}
                                             onClick={() => setShowPlaylistBuilder(true)}
                                             className="music-playlist-card p-6 cursor-pointer border-2 border-dashed border-white/20 flex flex-col items-center justify-center text-center min-h-[200px]"
@@ -474,6 +547,8 @@ const MusicPageContent = () => {
                                                 </div>
                                             </motion.div>
                                         ))}
+                                            </>
+                                        )}
                                     </div>
                                 )}
                             </div>

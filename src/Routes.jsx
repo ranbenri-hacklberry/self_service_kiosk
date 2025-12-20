@@ -27,43 +27,6 @@ const ProtectedRoute = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  useEffect(() => {
-    // Only run redirects when loading is complete
-    if (isLoading) return;
-
-    console.log('🔐 ProtectedRoute check:', {
-      hasUser: !!currentUser,
-      userName: currentUser?.name,
-      deviceMode,
-      path: location.pathname
-    });
-
-    if (!currentUser) {
-      console.log('🚫 No user, redirecting to login');
-      navigate('/login', { replace: true });
-      return;
-    }
-
-    // User is logged in - check mode
-    if (!deviceMode && location.pathname !== '/mode-selection') {
-      // Logged in but no mode - must select mode first
-      console.log('⚠️ No device mode selected, redirecting to mode-selection');
-      navigate('/mode-selection', { replace: true });
-      return;
-    }
-
-    // Handle root path redirect based on mode
-    if (location.pathname === '/' && deviceMode) {
-      console.log('🏠 At root with mode:', deviceMode);
-      if (deviceMode === 'kds') {
-        navigate('/kds', { replace: true });
-      } else if (deviceMode === 'manager') {
-        navigate('/data-manager-interface', { replace: true });
-      }
-      // For 'kiosk' mode, stay on CustomerPhoneInputScreen
-    }
-  }, [currentUser, deviceMode, isLoading, navigate, location.pathname]);
-
   // Show loading state
   if (isLoading) {
     return (
@@ -74,14 +37,34 @@ const ProtectedRoute = ({ children }) => {
     );
   }
 
-  // No user - null will be shown briefly before redirect
-  if (!currentUser) return null;
-
-  // No mode selected and not on mode-selection page - show loading briefly
-  if (!deviceMode && location.pathname !== '/mode-selection') {
+  // CRITICAL: If no user, redirect to login immediately - don't show any protected content
+  if (!currentUser) {
+    console.log('🚫 ProtectedRoute: No user, redirecting to login immediately');
+    navigate('/login', { replace: true });
     return null;
   }
 
+  // User is logged in - check mode
+  if (!deviceMode && location.pathname !== '/mode-selection') {
+    // Logged in but no mode - must select mode first
+    console.log('⚠️ ProtectedRoute: No device mode selected, redirecting to mode-selection');
+    navigate('/mode-selection', { replace: true });
+    return null;
+  }
+
+  // Handle root path redirect based on mode
+  if (location.pathname === '/' && deviceMode) {
+    console.log('🏠 ProtectedRoute: At root with mode:', deviceMode);
+    if (deviceMode === 'kds') {
+      navigate('/kds', { replace: true });
+    } else if (deviceMode === 'manager') {
+      navigate('/data-manager-interface', { replace: true });
+    }
+    // For 'kiosk' mode, stay on CustomerPhoneInputScreen
+    return null;
+  }
+
+  console.log('✅ ProtectedRoute: Access granted for path:', location.pathname);
   return children;
 };
 

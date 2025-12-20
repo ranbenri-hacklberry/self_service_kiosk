@@ -119,7 +119,13 @@ export const MusicProvider = ({ children }) => {
 
             audioRef.current.src = audioUrl;
             audioRef.current.load();
-            await audioRef.current.play();
+
+            try {
+                await audioRef.current.play();
+            } catch (playError) {
+                console.error('Audio play failed:', playError);
+                throw new Error('Failed to play audio. The file may not be available.');
+            }
 
             setCurrentSong(song);
 
@@ -175,9 +181,16 @@ export const MusicProvider = ({ children }) => {
             logSkip(currentSong, true);
         }
 
+        const isDislikedSong = (s) => (s?.myRating || 0) === 1;
+
         let nextIndex;
         if (shuffle) {
-            nextIndex = Math.floor(Math.random() * playlist.length);
+            // try a few times to avoid disliked songs
+            let tries = 0;
+            do {
+                nextIndex = Math.floor(Math.random() * playlist.length);
+                tries += 1;
+            } while (tries < 10 && isDislikedSong(playlist[nextIndex]));
         } else if (repeat === 'one') {
             nextIndex = playlistIndex;
         } else {
@@ -190,6 +203,22 @@ export const MusicProvider = ({ children }) => {
                     setIsPlaying(false);
                     return;
                 }
+            }
+        }
+
+        // Skip disliked songs (linear scan)
+        if (!shuffle && repeat !== 'one') {
+            let guard = 0;
+            while (guard < playlist.length && isDislikedSong(playlist[nextIndex])) {
+                nextIndex += 1;
+                if (nextIndex >= playlist.length) {
+                    if (repeat === 'all') nextIndex = 0;
+                    else {
+                        setIsPlaying(false);
+                        return;
+                    }
+                }
+                guard += 1;
             }
         }
 
@@ -226,6 +255,33 @@ export const MusicProvider = ({ children }) => {
         audioRef.current.currentTime = time;
     }, []);
 
+    // Rate a song (like/dislike only) - use backend service to bypass RLS
+    const rateSong = useCallback(async (songId, rating) => {
+        if (!currentUser || !songId) return;
+
+        try {
+            const response = await fetch(`${MUSIC_API_URL}/music/rate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    songId,
+                    employeeId: currentUser.id,
+                    businessId: currentUser.business_id || null,
+                    rating
+                })
+            });
+
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.message || 'Failed to rate song');
+            }
+            return true;
+        } catch (error) {
+            console.error('Error rating song:', error);
+            return false;
+        }
+    }, [currentUser]);
+
     // Set volume
     const setVolume = useCallback((vol) => {
         const clampedVol = Math.max(0, Math.min(1, vol));
@@ -233,41 +289,6 @@ export const MusicProvider = ({ children }) => {
         audioRef.current.volume = clampedVol;
     }, []);
 
-    // Rate a song
-    const rateSong = useCallback(async (songId, rating) => {
-        if (!currentUser || !songId) return;
-
-        try {
-            const { data: existing } = await supabase
-                .from('music_ratings')
-                .select('*')
-                .eq('song_id', songId)
-                .eq('employee_id', currentUser.id)
-                .single();
-
-            if (existing) {
-                await supabase
-                    .from('music_ratings')
-                    .update({
-                        rating,
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', existing.id);
-            } else {
-                await supabase.from('music_ratings').insert({
-                    song_id: songId,
-                    employee_id: currentUser.id,
-                    rating,
-                    business_id: currentUser.business_id
-                });
-            }
-
-            return true;
-        } catch (error) {
-            console.error('Error rating song:', error);
-            return false;
-        }
-    }, [currentUser]);
 
     // Stop playback
     const stop = useCallback(() => {

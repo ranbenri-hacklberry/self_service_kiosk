@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import {
     Play, Pause, SkipForward, SkipBack, Volume2, VolumeX,
-    Star, Music, ChevronUp
+    Music, ChevronUp
 } from 'lucide-react';
 import { useMusic } from '@/context/MusicContext';
-import RatingStars from './RatingStars';
 import '@/styles/music.css';
 
 /**
@@ -18,19 +17,10 @@ const MusicMiniBar = ({ onExpandClick }) => {
         togglePlay,
         handleNext,
         handlePrevious,
-        setVolume,
-        rateSong
+        setVolume
     } = useMusic();
 
-    const [showRating, setShowRating] = useState(false);
     const [showVolume, setShowVolume] = useState(false);
-
-    const handleRate = async (rating) => {
-        if (currentSong) {
-            await rateSong(currentSong.id, rating);
-            setShowRating(false);
-        }
-    };
 
     // Generate gradient based on song/album name
     const getGradientClass = () => {
@@ -147,28 +137,6 @@ const MusicMiniBar = ({ onExpandClick }) => {
                     )}
                 </div>
 
-                {/* Rating */}
-                <div className="relative">
-                    <button
-                        onClick={() => { setShowRating(!showRating); setShowVolume(false); }}
-                        className="music-mini-btn"
-                    >
-                        <Star className="w-4 h-4" />
-                    </button>
-
-                    {/* Rating popup */}
-                    {showRating && (
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-3 
-                          music-glass-dark rounded-xl shadow-xl z-50"
-                        >
-                            <RatingStars
-                                rating={0}
-                                onRate={handleRate}
-                                size="medium"
-                            />
-                        </div>
-                    )}
-                </div>
 
                 {/* Expand button */}
                 {onExpandClick && (
@@ -182,7 +150,7 @@ const MusicMiniBar = ({ onExpandClick }) => {
             </div>
 
             {/* Click outside to close popups */}
-            {(showRating || showVolume) && (
+            {showVolume && (
                 <div
                     className="fixed inset-0 z-40"
                     onClick={() => { setShowRating(false); setShowVolume(false); }}

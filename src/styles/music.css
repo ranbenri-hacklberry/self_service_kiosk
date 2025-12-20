@@ -120,30 +120,6 @@
   opacity: 1;
 }
 
-/* === STAR RATING === */
-.music-star {
-  cursor: pointer;
-  transition: all 0.2s;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
-}
-
-.music-star:hover {
-  transform: scale(1.2);
-}
-
-.music-star.filled {
-  color: #fbbf24;
-}
-
-.music-star.empty {
-  color: rgba(255, 255, 255, 0.3);
-}
-
-.music-star.half {
-  background: linear-gradient(90deg, #fbbf24 50%, rgba(255, 255, 255, 0.3) 50%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
 
 /* === PLAYER CONTROLS === */
 .music-player-btn {

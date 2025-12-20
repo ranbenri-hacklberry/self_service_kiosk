@@ -5,7 +5,6 @@ import {
     Heart
 } from 'lucide-react';
 import { useMusic } from '@/context/MusicContext';
-import RatingStars from './RatingStars';
 import '@/styles/music.css';
 
 /**
@@ -28,11 +27,9 @@ const MusicPlayer = ({ onMinimize, showPlaylist = false }) => {
         seek,
         setVolume,
         setShuffle,
-        setRepeat,
-        rateSong
+        setRepeat
     } = useMusic();
 
-    const [myRating, setMyRating] = useState(0);
 
     // Format time (seconds to MM:SS)
     const formatTime = (seconds) => {
@@ -52,13 +49,6 @@ const MusicPlayer = ({ onMinimize, showPlaylist = false }) => {
         seek(percent * duration);
     };
 
-    // Handle rating
-    const handleRate = async (rating) => {
-        if (currentSong) {
-            await rateSong(currentSong.id, rating);
-            setMyRating(rating);
-        }
-    };
 
     // Toggle repeat mode
     const toggleRepeat = () => {
@@ -149,14 +139,6 @@ const MusicPlayer = ({ onMinimize, showPlaylist = false }) => {
                         </p>
                     </div>
 
-                    {/* Rating */}
-                    <div className="flex-shrink-0 mr-4">
-                        <RatingStars
-                            rating={myRating}
-                            onRate={handleRate}
-                            size="medium"
-                        />
-                    </div>
                 </div>
             </div>
 

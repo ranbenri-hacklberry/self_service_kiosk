@@ -930,13 +930,18 @@ app.get("/music/stream", (req, res) => {
             return res.status(403).json({ error: 'Invalid path' });
         }
 
-        // Check if file exists
-        if (!fs.existsSync(filePath)) {
+        // For demo purposes, try to serve from project public/music directory first
+        let actualPath = filePath;
+        const projectMusicPath = path.join(process.cwd(), 'public', 'music', path.basename(filePath));
+
+        if (fs.existsSync(projectMusicPath)) {
+            actualPath = projectMusicPath;
+        } else if (!fs.existsSync(filePath)) {
             return res.status(404).json({ error: 'File not found' });
         }
 
         // Determine content type based on extension
-        const ext = path.extname(filePath).toLowerCase();
+        const ext = path.extname(actualPath).toLowerCase();
         const contentTypes = {
             '.mp3': 'audio/mpeg',
             '.flac': 'audio/flac',
@@ -946,7 +951,7 @@ app.get("/music/stream", (req, res) => {
         };
         const contentType = contentTypes[ext] || 'audio/mpeg';
 
-        const stat = fs.statSync(filePath);
+        const stat = fs.statSync(actualPath);
         const fileSize = stat.size;
         const range = req.headers.range;
 
@@ -956,7 +961,7 @@ app.get("/music/stream", (req, res) => {
             const start = parseInt(parts[0], 10);
             const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
             const chunksize = (end - start) + 1;
-            const file = fs.createReadStream(filePath, { start, end });
+            const file = fs.createReadStream(actualPath, { start, end });
 
             res.writeHead(206, {
                 'Content-Range': `bytes ${start}-${end}/${fileSize}`,
@@ -970,7 +975,7 @@ app.get("/music/stream", (req, res) => {
                 'Content-Length': fileSize,
                 'Content-Type': contentType,
             });
-            fs.createReadStream(filePath).pipe(res);
+            fs.createReadStream(actualPath).pipe(res);
         }
     } catch (err) {
         console.error('Music stream error:', err);
@@ -978,10 +983,11 @@ app.get("/music/stream", (req, res) => {
     }
 });
 
-// Scan directory for music files - returns data for frontend to save
-app.post("/music/scan", (req, res) => {
+// Scan directory for music files.
+// By default it returns the parsed data. If `saveToDb: true` is provided, it ALSO tries to upsert into Supabase (requires service key).
+app.post("/music/scan", async (req, res) => {
     try {
-        const { path: dirPath } = req.body;
+        const { path: dirPath, saveToDb = false, forceClean = false } = req.body || {};
 
         if (!dirPath) {
             return res.status(400).json({ error: 'Missing path parameter' });
@@ -1121,6 +1127,133 @@ app.post("/music/scan", (req, res) => {
 
         console.log(`✅ Scan complete: ${artists.length} artists, ${albums.length} albums, ${songs.length} songs`);
 
+        let saved = null;
+        if (saveToDb) {
+            if (!supabase) {
+                console.error("⚠️ Cannot save scan results - missing Supabase credentials (SUPABASE_URL / SUPABASE_SERVICE_KEY)");
+                // Still return scan results so UI can show library immediately
+                return res.json({
+                    success: true,
+                    message: `הסריקה הושלמה בהצלחה! (לא נשמר למסד נתונים - שרת לא מוגדר)`,
+                    stats: {
+                        artists: artists.length,
+                        albums: albums.length,
+                        songs: songs.length
+                    },
+                    saved: null,
+                    data: {
+                        artists,
+                        albums,
+                        songs
+                    }
+                });
+            }
+
+            console.log('💾 Saving music scan results to Supabase...');
+
+            if (forceClean) {
+                console.log('🗑️ forceClean enabled - deleting existing music library data...');
+                // Delete in FK-safe order
+                await supabase.from('music_songs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+                await supabase.from('music_albums').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+                await supabase.from('music_artists').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            }
+
+            // 1) Artists
+            const artistRows = artists.map(a => ({ name: a.name, folder_path: a.folder_path || null }));
+            if (artistRows.length > 0) {
+                const { error: artistUpsertError } = await supabase
+                    .from('music_artists')
+                    .upsert(artistRows, { onConflict: 'name', ignoreDuplicates: false });
+                if (artistUpsertError) {
+                    console.error('Artist upsert error:', artistUpsertError);
+                }
+            }
+
+            const { data: allArtists, error: allArtistsError } = await supabase
+                .from('music_artists')
+                .select('id, name');
+            if (allArtistsError) {
+                console.error('Failed to fetch artists for mapping:', allArtistsError);
+            }
+            const artistMap = {};
+            (allArtists || []).forEach(a => { artistMap[a.name] = a.id; });
+
+            // 2) Albums
+            const albumRows = albums
+                .filter(a => artistMap[a.artist_name])
+                .map(a => ({
+                    name: a.name,
+                    artist_id: artistMap[a.artist_name],
+                    folder_path: a.folder_path || null,
+                    cover_url: a.cover_path || null
+                }));
+
+            if (albumRows.length > 0) {
+                const { error: albumUpsertError } = await supabase
+                    .from('music_albums')
+                    .upsert(albumRows, { onConflict: 'name,artist_id', ignoreDuplicates: false });
+                if (albumUpsertError) {
+                    console.error('Album upsert error:', albumUpsertError);
+                }
+            }
+
+            const { data: allAlbums, error: allAlbumsError } = await supabase
+                .from('music_albums')
+                .select('id, name, artist_id');
+            if (allAlbumsError) {
+                console.error('Failed to fetch albums for mapping:', allAlbumsError);
+            }
+
+            const reverseArtistMap = {};
+            Object.keys(artistMap).forEach(name => { reverseArtistMap[artistMap[name]] = name; });
+            const albumMap = {};
+            (allAlbums || []).forEach(a => {
+                const artistName = reverseArtistMap[a.artist_id];
+                if (artistName) {
+                    albumMap[`${artistName}/${a.name}`] = a.id;
+                }
+            });
+
+            // 3) Songs (chunked)
+            const CHUNK_SIZE = 200;
+            let savedSongs = 0;
+
+            for (let i = 0; i < songs.length; i += CHUNK_SIZE) {
+                const chunk = songs.slice(i, i + CHUNK_SIZE);
+                const rows = chunk
+                    .filter(s => artistMap[s.artist_name])
+                    .map(s => ({
+                        title: s.title,
+                        file_path: s.file_path,
+                        file_name: s.file_name,
+                        track_number: s.track_number,
+                        artist_id: artistMap[s.artist_name],
+                        album_id: s.album_name ? (albumMap[`${s.artist_name}/${s.album_name}`] || null) : null
+                    }));
+
+                if (rows.length === 0) continue;
+
+                const { error: songUpsertError } = await supabase
+                    .from('music_songs')
+                    .upsert(rows, { onConflict: 'file_path', ignoreDuplicates: false });
+
+                if (songUpsertError) {
+                    console.error('Song upsert error:', songUpsertError);
+                } else {
+                    savedSongs += rows.length;
+                }
+            }
+
+            saved = {
+                artists: Object.keys(artistMap).length,
+                albums: Object.keys(albumMap).length,
+                songs: savedSongs
+            };
+
+            console.log('✅ Saved scan results:', saved);
+        }
+
         res.json({
             success: true,
             message: `הסריקה הושלמה בהצלחה!`,
@@ -1129,6 +1262,7 @@ app.post("/music/scan", (req, res) => {
                 albums: albums.length,
                 songs: songs.length
             },
+            saved,
             data: {
                 artists,
                 albums,
@@ -1142,6 +1276,287 @@ app.post("/music/scan", (req, res) => {
             success: false,
             message: `שגיאה בסריקה: ${err.message}`
         });
+    }
+});
+
+// ------------------------------------------------------------------
+// MUSIC LIBRARY (DB) ROUTES - bypass RLS by using backend service key
+// ------------------------------------------------------------------
+app.get("/music/library/artists", ensureSupabase, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('music_artists')
+            .select('*')
+            .order('name');
+        if (error) throw error;
+        res.json({ success: true, artists: data || [] });
+    } catch (err) {
+        console.error('Error fetching artists (library):', err);
+        res.status(500).json({ success: false, message: err.message, artists: [] });
+    }
+});
+
+app.get("/music/library/albums", ensureSupabase, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('music_albums')
+            .select(`
+                *,
+                artist:music_artists(id, name, image_url)
+            `)
+            .order('name');
+        if (error) throw error;
+        res.json({ success: true, albums: data || [] });
+    } catch (err) {
+        console.error('Error fetching albums (library):', err);
+        res.status(500).json({ success: false, message: err.message, albums: [] });
+    }
+});
+
+app.get("/music/library/albums/:albumId/songs", ensureSupabase, async (req, res) => {
+    try {
+        const { albumId } = req.params;
+        const { data, error } = await supabase
+            .from('music_songs')
+            .select(`
+                *,
+                album:music_albums(id, name, cover_url),
+                artist:music_artists(id, name)
+            `)
+            .eq('album_id', albumId)
+            .order('track_number', { ascending: true });
+        if (error) throw error;
+        res.json({ success: true, songs: data || [] });
+    } catch (err) {
+        console.error('Error fetching album songs (library):', err);
+        res.status(500).json({ success: false, message: err.message, songs: [] });
+    }
+});
+
+app.get("/music/library/playlists", ensureSupabase, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('music_playlists')
+            .select('*')
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        res.json({ success: true, playlists: data || [] });
+    } catch (err) {
+        console.error('Error fetching playlists (library):', err);
+        res.status(500).json({ success: false, message: err.message, playlists: [] });
+    }
+});
+
+app.get("/music/library/playlists/:playlistId/songs", ensureSupabase, async (req, res) => {
+    try {
+        const { playlistId } = req.params;
+        const { data, error } = await supabase
+            .from('music_playlist_songs')
+            .select(`
+                id,
+                position,
+                song:music_songs(
+                    *,
+                    album:music_albums(id, name, cover_url),
+                    artist:music_artists(id, name)
+                )
+            `)
+            .eq('playlist_id', playlistId)
+            .order('position', { ascending: true });
+        if (error) throw error;
+
+        const songs = (data || []).map(r => ({
+            ...(r.song || {}),
+            playlist_entry_id: r.id,
+            position: r.position
+        }));
+
+        res.json({ success: true, songs });
+    } catch (err) {
+        console.error('Error fetching playlist songs (library):', err);
+        res.status(500).json({ success: false, message: err.message, songs: [] });
+    }
+});
+
+// Ratings map for current employee (like/dislike)
+app.post("/music/library/ratings", ensureSupabase, async (req, res) => {
+    try {
+        const { employeeId, songIds } = req.body || {};
+        if (!employeeId) {
+            return res.status(400).json({ success: false, message: 'Missing employeeId', ratings: [] });
+        }
+
+        let query = supabase
+            .from('music_ratings')
+            .select('song_id, rating, skip_count')
+            .eq('employee_id', employeeId);
+
+        if (Array.isArray(songIds) && songIds.length > 0) {
+            query = query.in('song_id', songIds);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        res.json({ success: true, ratings: data || [] });
+    } catch (err) {
+        console.error('Error fetching ratings map:', err);
+        res.status(500).json({ success: false, message: err.message, ratings: [] });
+    }
+});
+
+// Favorites (liked songs)
+app.get("/music/library/favorites", ensureSupabase, async (req, res) => {
+    try {
+        const employeeId = req.query.employeeId;
+        if (!employeeId) {
+            return res.status(400).json({ success: false, message: 'Missing employeeId', songs: [] });
+        }
+
+        const { data, error } = await supabase
+            .from('music_ratings')
+            .select(`
+                song:music_songs(
+                    *,
+                    album:music_albums(id, name, cover_url),
+                    artist:music_artists(id, name)
+                )
+            `)
+            .eq('employee_id', employeeId)
+            .eq('rating', 5);
+
+        if (error) throw error;
+
+        const songs = (data || [])
+            .map(r => r.song)
+            .filter(Boolean)
+            .map(s => ({ ...s, myRating: 5 }));
+
+        res.json({ success: true, songs });
+    } catch (err) {
+        console.error('Error fetching favorites:', err);
+        res.status(500).json({ success: false, message: err.message, songs: [] });
+    }
+});
+
+// Smart playlist (auto) - excludes disliked songs for this employee
+app.post("/music/smart-playlist", ensureSupabase, async (req, res) => {
+    try {
+        const {
+            name = 'פלייליסט חכם',
+            artistIds = null,
+            maxSongs = 100,
+            saveToDb = true,
+            employeeId,
+            businessId
+        } = req.body || {};
+
+        if (!employeeId) {
+            return res.status(400).json({ success: false, message: 'Missing employeeId' });
+        }
+
+        // 1) Disliked song ids
+        const { data: dislikedRows, error: dislikedError } = await supabase
+            .from('music_ratings')
+            .select('song_id')
+            .eq('employee_id', employeeId)
+            .eq('rating', 1);
+
+        if (dislikedError) throw dislikedError;
+        const dislikedIds = new Set((dislikedRows || []).map(r => r.song_id));
+
+        // 2) Songs query
+        let songsQuery = supabase
+            .from('music_songs')
+            .select(`
+                *,
+                album:music_albums(id, name, cover_url),
+                artist:music_artists(id, name)
+            `);
+
+        if (Array.isArray(artistIds) && artistIds.length > 0) {
+            songsQuery = songsQuery.in('artist_id', artistIds);
+        }
+
+        const { data: songsRaw, error: songsError } = await songsQuery;
+        if (songsError) throw songsError;
+
+        let songs = (songsRaw || []).filter(s => !dislikedIds.has(s.id));
+
+        // shuffle
+        songs = songs.sort(() => Math.random() - 0.5).slice(0, maxSongs);
+
+        if (songs.length === 0) {
+            return res.json({ success: false, message: 'אין שירים זמינים (אולי סומנו כלא אהבתי)' });
+        }
+
+        if (!saveToDb) {
+            return res.json({ success: true, playlist: { name, songs }, message: `נוצר פלייליסט עם ${songs.length} שירים` });
+        }
+
+        // 3) Create playlist
+        const { data: playlist, error: playlistError } = await supabase
+            .from('music_playlists')
+            .insert({
+                name,
+                is_auto_generated: true,
+                filter_artists: artistIds,
+                business_id: businessId || null,
+                created_by: employeeId
+            })
+            .select()
+            .single();
+
+        if (playlistError) throw playlistError;
+
+        const playlistSongs = songs.map((song, idx) => ({
+            playlist_id: playlist.id,
+            song_id: song.id,
+            position: idx
+        }));
+
+        const { error: addSongsError } = await supabase
+            .from('music_playlist_songs')
+            .insert(playlistSongs);
+        if (addSongsError) throw addSongsError;
+
+        res.json({
+            success: true,
+            playlist: { ...playlist, songs },
+            message: `נוצר פלייליסט עם ${songs.length} שירים`
+        });
+    } catch (err) {
+        console.error('Error creating smart playlist:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Like / Dislike (rating)
+app.post("/music/rate", ensureSupabase, async (req, res) => {
+    try {
+        const { songId, employeeId, rating, businessId } = req.body || {};
+        if (!songId || !employeeId) {
+            return res.status(400).json({ success: false, message: 'Missing songId or employeeId' });
+        }
+        if (![1, 5].includes(rating)) {
+            return res.status(400).json({ success: false, message: 'Invalid rating (must be 1 or 5)' });
+        }
+
+        const { error } = await supabase
+            .from('music_ratings')
+            .upsert({
+                song_id: songId,
+                employee_id: employeeId,
+                rating,
+                business_id: businessId || null,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'song_id,employee_id', ignoreDuplicates: false });
+
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error rating song:', err);
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 

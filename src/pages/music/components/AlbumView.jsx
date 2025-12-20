@@ -3,7 +3,6 @@ import { ArrowRight, Play, Clock, Music } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useMusic } from '@/context/MusicContext';
 import { useAlbums } from '@/hooks/useAlbums';
-import { useRatings } from '@/hooks/useRatings';
 import SongRow from '@/components/music/SongRow';
 import '@/styles/music.css';
 
@@ -22,9 +21,8 @@ const getCoverUrl = (localPath) => {
  * Album view component - shows album details and song list
  */
 const AlbumView = ({ album, onBack }) => {
-    const { playSong, currentSong, isPlaying } = useMusic();
+    const { playSong, currentSong, isPlaying, rateSong } = useMusic();
     const { fetchAlbumSongs } = useAlbums();
-    const { rateSong } = useRatings();
 
     const [songs, setSongs] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -58,11 +56,8 @@ const AlbumView = ({ album, onBack }) => {
     // Handle rating
     const handleRate = async (songId, rating) => {
         await rateSong(songId, rating);
-        // Update local state
-        setSongs(prev => prev.map(s =>
-            s.id === songId ? { ...s, myRating: rating } : s
-        ));
     };
+
 
     // Calculate total duration
     const totalDuration = songs.reduce((sum, s) => sum + (s.duration_seconds || 0), 0);

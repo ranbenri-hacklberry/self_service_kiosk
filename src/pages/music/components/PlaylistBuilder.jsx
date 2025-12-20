@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { X, Sparkles, Music, Check } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAlbums } from '@/hooks/useAlbums';
-import { useRatings } from '@/hooks/useRatings';
 import { useMusic } from '@/context/MusicContext';
 import '@/styles/music.css';
 
@@ -10,13 +9,11 @@ import '@/styles/music.css';
  * Playlist builder modal - create smart playlists based on preferences
  */
 const PlaylistBuilder = ({ onClose, onSuccess }) => {
-    const { artists } = useAlbums();
-    const { generateSmartPlaylist, isLoading } = useRatings();
+    const { artists, generateSmartPlaylist, isLoading } = useAlbums();
     const { playSong } = useMusic();
 
     const [playlistName, setPlaylistName] = useState('פלייליסט חדש');
     const [selectedArtists, setSelectedArtists] = useState([]);
-    const [minRating, setMinRating] = useState(3.0);
     const [maxSongs, setMaxSongs] = useState(100);
     const [result, setResult] = useState(null);
 
@@ -34,7 +31,6 @@ const PlaylistBuilder = ({ onClose, onSuccess }) => {
         const genResult = await generateSmartPlaylist({
             name: playlistName,
             artistIds: selectedArtists.length > 0 ? selectedArtists : null,
-            minRating,
             maxSongs,
             saveToDb: true
         });
@@ -91,25 +87,6 @@ const PlaylistBuilder = ({ onClose, onSuccess }) => {
                         />
                     </div>
 
-                    {/* Min rating slider */}
-                    <div className="mb-6">
-                        <label className="text-white/60 text-sm block mb-2">
-                            דירוג מינימלי: <span className="text-purple-400 font-bold">{minRating.toFixed(1)} ⭐</span>
-                        </label>
-                        <input
-                            type="range"
-                            min="1"
-                            max="5"
-                            step="0.5"
-                            value={minRating}
-                            onChange={(e) => setMinRating(parseFloat(e.target.value))}
-                            className="w-full music-volume-slider"
-                        />
-                        <div className="flex justify-between text-white/30 text-xs mt-1">
-                            <span>1</span>
-                            <span>5</span>
-                        </div>
-                    </div>
 
                     {/* Max songs */}
                     <div className="mb-6">

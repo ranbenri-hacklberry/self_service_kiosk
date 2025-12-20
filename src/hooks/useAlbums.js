@@ -12,54 +12,113 @@ export const useAlbums = () => {
     const [albums, setAlbums] = useState([]);
     const [playlists, setPlaylists] = useState([]);
     const [songs, setSongs] = useState([]);
+    const [scanLibrary, setScanLibrary] = useState(null); // { artists, albums, songs } from last scan (fallback when DB/RLS blocks)
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [isMusicDriveConnected, setIsMusicDriveConnected] = useState(true);
 
-    // Fetch all artists
+    const fetchRatingsMap = useCallback(async (songIds) => {
+        if (!currentUser?.id) {
+            return new Map();
+        }
+
+        try {
+            const res = await fetch(`${MUSIC_API_URL}/music/library/ratings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ employeeId: currentUser.id, songIds })
+            });
+            const json = await res.json();
+            if (!res.ok || !json?.success) return new Map();
+            const m = new Map();
+            (json.ratings || []).forEach(r => m.set(r.song_id, r.rating));
+            return m;
+        } catch {
+            return new Map();
+        }
+    }, [currentUser?.id]);
+
+    const fetchFavoritesSongs = useCallback(async () => {
+        if (!currentUser?.id) return [];
+        try {
+            const res = await fetch(`${MUSIC_API_URL}/music/library/favorites?employeeId=${encodeURIComponent(currentUser.id)}`);
+            const json = await res.json();
+            if (!res.ok || !json?.success) throw new Error(json?.message || 'Failed to fetch favorites');
+            return json.songs || [];
+        } catch (err) {
+            console.error('Error fetching favorites:', err);
+            return [];
+        }
+    }, [currentUser?.id]);
+
+    // Check if music drive is connected
+    const checkMusicDriveConnection = useCallback(async () => {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            const response = await fetch(`${MUSIC_API_URL}/music/volumes`, { signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            const ran1Drive = data.volumes?.find(v => v.name === 'Ran1');
+            const isConnected = !!ran1Drive;
+            setIsMusicDriveConnected(isConnected);
+            return isConnected;
+        } catch (err) {
+            console.error('Error checking music drive connection:', err);
+            setIsMusicDriveConnected(false);
+            return false;
+        }
+    }, []);
+
+    // Fetch all artists (via backend service to bypass RLS)
     const fetchArtists = useCallback(async () => {
         try {
-            const { data, error } = await supabase
-                .from('music_artists')
-                .select('*')
-                .order('name');
-
-            if (error) throw error;
-            setArtists(data || []);
+            const res = await fetch(`${MUSIC_API_URL}/music/library/artists`);
+            const json = await res.json();
+            if (!res.ok || !json?.success) throw new Error(json?.message || 'Failed to fetch artists');
+            const list = json.artists || [];
+            if (list.length === 0 && scanLibrary?.artists?.length) {
+                setArtists(scanLibrary.artists);
+            } else {
+                setArtists(list);
+            }
         } catch (err) {
             console.error('Error fetching artists:', err);
             setError(err.message);
         }
-    }, []);
+    }, [scanLibrary]);
 
-    // Fetch all albums with artist info
+    // Fetch all albums with artist info (via backend service to bypass RLS)
     const fetchAlbums = useCallback(async () => {
         try {
-            const { data, error } = await supabase
-                .from('music_albums')
-                .select(`
-          *,
-          artist:music_artists(id, name, image_url)
-        `)
-                .order('name');
-
-            if (error) throw error;
-            setAlbums(data || []);
+            const res = await fetch(`${MUSIC_API_URL}/music/library/albums`);
+            const json = await res.json();
+            if (!res.ok || !json?.success) throw new Error(json?.message || 'Failed to fetch albums');
+            const list = json.albums || [];
+            if (list.length === 0 && scanLibrary?.albums?.length) {
+                setAlbums(scanLibrary.albums);
+            } else {
+                setAlbums(list);
+            }
         } catch (err) {
             console.error('Error fetching albums:', err);
             setError(err.message);
         }
-    }, []);
+    }, [scanLibrary]);
 
-    // Fetch all playlists
+    // Fetch all playlists (via backend service to bypass RLS)
     const fetchPlaylists = useCallback(async () => {
         try {
-            const { data, error } = await supabase
-                .from('music_playlists')
-                .select('*')
-                .order('created_at', { ascending: false });
-
-            if (error) throw error;
-            setPlaylists(data || []);
+            const res = await fetch(`${MUSIC_API_URL}/music/library/playlists`);
+            const json = await res.json();
+            if (!res.ok || !json?.success) throw new Error(json?.message || 'Failed to fetch playlists');
+            setPlaylists(json.playlists || []);
         } catch (err) {
             console.error('Error fetching playlists:', err);
             setError(err.message);
@@ -134,59 +193,16 @@ export const useAlbums = () => {
         }
     }, []);
 
-    // Fetch songs for a playlist
+    // Fetch songs for a playlist (via backend service to bypass RLS)
     const fetchPlaylistSongs = useCallback(async (playlistId) => {
         try {
             setIsLoading(true);
-
-            const { data, error } = await supabase
-                .from('music_playlist_songs')
-                .select(`
-                    *,
-                    song:music_songs (
-                        *,
-                        album:music_albums(id, name, cover_url),
-                        artist:music_artists(id, name)
-                    )
-                `)
-                .eq('playlist_id', playlistId)
-                .order('position');
-
-            if (error) throw error;
-
-            // Extract songs from join and format
-            const songs = data.map(item => ({
-                ...item.song,
-                playlist_entry_id: item.id
-            })).filter(s => s.id); // Filter out nulls if any
-
-            // Fetch ratings for these songs
-            if (songs.length > 0) {
-                const songIds = songs.map(s => s.id);
-                const { data: ratings } = await supabase
-                    .from('music_ratings')
-                    .select('*')
-                    .in('song_id', songIds);
-
-                return songs.map(song => {
-                    const songRatings = ratings?.filter(r => r.song_id === song.id) || [];
-                    const avgRating = songRatings.length > 0
-                        ? songRatings.reduce((sum, r) => sum + (r.rating || 0), 0) / songRatings.filter(r => r.rating).length
-                        : 0;
-                    const myRating = songRatings.find(r => r.employee_id === currentUser?.id)?.rating || 0;
-                    const totalSkips = songRatings.reduce((sum, r) => sum + (r.skip_count || 0), 0);
-
-                    return {
-                        ...song,
-                        avgRating: isNaN(avgRating) ? 0 : avgRating,
-                        myRating,
-                        totalSkips,
-                        ratingCount: songRatings.filter(r => r.rating).length
-                    };
-                });
-            }
-
-            return songs;
+            const res = await fetch(`${MUSIC_API_URL}/music/library/playlists/${playlistId}/songs`);
+            const json = await res.json();
+            if (!res.ok || !json?.success) throw new Error(json?.message || 'Failed to fetch playlist songs');
+            const songs = json.songs || [];
+            const ratingMap = await fetchRatingsMap(songs.map(s => s.id).filter(Boolean));
+            return songs.map(s => ({ ...s, myRating: ratingMap.get(s.id) || 0 }));
         } catch (err) {
             console.error('Error fetching playlist songs:', err);
             setError(err.message);
@@ -196,49 +212,36 @@ export const useAlbums = () => {
         }
     }, [currentUser]);
 
-    // Fetch songs for an album with ratings
+    // Fetch songs for an album (via backend service to bypass RLS)
     const fetchAlbumSongs = useCallback(async (albumId) => {
         try {
             setIsLoading(true);
+            // If this is a scanned album (we use folder_path as id), resolve from scan cache
+            const looksLikeFolderPath = typeof albumId === 'string' && albumId.startsWith('/');
+            if (looksLikeFolderPath && scanLibrary?.songs?.length) {
+                const albumMeta = scanLibrary?.albums?.find(a => a.id === albumId);
+                const coverUrl = albumMeta?.cover_url || null;
+                const albumName = albumMeta?.name || null;
+                const artistName = albumMeta?.artist?.name || null;
 
-            const { data, error } = await supabase
-                .from('music_songs')
-                .select(`
-          *,
-          album:music_albums(id, name, cover_url),
-          artist:music_artists(id, name)
-        `)
-                .eq('album_id', albumId)
-                .order('track_number');
+                const matching = scanLibrary.songs
+                    .filter(s => s.file_path?.startsWith(albumId))
+                    .sort((a, b) => (a.track_number || 0) - (b.track_number || 0))
+                    .map(s => ({
+                        ...s,
+                        album: { name: albumName, cover_url: coverUrl },
+                        artist: { name: artistName || s.artist?.name || null }
+                    }));
 
-            if (error) throw error;
+                return matching;
+            }
 
-            // Fetch ratings for these songs
-            const songIds = data.map(s => s.id);
-            const { data: ratings } = await supabase
-                .from('music_ratings')
-                .select('*')
-                .in('song_id', songIds);
-
-            // Calculate average ratings
-            const songsWithRatings = data.map(song => {
-                const songRatings = ratings?.filter(r => r.song_id === song.id) || [];
-                const avgRating = songRatings.length > 0
-                    ? songRatings.reduce((sum, r) => sum + (r.rating || 0), 0) / songRatings.filter(r => r.rating).length
-                    : 0;
-                const myRating = songRatings.find(r => r.employee_id === currentUser?.id)?.rating || 0;
-                const totalSkips = songRatings.reduce((sum, r) => sum + (r.skip_count || 0), 0);
-
-                return {
-                    ...song,
-                    avgRating: isNaN(avgRating) ? 0 : avgRating,
-                    myRating,
-                    totalSkips,
-                    ratingCount: songRatings.filter(r => r.rating).length
-                };
-            });
-
-            return songsWithRatings;
+            const res = await fetch(`${MUSIC_API_URL}/music/library/albums/${albumId}/songs`);
+            const json = await res.json();
+            if (!res.ok || !json?.success) throw new Error(json?.message || 'Failed to fetch album songs');
+            const songs = json.songs || [];
+            const ratingMap = await fetchRatingsMap(songs.map(s => s.id).filter(Boolean));
+            return songs.map(s => ({ ...s, myRating: ratingMap.get(s.id) || 0 }));
         } catch (err) {
             console.error('Error fetching album songs:', err);
             setError(err.message);
@@ -246,7 +249,7 @@ export const useAlbums = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [currentUser]);
+    }, [currentUser, scanLibrary]);
 
     // Fetch all songs
     const fetchAllSongs = useCallback(async () => {
@@ -274,145 +277,79 @@ export const useAlbums = () => {
         }
     }, []);
 
-    // Scan directory for music files (calls backend, then saves to Supabase)
+    // Scan directory for music files (backend scans + saves to Supabase using service key)
     const scanMusicDirectory = useCallback(async (directoryPath, forceClean = false, onProgress = null) => {
         try {
             setIsLoading(true);
             setError(null);
 
-            // If forceClean, delete all existing data first
-            if (forceClean) {
-                onProgress?.({ phase: 'מוחק נתונים ישנים...', current: 0, total: 0 });
-                console.log('🗑️ Deleting all existing songs for clean rescan...');
-                await supabase.from('music_songs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-                await supabase.from('music_albums').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-                await supabase.from('music_artists').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-                console.log('✅ Cleaned database');
-            }
-
-            // 1. Call backend to scan files
-            onProgress?.({ phase: 'סורק תיקיות...', current: 0, total: 0 });
+            onProgress?.({ phase: 'סורק ושומר למסד נתונים...', current: 0, total: 0 });
             const response = await fetch(`${MUSIC_API_URL}/music/scan`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: directoryPath })
+                body: JSON.stringify({ path: directoryPath, saveToDb: true, forceClean })
             });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to scan directory');
-            }
-
             const result = await response.json();
-
-            if (!result.success) {
-                throw new Error(result.message || 'Scan failed');
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.message || 'Failed to scan directory');
             }
 
-            const artists = result.data?.artists || [];
-            const albums = result.data?.albums || [];
-            const songs = result.data?.songs || [];
-            const totalItems = artists.length + albums.length + songs.length;
-            let processedItems = 0;
+            // Always populate UI immediately from scan result (even if DB write is blocked by RLS/missing service key)
+            const rawArtists = result.data?.artists || [];
+            const rawAlbums = result.data?.albums || [];
+            const rawSongs = result.data?.songs || [];
 
-            console.log(`📂 Found ${artists.length} artists, ${albums.length} albums, ${songs.length} songs`);
+            const mappedArtists = rawArtists.map(a => ({
+                id: `scan-artist:${a.name}`,
+                name: a.name,
+                image_url: null,
+                folder_path: a.folder_path || null
+            }));
 
-            // 2. Batch insert artists
-            onProgress?.({ phase: 'שומר אמנים...', current: processedItems, total: totalItems });
-            const artistMap = {};
+            const mappedAlbums = rawAlbums.map(a => ({
+                id: a.folder_path, // folder path is unique and lets us resolve songs locally
+                name: a.name,
+                cover_url: a.cover_path || null,
+                folder_path: a.folder_path || null,
+                artist: { name: a.artist_name }
+            }));
 
-            if (artists.length > 0) {
-                // Insert all artists at once
-                const { data: insertedArtists, error: artistError } = await supabase
-                    .from('music_artists')
-                    .upsert(
-                        artists.map(a => ({ name: a.name, folder_path: a.folder_path })),
-                        { onConflict: 'name', ignoreDuplicates: false }
-                    )
-                    .select();
-
-                if (artistError) console.error('Artist insert error:', artistError);
-
-                // Fetch all artists to build map
-                const { data: allArtists } = await supabase.from('music_artists').select('id, name');
-                allArtists?.forEach(a => { artistMap[a.name] = a.id; });
-                processedItems += artists.length;
-            }
-
-            // 3. Batch insert albums
-            onProgress?.({ phase: 'שומר אלבומים...', current: processedItems, total: totalItems });
-            const albumMap = {};
-
-            if (albums.length > 0) {
-                const albumsToInsert = albums
-                    .filter(a => artistMap[a.artist_name])
-                    .map(a => ({
-                        name: a.name,
-                        artist_id: artistMap[a.artist_name],
-                        folder_path: a.folder_path,
-                        cover_url: a.cover_path
-                    }));
-
-                if (albumsToInsert.length > 0) {
-                    const { error: albumError } = await supabase
-                        .from('music_albums')
-                        .upsert(albumsToInsert, { onConflict: 'name,artist_id', ignoreDuplicates: false });
-
-                    if (albumError) console.error('Album insert error:', albumError);
+            const albumByFolder = new Map(mappedAlbums.map(a => [a.id, a]));
+            const mappedSongs = rawSongs.map(s => {
+                // best-effort: match album by folder path prefix
+                let albumMatch = null;
+                for (const [folderPath, album] of albumByFolder.entries()) {
+                    if (folderPath && s.file_path?.startsWith(folderPath)) {
+                        albumMatch = album;
+                        break;
+                    }
                 }
 
-                // Fetch all albums to build map
-                const { data: allAlbums } = await supabase
-                    .from('music_albums')
-                    .select('id, name, artist_id');
-                allAlbums?.forEach(a => {
-                    const artistName = Object.keys(artistMap).find(k => artistMap[k] === a.artist_id);
-                    if (artistName) albumMap[`${artistName}/${a.name}`] = a.id;
-                });
-                processedItems += albums.length;
-            }
+                return {
+                    id: s.file_path, // stable for playback
+                    title: s.title,
+                    file_path: s.file_path,
+                    file_name: s.file_name,
+                    track_number: s.track_number || 0,
+                    duration_seconds: null,
+                    artist: { name: s.artist_name },
+                    album: albumMatch ? { name: albumMatch.name, cover_url: albumMatch.cover_url } : { name: s.album_name, cover_url: null }
+                };
+            });
 
-            // 4. Batch insert songs in chunks of 50
-            const CHUNK_SIZE = 50;
-            let savedCount = 0;
+            const library = { artists: mappedArtists, albums: mappedAlbums, songs: mappedSongs };
+            setScanLibrary(library);
+            setArtists(mappedArtists);
+            setAlbums(mappedAlbums);
+            setSongs(mappedSongs);
 
-            for (let i = 0; i < songs.length; i += CHUNK_SIZE) {
-                const chunk = songs.slice(i, i + CHUNK_SIZE);
-                onProgress?.({
-                    phase: `שומר שירים... (${Math.min(i + CHUNK_SIZE, songs.length)}/${songs.length})`,
-                    current: processedItems + i,
-                    total: totalItems
-                });
-
-                const songsToInsert = chunk
-                    .filter(s => artistMap[s.artist_name])
-                    .map(s => ({
-                        title: s.title,
-                        file_path: s.file_path,
-                        file_name: s.file_name,
-                        track_number: s.track_number,
-                        artist_id: artistMap[s.artist_name],
-                        album_id: albumMap[`${s.artist_name}/${s.album_name}`] || null
-                    }));
-
-                if (songsToInsert.length > 0) {
-                    const { error: songError } = await supabase
-                        .from('music_songs')
-                        .upsert(songsToInsert, { onConflict: 'file_path', ignoreDuplicates: false });
-
-                    if (songError) console.error('Song insert error:', songError);
-                    else savedCount += songsToInsert.length;
-                }
-            }
-            processedItems = totalItems;
-
-            console.log(`✅ Saved ${savedCount} songs`);
-            onProgress?.({ phase: 'סיים!', current: totalItems, total: totalItems });
-
-            // Refresh data after save
+            onProgress?.({ phase: 'טוען נתונים...', current: 0, total: 0 });
             await fetchArtists();
             await fetchAlbums();
+            await fetchPlaylists();
 
+            onProgress?.({ phase: 'סיים!', current: result?.stats?.songs || 0, total: result?.stats?.songs || 0 });
             return result;
         } catch (err) {
             console.error('Error scanning directory:', err);
@@ -421,7 +358,7 @@ export const useAlbums = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [fetchArtists, fetchAlbums]);
+    }, [fetchArtists, fetchAlbums, fetchPlaylists]);
 
     // Get songs by artist
     const fetchArtistSongs = useCallback(async (artistId) => {
@@ -452,10 +389,11 @@ export const useAlbums = () => {
 
     // Initial load
     useEffect(() => {
+        checkMusicDriveConnection();
         fetchArtists();
         fetchAlbums();
         fetchPlaylists();
-    }, [fetchArtists, fetchAlbums, fetchPlaylists]);
+    }, [checkMusicDriveConnection, fetchArtists, fetchAlbums, fetchPlaylists]);
 
     return {
         artists,
@@ -471,10 +409,60 @@ export const useAlbums = () => {
         fetchArtistSongs,
         fetchPlaylists,
         fetchPlaylistSongs,
+        fetchFavoritesSongs,
         deletePlaylist,
         removePlaylistSong,
         addSongToPlaylist,
         scanMusicDirectory,
+        isMusicDriveConnected,
+        checkMusicDriveConnection,
+        generateSmartPlaylist: useCallback(async (options = {}) => {
+            const {
+                name = 'פלייליסט חכם',
+                artistIds = null,
+                maxSongs = 100,
+                saveToDb = true
+            } = options;
+
+            if (!currentUser?.id) {
+                return { success: false, message: 'אין משתמש מחובר' };
+            }
+
+            try {
+                const res = await fetch(`${MUSIC_API_URL}/music/smart-playlist`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name,
+                        artistIds,
+                        maxSongs,
+                        saveToDb,
+                        employeeId: currentUser.id,
+                        businessId: currentUser.business_id || null
+                    })
+                });
+
+                const json = await res.json();
+                if (!res.ok || !json?.success) {
+                    return { success: false, message: json?.message || 'Failed to create playlist' };
+                }
+
+                // Attach myRating for UI highlighting
+                const songs = json.playlist?.songs || [];
+                const ratingMap = await fetchRatingsMap(songs.map(s => s.id).filter(Boolean));
+                const songsWithRatings = songs.map(s => ({ ...s, myRating: ratingMap.get(s.id) || 0 }));
+
+                return {
+                    success: true,
+                    playlist: { ...(json.playlist || {}), songs: songsWithRatings },
+                    message: json.message || `נוצר פלייליסט עם ${songsWithRatings.length} שירים`
+                };
+            } catch (err) {
+                console.error('Error generating playlist:', err);
+                return { success: false, message: err.message };
+            }
+        }, [currentUser?.id, currentUser?.business_id, fetchRatingsMap]),
+
         refreshAll: async () => {
             await fetchArtists();
             await fetchAlbums();

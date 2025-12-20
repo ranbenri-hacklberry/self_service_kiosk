@@ -10,26 +10,20 @@ const SongRow = ({
     isPlaying = false,
     isCurrentSong = false,
     onPlay,
-    onRate,
-    showRating = true
+    onRate
 }) => {
     const handlePlay = () => {
         onPlay?.(song);
     };
 
     const handleRate = (rating) => {
-        // Toggle rating: if clicking same rating, remove it (set to 0)
         // Like (5) or Dislike (1)
-        const currentRating = song.myRating || 0;
-
-        if (rating === 5) {
-            // Clicked Like
-            onRate?.(song.id, currentRating === 5 ? 0 : 5);
-        } else if (rating === 1) {
-            // Clicked Dislike
-            onRate?.(song.id, currentRating === 1 ? 0 : 1);
-        }
+        onRate?.(song.id, rating);
     };
+
+    const myRating = song?.myRating || 0;
+    const isLiked = myRating === 5;
+    const isDisliked = myRating === 1;
 
     // Format duration (seconds to MM:SS)
     const formatDuration = (seconds) => {
@@ -39,8 +33,6 @@ const SongRow = ({
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
-    const isLiked = (song.myRating || 0) >= 4;
-    const isDisliked = (song.myRating || 0) > 0 && (song.myRating || 0) <= 2;
 
     return (
         <div
@@ -77,30 +69,27 @@ const SongRow = ({
                 )}
             </div>
 
-            {/* Like / Dislike - More prominent as requested */}
-            {showRating && (
-                <div className="flex-shrink-0 ml-4 hidden sm:flex items-center gap-3">
-                    <button
-                        onClick={(e) => { e.stopPropagation(); handleRate(1); }}
-                        className={`p-3 rounded-full transition-all transform hover:scale-110 ${isDisliked
-                            ? 'text-red-400 bg-red-400/20 ring-1 ring-red-400/50'
-                            : 'text-white/40 hover:text-red-400 hover:bg-white/10'}`}
-                        title="לא אהבתי (הסר מהפלייליסט)"
-                    >
-                        <ThumbsDown className="w-5 h-5" />
-                    </button>
 
-                    <button
-                        onClick={(e) => { e.stopPropagation(); handleRate(5); }}
-                        className={`p-3 rounded-full transition-all transform hover:scale-110 ${isLiked
-                            ? 'text-green-400 bg-green-400/20 ring-1 ring-green-400/50'
-                            : 'text-white/40 hover:text-green-400 hover:bg-white/10'}`}
-                        title="אהבתי"
-                    >
-                        <ThumbsUp className="w-5 h-5" />
-                    </button>
-                </div>
-            )}
+            {/* Like / Dislike */}
+            <div className="flex-shrink-0 ml-3 flex items-center gap-2">
+                <button
+                    onClick={(e) => { e.stopPropagation(); handleRate(1); }}
+                    className={`p-2 sm:p-3 rounded-full transition-all transform hover:scale-110
+                        ${isDisliked ? 'text-red-400 bg-red-500/20 ring-1 ring-red-400/40' : 'text-white/40 hover:text-red-400 hover:bg-white/10'}`}
+                    title="לא אהבתי"
+                >
+                    <ThumbsDown className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+
+                <button
+                    onClick={(e) => { e.stopPropagation(); handleRate(5); }}
+                    className={`p-2 sm:p-3 rounded-full transition-all transform hover:scale-110
+                        ${isLiked ? 'text-green-400 bg-green-500/20 ring-1 ring-green-400/40' : 'text-white/40 hover:text-green-400 hover:bg-white/10'}`}
+                    title="אהבתי"
+                >
+                    <ThumbsUp className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+            </div>
 
             {/* Duration */}
             <div className="w-12 flex-shrink-0 text-left text-white/40 text-sm">
@@ -110,7 +99,7 @@ const SongRow = ({
             {/* Play button on hover */}
             <button
                 onClick={(e) => { e.stopPropagation(); handlePlay(); }}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-purple-500 
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-purple-500
                    flex items-center justify-center opacity-0 group-hover:opacity-100
                    transition-all ml-2 flex-shrink-0"
             >
