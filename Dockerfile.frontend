@@ -4,4 +4,4 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 EXPOSE 4028
-CMD ["npm", "run", "dev", "--", "--host"]
+CMD ["npm", "start", "--", "--host", "--port", "4028"]

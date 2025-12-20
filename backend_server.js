@@ -6,23 +6,121 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// === ENV ===
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+// === HYBRID SUPABASE SETUP ===
+// Remote (Cloud) - for Auth verification and initial sync
+const REMOTE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const REMOTE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
-let supabase = null;
+// Local (Docker) - for fast operations and offline mode
+const LOCAL_URL = process.env.LOCAL_SUPABASE_URL || 'http://127.0.0.1:54321';
+const LOCAL_KEY = process.env.LOCAL_SUPABASE_SERVICE_KEY || process.env.VITE_LOCAL_SERVICE_ROLE_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-    console.error("⚠️ WARNING: Missing Supabase Environment Variables! Server starting in limited mode.");
-} else {
+let remoteSupabase = null;
+let localSupabase = null;
+let supabase = null; // Default client (will be local for most operations)
+
+// Initialize Remote Client
+if (REMOTE_URL && REMOTE_KEY) {
     try {
-        supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-        console.log("✅ Supabase Client Initialized");
+        remoteSupabase = createClient(REMOTE_URL, REMOTE_KEY);
+        console.log("✅ Remote Supabase Client Initialized (Cloud)");
     } catch (err) {
-        console.error("❌ Failed to initialize Supabase client:", err.message);
+        console.error("❌ Failed to initialize Remote Supabase:", err.message);
     }
 }
 
+// Initialize Local Client
+if (LOCAL_URL && LOCAL_KEY) {
+    try {
+        localSupabase = createClient(LOCAL_URL, LOCAL_KEY);
+        supabase = localSupabase; // Use local as default for speed
+        console.log("✅ Local Supabase Client Initialized (Docker)");
+    } catch (err) {
+        console.error("❌ Failed to initialize Local Supabase:", err.message);
+        // Fallback to remote if local fails
+        supabase = remoteSupabase;
+    }
+} else {
+    supabase = remoteSupabase;
+    console.log("ℹ️ Using Remote Supabase as primary (no local config)");
+}
+
+if (!supabase) {
+    console.error("⚠️ WARNING: No Supabase client available! Server in limited mode.");
+}
+
+// === HYBRID AUTH MIDDLEWARE ===
+const hybridAuth = async (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+    }
+
+    const token = authHeader.split(' ')[1];
+
+    try {
+        // Step 1: Try to verify with Remote (Cloud) first
+        if (remoteSupabase) {
+            const { data: { user }, error: authError } = await remoteSupabase.auth.getUser(token);
+
+            if (user && !authError) {
+                // User verified on cloud! Sync profile to local if needed
+                if (localSupabase) {
+                    try {
+                        const { data: profile } = await remoteSupabase
+                            .from('business_profiles')
+                            .select('*')
+                            .eq('id', user.id)
+                            .single();
+
+                        if (profile) {
+                            await localSupabase.from('business_profiles').upsert(profile, { onConflict: 'id' });
+                            console.log(`🔄 Synced user profile for ${user.email} to local DB`);
+                        }
+                    } catch (syncErr) {
+                        console.warn('⚠️ Could not sync user profile to local:', syncErr.message);
+                    }
+                }
+
+                req.user = user;
+                req.authSource = 'remote';
+                return next();
+            }
+        }
+
+        // Step 2: Fallback - Check local DB for cached user (offline mode)
+        if (localSupabase) {
+            // Extract user ID from JWT payload (basic decode, not verify)
+            try {
+                const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+                const userId = payload.sub;
+
+                const { data: localProfile } = await localSupabase
+                    .from('business_profiles')
+                    .select('*')
+                    .eq('id', userId)
+                    .single();
+
+                if (localProfile) {
+                    console.log(`🏠 User ${userId} authenticated from local cache (offline mode)`);
+                    req.user = { id: userId, ...localProfile };
+                    req.authSource = 'local';
+                    return next();
+                }
+            } catch (decodeErr) {
+                // Invalid token format
+            }
+        }
+
+        return res.status(401).json({ error: 'Authentication failed' });
+
+    } catch (err) {
+        console.error('Auth error:', err.message);
+        return res.status(500).json({ error: 'Internal auth error' });
+    }
+};
+
+// Legacy middleware for backward compatibility
 const ensureSupabase = (req, res, next) => {
     if (!supabase) {
         return res.status(500).json({ error: "Server Misconfiguration: Missing Supabase Credentials." });
@@ -1105,31 +1203,34 @@ app.get("/music/volumes", (req, res) => {
 });
 
 // Import DriveSync using dynamic import since it's an ES module (assuming package.json type="module", otherwise require)
-import DriveSync from './src/lib/driveSync.js';
+// import DriveSync from './src/lib/driveSync.js';
 
 app.post("/music/sync-drive", async (req, res) => {
-    try {
-        const serviceAccountPath = path.join(process.cwd(), 'service-account.json');
-
-        // Target: Use user's Music folder by default for download destination
-        const localMusicDir = path.join(process.env.HOME || '/Users', 'Music', 'SyncedFromDrive');
-
-        if (!fs.existsSync(serviceAccountPath)) {
-            return res.status(400).json({
-                error: 'Configuration missing',
-                message: 'Please upload service-account.json to server root.'
-            });
+    res.status(501).json({ error: "Sync not implemented - driveSync.js is missing in repository" });
+    /*
+        try {
+            const serviceAccountPath = path.join(process.cwd(), 'service-account.json');
+    
+            // Target: Use user's Music folder by default for download destination
+            const localMusicDir = path.join(process.env.HOME || '/Users', 'Music', 'SyncedFromDrive');
+    
+            if (!fs.existsSync(serviceAccountPath)) {
+                return res.status(400).json({
+                    error: 'Configuration missing',
+                    message: 'Please upload service-account.json to server root.'
+                });
+            }
+    
+            const syncer = new DriveSync(serviceAccountPath, localMusicDir);
+            const result = await syncer.performSync();
+    
+            res.json({ success: true, message: 'Sync initiated', details: result });
+    
+        } catch (err) {
+            console.error('Drive Sync Error:', err);
+            res.status(500).json({ error: err.message });
         }
-
-        const syncer = new DriveSync(serviceAccountPath, localMusicDir);
-        const result = await syncer.performSync();
-
-        res.json({ success: true, message: 'Sync initiated', details: result });
-
-    } catch (err) {
-        console.error('Drive Sync Error:', err);
-        res.status(500).json({ error: err.message });
-    }
+    */
 });
 
 // ------------------------------------------------------------------

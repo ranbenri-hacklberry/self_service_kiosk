@@ -48,7 +48,7 @@ export const useKDSData = () => {
             // if (!businessId) { ... }
 
             // CHANGED: Use supabase directly instead of getSupabase
-            const { data: ordersData, error } = await supabase.rpc('get_kds_orders', {
+            let { data: ordersData, error } = await supabase.rpc('get_kds_orders', {
                 p_date: today.toISOString(),
                 p_business_id: businessId || null // Pass the ID explicitly for PIN users
             });
