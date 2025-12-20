@@ -20,6 +20,8 @@ const ModeSelectionScreen = () => {
             navigate('/inventory');
         } else if (mode === 'prep') {
             navigate('/prep');
+        } else if (mode === 'music') {
+            navigate('/music');
         } else if (mode === 'mobile-kds') {
             setMode('kds'); // Set as KDS mode for auth
             navigate('/mobile-kds');
@@ -190,19 +192,20 @@ const ModeSelectionScreen = () => {
                         </div>
                     </button>
 
-                    {/* 5. Music - Coming Soon */}
+                    {/* 5. Music */}
                     <button
-                        disabled
-                        className="group relative bg-gray-50 rounded-2xl p-5 cursor-not-allowed opacity-80 text-right overflow-hidden border-2 border-dashed border-gray-200"
+                        onClick={() => handleModeSelect('music')}
+                        className="group relative bg-white rounded-2xl p-5 hover:bg-pink-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-pink-100"
                     >
-                        <div className="absolute top-3 left-3 bg-slate-900 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                            בקרוב
+                        <div className="absolute top-3 left-3 bg-pink-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                            חדש
                         </div>
-                        <div className="relative z-10 opacity-60 grayscale">
-                            <div className="w-10 h-10 bg-pink-500 rounded-xl flex items-center justify-center text-white mb-3 shadow-sm">
+                        <div className="absolute top-0 left-0 w-20 h-20 bg-pink-100 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
+                        <div className="relative z-10">
+                            <div className="w-10 h-10 bg-pink-500 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
                                 <Music size={20} strokeWidth={2.5} />
                             </div>
-                            <h2 className="text-xl font-black text-slate-700 mb-1">מוזיקה</h2>
+                            <h2 className="text-xl font-black text-slate-900 mb-1">מוזיקה</h2>
                             <p className="text-slate-500 text-sm leading-relaxed font-medium">
                                 שליטה בפלייליסט
                             </p>

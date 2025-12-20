@@ -199,7 +199,16 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [item]);
 
-    const fetchCategories = async () => { try { const { data } = await supabase.from('menu_items').select('category').not('category', 'is', null); if (data) setAvailableCategories([...new Set(data.map(i => i.category))].sort()); } catch (e) { console.error(e); } };
+    const fetchCategories = async () => {
+        if (!user?.business_id) return;
+        try {
+            const { data } = await supabase.from('menu_items')
+                .select('category')
+                .eq('business_id', user.business_id)
+                .not('category', 'is', null);
+            if (data) setAvailableCategories([...new Set(data.map(i => i.category))].sort());
+        } catch (e) { console.error(e); }
+    };
 
     const fetchModifiers = async () => {
         console.log('🔍 fetchModifiers called for item:', item?.id);
@@ -250,7 +259,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                     // Try optiongroups first
                     const { data: linkedGroups, error } = await supabase.from('optiongroups')
                         .select(`*, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
-                        .in('id', Array.from(linkedGroupIds));
+                        .in('id', Array.from(linkedGroupIds))
+                        .eq('business_id', user?.business_id);
 
                     if (error) {
                         console.error('❌ Error fetching linked groups:', error);
@@ -261,7 +271,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                         console.log('📋 Trying optionvalues directly...');
                         const { data: directValues, error: valuesError } = await supabase.from('optionvalues')
                             .select('*')
-                            .in('group_id', Array.from(linkedGroupIds));
+                            .in('group_id', Array.from(linkedGroupIds))
+                            .eq('business_id', user?.business_id);
 
                         if (valuesError) {
                             console.error('❌ Error fetching optionvalues:', valuesError);
@@ -301,7 +312,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             if (relevantGroups.length === 0 && item?.id) {
                 try {
                     console.log('🌐 Supabase returned 0 groups, trying external API:', item.id);
-                    const apiGroups = await fetchManagerItemOptions(item.id);
+                    const apiGroups = await fetchManagerItemOptions(item.id, user?.business_id);
                     console.log('🌐 API returned:', apiGroups?.length, 'groups');
 
                     if (apiGroups && apiGroups.length > 0) {
@@ -312,7 +323,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                         // Fetch fresh data from Supabase using the API group IDs
                         const { data: freshGroups, error: freshError } = await supabase.from('optiongroups')
                             .select(`*, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
-                            .in('id', groupIds);
+                            .in('id', groupIds)
+                            .eq('business_id', user?.business_id);
 
                         if (freshError) {
                             console.error('❌ Error fetching fresh groups:', freshError);
@@ -414,9 +426,13 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     };
 
     const fetchInventoryOptions = async () => {
+        if (!user?.business_id) return [];
         try {
             // Use cost_per_unit instead of price
-            let { data, error } = await supabase.from('inventory_items').select('id, name, unit, cost_per_unit, quantity_step').order('name');
+            let { data, error } = await supabase.from('inventory_items')
+                .select('id, name, unit, cost_per_unit, quantity_step')
+                .eq('business_id', user.business_id)
+                .order('name');
             console.log('📦 Inventory fetched:', data?.length, 'items', error ? `Error: ${error.message}` : '');
             // Debug: show some cost_per_unit values
             const withCosts = (data || []).filter(i => i.cost_per_unit && i.cost_per_unit > 0);
@@ -430,7 +446,13 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             return [];
         }
     };
-    const fetchAllOptionNames = async () => { const { data } = await supabase.from('optionvalues').select('value_name'); if (data) setAllOptionNames([...new Set(data.map(d => d.value_name))].sort()); };
+    const fetchAllOptionNames = async () => {
+        if (!user?.business_id) return;
+        const { data } = await supabase.from('optionvalues')
+            .select('value_name')
+            .eq('business_id', user.business_id);
+        if (data) setAllOptionNames([...new Set(data.map(d => d.value_name))].sort());
+    };
 
     const fetchKitchenLogic = async () => {
         if (!item?.id) return;
@@ -451,8 +473,11 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     };
 
     const fetchUniqueModifiers = async () => {
+        if (!user?.business_id) return;
         // Fetch all distinct value_names from the system to serve as a library
-        const { data } = await supabase.from('optionvalues').select('value_name');
+        const { data } = await supabase.from('optionvalues')
+            .select('value_name')
+            .eq('business_id', user.business_id);
         if (data) {
             // Count frequency just for sorting/interest? Or just unique list.
             // Let's just get unique names sorted.
@@ -737,13 +762,34 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         if (!pinInput) { alert('נא להזין קוד אישי'); return; }
 
         try {
-            // Verify PIN
-            const { data: profile } = await supabase.from('profiles').select('id').eq('id', user?.id).eq('pin_code', pinInput).single();
-            if (!profile) { alert('קוד שגוי'); return; }
+            // Verify PIN against employees table
+            const { data: employee, error: pinError } = await supabase
+                .from('employees')
+                .select('id')
+                .eq('id', user?.id)
+                .eq('pin_code', pinInput)
+                .single();
 
-            // Delete Item
+            if (pinError || !employee) {
+                console.error('PIN verification failed:', pinError);
+                alert('קוד שגוי');
+                return;
+            }
+
+            // Delete Item (with business_id safety check)
             if (item?.id) {
-                await supabase.from('menu_items').delete().eq('id', item.id);
+                const { error: deleteError } = await supabase
+                    .from('menu_items')
+                    .delete()
+                    .eq('id', item.id)
+                    .eq('business_id', user?.business_id);
+
+                if (deleteError) {
+                    console.error('Delete error:', deleteError);
+                    alert('שגיאה במחיקת פריט: ' + deleteError.message);
+                    return;
+                }
+
                 onSave?.(); // Refresh list
                 onClose(); // Close modal
             }

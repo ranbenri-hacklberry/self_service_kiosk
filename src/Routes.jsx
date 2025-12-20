@@ -19,6 +19,7 @@ import SuperAdminDashboard from './pages/super-admin';
 import ManagerKDS from './components/manager/ManagerKDS';
 import InventoryPage from './pages/inventory';
 import PrepPage from './pages/prep';
+import MusicPage from './pages/music';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -127,6 +128,12 @@ const AppRoutes = () => {
       <Route path="/prep" element={
         <ProtectedRoute>
           <PrepPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/music" element={
+        <ProtectedRoute>
+          <MusicPage />
         </ProtectedRoute>
       } />
 

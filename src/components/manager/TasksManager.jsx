@@ -9,13 +9,13 @@ import ConfirmationModal from '../ui/ConfirmationModal';
 const TasksManager = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
-  
+
   // Top Tabs: 'opening' | 'pre_closing' | 'closing'
   const [activeTab, setActiveTab] = useState('opening');
-  
+
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Edit Modal
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
@@ -24,17 +24,17 @@ const TasksManager = () => {
     description: '',
     is_pre_closing: false
   });
-  
+
   // Menu Item Task Modal (can't edit here)
   const [showMenuItemModal, setShowMenuItemModal] = useState(false);
   const [selectedMenuTask, setSelectedMenuTask] = useState(null);
-  
+
   // Confirmation Modal
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
     variant: 'info'
   });
 
@@ -50,9 +50,10 @@ const TasksManager = () => {
       const { data, error } = await supabase
         .from('recurring_tasks')
         .select('*')
+        .eq('business_id', currentUser?.business_id)
         .eq('is_active', true)
         .order('name');
-      
+
       if (error) throw error;
       setTasks(data || []);
     } catch (err) {
@@ -109,10 +110,10 @@ const TasksManager = () => {
 
   const handleSaveTask = async () => {
     if (!taskForm.name.trim()) return;
-    
+
     try {
       const category = activeTab === 'opening' ? 'פתיחה' : 'סגירה';
-      
+
       if (editingTask) {
         // Update existing
         const { error } = await supabase
@@ -122,8 +123,9 @@ const TasksManager = () => {
             description: taskForm.description,
             is_pre_closing: taskForm.is_pre_closing
           })
-          .eq('id', editingTask.id);
-        
+          .eq('id', editingTask.id)
+          .eq('business_id', currentUser?.business_id);
+
         if (error) throw error;
       } else {
         // Create new
@@ -135,12 +137,13 @@ const TasksManager = () => {
             category: category,
             is_pre_closing: taskForm.is_pre_closing,
             is_active: true,
-            frequency: 'Daily'
+            frequency: 'Daily',
+            business_id: currentUser?.business_id
           }]);
-        
+
         if (error) throw error;
       }
-      
+
       setShowEditModal(false);
       fetchTasks();
     } catch (err) {
@@ -165,8 +168,9 @@ const TasksManager = () => {
       const { error } = await supabase
         .from('recurring_tasks')
         .update({ is_active: false })
-        .eq('id', taskId);
-      
+        .eq('id', taskId)
+        .eq('business_id', currentUser?.business_id);
+
       if (error) throw error;
       fetchTasks();
     } catch (err) {
@@ -176,11 +180,11 @@ const TasksManager = () => {
 
   const goToMenuItem = () => {
     if (selectedMenuTask?.menu_item_id) {
-      navigate('/data-manager-interface', { 
-        state: { 
-          activeTab: 'menu', 
-          editItemId: selectedMenuTask.menu_item_id 
-        } 
+      navigate('/data-manager-interface', {
+        state: {
+          activeTab: 'menu',
+          editItemId: selectedMenuTask.menu_item_id
+        }
       });
     }
     setShowMenuItemModal(false);
@@ -194,42 +198,41 @@ const TasksManager = () => {
 
   return (
     <div className="h-full flex flex-col bg-gray-50 font-heebo pt-4" dir="rtl">
-      
+
       {/* Header */}
       <div className="bg-white shrink-0 z-20 shadow-sm border-b border-gray-100 pb-2">
         <div className="px-4 py-3 flex justify-between items-center relative">
           <div className="w-1/4"></div>
-          
+
           {/* Centered Tabs */}
           <div className="absolute left-1/2 -translate-x-1/2 flex bg-gray-100 p-1.5 rounded-xl border border-gray-200">
             {['opening', 'pre_closing', 'closing'].map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-5 py-2 rounded-lg text-sm font-black transition-all ${
-                  activeTab === tab 
-                    ? 'bg-black text-white shadow-sm' 
+                className={`px-5 py-2 rounded-lg text-sm font-black transition-all ${activeTab === tab
+                    ? 'bg-black text-white shadow-sm'
                     : 'bg-white text-gray-700 hover:text-black'
-                }`}
+                  }`}
               >
                 {tabLabels[tab]}
               </button>
             ))}
           </div>
-          
+
           <div className="w-1/4 flex justify-end"></div>
         </div>
 
         {/* Sub-header with title and add button */}
-        <motion.div 
-          initial={{ opacity: 0 }} 
-          animate={{ opacity: 1 }} 
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           className="px-4 py-4 flex justify-between items-center max-w-4xl mx-auto w-full mb-1 mt-3"
         >
           <h2 className="text-2xl font-black text-slate-800">
             משימות {tabLabels[activeTab]}
           </h2>
-          <button 
+          <button
             onClick={handleAddNew}
             className="bg-blue-600 text-white rounded-xl px-4 py-2 font-bold shadow-md shadow-blue-200 hover:bg-blue-700 transition-colors flex items-center gap-2"
           >
@@ -254,7 +257,7 @@ const TasksManager = () => {
               <div className="text-center py-20 text-gray-400 flex flex-col items-center gap-4">
                 <ClipboardList size={48} className="text-gray-200" />
                 <p className="text-lg font-bold text-gray-500">אין משימות {tabLabels[activeTab]}</p>
-                <button 
+                <button
                   onClick={handleAddNew}
                   className="text-blue-600 font-bold hover:underline"
                 >
@@ -269,9 +272,8 @@ const TasksManager = () => {
                   className="bg-white rounded-xl shadow-sm border border-gray-100 p-2 pr-2 flex items-center gap-3 relative transition-all cursor-pointer group h-[88px] hover:shadow-md hover:border-blue-200 hover:bg-blue-50/50"
                 >
                   {/* Icon */}
-                  <div className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center ${
-                    task.menu_item_id ? 'bg-amber-100/50 text-amber-600' : 'bg-blue-100/50 text-blue-600'
-                  }`}>
+                  <div className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center ${task.menu_item_id ? 'bg-amber-100/50 text-amber-600' : 'bg-blue-100/50 text-blue-600'
+                    }`}>
                     {task.menu_item_id ? <Coffee size={24} /> : <ClipboardList size={24} />}
                   </div>
 
@@ -322,18 +324,18 @@ const TasksManager = () => {
       <AnimatePresence>
         {showEditModal && (
           <>
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 0.5 }} 
-              exit={{ opacity: 0 }} 
-              onClick={() => setShowEditModal(false)} 
-              className="fixed inset-0 bg-black z-40" 
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowEditModal(false)}
+              className="fixed inset-0 bg-black z-40"
             />
-            <motion.div 
-              initial={{ y: '100%' }} 
-              animate={{ y: 0 }} 
-              exit={{ y: '100%' }} 
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }} 
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
               className="fixed bottom-0 left-0 right-0 bg-white z-50 rounded-t-3xl shadow-2xl p-0 min-h-[50vh] flex flex-col"
             >
               {/* Modal Header */}
@@ -381,7 +383,7 @@ const TasksManager = () => {
                         <span className="font-bold text-slate-700">אפשר לבצע לפני סגירה</span>
                         <p className="text-xs text-gray-400 mt-0.5">משימה שניתן להתחיל בזמן שהמקום עוד פתוח</p>
                       </div>
-                      <div 
+                      <div
                         onClick={() => setTaskForm({ ...taskForm, is_pre_closing: !taskForm.is_pre_closing })}
                         className={`w-14 h-8 rounded-full transition-colors relative ${taskForm.is_pre_closing ? 'bg-blue-600' : 'bg-gray-300'}`}
                       >
@@ -394,7 +396,7 @@ const TasksManager = () => {
 
               {/* Save Button */}
               <div className="p-4 border-t border-gray-100 bg-white shrink-0">
-                <button 
+                <button
                   onClick={handleSaveTask}
                   className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xl shadow-xl shadow-slate-200 active:scale-[0.98] transition-all"
                 >
@@ -410,17 +412,17 @@ const TasksManager = () => {
       <AnimatePresence>
         {showMenuItemModal && selectedMenuTask && (
           <>
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 0.5 }} 
-              exit={{ opacity: 0 }} 
-              onClick={() => setShowMenuItemModal(false)} 
-              className="fixed inset-0 bg-black z-40" 
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowMenuItemModal(false)}
+              className="fixed inset-0 bg-black z-40"
             />
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }} 
-              animate={{ scale: 1, opacity: 1 }} 
-              exit={{ scale: 0.9, opacity: 0 }} 
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
               className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
             >
               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden pointer-events-auto">
@@ -446,13 +448,13 @@ const TasksManager = () => {
 
                 {/* Actions */}
                 <div className="p-4 border-t border-gray-100 bg-white flex gap-3">
-                  <button 
+                  <button
                     onClick={() => setShowMenuItemModal(false)}
                     className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-200 transition-colors"
                   >
                     ביטול
                   </button>
-                  <button 
+                  <button
                     onClick={goToMenuItem}
                     className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
                   >

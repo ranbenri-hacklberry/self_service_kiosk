@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
 import MenuManagerCard from './MenuManagerCard';
 import {
   Search, Coffee, GlassWater, Croissant, Sandwich,
@@ -39,6 +40,7 @@ const getCategoryIcon = (category) => {
 };
 
 const MenuDisplay = () => {
+  const { currentUser } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -49,11 +51,17 @@ const MenuDisplay = () => {
   const [isAnimating, setIsAnimating] = useState(false);
 
   const fetchItems = async () => {
+    if (!currentUser?.business_id) {
+      console.log('⏳ MenuDisplay: Waiting for business_id...');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('menu_items')
         .select('*')
+        .eq('business_id', currentUser.business_id)
         .order('category')
         .order('name');
       if (error) throw error;
@@ -65,16 +73,18 @@ const MenuDisplay = () => {
     }
   };
 
-  useEffect(() => { fetchItems(); }, []);
+  useEffect(() => { fetchItems(); }, [currentUser?.business_id]);
 
   // Sync selectedItem with fresh data when items update
   useEffect(() => {
     if (selectedItem && items.length > 0) {
       const fresh = items.find(i => i.id === selectedItem.id);
-      // Only update if data changed to avoid loops/unnecessary renders
+      // Only update if we found fresh data AND it changed
+      // Don't close modal if item not found (could be re-fetching)
       if (fresh && JSON.stringify(fresh) !== JSON.stringify(selectedItem)) {
         setSelectedItem(fresh);
       }
+      // If fresh is null/undefined, keep the current selectedItem to prevent modal closure
     }
   }, [items]);
 

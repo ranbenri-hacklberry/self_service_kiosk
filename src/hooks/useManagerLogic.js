@@ -3,8 +3,10 @@ import {
   fetchManagerMenuItems,
   updateManagerMenuItem,
 } from '@/lib/managerApi';
+import { useAuth } from '@/context/AuthContext';
 
 export const useManagerLogic = () => {
+  const { currentUser } = useAuth();
   const [menuItems, setMenuItems] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
@@ -16,7 +18,7 @@ export const useManagerLogic = () => {
   const fetchAllData = async (command = 'תפריט') => {
     setIsLoading(true);
     try {
-      const items = await fetchManagerMenuItems(command);
+      const items = await fetchManagerMenuItems(command, currentUser?.business_id);
       setMenuItems(items || []);
       setStatusMessage('');
       setErrorMessage('');

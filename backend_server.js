@@ -812,6 +812,327 @@ app.post("/customers/identify-and-greet", ensureSupabase, async (req, res) => {
 });
 
 // ------------------------------------------------------------------
+// === 12. MUSIC API ROUTES ===
+// ------------------------------------------------------------------
+
+import fs from 'fs';
+import path from 'path';
+
+// Stream audio file from disk
+app.get("/music/stream", (req, res) => {
+    try {
+        const filePath = decodeURIComponent(req.query.path || '');
+
+        if (!filePath) {
+            return res.status(400).json({ error: 'Missing path parameter' });
+        }
+
+        // Security: Prevent directory traversal
+        if (filePath.includes('..')) {
+            return res.status(403).json({ error: 'Invalid path' });
+        }
+
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+
+        // Determine content type based on extension
+        const ext = path.extname(filePath).toLowerCase();
+        const contentTypes = {
+            '.mp3': 'audio/mpeg',
+            '.flac': 'audio/flac',
+            '.m4a': 'audio/mp4',
+            '.wav': 'audio/wav',
+            '.ogg': 'audio/ogg'
+        };
+        const contentType = contentTypes[ext] || 'audio/mpeg';
+
+        const stat = fs.statSync(filePath);
+        const fileSize = stat.size;
+        const range = req.headers.range;
+
+        // Support range requests for seeking
+        if (range) {
+            const parts = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+            const chunksize = (end - start) + 1;
+            const file = fs.createReadStream(filePath, { start, end });
+
+            res.writeHead(206, {
+                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunksize,
+                'Content-Type': contentType,
+            });
+            file.pipe(res);
+        } else {
+            res.writeHead(200, {
+                'Content-Length': fileSize,
+                'Content-Type': contentType,
+            });
+            fs.createReadStream(filePath).pipe(res);
+        }
+    } catch (err) {
+        console.error('Music stream error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Scan directory for music files - returns data for frontend to save
+app.post("/music/scan", (req, res) => {
+    try {
+        const { path: dirPath } = req.body;
+
+        if (!dirPath) {
+            return res.status(400).json({ error: 'Missing path parameter' });
+        }
+
+        // Expand ~ to home directory
+        const expandedPath = dirPath.replace(/^~/, process.env.HOME || '/Users');
+
+        if (!fs.existsSync(expandedPath)) {
+            return res.status(404).json({
+                success: false,
+                message: `הנתיב לא נמצא: ${expandedPath}`
+            });
+        }
+
+        console.log(`🎵 Scanning music directory: ${expandedPath}`);
+
+        const artists = [];
+        const albums = [];
+        const songs = [];
+
+        const artistSet = new Set();
+
+        // Helper to check if it's an audio file
+        const isAudioFile = (name) => {
+            const ext = name.toLowerCase();
+            return ext.endsWith('.mp3') || ext.endsWith('.flac') || ext.endsWith('.m4a') || ext.endsWith('.wav');
+        };
+
+        // Helper to get file extension
+        const getExt = (name) => path.extname(name).toLowerCase();
+
+        // Helper to parse "Artist - Album" format
+        const parseArtistAlbum = (folderName) => {
+            // Try to split by " - " (with spaces around dash)
+            const parts = folderName.split(' - ');
+            if (parts.length >= 2) {
+                const artistName = parts[0].trim();
+                const albumName = parts.slice(1).join(' - ').trim()
+                    .replace(/\s*\([^)]*\)\s*/g, ' ')  // Remove (year)
+                    .replace(/\s*\[[^\]]*\]\s*/g, ' ') // Remove [tags]
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                return { artistName, albumName };
+            }
+            return { artistName: 'Unknown', albumName: folderName };
+        };
+
+        // Scan function
+        const scanDirectory = (dir, parentArtist = null, parentAlbum = null, depth = 0) => {
+            if (depth > 4) return;
+
+            let entries;
+            try {
+                entries = fs.readdirSync(dir, { withFileTypes: true });
+            } catch (err) {
+                console.log(`Cannot read directory: ${dir}`);
+                return;
+            }
+
+            for (const entry of entries) {
+                if (entry.name.startsWith('.')) continue;
+
+                const fullPath = path.join(dir, entry.name);
+
+                if (entry.isDirectory()) {
+                    if (depth === 0) {
+                        // Top level: could be "Artist - Album" format
+                        const parsed = parseArtistAlbum(entry.name);
+
+                        // Add artist if new
+                        if (!artistSet.has(parsed.artistName)) {
+                            artistSet.add(parsed.artistName);
+                            artists.push({
+                                name: parsed.artistName,
+                                folder_path: null
+                            });
+                        }
+
+                        // Look for cover image
+                        const coverFiles = ['cover.jpg', 'cover.png', 'folder.jpg', 'folder.png', 'album.jpg', 'Cover.jpg', 'Cover.png'];
+                        let coverPath = null;
+                        // Also check for any .jpg or .png in the folder
+                        try {
+                            const albumContents = fs.readdirSync(fullPath);
+                            for (const file of albumContents) {
+                                if (coverFiles.includes(file)) {
+                                    coverPath = path.join(fullPath, file);
+                                    break;
+                                }
+                                // Fallback: any image file
+                                if (!coverPath && (file.endsWith('.jpg') || file.endsWith('.png')) && !file.startsWith('.')) {
+                                    coverPath = path.join(fullPath, file);
+                                }
+                            }
+                        } catch (e) { }
+
+                        const album = {
+                            name: parsed.albumName,
+                            artist_name: parsed.artistName,
+                            folder_path: fullPath,
+                            cover_path: coverPath
+                        };
+                        albums.push(album);
+
+                        // Scan subdirectories (CD 1, CD 2, etc.)
+                        scanDirectory(fullPath, parsed.artistName, album, depth + 1);
+                    } else {
+                        // Subdirectory (like CD 1, CD 2) - continue scanning
+                        scanDirectory(fullPath, parentArtist, parentAlbum, depth + 1);
+                    }
+                } else if (isAudioFile(entry.name)) {
+                    // Audio file
+                    const trackMatch = entry.name.match(/^(\d+)/);
+                    const trackNumber = trackMatch ? parseInt(trackMatch[1], 10) : 0;
+
+                    const ext = getExt(entry.name);
+                    let title = entry.name
+                        .replace(/\.(mp3|flac|m4a|wav)$/i, '')
+                        .replace(/^[\d\.\-\s]+/, '')
+                        .trim();
+
+                    const song = {
+                        title: title || entry.name.replace(/\.[^.]+$/, ''),
+                        file_path: fullPath,
+                        file_name: entry.name,
+                        track_number: trackNumber,
+                        artist_name: parentArtist || 'Unknown',
+                        album_name: parentAlbum?.name || null
+                    };
+                    songs.push(song);
+                }
+            }
+        };
+
+        scanDirectory(expandedPath);
+
+        console.log(`✅ Scan complete: ${artists.length} artists, ${albums.length} albums, ${songs.length} songs`);
+
+        res.json({
+            success: true,
+            message: `הסריקה הושלמה בהצלחה!`,
+            stats: {
+                artists: artists.length,
+                albums: albums.length,
+                songs: songs.length
+            },
+            data: {
+                artists,
+                albums,
+                songs
+            }
+        });
+
+    } catch (err) {
+        console.error('Music scan error:', err);
+        res.status(500).json({
+            success: false,
+            message: `שגיאה בסריקה: ${err.message}`
+        });
+    }
+});
+
+// Get album cover image
+app.get("/music/cover", (req, res) => {
+    try {
+        const filePath = decodeURIComponent(req.query.path || '');
+
+        if (!filePath || filePath.includes('..') || !fs.existsSync(filePath)) {
+            return res.status(404).send('Not found');
+        }
+
+        const ext = path.extname(filePath).toLowerCase();
+        const contentType = ext === '.png' ? 'image/png' : 'image/jpeg';
+
+        res.setHeader('Content-Type', contentType);
+        fs.createReadStream(filePath).pipe(res);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// List available volumes/drives
+app.get("/music/volumes", (req, res) => {
+    try {
+        const volumesPath = '/Volumes';
+        const volumes = [];
+
+        if (fs.existsSync(volumesPath)) {
+            const entries = fs.readdirSync(volumesPath, { withFileTypes: true });
+
+            for (const entry of entries) {
+                if (entry.isDirectory() || entry.isSymbolicLink()) {
+                    const fullPath = path.join(volumesPath, entry.name);
+                    volumes.push({
+                        name: entry.name,
+                        path: fullPath
+                    });
+                }
+            }
+        }
+
+        // Also add common paths
+        const homePath = process.env.HOME || '/Users';
+        const musicPath = path.join(homePath, 'Music');
+
+        if (fs.existsSync(musicPath)) {
+            volumes.push({
+                name: 'מוזיקה מקומית',
+                path: musicPath
+            });
+        }
+
+        res.json({ volumes });
+    } catch (err) {
+        console.error('Error listing volumes:', err);
+        res.json({ volumes: [] });
+    }
+});
+
+// Import DriveSync using dynamic import since it's an ES module (assuming package.json type="module", otherwise require)
+import DriveSync from './src/lib/driveSync.js';
+
+app.post("/music/sync-drive", async (req, res) => {
+    try {
+        const serviceAccountPath = path.join(process.cwd(), 'service-account.json');
+
+        // Target: Use user's Music folder by default for download destination
+        const localMusicDir = path.join(process.env.HOME || '/Users', 'Music', 'SyncedFromDrive');
+
+        if (!fs.existsSync(serviceAccountPath)) {
+            return res.status(400).json({
+                error: 'Configuration missing',
+                message: 'Please upload service-account.json to server root.'
+            });
+        }
+
+        const syncer = new DriveSync(serviceAccountPath, localMusicDir);
+        const result = await syncer.performSync();
+
+        res.json({ success: true, message: 'Sync initiated', details: result });
+
+    } catch (err) {
+        console.error('Drive Sync Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ------------------------------------------------------------------
 // === CLOUD RUN PORT ===
 // ------------------------------------------------------------------
 const PORT = process.env.PORT || 8080;

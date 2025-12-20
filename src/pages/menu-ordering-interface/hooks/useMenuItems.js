@@ -56,7 +56,13 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
 
     // Fetch menu items from Supabase with Caching
     const fetchMenuItems = useCallback(async () => {
-        const targetBusinessId = businessId || '11111111-1111-1111-1111-111111111111';
+        if (!businessId) {
+            console.log('⏳ useMenuItems: Waiting for businessId...');
+            setMenuLoading(false);
+            return;
+        }
+
+        const targetBusinessId = businessId;
         const CACHE_KEY = `menu_items_cache_${targetBusinessId}`;
         const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 

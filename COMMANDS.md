@@ -250,3 +250,23 @@ git checkout main && git merge develop && git push origin main && git checkout d
 
 **Last Updated:** December 16, 2025 | **Version:** 2.0.0
 
+---
+
+## 🎵 מוזיקה (Music Encryption)
+
+### הצפנה והכנה להעלאה
+
+```bash
+# הצפנת תיקיית מוזיקה (יוצר תיקייה encrypted_music_output)
+node scripts/encrypt_upload.js /path/to/my/music
+
+# דוגמה עם כונן חיצוני
+node scripts/encrypt_upload.js /Volumes/Ran1/Music
+
+# 🔥 אוטומציה: כתיבה ישירה לגוגל דרייב (אם מותקן)
+# החלף את הנתיב השני בנתיב האמיתי של התיקייה בדרייב שלך
+node scripts/encrypt_upload.js /Volumes/Ran1/Music "/Volumes/GoogleDrive/My Drive/Music Encrypted"
+```
+
+*הערה: הסקריפט מדלג אוטומטית על קבצים שכבר הוצפנו.*
+

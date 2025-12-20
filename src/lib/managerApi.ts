@@ -61,8 +61,11 @@ export const normalizeOptionGroups = (rawGroups: any[] = []): OptionGroup[] => {
     });
 };
 
-export const fetchManagerMenuItems = async (command = 'תפריט') => {
-  const payload = { command };
+export const fetchManagerMenuItems = async (command = 'תפריט', businessId?: string) => {
+  const payload = {
+    command,
+    business_id: businessId
+  };
   const response = await fetch(buildUrl('/'), {
     method: 'POST',
     headers: JSON_HEADERS,
@@ -87,13 +90,17 @@ export const updateManagerMenuItem = async (id: string | number, updates: Record
 
 const optionsCache: Record<string, OptionGroup[]> = {};
 
-export const fetchManagerItemOptions = async (itemId: string | number): Promise<OptionGroup[]> => {
-  const cacheKey = String(itemId);
+export const fetchManagerItemOptions = async (itemId: string | number, businessId?: string): Promise<OptionGroup[]> => {
+  const cacheKey = `${businessId}_${itemId}`;
   if (optionsCache[cacheKey]) {
     return optionsCache[cacheKey];
   }
 
-  const response = await fetch(buildUrl(`/item/${itemId}/options`));
+  const url = businessId
+    ? buildUrl(`/item/${itemId}/options?business_id=${businessId}`)
+    : buildUrl(`/item/${itemId}/options`);
+
+  const response = await fetch(url);
   const rawGroups = await handleJson<any[]>(response);
   const normalized = normalizeOptionGroups(rawGroups);
 
@@ -110,10 +117,13 @@ export const clearOptionsCache = (itemId?: string | number) => {
   }
 };
 
-export const fetchInventoryItems = async () => {
+export const fetchInventoryItems = async (businessId: string) => {
+  if (!businessId) throw new Error('businessId is required for inventory fetch');
+
   const { data, error } = await supabase
     .from('inventory_items')
     .select('*')
+    .eq('business_id', businessId) // Crucial Multi-tenant filter
     .order('name');
 
   if (error) throw error;
