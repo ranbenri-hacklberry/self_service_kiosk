@@ -1,15 +1,17 @@
+import 'dotenv/config';
 import express from "express";
 import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
 // === HYBRID SUPABASE SETUP ===
 // Remote (Cloud) - for Auth verification and initial sync
 const REMOTE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const REMOTE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+const REMOTE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
 // Local (Docker) - for fast operations and offline mode
 const LOCAL_URL = process.env.LOCAL_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -1286,7 +1288,7 @@ app.post("/music/scan", async (req, res) => {
 
                 if (rows.length === 0) continue;
 
-                console.log(`💾 Inserting chunk ${Math.floor(i/CHUNK_SIZE) + 1} (${rows.length} songs)...`);
+                console.log(`💾 Inserting chunk ${Math.floor(i / CHUNK_SIZE) + 1} (${rows.length} songs)...`);
                 // Try upsert first, then individual inserts
                 let songUpsertError = null;
                 try {
@@ -1629,7 +1631,7 @@ app.post("/music/rate", ensureSupabase, async (req, res) => {
                 .delete()
                 .eq('song_id', songId)
                 .eq('employee_id', employeeId);
-            
+
             if (deleteError) throw deleteError;
             console.log('✅ Rating removed successfully');
             return res.json({ success: true });
@@ -1651,11 +1653,11 @@ app.post("/music/rate", ensureSupabase, async (req, res) => {
                 console.log('✅ Rating saved via upsert');
                 return res.json({ success: true });
             }
-            
+
             if (error.code !== '42P10') { // 42P10 is missing unique constraint
                 throw error;
             }
-            
+
             console.log('⚠️ Missing unique constraint for upsert, trying manual update/insert...');
         } catch (e) {
             console.log('⚠️ Upsert failed, falling back to manual update/insert...');
@@ -1672,12 +1674,12 @@ app.post("/music/rate", ensureSupabase, async (req, res) => {
         if (existing) {
             const { error: updateError } = await supabase
                 .from('music_ratings')
-                .update({ 
-                    rating, 
-                    updated_at: new Date().toISOString() 
+                .update({
+                    rating,
+                    updated_at: new Date().toISOString()
                 })
                 .eq('id', existing.id);
-            
+
             if (updateError) throw updateError;
             console.log('✅ Rating updated manually');
         } else {
@@ -1689,7 +1691,7 @@ app.post("/music/rate", ensureSupabase, async (req, res) => {
                     rating,
                     business_id: businessId || null
                 });
-            
+
             if (insertError) throw insertError;
             console.log('✅ Rating inserted manually');
         }

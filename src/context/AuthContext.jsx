@@ -4,7 +4,7 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
-    const [deviceMode, setDeviceMode] = useState(null); // 'kiosk', 'kds', 'manager'
+    const [deviceMode, setDeviceMode] = useState(null); // 'kiosk', 'kds', 'manager', 'music'
     const [isLoading, setIsLoading] = useState(true);
 
     // Load state from localStorage on mount with expiration check
@@ -19,18 +19,20 @@ export const AuthProvider = ({ children }) => {
                 const now = Date.now();
                 // 18 hours expiration (Daily login requirement)
                 const hoursPassed = (now - parseInt(storedTime)) / (1000 * 60 * 60);
-                console.log('🔐 Session age:', hoursPassed.toFixed(2), 'hours');
 
                 if (hoursPassed < 18) {
                     try {
                         const sessionUser = JSON.parse(storedSession);
                         setCurrentUser(sessionUser);
-                        console.log('✅ Session restored for:', sessionUser?.name);
-                        
-                        // Only restore mode if session is valid
-                        if (storedMode) {
+
+                        // DEEP FIX: If accessing through icaffe domain, ensure we don't get stuck in old kiosk mode
+                        const isIffeDomain = window.location.hostname === 'icaffe.hacklberryfinn.com';
+                        if (isIffeDomain && storedMode === 'kiosk') {
+                            console.log('🧹 Clearing old kiosk mode for production domain');
+                            localStorage.removeItem('kiosk_mode');
+                            setDeviceMode(null);
+                        } else if (storedMode) {
                             setDeviceMode(storedMode);
-                            console.log('✅ Device mode restored:', storedMode);
                         }
                     } catch (e) {
                         console.error('Failed to parse session user', e);
@@ -39,16 +41,11 @@ export const AuthProvider = ({ children }) => {
                         localStorage.removeItem('kiosk_mode');
                     }
                 } else {
-                    // Session expired - clear EVERYTHING including mode
-                    console.log('⏰ Session expired, clearing all auth data');
                     localStorage.removeItem('kiosk_user');
                     localStorage.removeItem('kiosk_auth_time');
                     localStorage.removeItem('kiosk_mode');
-                    // Don't restore mode for expired sessions!
                 }
             } else {
-                // No session - also clear mode to prevent stale mode
-                console.log('🔐 No session found');
                 localStorage.removeItem('kiosk_mode');
             }
 
@@ -70,10 +67,6 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('kiosk_user');
         localStorage.removeItem('kiosk_auth_time');
         localStorage.removeItem('kiosk_mode');
-        // Also clear manager legacy keys if any
-        localStorage.removeItem('manager_auth_key');
-        localStorage.removeItem('manager_auth_time');
-        localStorage.removeItem('manager_employee_id');
     };
 
     const setMode = (mode) => {

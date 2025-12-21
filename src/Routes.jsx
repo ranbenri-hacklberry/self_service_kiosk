@@ -31,12 +31,12 @@ const ProtectedRoute = ({ children }) => {
   // Use state mode or fallback to localStorage for immediate transitions
   const deviceMode = stateMode || localStorage.getItem('kiosk_mode');
 
-  console.log('🛡️ ProtectedRoute Check:', { 
-    path: location.pathname, 
-    hasUser: !!currentUser, 
-    stateMode, 
+  console.log('🛡️ ProtectedRoute Check:', {
+    path: location.pathname,
+    hasUser: !!currentUser,
+    stateMode,
     deviceMode,
-    isLoading 
+    isLoading
   });
 
   // Show loading state
@@ -68,6 +68,8 @@ const ProtectedRoute = ({ children }) => {
       return <Navigate to="/kds" replace />;
     } else if (deviceMode === 'manager') {
       return <Navigate to="/data-manager-interface" replace />;
+    } else if (deviceMode === 'music') {
+      return <Navigate to="/music" replace />;
     }
     // For 'kiosk' mode, let it fall through and render children (CustomerPhoneInputScreen)
   }
