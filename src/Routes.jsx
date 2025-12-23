@@ -21,6 +21,7 @@ import ManagerKDS from './components/manager/ManagerKDS';
 import InventoryPage from './pages/inventory';
 import PrepPage from './pages/prep';
 import MusicPage from './pages/music';
+import SpotifyCallback from './pages/callback/spotify';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -154,6 +155,9 @@ const AppRoutes = () => {
           </ErrorBoundary>
         </ProtectedRoute>
       } />
+
+      {/* Spotify Callback Route - Public */}
+      <Route path="/callback/spotify" element={<SpotifyCallback />} />
 
       <Route path="*" element={<NotFound />} />
     </RouterRoutes>
