@@ -21,7 +21,9 @@ const PaymentSelectionModal = ({
 
   // Custom Hooks
   // We pass businessId to the hook
-  const { discounts, calculateDiscount } = useDiscounts(businessId);
+  // const { discounts, calculateDiscount } = useDiscounts(businessId);
+  const discounts = [];
+  const calculateDiscount = () => ({ amount: 0, details: '' });
 
   // State
   const [selectedDiscount, setSelectedDiscount] = useState(null); // The full discount object
@@ -338,6 +340,7 @@ const PaymentSelectionModal = ({
           </div>
 
           {/* Discounts Grid */}
+          {/* Discounts Grid - TEMPORARILY DISABLED
           {!isRefund && (
             <div>
               <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
@@ -375,6 +378,7 @@ const PaymentSelectionModal = ({
               </div>
             </div>
           )}
+          */}
 
           {/* Payment Methods Grid */}
           <div>
