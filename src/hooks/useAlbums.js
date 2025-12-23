@@ -92,6 +92,42 @@ export const useAlbums = () => {
         }
     }, []);
 
+    // Fetch all artists (via backend service to bypass RLS)
+    const fetchArtists = useCallback(async () => {
+        try {
+            const res = await fetch(`${MUSIC_API_URL}/music/library/artists`);
+            const json = await res.json();
+            if (!res.ok || !json?.success) throw new Error(json?.message || 'Failed to fetch artists');
+            const list = json.artists || [];
+            if (list.length === 0 && scanLibrary?.artists?.length) {
+                setArtists(scanLibrary.artists);
+            } else {
+                setArtists(list);
+            }
+        } catch (err) {
+            console.error('Error fetching artists:', err);
+            setError(err.message);
+        }
+    }, [scanLibrary]);
+
+    // Fetch all albums with artist info (via backend service to bypass RLS)
+    const fetchAlbums = useCallback(async () => {
+        try {
+            const res = await fetch(`${MUSIC_API_URL}/music/library/albums`);
+            const json = await res.json();
+            if (!res.ok || !json?.success) throw new Error(json?.message || 'Failed to fetch albums');
+            const list = json.albums || [];
+            if (list.length === 0 && scanLibrary?.albums?.length) {
+                setAlbums(scanLibrary.albums);
+            } else {
+                setAlbums(list);
+            }
+        } catch (err) {
+            console.error('Error fetching albums:', err);
+            setError(err.message);
+        }
+    }, [scanLibrary]);
+
     // Add Spotify Album to library
     const addSpotifyAlbum = useCallback(async (spotifyAlbum) => {
         try {
@@ -163,42 +199,6 @@ export const useAlbums = () => {
             setIsLoading(false);
         }
     }, [fetchAlbums]);
-
-    // Fetch all artists (via backend service to bypass RLS)
-    const fetchArtists = useCallback(async () => {
-        try {
-            const res = await fetch(`${MUSIC_API_URL}/music/library/artists`);
-            const json = await res.json();
-            if (!res.ok || !json?.success) throw new Error(json?.message || 'Failed to fetch artists');
-            const list = json.artists || [];
-            if (list.length === 0 && scanLibrary?.artists?.length) {
-                setArtists(scanLibrary.artists);
-            } else {
-                setArtists(list);
-            }
-        } catch (err) {
-            console.error('Error fetching artists:', err);
-            setError(err.message);
-        }
-    }, [scanLibrary]);
-
-    // Fetch all albums with artist info (via backend service to bypass RLS)
-    const fetchAlbums = useCallback(async () => {
-        try {
-            const res = await fetch(`${MUSIC_API_URL}/music/library/albums`);
-            const json = await res.json();
-            if (!res.ok || !json?.success) throw new Error(json?.message || 'Failed to fetch albums');
-            const list = json.albums || [];
-            if (list.length === 0 && scanLibrary?.albums?.length) {
-                setAlbums(scanLibrary.albums);
-            } else {
-                setAlbums(list);
-            }
-        } catch (err) {
-            console.error('Error fetching albums:', err);
-            setError(err.message);
-        }
-    }, [scanLibrary]);
 
     // Fetch all playlists (via backend service to bypass RLS)
     const fetchPlaylists = useCallback(async () => {
