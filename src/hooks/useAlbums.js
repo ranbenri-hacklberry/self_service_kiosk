@@ -92,6 +92,78 @@ export const useAlbums = () => {
         }
     }, []);
 
+    // Add Spotify Album to library
+    const addSpotifyAlbum = useCallback(async (spotifyAlbum) => {
+        try {
+            setIsLoading(true);
+            const businessId = currentUser?.business_id || null;
+
+            // 1. Ensure artist exists
+            const artistName = spotifyAlbum.artists?.[0]?.name || 'אמן לא ידוע';
+            const { data: artistData, error: artistError } = await supabase
+                .from('music_artists')
+                .upsert({
+                    name: artistName,
+                    business_id: businessId,
+                    folder_path: `spotify:artist:${spotifyAlbum.artists?.[0]?.id}`
+                }, { onConflict: 'name, business_id' })
+                .select()
+                .single();
+
+            if (artistError) throw artistError;
+
+            // 2. Ensure album exists
+            const { data: albumData, error: albumError } = await supabase
+                .from('music_albums')
+                .upsert({
+                    name: spotifyAlbum.name,
+                    artist_id: artistData.id,
+                    cover_url: spotifyAlbum.images?.[0]?.url || null,
+                    folder_path: `spotify:album:${spotifyAlbum.id}`,
+                    business_id: businessId
+                }, { onConflict: 'name, artist_id' })
+                .select()
+                .single();
+
+            if (albumError) throw albumError;
+
+            // 3. Get tracks from Spotify
+            // We need dynamic import or use the already imported service in the component
+            // But here we'll just assume we'll pass the tracks or fetch them if possible
+            // For now, let's just save the album. Tracks could be added on first play or here.
+
+            await fetchAlbums();
+            return albumData;
+        } catch (err) {
+            console.error('Error adding Spotify album:', err);
+            setError(err.message);
+            return null;
+        } finally {
+            setIsLoading(false);
+        }
+    }, [currentUser, fetchAlbums]);
+
+    // Remove Spotify Album (metadata only)
+    const removeSpotifyAlbum = useCallback(async (albumId) => {
+        try {
+            setIsLoading(true);
+            const { error } = await supabase
+                .from('music_albums')
+                .delete()
+                .match({ folder_path: `spotify:album:${albumId}` });
+
+            if (error) throw error;
+            await fetchAlbums();
+            return true;
+        } catch (err) {
+            console.error('Error removing Spotify album:', err);
+            setError(err.message);
+            return false;
+        } finally {
+            setIsLoading(false);
+        }
+    }, [fetchAlbums]);
+
     // Fetch all artists (via backend service to bypass RLS)
     const fetchArtists = useCallback(async () => {
         try {
@@ -429,6 +501,8 @@ export const useAlbums = () => {
         deletePlaylist,
         removePlaylistSong,
         addSongToPlaylist,
+        addSpotifyAlbum,
+        removeSpotifyAlbum,
         scanMusicDirectory,
         isMusicDriveConnected,
         checkMusicDriveConnection,

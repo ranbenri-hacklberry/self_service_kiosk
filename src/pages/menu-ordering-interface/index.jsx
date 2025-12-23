@@ -1500,12 +1500,9 @@ const MenuOrderingInterface = () => {
         edit_mode: isEditMode || false,
         order_id: isEditMode ? editingOrderData.orderId : null,
         original_total: isEditMode ? editingOrderData.originalTotal : null,
-        is_refund: isRefund,
         p_cancelled_items: isEditMode && cancelledItems.length > 0 ? cancelledItems.map(i => ({ id: i.id })) : [],
-        p_final_total: finalTotal,
+        p_final_total: (orderData?.total_amount !== undefined) ? orderData.total_amount : finalTotal,
         p_original_coffee_count: originalCoffeeCount,
-        // Critical Fix: ONLY mark as quick order if there is NO real phone number.
-        // This prevents overwriting the customer name with an order number if a phone was entered but the flag persisted.
         p_is_quick_order: !!currentCustomer?.isQuickOrder && !realPhone,
         p_discount_id: orderData?.discount_id || null,
         p_discount_amount: orderData?.discount_amount || 0,
