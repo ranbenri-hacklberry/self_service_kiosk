@@ -1,0 +1,13 @@
+_format_version: "2.1"
+
+services:
+  - name: supabase-kong
+    url: http://postgres:5432
+    routes:
+      - name: postgres
+        paths:
+          - /
+
+plugins:
+  - name: cors
+  - name: key-auth

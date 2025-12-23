@@ -37,7 +37,8 @@ const MenuOrderingInterface = () => {
     filteredItems,
     groupedItems,
     handleCategoryChange,
-    isFoodItem
+    isFoodItem,
+    fetchMenuItems
   } = useMenuItems('hot-drinks', currentUser?.business_id);
 
   // ===== Cart Hook (replaces cart state + cart functions) =====
@@ -186,7 +187,7 @@ const MenuOrderingInterface = () => {
           for (const group of ownedGroups) {
             // 2. Check if this owned group is ALSO linked in menuitemoptions
             const { data: links } = await supabase.from('menuitemoptions')
-              .select('id')
+              .select('group_id')
               .eq('item_id', itemId)
               .eq('group_id', group.id);
 
@@ -1506,6 +1507,8 @@ const MenuOrderingInterface = () => {
         // Critical Fix: ONLY mark as quick order if there is NO real phone number.
         // This prevents overwriting the customer name with an order number if a phone was entered but the flag persisted.
         p_is_quick_order: !!currentCustomer?.isQuickOrder && !realPhone,
+        p_discount_id: orderData?.discount_id || null,
+        p_discount_amount: orderData?.discount_amount || 0,
         p_business_id: currentUser?.business_id || null
       };
 
@@ -1977,6 +1980,7 @@ const MenuOrderingInterface = () => {
             cartItems={cartItems}
             isRefund={isEditMode && editingOrderData?.isPaid && priceDifference < 0}
             refundAmount={Math.abs(priceDifference)}
+            businessId={currentUser?.business_id}
           />
         );
       })()}

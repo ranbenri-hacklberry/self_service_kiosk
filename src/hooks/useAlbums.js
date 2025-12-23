@@ -15,7 +15,7 @@ export const useAlbums = () => {
     const [scanLibrary, setScanLibrary] = useState(null); // { artists, albums, songs } from last scan (fallback when DB/RLS blocks)
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [isMusicDriveConnected, setIsMusicDriveConnected] = useState(true);
+    const [isMusicDriveConnected, setIsMusicDriveConnected] = useState(false); // Start as false until we check
 
     const fetchRatingsMap = useCallback(async (songIds) => {
         if (!currentUser?.id) {
@@ -65,9 +65,25 @@ export const useAlbums = () => {
             }
 
             const data = await response.json();
-            const ran1Drive = data.volumes?.find(v => v.name === 'Ran1');
-            const isConnected = !!ran1Drive;
+
+            // Check for saved music path in localStorage, or find external drive
+            const savedMusicPath = localStorage.getItem('music_drive_path');
+
+            // Look for: saved path, Ran1 drive, or any external volume (not Macintosh HD)
+            const externalDrive = data.volumes?.find(v =>
+                (savedMusicPath && v.path === savedMusicPath) ||
+                v.name === 'Ran1' ||
+                (v.path.startsWith('/Volumes/') && v.name !== 'Macintosh HD')
+            );
+
+            const isConnected = !!externalDrive;
             setIsMusicDriveConnected(isConnected);
+
+            // Save the path if found
+            if (externalDrive) {
+                localStorage.setItem('music_drive_path', externalDrive.path);
+            }
+
             return isConnected;
         } catch (err) {
             console.error('Error checking music drive connection:', err);

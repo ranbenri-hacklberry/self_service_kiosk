@@ -33,25 +33,32 @@ export const ConnectionProvider = ({ children }) => {
             cloudOk = false;
         }
 
-        // Check Local (Docker) - simple health check
-        try {
-            const controller = new AbortController();
-            const id = setTimeout(() => controller.abort(), 2000);
-            
-            const response = await fetch(`${LOCAL_SUPABASE_URL}/rest/v1/`, {
-                method: 'GET', // HEAD sometimes causes issues with some proxies
-                headers: {
-                    'apikey': import.meta.env.VITE_LOCAL_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0'
-                },
-                signal: controller.signal,
-                mode: 'cors'
-            }).catch(() => ({ ok: false }));
-            
-            clearTimeout(id);
-            localOk = response && (response.ok || response.status === 400);
-        } catch {
-            localOk = false;
-        }
+        // Check Local (Docker) - DISABLED per user request (Cloud Only Mode)
+        // try {
+        //     const controller = new AbortController();
+        //     const id = setTimeout(() => controller.abort(), 2000);
+        //
+        //     // Use the backend's sync status endpoint which tells us if local is available
+        //     const API_URL = import.meta.env.VITE_MUSIC_API_URL ||
+        //         import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
+        //         'http://localhost:8080';
+        //
+        //     const response = await fetch(`${API_URL}/api/sync/status`, {
+        //         method: 'GET',
+        //         signal: controller.signal
+        //     }).catch(() => ({ ok: false }));
+        //
+        //     clearTimeout(id);
+        //
+        //     if (response.ok) {
+        //         const data = await response.json();
+        //         // Backend tells us if local Supabase is available
+        //         localOk = data.localAvailable === true;
+        //     }
+        // } catch {
+        //     localOk = false;
+        // }
+        localOk = false; // Force Cloud Only
 
         // Determine status
         let status = 'checking';

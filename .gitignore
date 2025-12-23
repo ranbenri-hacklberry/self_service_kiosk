@@ -32,3 +32,10 @@ yarn-error.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Local/Secrets (User Added)
+service-account.json
+encrypted_music_output/
+*.sql
+*.log
+*.mjs

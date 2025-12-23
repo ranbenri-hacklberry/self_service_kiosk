@@ -133,6 +133,157 @@ const ensureSupabase = (req, res, next) => {
 };
 
 // ------------------------------------------------------------------
+// === SYNC ENGINE: Cloud to Local ===
+// ------------------------------------------------------------------
+const SYNC_TABLES = [
+    { name: 'businesses', key: 'id' },
+    { name: 'employees', key: 'id' },
+    { name: 'menu_items', key: 'id' },
+    { name: 'customers', key: 'id' },
+    { name: 'orders', key: 'id', limit: 500 }, // Limit recent orders
+    { name: 'order_items', key: 'id', limit: 2000 },
+    { name: 'optiongroups', key: 'id' },
+    { name: 'optionvalues', key: 'id' },
+    { name: 'menuitemoptions', key: 'id' },
+    { name: 'music_artists', key: 'id' },
+    { name: 'music_albums', key: 'id' },
+    { name: 'music_songs', key: 'id' },
+    { name: 'music_playlists', key: 'id' },
+];
+
+// Sync status tracking
+let syncStatus = {
+    inProgress: false,
+    lastSync: null,
+    progress: 0,
+    currentTable: null,
+    error: null
+};
+
+app.get("/api/sync/status", (req, res) => {
+    res.json({
+        ...syncStatus,
+        localAvailable: !!localSupabase,
+        remoteAvailable: !!remoteSupabase
+    });
+});
+
+app.post("/api/sync-cloud-to-local", ensureSupabase, async (req, res) => {
+    // Check if both clients are available
+    if (!remoteSupabase) {
+        return res.status(400).json({ error: "Remote Supabase not configured" });
+    }
+    if (!localSupabase) {
+        return res.status(400).json({ error: "Local Supabase not running. Start with: supabase start" });
+    }
+
+    // Prevent concurrent syncs
+    if (syncStatus.inProgress) {
+        return res.status(409).json({
+            error: "Sync already in progress",
+            progress: syncStatus.progress,
+            currentTable: syncStatus.currentTable
+        });
+    }
+
+    const { businessId } = req.body;
+
+    // Start sync in background, return immediately
+    res.json({
+        message: "Sync started",
+        tables: SYNC_TABLES.map(t => t.name),
+        estimatedTime: "30-60 seconds"
+    });
+
+    // Background sync process
+    (async () => {
+        syncStatus = { inProgress: true, lastSync: null, progress: 0, currentTable: null, error: null };
+
+        try {
+            const totalTables = SYNC_TABLES.length;
+            let syncedCount = 0;
+            let totalRows = 0;
+
+            for (const tableConfig of SYNC_TABLES) {
+                const { name: tableName, key, limit } = tableConfig;
+                syncStatus.currentTable = tableName;
+                syncStatus.progress = Math.round((syncedCount / totalTables) * 100);
+
+                try {
+                    // Fetch from cloud
+                    let query = remoteSupabase.from(tableName).select('*');
+
+                    // Apply business filter if applicable
+                    if (businessId && ['employees', 'menu_items', 'customers', 'orders', 'order_items'].includes(tableName)) {
+                        query = query.eq('business_id', businessId);
+                    }
+
+                    // Apply limit for large tables
+                    if (limit) {
+                        query = query.order('created_at', { ascending: false }).limit(limit);
+                    }
+
+                    const { data: cloudData, error: fetchError } = await query;
+
+                    if (fetchError) {
+                        console.warn(`⚠️ Skipping ${tableName}: ${fetchError.message}`);
+                        syncedCount++;
+                        continue;
+                    }
+
+                    if (!cloudData || cloudData.length === 0) {
+                        console.log(`📭 ${tableName}: No data to sync`);
+                        syncedCount++;
+                        continue;
+                    }
+
+                    // Upsert to local in batches of 100
+                    const batchSize = 100;
+                    for (let i = 0; i < cloudData.length; i += batchSize) {
+                        const batch = cloudData.slice(i, i + batchSize);
+                        const { error: upsertError } = await localSupabase
+                            .from(tableName)
+                            .upsert(batch, { onConflict: key, ignoreDuplicates: false });
+
+                        if (upsertError) {
+                            console.warn(`⚠️ Upsert error on ${tableName} batch ${i}: ${upsertError.message}`);
+                        }
+                    }
+
+                    totalRows += cloudData.length;
+                    console.log(`✅ Synced ${tableName}: ${cloudData.length} rows`);
+
+                } catch (tableErr) {
+                    console.warn(`⚠️ Error syncing ${tableName}:`, tableErr.message);
+                }
+
+                syncedCount++;
+            }
+
+            syncStatus = {
+                inProgress: false,
+                lastSync: new Date().toISOString(),
+                progress: 100,
+                currentTable: null,
+                error: null,
+                totalRows
+            };
+            console.log(`🎉 Sync complete! ${totalRows} rows synced across ${totalTables} tables`);
+
+        } catch (err) {
+            console.error("❌ Sync failed:", err.message);
+            syncStatus = {
+                inProgress: false,
+                lastSync: null,
+                progress: 0,
+                currentTable: null,
+                error: err.message
+            };
+        }
+    })();
+});
+
+// ------------------------------------------------------------------
 // === 1. MENU & CHAT ROUTES ===
 // ------------------------------------------------------------------
 

@@ -1,25 +1,27 @@
 import React from 'react';
 import { useConnection } from '@/context/ConnectionContext';
 import { useAuth } from '@/context/AuthContext';
-import { Wifi, WifiOff, Cloud, CloudOff, Server, ServerOff, RefreshCw } from 'lucide-react';
+import { Wifi, WifiOff, Cloud, CloudOff, Server, ServerOff, RefreshCw, CloudDownload } from 'lucide-react';
 
 /**
  * Connection status indicator - can be floating or integrated into headers
+ * Now includes sync status from AuthContext
  */
 const ConnectionStatusBar = ({ isIntegrated = false }) => {
     const { status, lastSync, lastLocalAvailable, lastCloudAvailable, refresh } = useConnection();
-    const { currentUser } = useAuth();
+    const { currentUser, syncStatus, triggerSync } = useAuth();
 
     // Format relative time
     const formatTime = (date) => {
         if (!date) return 'לא ידוע';
+        const dateObj = typeof date === 'string' ? new Date(date) : date;
         const now = new Date();
-        const diff = Math.floor((now - date) / 1000);
+        const diff = Math.floor((now - dateObj) / 1000);
 
         if (diff < 60) return 'עכשיו';
         if (diff < 3600) return `לפני ${Math.floor(diff / 60)} דק׳`;
         if (diff < 86400) return `לפני ${Math.floor(diff / 3600)} שע׳`;
-        return date.toLocaleDateString('he-IL');
+        return dateObj.toLocaleDateString('he-IL');
     };
 
     // Don't show anything while checking
@@ -28,17 +30,31 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
     }
 
     // Base styles for the pill
-    const baseStyles = isIntegrated 
+    const baseStyles = isIntegrated
         ? "text-[10px] px-2.5 py-1 rounded-full flex items-center gap-1.5 border transition-all duration-300 h-7"
         : "fixed top-3 left-3 z-[100] text-[10px] px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-lg backdrop-blur-md border transition-all duration-300";
+
+    // Sync indicator (shown as a separate small badge when syncing)
+    const syncIndicator = syncStatus?.inProgress ? (
+        <div className="absolute -bottom-5 left-0 right-0 flex justify-center">
+            <div className="bg-purple-500/20 text-purple-700 text-[8px] px-2 py-0.5 rounded-full flex items-center gap-1 border border-purple-200/50 animate-pulse">
+                <CloudDownload size={9} className="animate-bounce" />
+                <span>מסנכרן {syncStatus.progress || 0}%</span>
+            </div>
+        </div>
+    ) : null;
 
     const content = (() => {
         // Fully online - minimal green indicator
         if (status === 'online') {
             return (
-                <div className={`${baseStyles} bg-green-500/15 text-green-700 border-green-200/50`}>
+                <div className={`${baseStyles} bg-green-500/15 text-green-700 border-green-200/50 relative`}>
                     <Wifi size={11} strokeWidth={2.5} />
                     <span className="font-medium">מחובר</span>
+                    {syncStatus?.lastSync && (
+                        <span className="text-green-600 text-[9px]">• סונכרן {formatTime(syncStatus.lastSync)}</span>
+                    )}
+                    {syncIndicator}
                 </div>
             );
         }
@@ -46,7 +62,7 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
         // Local only (Offline mode)
         if (status === 'local-only') {
             return (
-                <div className={`${baseStyles} bg-amber-500/15 text-amber-800 border-amber-200/50`}>
+                <div className={`${baseStyles} bg-amber-500/15 text-amber-800 border-amber-200/50 relative`}>
                     <WifiOff size={11} strokeWidth={2.5} />
                     <span className="font-medium">אופליין</span>
                     <span className="text-amber-600 text-[9px]">• {formatTime(lastSync)}</span>
@@ -57,6 +73,7 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
                     >
                         <RefreshCw size={9} />
                     </button>
+                    {syncIndicator}
                 </div>
             );
         }
@@ -64,17 +81,19 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
         // Cloud only (Local server down)
         if (status === 'cloud-only') {
             return (
-                <div className={`${baseStyles} bg-blue-500/15 text-blue-800 border-blue-200/50`}>
+                <div className={`${baseStyles} bg-blue-500/15 text-blue-800 border-blue-200/50 relative`}>
                     <ServerOff size={11} strokeWidth={2.5} />
                     <span className="font-medium">ענן בלבד</span>
                     <span className="text-blue-600 text-[9px]">• {formatTime(lastLocalAvailable)}</span>
                     <button
-                        onClick={refresh}
+                        onClick={() => triggerSync?.(currentUser?.business_id)}
                         className="p-0.5 hover:bg-blue-200/50 rounded-full transition-colors"
-                        title="בדוק חיבור"
+                        title="סנכרן למקומי"
+                        disabled={syncStatus?.inProgress}
                     >
-                        <RefreshCw size={9} />
+                        <CloudDownload size={9} className={syncStatus?.inProgress ? 'animate-spin' : ''} />
                     </button>
+                    {syncIndicator}
                 </div>
             );
         }
@@ -82,7 +101,7 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
         // Completely offline
         if (status === 'offline') {
             return (
-                <div className={`${baseStyles} bg-red-500/15 text-red-800 border-red-200/50`}>
+                <div className={`${baseStyles} bg-red-500/15 text-red-800 border-red-200/50 relative`}>
                     <WifiOff size={11} strokeWidth={2.5} />
                     <span className="font-medium">אין חיבור</span>
                     <span className="text-red-600 text-[9px]">• {formatTime(lastSync)}</span>
@@ -116,3 +135,4 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
 };
 
 export default ConnectionStatusBar;
+
