@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutGrid, Package, Plus, RotateCcw,
   Clock, CreditCard, ChefHat, CheckCircle, List,
@@ -143,7 +143,12 @@ const Header = ({
   return (
     <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-2 flex justify-between items-center border-b border-gray-200 font-heebo">
       <div className="flex items-center gap-4">
-        {/* Title (Icon Removed) */}
+        {/* Home Button (Far Right) */}
+        <button onClick={handleExit} className="p-2 text-gray-400 hover:text-red-500 hover:bg-neutral-100 rounded-xl transition mr-[-8px]">
+          <House size={20} />
+        </button>
+
+        {/* Title */}
         <h1 className="text-xl font-black text-slate-800">
           מסך מטבח
         </h1>
@@ -196,10 +201,6 @@ const Header = ({
           <RotateCcw size={18} />
         </button>
 
-        {/* Home Button (Back to Right Group) */}
-        <button onClick={handleExit} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition">
-          <House size={18} />
-        </button>
 
         <button onClick={handleNewOrder} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition shadow-sm text-sm font-bold">
           <Plus size={16} /> הזמנה
@@ -259,7 +260,8 @@ const KdsScreen = () => {
     }
   };
 
-  const [viewMode, setViewMode] = useState('active'); // 'active' | 'history'
+  const location = useLocation();
+  const [viewMode, setViewMode] = useState(location.state?.viewMode || 'active'); // 'active' | 'history'
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [historyOrders, setHistoryOrders] = useState([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
@@ -348,12 +350,15 @@ const KdsScreen = () => {
       const editData = {
         id: order.id,
         orderNumber: order.orderNumber,
-        restrictedMode: true
+        restrictedMode: true,
+        viewMode: viewMode
       };
       sessionStorage.setItem('editOrderData', JSON.stringify(editData));
       sessionStorage.setItem('order_origin', 'kds');
       // Navigate directly to cart
-      navigate(`/ menu - ordering - interface ? editOrderId = ${order.id} `);
+      navigate(`/menu-ordering-interface?editOrderId=${order.id}`, {
+        state: { orderId: order.id, viewMode: viewMode }
+      });
     } else {
       console.log('🖊️ KDS: Opening Edit Modal for Active Order:', order.id);
       setEditingOrder(order);

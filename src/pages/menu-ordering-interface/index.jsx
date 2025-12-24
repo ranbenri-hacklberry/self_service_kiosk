@@ -459,7 +459,14 @@ const MenuOrderingInterface = () => {
     } catch (err) {
       console.error('Error fetching order for editing:', err);
       alert('שגיאה בטעינת ההזמנה לעריכה');
-      navigate('/kds');
+      const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
+      const editDataRaw = sessionStorage.getItem('editOrderData');
+      const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
+      if (origin === 'kds') {
+        navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
+      } else {
+        navigate('/kds');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -470,15 +477,40 @@ const MenuOrderingInterface = () => {
     setShowConfirmationModal(null);
     cartClearCart();
     const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
-    console.log('🔙 handleCloseConfirmation - origin:', origin, 'key:', ORDER_ORIGIN_STORAGE_KEY);
+    const editDataRaw = sessionStorage.getItem('editOrderData');
+    const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
+
+    console.log('🔙 handleCloseConfirmation - origin:', origin, 'viewMode:', editData?.viewMode);
+
     if (origin === 'kds') {
       console.log('✅ Navigating back to KDS');
       sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
-      navigate('/kds');
+      // After a successful update with changes, we return to the Active tab
+      // as the order likely needs attention (or simply as requested by the user).
+      navigate('/kds', { state: { viewMode: 'active' } });
       return;
     }
     console.log('📞 Navigating to phone input');
     navigate('/customer-phone-input-screen');
+  };
+
+  // Handle back button from header
+  const handleBack = () => {
+    const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
+    const editDataRaw = sessionStorage.getItem('editOrderData');
+    const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
+
+    if (origin === 'kds') {
+      console.log('🔙 Header Back clicked - returning to KDS:', editData?.viewMode);
+      // If we clicked back without "saving" (closing confirmation), 
+      // we strictly follow the origin viewMode.
+      navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
+      sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
+      return;
+    }
+
+    // Default behavior
+    navigate(-1);
   };
 
   // Use cart hook utilities for normalization and signature
@@ -572,7 +604,7 @@ const MenuOrderingInterface = () => {
             console.error('❌ Computed invalid order data from session:', parsedData);
             sessionStorage.removeItem('editOrderData');
             alert('נתוני הזמנה לא תקינים. חוזר למסך ראשי.');
-            navigate('/kds');
+            navigate('/kds', { state: { viewMode: parsedData?.viewMode || 'active' } });
             return;
           }
 
@@ -1165,7 +1197,9 @@ const MenuOrderingInterface = () => {
       if (!orderId || orderId === 'undefined' || orderId === 'null') {
         console.error('❌ Cannot cancel order: Invalid ID', orderId);
         alert('שגיאה: מספר הזמנה לא תקין. אנא חזור למסך המטבח.');
-        navigate('/kds');
+        const editDataRaw = sessionStorage.getItem('editOrderData');
+        const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
+        navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
         return;
       }
 
@@ -1587,7 +1621,9 @@ const MenuOrderingInterface = () => {
         const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
         if (origin === 'kds') {
           sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
-          navigate('/kds');
+          const editDataRaw = sessionStorage.getItem('editOrderData');
+          const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
+          navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
         }
         return;
       }
@@ -1599,7 +1635,9 @@ const MenuOrderingInterface = () => {
         const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
         if (origin === 'kds') {
           sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
-          navigate('/kds');
+          const editDataRaw = sessionStorage.getItem('editOrderData');
+          const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
+          navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
         } else {
           navigate('/customer-phone-input-screen');
         }
@@ -1837,7 +1875,7 @@ const MenuOrderingInterface = () => {
         {/* Right Side Group (RTL): Back Button */}
         <div className="flex items-center gap-4">
           <button
-            onClick={() => navigate(-1)}
+            onClick={handleBack}
             className="flex items-center gap-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-2 rounded-xl transition-all font-bold"
           >
             <Icon name="ArrowRight" size={20} />
