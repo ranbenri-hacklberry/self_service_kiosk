@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, UserPlus, Check } from 'lucide-react';
+import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, UserPlus, Check, Phone, User } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
@@ -136,6 +136,7 @@ const SmartCart = ({
     editingOrderData,
     disabled = false,
     customerName,
+    customerPhone, // Added
     loyaltyDiscount = 0,
     finalTotal,
     loyaltyPoints = 0,
@@ -313,16 +314,56 @@ const SmartCart = ({
                                 {hasRealCustomer ? customerName : (orderNumber ? `#${orderNumber}` : 'הזמנה מהירה')}
                             </h2>
 
-                            {/* Add Customer Details Button - Premium Style (Compact, Orange, No Icon) */}
-                            {!hasRealCustomer && onAddCustomerDetails && (
-                                <button
-                                    onClick={onAddCustomerDetails}
-                                    className="px-3 py-1.5 rounded-lg bg-orange-50 text-orange-700 border border-orange-100 shadow-sm hover:shadow-md hover:bg-orange-100 transition-all duration-200 active:scale-95 font-bold w-fit text-xs"
-                                    title="הוסף פרטי לקוח"
-                                >
-                                    הוסף פרטי לקוח
-                                </button>
-                            )}
+                            {/* Customer Info Buttons - Dynamic based on state */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {/* Case 1: Quick Order (no customer info) - Show two prominent buttons */}
+                                {(!customerName || customerName === 'הזמנה מהירה') && onAddCustomerDetails && (
+                                    <>
+                                        <button
+                                            onClick={() => onAddCustomerDetails('phone-then-name')}
+                                            className="px-3 py-1.5 rounded-lg bg-orange-500 text-white border border-orange-600 shadow-sm hover:shadow-md hover:bg-orange-600 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1"
+                                        >
+                                            <Phone size={12} />
+                                            הוסף טלפון + שם
+                                        </button>
+                                        <button
+                                            onClick={() => onAddCustomerDetails('name')}
+                                            className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 border border-gray-200 shadow-sm hover:shadow-md hover:bg-gray-200 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1"
+                                        >
+                                            <User size={12} />
+                                            הוסף שם בלבד
+                                        </button>
+                                    </>
+                                )}
+
+                                {/* Case 2: Has name but no phone - Show add phone button */}
+                                {customerName && customerName !== 'הזמנה מהירה' && !customerPhone && onAddCustomerDetails && (
+                                    <button
+                                        onClick={() => onAddCustomerDetails('phone')}
+                                        className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 border border-blue-200 shadow-sm hover:shadow-md hover:bg-blue-200 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1"
+                                    >
+                                        <Phone size={12} />
+                                        הוסף טלפון
+                                    </button>
+                                )}
+
+                                {/* Case 3: Has phone + name - Show info with edit option */}
+                                {customerPhone && customerName && onAddCustomerDetails && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-gray-600 flex items-center gap-1">
+                                            <Phone size={10} />
+                                            {customerPhone}
+                                        </span>
+                                        <button
+                                            onClick={() => onAddCustomerDetails('phone')}
+                                            className="text-xs text-blue-600 hover:underline font-medium"
+                                        >
+                                            ערוך
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
 
                             {/* Loyalty Badge - BELOW title - Only show when customer is identified */}
                             {hasRealCustomer && (() => {

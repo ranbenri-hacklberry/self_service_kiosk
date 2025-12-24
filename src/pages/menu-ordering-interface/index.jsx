@@ -10,6 +10,7 @@ import ModifierModal from './components/ModifierModal';
 import SaladPrepDecision from './components/SaladPrepDecision';
 import MTOQuickNotesModal from './components/MTOQuickNotesModal';
 import OrderConfirmationModal from '@/components/ui/OrderConfirmationModal';
+import CustomerInfoModal from '@/components/CustomerInfoModal';
 import { addCoffeePurchase, getLoyaltyCount, handleLoyaltyAdjustment, getLoyaltyRedemptionForOrder } from "@/lib/loyalty";
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -76,6 +77,8 @@ const MenuOrderingInterface = () => {
     return raw ? JSON.parse(raw) : null;
   });
   const [modifierOptionsCache, setModifierOptionsCache] = useState({}); // Cache for modifier options
+  const [showCustomerInfoModal, setShowCustomerInfoModal] = useState(false);
+  const [customerInfoModalMode, setCustomerInfoModalMode] = useState('phone');
 
   // ===== Loyalty Hook (replaces loyalty state + fetch logic) =====
   const {
@@ -1262,25 +1265,10 @@ const MenuOrderingInterface = () => {
   };
 
   // Handler for adding customer details mid-order
-  const handleAddCustomerDetails = () => {
-    console.log('👤 Adding customer details mid-order...');
-
-    // Save current cart state to sessionStorage
-    const cartState = {
-      cartItems: cartItems,
-      cartHistory: cartHistory,
-      editingOrderData: editingOrderData,
-      isEditMode: isEditMode
-      // modifierOptionsCache removed to ensure fresh data on return
-    };
-    sessionStorage.setItem('pendingCartState', JSON.stringify(cartState));
-
-    // Navigate to phone input screen with returnToCart flag
-    navigate('/customer-phone-input-screen', {
-      state: {
-        returnToCart: true
-      }
-    });
+  const handleAddCustomerDetails = (mode = 'phone-then-name') => {
+    console.log('👤 Opening customer info modal with mode:', mode);
+    setCustomerInfoModalMode(mode);
+    setShowCustomerInfoModal(true);
   };
 
   // Handle payment selection and order creation
@@ -1895,6 +1883,21 @@ const MenuOrderingInterface = () => {
         </div>
       </div>
 
+      {/* Customer Info Modal */}
+      <CustomerInfoModal
+        isOpen={showCustomerInfoModal}
+        onClose={() => setShowCustomerInfoModal(false)}
+        mode={customerInfoModalMode}
+        currentCustomer={currentCustomer}
+        onCustomerUpdate={(updatedCustomer) => {
+          setCurrentCustomer(updatedCustomer);
+          localStorage.setItem('currentCustomer', JSON.stringify(updatedCustomer));
+          setShowCustomerInfoModal(false);
+          refreshLoyalty(); // Refresh loyalty after customer update
+        }}
+        orderId={null}
+      />
+
       {/* Main Content - Menu (Right) and Cart (Left) */}
       <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] overflow-hidden">
 
@@ -1935,6 +1938,7 @@ const MenuOrderingInterface = () => {
               editingOrderData={editingOrderData}
               disabled={isProcessingOrder}
               customerName={currentCustomer?.name}
+              customerPhone={currentCustomer?.phone}
               className="h-full flex flex-col"
               loyaltyDiscount={loyaltyDiscount}
               loyaltyPoints={adjustedLoyaltyPoints}

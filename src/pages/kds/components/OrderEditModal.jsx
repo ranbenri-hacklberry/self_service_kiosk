@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Check, Edit } from 'lucide-react';
+import { X, Check, Edit, Phone, User } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import CustomerInfoModal from '../../../components/CustomerInfoModal';
 
 /**
  * OrderEditModal - Simple modal for viewing order items and marking early delivery
@@ -20,6 +21,8 @@ const OrderEditModal = ({
     const [isLoading, setIsLoading] = useState(false);
     const [orderData, setOrderData] = useState(null);
     const [processingItemId, setProcessingItemId] = useState(null);
+    const [showCustomerInfoModal, setShowCustomerInfoModal] = useState(false);
+    const [customerInfoModalMode, setCustomerInfoModalMode] = useState('phone');
 
     const loadItemsFromOrder = () => {
         if (!order || !order.items) return;
@@ -294,6 +297,84 @@ const OrderEditModal = ({
                     </div>
                 )}
 
+                {/* Customer Info Section */}
+                {!isLoading && orderData && (
+                    <div className="border-t border-gray-200 p-4 bg-gray-50">
+                        <h3 className="text-sm font-bold text-gray-700 mb-2">פרטי לקוח</h3>
+
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {/* Case 1: No customer info - Show two buttons */}
+                            {!orderData.customer_phone && !orderData.customer_name && (
+                                <>
+                                    <button
+                                        onClick={() => {
+                                            setCustomerInfoModalMode('phone-then-name');
+                                            setShowCustomerInfoModal(true);
+                                        }}
+                                        className="px-3 py-1.5 rounded-lg bg-orange-500 text-white border border-orange-600 shadow-sm hover:shadow-md hover:bg-orange-600 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1"
+                                    >
+                                        <Phone size={12} />
+                                        הוסף טלפון + שם
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setCustomerInfoModalMode('name');
+                                            setShowCustomerInfoModal(true);
+                                        }}
+                                        className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 border border-gray-200 shadow-sm hover:shadow-md hover:bg-gray-200 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1"
+                                    >
+                                        <User size={12} />
+                                        הוסף שם בלבד
+                                    </button>
+                                </>
+                            )}
+
+                            {/* Case 2: Has name but no phone */}
+                            {orderData.customer_name && !orderData.customer_phone && (
+                                <>
+                                    <span className="text-sm text-gray-700 flex items-center gap-1">
+                                        <User size={14} />
+                                        {orderData.customer_name}
+                                    </span>
+                                    <button
+                                        onClick={() => {
+                                            setCustomerInfoModalMode('phone');
+                                            setShowCustomerInfoModal(true);
+                                        }}
+                                        className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 border border-blue-200 shadow-sm hover:shadow-md hover:bg-blue-200 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1"
+                                    >
+                                        <Phone size={12} />
+                                        הוסף טלפון
+                                    </button>
+                                </>
+                            )}
+
+                            {/* Case 3: Has phone + name */}
+                            {orderData.customer_phone && orderData.customer_name && (
+                                <div className="flex items-center gap-3">
+                                    <span className="text-sm text-gray-700 flex items-center gap-1">
+                                        <Phone size={14} />
+                                        {orderData.customer_phone}
+                                    </span>
+                                    <span className="text-sm text-gray-700 flex items-center gap-1">
+                                        <User size={14} />
+                                        {orderData.customer_name}
+                                    </span>
+                                    <button
+                                        onClick={() => {
+                                            setCustomerInfoModalMode('phone');
+                                            setShowCustomerInfoModal(true);
+                                        }}
+                                        className="text-xs text-blue-600 hover:underline font-medium"
+                                    >
+                                        ערוך
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {/* Footer */}
                 <div className="bg-white border-t border-gray-200 p-4">
                     <button
@@ -304,6 +385,48 @@ const OrderEditModal = ({
                     </button>
                 </div>
             </div>
+
+            {/* Customer Info Modal */}
+            <CustomerInfoModal
+                isOpen={showCustomerInfoModal}
+                onClose={() => setShowCustomerInfoModal(false)}
+                mode={customerInfoModalMode}
+                currentCustomer={{
+                    phone: orderData?.customer_phone,
+                    name: orderData?.customer_name,
+                    id: orderData?.customer_id
+                }}
+                onCustomerUpdate={async (updatedCustomer) => {
+                    try {
+                        // Update order in database
+                        const { error } = await supabase
+                            .from('orders')
+                            .update({
+                                customer_id: updatedCustomer.id,
+                                customer_phone: updatedCustomer.phone,
+                                customer_name: updatedCustomer.name
+                            })
+                            .eq('id', orderData.id);
+
+                        if (error) throw error;
+
+                        // Update local state
+                        setOrderData({
+                            ...orderData,
+                            customer_id: updatedCustomer.id,
+                            customer_phone: updatedCustomer.phone,
+                            customer_name: updatedCustomer.name
+                        });
+
+                        setShowCustomerInfoModal(false);
+                        onRefresh?.(); // Refresh KDS
+                    } catch (err) {
+                        console.error('Failed to update customer info:', err);
+                        alert('שגיאה בעדכון פרטי לקוח');
+                    }
+                }}
+                orderId={orderData?.id}
+            />
         </div>
     );
 };
