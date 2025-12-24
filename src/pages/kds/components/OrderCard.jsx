@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
-import { Clock, Edit, RotateCcw, Flame, Trash2 } from 'lucide-react';
+import { Clock, Edit, RotateCcw, Flame } from 'lucide-react';
 import { sortItems } from '../../../utils/kdsUtils';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
@@ -106,6 +106,10 @@ const OrderCard = ({
     if (statusLower === 'new' || statusLower === 'pending') return 'border-t-[6px] border-green-500 shadow-md';
     // רקע לבן במקום צהוב
     if (statusLower === 'in_progress') return 'border-t-[6px] border-yellow-500 shadow-lg ring-1 ring-yellow-100';
+
+    // History cards - unpaid orders flash with amber border
+    if (isHistory && !order.isPaid) return 'border-t-[6px] border-amber-500 shadow-md animate-pulse ring-2 ring-amber-200';
+
     return 'border-gray-200 shadow-sm';
   };
 
@@ -385,52 +389,7 @@ const OrderCard = ({
       </div>
 
       <div className="mt-auto flex flex-col gap-2 relative">
-        {isUnpaidDelivered ? (
-          // כרטיס נמסר שלא שולם - כפתור תשלום + כפתור ביטול
-          <div className="flex gap-2">
-            {/* כפתור ביטול/מחיקה */}
-            <button
-              disabled={isUpdating}
-              onClick={async () => {
-                if (onCancelOrder && window.confirm('האם אתה בטוח שברצונך לבטל את ההזמנה?')) {
-                  setIsUpdating(true);
-                  try {
-                    await onCancelOrder(order.originalOrderId || order.id);
-                  } finally {
-                    setIsUpdating(false);
-                  }
-                }
-              }}
-              className="w-12 h-12 bg-red-50 border-2 border-red-300 rounded-xl flex items-center justify-center text-red-500 hover:bg-red-100 hover:text-red-600 shrink-0 active:scale-95 transition-all"
-              title="בטל הזמנה"
-            >
-              <Trash2 size={20} />
-            </button>
-
-            {/* כפתור תשלום */}
-            <button
-              disabled={isUpdating}
-              onClick={async () => {
-                if (onPaymentCollected) {
-                  setIsUpdating(true);
-                  try {
-                    await onPaymentCollected(order);
-                  } finally {
-                    setIsUpdating(false);
-                  }
-                }
-              }}
-              className={`flex-1 py-2.5 bg-white border-2 border-amber-500 text-amber-700 rounded-xl font-black text-lg active:scale-[0.98] transition-all flex items-center justify-center gap-3 animate-strong-pulse hover:bg-amber-50 ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <img
-                src="https://gxzsxvbercpkgxraiaex.supabase.co/storage/v1/object/public/Photos/cashregister.jpg"
-                alt="קופה"
-                className="w-8 h-8 object-contain drop-shadow-sm"
-              />
-              <span>{isUpdating ? 'מעדכן...' : `לתשלום (₪${order.totalAmount?.toFixed(0)})`}</span>
-            </button>
-          </div>
-        ) : isDelayedCard ? (
+        {isDelayedCard ? (
           // כרטיס מושהה - כפתור "הכן עכשיו"
           <button
             disabled={isUpdating}
@@ -480,6 +439,29 @@ const OrderCard = ({
                   </div>
                 )}
 
+                {/* Payment Status & Method */}
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-400">סטטוס תשלום:</span>
+                  <div className="flex items-center gap-2">
+                    {order.isPaid ? (
+                      <>
+                        <span className="text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-lg border border-green-100">שולם</span>
+                        {order.payment_method && (
+                          <span className="text-gray-500 font-medium">
+                            ({order.payment_method === 'cash' ? 'מזומן' :
+                              order.payment_method === 'credit_card' ? 'אשראי' :
+                                order.payment_method === 'gift_card' ? 'גיפט קארד' :
+                                  order.payment_method === 'oth' ? 'ע״ח הבית' :
+                                    order.payment_method})
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded-lg border border-red-100 animate-pulse">טרם שולם</span>
+                    )}
+                  </div>
+                </div>
+
                 <div className="flex justify-between items-center mt-1 pt-2 border-t border-dashed border-gray-200 text-base">
                   <span>סה"כ הזמנה:</span>
                   <span className="font-black text-gray-900">₪{order.fullTotalAmount?.toLocaleString() || order.totalAmount?.toLocaleString()}</span>
@@ -511,18 +493,47 @@ const OrderCard = ({
             )}
 
             {isHistory ? (
-              // History View Bottom Actions (Subtle Edit Button)
-              <div className="flex items-center justify-center mt-auto h-12 w-full">
+              // History View Bottom Actions
+              <div className="flex items-center justify-center mt-auto gap-2 w-full">
+                {/* Edit/View Button */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     if (onEditOrder) onEditOrder(order);
                   }}
-                  className="w-full py-2 bg-slate-100 text-slate-500 rounded-lg text-sm font-bold border border-slate-200 hover:bg-slate-200 hover:text-slate-700 transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 py-2 bg-slate-100 text-slate-500 rounded-lg text-sm font-bold border border-slate-200 hover:bg-slate-200 hover:text-slate-700 transition-colors flex items-center justify-center gap-2"
                 >
                   <Edit size={16} />
-                  צפייה / זיכוי
+                  {order.isPaid ? 'צפייה / זיכוי' : 'צפייה / עריכה'}
                 </button>
+
+                {/* Payment Button - Only for unpaid orders in history */}
+                {!order.isPaid && (
+                  <button
+                    disabled={isUpdating}
+                    onClick={async () => {
+                      if (onPaymentCollected) {
+                        setIsUpdating(true);
+                        try {
+                          await onPaymentCollected(order);
+                        } finally {
+                          setIsUpdating(false);
+                        }
+                      }
+                    }}
+                    className="w-12 h-10 bg-white border-2 border-amber-500 rounded-lg flex items-center justify-center hover:bg-amber-50 shrink-0 relative overflow-visible active:scale-95 transition-all animate-pulse"
+                    title="גבה תשלום"
+                  >
+                    <img
+                      src="https://gxzsxvbercpkgxraiaex.supabase.co/storage/v1/object/public/Photos/cashregister.jpg"
+                      alt="קופה"
+                      className="w-7 h-7 object-contain"
+                    />
+                    <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-bold px-1 py-0.5 rounded-full shadow-md ring-1 ring-white">
+                      ₪{order.totalAmount?.toFixed(0)}
+                    </span>
+                  </button>
+                )}
               </div>
             ) : (
               // Active Cards (Updates/Ready)

@@ -9,7 +9,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { sendSms } from '../../services/smsService';
-import CashPaymentModal from './components/CashPaymentModal';
+import KDSPaymentModal from './components/KDSPaymentModal';
+import HistoryInfoModal from './components/HistoryInfoModal';
 import StaffQuickAccessModal from '../../components/StaffQuickAccessModal';
 import { useAuth } from '../../context/AuthContext';
 import { isDrink, isHotDrink, sortItems, groupOrderItems } from '../../utils/kdsUtils';
@@ -227,13 +228,36 @@ const KdsScreen = () => {
     fetchOrders,
     fetchHistoryOrders,
     findNearestActiveDate,
-    updateOrderStatus,
+    updateOrderStatus: updateOrderStatusBase,
     handleFireItems,
     handleReadyItems,
     handleUndoLastAction,
     handleConfirmPayment,
     handleCancelOrder
   } = useKDSData();
+
+  // Multi-step status update with potential popup
+  const handleStatusUpdate = async (orderId, currentStatus) => {
+    try {
+      // Find the order details before it disappears from state
+      const allActive = Array.isArray(currentOrders) ? currentOrders : [];
+      const allReady = Array.isArray(completedOrders) ? completedOrders : [];
+      const targetOrder = [...allActive, ...allReady].find(o => o.id === orderId);
+
+      // Execute the update
+      await updateOrderStatusBase(orderId, currentStatus);
+
+      // If we just delivered (moved from ready to completed) an UNPAID order, show info popup
+      if (currentStatus === 'ready' && targetOrder && !targetOrder.isPaid) {
+        setHistoryInfoModal({
+          isOpen: true,
+          orderNumber: targetOrder.orderNumber
+        });
+      }
+    } catch (err) {
+      console.error('Error updating status:', err);
+    }
+  };
 
   const [viewMode, setViewMode] = useState('active'); // 'active' | 'history'
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -245,6 +269,9 @@ const KdsScreen = () => {
   const [editingOrder, setEditingOrder] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const navigate = useNavigate();
+
+  // History Info Modal (shown when unpaid order is moved to history)
+  const [historyInfoModal, setHistoryInfoModal] = useState({ isOpen: false, orderNumber: null });
 
   // Manual refresh trigger for history
   const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
@@ -295,12 +322,24 @@ const KdsScreen = () => {
   }, [viewMode, selectedDate, fetchHistoryOrders, findNearestActiveDate, historyRefreshTrigger]);
 
 
-  const handlePaymentCollected = (order) => {
-    setSelectedOrderForPayment(order);
+  const handlePaymentCollected = (order, fromHistory = false) => {
+    setSelectedOrderForPayment({ ...order, _fromHistory: fromHistory });
   };
 
   const handleEditOrder = (order) => {
-    // Determine restricted mode (History or Completed)
+    // handleEditOrder ALWAYS opens the edit/view screen
+    // Payment modal is opened separately via onPaymentCollected (the cash register button)
+
+    // READY ORDERS: Open the edit modal
+    const isReady = order.type === 'ready' || order.orderStatus === 'ready';
+    if (isReady) {
+      console.log('🖊️ KDS: Opening Edit Modal for Ready Order:', order.id);
+      setEditingOrder(order);
+      setIsEditModalOpen(true);
+      return;
+    }
+
+    // HISTORY/COMPLETED ORDERS: Navigate to restricted edit screen
     const isRestricted = viewMode === 'history' || order.order_status === 'completed' || order.order_status === 'cancelled';
 
     if (isRestricted) {
@@ -314,7 +353,7 @@ const KdsScreen = () => {
       sessionStorage.setItem('editOrderData', JSON.stringify(editData));
       sessionStorage.setItem('order_origin', 'kds');
       // Navigate directly to cart
-      navigate(`/menu-ordering-interface?editOrderId=${order.id}`);
+      navigate(`/ menu - ordering - interface ? editOrderId = ${order.id} `);
     } else {
       console.log('🖊️ KDS: Opening Edit Modal for Active Order:', order.id);
       setEditingOrder(order);
@@ -358,7 +397,7 @@ const KdsScreen = () => {
                   {currentOrders.map(order => (
                     <OrderCard
                       key={order.id} order={order}
-                      onOrderStatusUpdate={updateOrderStatus}
+                      onOrderStatusUpdate={handleStatusUpdate}
                       onPaymentCollected={handlePaymentCollected}
                       onFireItems={handleFireItems}
                       onReadyItems={handleReadyItems}
@@ -381,7 +420,7 @@ const KdsScreen = () => {
                   {completedOrders.map(order => (
                     <OrderCard
                       key={order.id} order={order} isReady={true}
-                      onOrderStatusUpdate={updateOrderStatus}
+                      onOrderStatusUpdate={handleStatusUpdate}
                       onPaymentCollected={handlePaymentCollected}
                       onEditOrder={handleEditOrder}
                       onCancelOrder={handleCancelOrder}
@@ -416,12 +455,12 @@ const KdsScreen = () => {
                   ) : (
                     historyOrders.map(order => (
                       <OrderCard
-                        key={`${order.id}-${selectedDate.toISOString().split('T')[0]}`} // Unique Mapping Key
+                        key={`${order.id} -${selectedDate.toISOString().split('T')[0]} `} // Unique Mapping Key
                         order={order}
                         isHistory={true} // New Prop
                         isReady={order.order_status === 'completed'} // Reuse styling
                         onOrderStatusUpdate={() => { }} // No Action
-                        onPaymentCollected={() => { }} // No Action
+                        onPaymentCollected={(o) => handlePaymentCollected(o, true)} // From history
                         onFireItems={() => { }} // No Action
                         onReadyItems={() => { }} // No Action
                         onEditOrder={handleEditOrder} // Allow Edit (Restricted)
@@ -496,14 +535,39 @@ const KdsScreen = () => {
           </div>
         )}
 
-        {/* Payment Instruction Modal */}
-        <CashPaymentModal
+        {/* Payment Selection Modal */}
+        <KDSPaymentModal
           isOpen={!!selectedOrderForPayment}
-          onClose={() => setSelectedOrderForPayment(null)}
-          orderId={selectedOrderForPayment?.originalOrderId || selectedOrderForPayment?.id}
-          orderAmount={selectedOrderForPayment?.totalAmount || 0}
-          customerName={selectedOrderForPayment?.customerName}
-          onConfirmCash={handleConfirmPayment}
+          onClose={(closeInfo) => {
+            setSelectedOrderForPayment(null);
+            // If unpaid order was moved to history, show the info popup
+            if (closeInfo?.showHistoryInfo) {
+              setHistoryInfoModal({ isOpen: true, orderNumber: closeInfo.orderNumber });
+            }
+          }}
+          order={selectedOrderForPayment}
+          isFromHistory={selectedOrderForPayment?._fromHistory || false}
+          onConfirmPayment={async (orderId, paymentMethod) => {
+            await handleConfirmPayment(orderId, paymentMethod);
+            setSelectedOrderForPayment(null);
+            // Refresh history if in history mode
+            if (viewMode === 'history') {
+              setHistoryRefreshTrigger(prev => prev + 1);
+            }
+          }}
+          onMoveToHistory={async (orderId) => {
+            // Move to history (completed) without payment
+            await updateOrderStatusBase(orderId, 'completed');
+            await fetchOrders();
+            // Note: onClose will be called by the modal after this, showing the info popup
+          }}
+        />
+
+        {/* History Info Modal - shown when unpaid order is moved to history */}
+        <HistoryInfoModal
+          isOpen={historyInfoModal.isOpen}
+          onClose={() => setHistoryInfoModal({ isOpen: false, orderNumber: null })}
+          orderNumber={historyInfoModal.orderNumber}
         />
 
         <StaffQuickAccessModal

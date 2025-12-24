@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Music, Disc, ListMusic, Search, Upload, RefreshCw,
     ArrowRight, Sparkles, User, Play, FolderOpen, Heart,
-    Pause, SkipForward, SkipBack, Trash2, X, HardDrive, AlertCircle
+    Pause, SkipForward, SkipBack, Trash2, X, HardDrive, AlertCircle, Home
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMusic } from '@/context/MusicContext';
@@ -346,10 +346,11 @@ const MusicPageContent = () => {
             <header className="flex items-center justify-between p-4 border-b border-white/10 bg-black/20 backdrop-blur-md z-10">
                 <div className="flex items-center gap-4">
                     <button
-                        onClick={handleExit}
-                        className="w-10 h-10 rounded-full music-glass flex items-center justify-center"
+                        onClick={() => navigate('/mode-selection')}
+                        className="w-10 h-10 rounded-full music-glass flex items-center justify-center hover:bg-white/10 transition-colors"
+                        title="חזרה לבית"
                     >
-                        <ArrowRight className="w-5 h-5 text-white" />
+                        <Home className="w-5 h-5 text-white" />
                     </button>
 
                     <div className="flex items-center gap-2">
@@ -509,8 +510,10 @@ const MusicPageContent = () => {
 
                         {/* No song message */}
                         {!currentSong && (
-                            <div className="text-center mt-8">
-                                <p className="text-white/50 text-lg">בחר אלבום להתחיל לנגן</p>
+                            <div className="text-center mt-8 bg-black/20 p-6 rounded-3xl backdrop-blur-sm border border-white/5 max-w-[280px]">
+                                <Music className="w-12 h-12 text-white/20 mx-auto mb-4" />
+                                <p className="text-white/60 font-medium">בחר שיר כדי להתחיל לנגן</p>
+                                <p className="text-white/30 text-sm mt-1">האלבומים שלך מופיעים מצד ימין</p>
                             </div>
                         )}
                     </div>
@@ -606,12 +609,28 @@ const MusicPageContent = () => {
                                         )}
 
                                         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {/* Special "Add Album" Card - Always first */}
+                                            <motion.div
+                                                whileHover={{ scale: 1.02 }}
+                                                onClick={() => musicSource === 'spotify' ? setShowSpotifySearch(true) : setShowScanner(true)}
+                                                className="music-album-card group bg-white/5 border-2 border-dashed border-white/20 flex flex-col items-center justify-center text-center p-4 hover:border-purple-500/50 transition-all cursor-pointer min-h-[200px] rounded-2xl"
+                                            >
+                                                <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                                    <Upload className="w-6 h-6 text-white/50" />
+                                                </div>
+                                                <h3 className="text-white font-bold">הוסף אלבום</h3>
+                                                <p className="text-white/40 text-xs">סרוק תיקייה או חפש</p>
+                                            </motion.div>
+
                                             {isLoading && albums.length === 0 ? (
                                                 <div className="col-span-full flex items-center justify-center py-12">
                                                     <div className="w-8 h-8 border-3 border-purple-500/20 border-t-purple-500 rounded-full animate-spin" />
                                                 </div>
+                                            ) : filteredAlbums.length === 0 && (musicSource || isMusicDriveConnected) ? (
+                                                /* If no albums found but source is ready, we just show the Add card alone (above) or a message */
+                                                null
                                             ) : !musicSource && !isMusicDriveConnected ? (
-                                                /* NEW: Music Source Selection */
+                                                /* Source selection - now integrated into grid area or handled separately */
                                                 <div className="col-span-full py-8">
                                                     <div className="text-center mb-8">
                                                         <Music className="w-16 h-16 text-purple-400 mx-auto mb-4" />
@@ -620,7 +639,6 @@ const MusicPageContent = () => {
                                                     </div>
 
                                                     <div className="flex flex-col sm:flex-row gap-4 justify-center max-w-lg mx-auto">
-                                                        {/* Local Drive Option */}
                                                         <button
                                                             onClick={() => handleSelectMusicSource('local')}
                                                             className="flex-1 music-glass p-6 rounded-2xl border border-white/10 hover:border-purple-500/50 hover:bg-white/5 transition-all group"
@@ -630,7 +648,6 @@ const MusicPageContent = () => {
                                                             <p className="text-white/50 text-sm">נגן מוזיקה מכונן USB או תיקייה מקומית</p>
                                                         </button>
 
-                                                        {/* Spotify Option */}
                                                         <button
                                                             onClick={() => handleSelectMusicSource('spotify')}
                                                             className="flex-1 music-glass p-6 rounded-2xl border border-white/10 hover:border-green-500/50 hover:bg-white/5 transition-all group"
@@ -642,62 +659,15 @@ const MusicPageContent = () => {
                                                             </div>
                                                             <h3 className="text-white font-bold text-lg mb-2">Spotify</h3>
                                                             <p className="text-white/50 text-sm">התחבר לחשבון Spotify שלך</p>
-                                                            {isSpotifyConnected && (
-                                                                <span className="inline-block mt-2 px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full">מחובר</span>
-                                                            )}
                                                         </button>
                                                     </div>
                                                 </div>
                                             ) : musicSource === 'local' && !isMusicDriveConnected ? (
-                                                /* Local drive selected but not connected */
                                                 <div className="col-span-full text-center py-12">
-                                                    <div className="w-16 h-16 rounded-full bg-amber-500/20 mb-4 flex items-center justify-center mx-auto">
-                                                        <HardDrive className="w-8 h-8 text-amber-400" />
-                                                    </div>
+                                                    <HardDrive className="w-12 h-12 text-amber-400 mx-auto mb-4" />
                                                     <p className="text-white/60 text-lg mb-2">כונן המוזיקה לא מחובר</p>
-                                                    <p className="text-white/40 text-sm mb-4">חבר את הכונן למחשב כדי לגשת למוזיקה</p>
-                                                    <div className="flex gap-3 justify-center">
-                                                        <button
-                                                            onClick={() => setShowDiskPopup(true)}
-                                                            className="px-6 py-3 music-gradient-purple hover:opacity-90 rounded-xl text-white font-medium transition-all"
-                                                        >
-                                                            <RefreshCw className="w-5 h-5 inline-block ml-2" />
-                                                            בדוק שוב
-                                                        </button>
-                                                        <button
-                                                            onClick={() => {
-                                                                setMusicSource(null);
-                                                                localStorage.removeItem('music_source');
-                                                            }}
-                                                            className="px-6 py-3 bg-white/10 hover:bg-white/20 rounded-xl text-white font-medium transition-colors"
-                                                        >
-                                                            החלף מקור
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ) : filteredAlbums.length === 0 ? (
-                                                <div className="col-span-full text-center py-12">
-                                                    <Disc className="w-16 h-16 text-white/20 mx-auto mb-4" />
-                                                    <p className="text-white/40 text-lg mb-4">אין אלבומים בספרייה</p>
-                                                    <div className="flex flex-col gap-4 items-center">
-                                                        {musicSource === 'spotify' ? (
-                                                            <button
-                                                                onClick={() => setShowSpotifySearch(true)}
-                                                                className="px-6 py-3 bg-green-500 hover:bg-green-600 rounded-xl text-black font-bold flex items-center gap-2 transition-all shadow-lg"
-                                                            >
-                                                                <Search className="w-5 h-5" />
-                                                                חפש והוסף אלבום מ-Spotify
-                                                            </button>
-                                                        ) : (
-                                                            <button
-                                                                onClick={() => setShowScanner(true)}
-                                                                className="px-6 py-3 music-gradient-purple rounded-xl text-white font-medium flex items-center gap-2"
-                                                            >
-                                                                <Upload className="w-5 h-5" />
-                                                                סרוק ספרייה מקומית
-                                                            </button>
-                                                        )}
-                                                    </div>
+                                                    <p className="text-white/40 text-sm mb-4">חבר את הכונן ונסה שוב</p>
+                                                    <button onClick={handleRetryDisk} className="px-6 py-3 music-gradient-purple rounded-xl text-white font-medium">בדוק שוב</button>
                                                 </div>
                                             ) : (
                                                 filteredAlbums.map(album => (

@@ -1161,7 +1161,7 @@ const MenuOrderingInterface = () => {
     const isCancelOrder = isEditMode && editingOrderData && !editingOrderData.isPaid && cartItems.length === 0;
 
     if (isCancelOrder) {
-      const orderId = editingOrderData?.id;
+      const orderId = editingOrderData?.orderId;
       if (!orderId || orderId === 'undefined' || orderId === 'null') {
         console.error('❌ Cannot cancel order: Invalid ID', orderId);
         alert('שגיאה: מספר הזמנה לא תקין. אנא חזור למסך המטבח.');

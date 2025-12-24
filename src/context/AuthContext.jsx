@@ -99,7 +99,7 @@ export const AuthProvider = ({ children }) => {
                         const lastSyncTime = localStorage.getItem('last_sync_time');
                         const syncAge = lastSyncTime ? (now - parseInt(lastSyncTime)) / (1000 * 60) : Infinity;
                         if (syncAge > 30) { // Sync if older than 30 minutes
-                            triggerSync(sessionUser?.business_id);
+                            // triggerSync(sessionUser?.business_id); // DISABLED for Cloud-Only Mode
                         }
                     } catch (e) {
                         console.error('Failed to parse session user', e);
@@ -128,7 +128,7 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('kiosk_auth_time', Date.now().toString());
 
         // Trigger sync immediately after login
-        triggerSync(employee?.business_id);
+        // triggerSync(employee?.business_id); // DISABLED for Cloud-Only Mode
         localStorage.setItem('last_sync_time', Date.now().toString());
     };
 

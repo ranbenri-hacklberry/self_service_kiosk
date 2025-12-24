@@ -101,64 +101,16 @@ export const useKDSData = () => {
                 }
             }
 
-            // FAILSAFE: Fetch recently completed orders (last 60 mins) to prevent them from disappearing
-            // This handles cases where 'complete_order_part_v2' closes the order despite our flag,
-            // or if the order was legitimately completed but we still want to show it in 'Ready' for a bit.
-            try {
-                const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-
-                // We need to match the structure of 'get_kds_orders' RPC result roughly
-                const { data: recentCompleted } = await supabase
-                    .from('orders')
-                    .select(`
-                        id, order_number, customer_name, customer_phone, is_paid, total_amount, paid_amount, created_at, fired_at, ready_at, order_status,
-                        order_items (
-                            id, quantity, item_status, course_stage, price, mods, notes, item_fired_at,
-                            menu_items (id, name, price, kds_routing_logic, is_prep_required)
-                        )
-                    `)
-                    .eq('order_status', 'completed')
-                    .gt('updated_at', oneHourAgo)
-                    .order('updated_at', { ascending: false });
-
-                if (recentCompleted && recentCompleted.length > 0) {
-                    // console.log(`🛡️ Failsafe: Found ${recentCompleted.length} recent completed orders`);
-
-                    // Merge into ordersData, avoiding duplicates
-                    if (!ordersData) ordersData = [];
-                    const existingIds = new Set(ordersData.map(o => o.id));
-
-                    const mappedRecent = recentCompleted.filter(o => !existingIds.has(o.id)).map(o => {
-                        // Ensure order_items structure is compatible
-                        // The direct select returns menu_items object inside.
-                        // Our processing loop expects it.
-                        return o;
-                    });
-
-                    ordersData = [...ordersData, ...mappedRecent];
-                }
-            } catch (failsafeErr) {
-                console.error('Error fetching recent completed orders:', failsafeErr);
-            }
+            // NOTE: Completed orders are NOT fetched for active KDS.
+            // They belong only in History tab and are fetched separately when viewing history.
 
             const processedOrders = [];
 
             (ordersData || []).forEach(order => {
-                // SAFETY CHECK: If order is completed, only show if it was updated recently.
-                // This prevents old history (paid or unpaid) from cluttering the KDS active view.
+                // ALL completed orders belong ONLY in History tab - skip from active KDS
+                // When moving unpaid orders to history, a popup will explain how to access them
                 if (order.order_status === 'completed') {
-                    const updatedTime = new Date(order.updated_at || order.created_at).getTime();
-                    const now = Date.now();
-                    const diff = now - updatedTime;
-                    const maxAge = 60 * 60 * 1000;
-
-                    // DEBUG LOG for filtering
-                    if (diff > maxAge) {
-                        // console.log(`🗑️ Filtering old completed order ${order.id.slice(0, 6)}: Age ${Math.round(diff/1000/60)} mins`);
-                        return;
-                    } else {
-                        // console.log(`✅ Keeping recent completed order ${order.id.slice(0, 6)}: Age ${Math.round(diff / 1000 / 60)} mins`);
-                    }
+                    return; // Skip entirely
                 }
 
                 // Filter items logic
@@ -292,37 +244,10 @@ export const useKDSData = () => {
                     fired_at: order.fired_at,
                     ready_at: order.ready_at,
                     updated_at: order.updated_at,
+                    payment_method: order.payment_method,
                 };
 
-                // SPECIAL CASE: Unpaid Delivered Orders
-                if (order.order_status === 'completed' && !order.is_paid) {
-                    const rawDisplayItems = (order.order_items || [])
-                        .filter(item => item.item_status !== 'cancelled' && item.menu_items?.name)
-                        .map(item => {
-                            const itemName = item.menu_items?.name || 'פריט';
-                            return {
-                                id: item.id,
-                                menuItemId: item.menu_items?.id,
-                                name: itemName,
-                                quantity: item.quantity,
-                                price: item.menu_items?.price || 0,
-                                modifiers: [],
-                                modsKey: ''
-                            };
-                        });
-
-                    const displayItems = groupOrderItems(rawDisplayItems);
-
-                    if (displayItems.length > 0) {
-                        processedOrders.push({
-                            ...baseOrder,
-                            orderStatus: 'completed',
-                            items: displayItems,
-                            type: 'unpaid_delivered'
-                        });
-                    }
-                    return; // Done with this order
-                }
+                // Completed orders are already filtered out at the start of the loop
 
                 // Skip orders with no items after filtering
                 if (!rawItems || rawItems.length === 0) return;
@@ -379,39 +304,14 @@ export const useKDSData = () => {
                 (o.type === 'active' || o.type === 'delayed')
             );
 
-            // Sort current
+            // Sort current (Active)
             current.sort((a, b) => {
-                // Sort by fired_at time (effective start time)
-                // If not fired yet (null), use creation timestamp
-
-                // Note: a.fired_at is a string from DB, a.timestamp is a localized string formatted above!
-                // We need the raw ISO timestamp for sorting accurately.
-                // Fortunately, we can grab it from order.created_at or similar if we preserved it, 
-                // but wait - processedOrders object has 'fired_at' which acts as the source of truth here.
-                // Let's rely on 'fired_at' being set correctly in the mapping loop.
-
-                const getSortTime = (o) => {
-                    if (o.fired_at) return new Date(o.fired_at).getTime();
-                    // Fallback to parsing the localized timestamp is bad. 
-                    // Let's use the ID timestamp if possible or better yet, ensure raw timestamp is passed.
-                    // Actually, let's fix the mapping to include rawTimestamp.
-                    return 0;
-                };
-
-                // Better approach: Use the raw values which we have in specific fields
-                // In mapping loop: fired_at: stageItems[0]?.item_fired_at || order.created_at
-
-                const timeA = new Date(a.fired_at).getTime();
-                const timeB = new Date(b.fired_at).getTime();
-
-                if (Math.abs(timeA - timeB) > 1000) { // If distinct times (>1s diff)
-                    return timeA - timeB;
-                }
-
-                // If times are roughly same (e.g. initial load), put Stage 2 after Stage 1 (Left of it in RTL)
-                const stageA = a.courseStage || 1;
-                const stageB = b.courseStage || 1;
-                return stageA - stageB;
+                if (a.type === 'delayed' && b.type !== 'delayed') return 1;
+                if (a.type !== 'delayed' && b.type === 'delayed') return -1;
+                const timeA = new Date(a.fired_at || a.created_at || 0).getTime();
+                const timeB = new Date(b.fired_at || b.created_at || 0).getTime();
+                if (Math.abs(timeA - timeB) > 1000) return timeA - timeB;
+                return (a.courseStage || 1) - (b.courseStage || 1);
             });
 
             // Completed/Ready Section
@@ -420,9 +320,17 @@ export const useKDSData = () => {
             );
 
             completed.sort((a, b) => {
-                if (a.type === 'unpaid_delivered' && b.type !== 'unpaid_delivered') return -1;
-                if (a.type !== 'unpaid_delivered' && b.type === 'unpaid_delivered') return 1;
-                return 0;
+                // Priority 1: Unpaid delivered orders go LEFTMOST (end of array)
+                if (a.type === 'unpaid_delivered' && b.type !== 'unpaid_delivered') return 1;
+                if (a.type !== 'unpaid_delivered' && b.type === 'unpaid_delivered') return -1;
+
+                // Priority 2: Ready orders - Newest on Right (Index 0)
+                // Customers coming now are likely for recent orders
+                const timeA = new Date(a.ready_at || a.updated_at || a.created_at || 0).getTime();
+                const timeB = new Date(b.ready_at || b.updated_at || b.created_at || 0).getTime();
+
+                // Sort by time Descending (Newest first)
+                return timeB - timeA;
             });
 
             setCurrentOrders(current);
@@ -545,6 +453,31 @@ export const useKDSData = () => {
                 if (error) throw error;
                 // Capture IDs for precise undo
                 setLastAction({ orderId: realOrderId, previousStatus: 'ready', itemIds: itemIds });
+                await fetchOrders();
+                return;
+
+            } else if (currentStatus === 'completed') {
+                // EXPLICIT: Move to history - close the order and mark all items as completed
+                const realOrderId = typeof orderId === 'string' ? orderId.replace(/-stage-\d+/, '').replace('-ready', '') : orderId;
+
+                // Find all items from this order that need to be completed
+                const orderCard = completedOrders.find(o => o.id === orderId) ||
+                    currentOrders.find(o => o.id === orderId || o.originalOrderId === realOrderId);
+                let itemIds = [];
+                if (orderCard && orderCard.items) {
+                    itemIds = orderCard.items.flatMap(i => i.ids || [i.id]);
+                }
+
+                console.log('📦 Moving to history:', { realOrderId, itemIds });
+
+                // Call complete_order_part_v2 with p_keep_order_open = false to close the order
+                const { error } = await supabase.rpc('complete_order_part_v2', {
+                    p_order_id: String(realOrderId).trim(),
+                    p_item_ids: itemIds,
+                    p_keep_order_open: false // Close the order!
+                });
+
+                if (error) throw error;
                 await fetchOrders();
                 return;
 
@@ -724,7 +657,7 @@ export const useKDSData = () => {
         }
     };
 
-    const handleConfirmPayment = async (orderId, amount = null) => {
+    const handleConfirmPayment = async (orderId, paymentMethod = 'cash') => {
         // Clean orderId - remove KDS suffixes like "-ready" or "-stage-2"
         let cleanOrderId = orderId;
         if (typeof orderId === 'string') {
@@ -735,9 +668,10 @@ export const useKDSData = () => {
         }
 
         try {
-            // Use RPC function to bypass RLS
+            // Use RPC function to bypass RLS - now also passing payment_method
             const { data, error } = await supabase.rpc('confirm_order_payment', {
-                p_order_id: cleanOrderId
+                p_order_id: cleanOrderId,
+                p_payment_method: paymentMethod
             });
 
             if (error) throw error;
@@ -751,7 +685,7 @@ export const useKDSData = () => {
                 message: 'לא הצלחנו לעדכן את התשלום במערכת',
                 details: err.message,
                 retryLabel: 'נסה שוב',
-                onRetry: () => handleConfirmPayment(orderId, amount)
+                onRetry: () => handleConfirmPayment(orderId, paymentMethod)
             });
             throw err;
         }
