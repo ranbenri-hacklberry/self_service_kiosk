@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -261,13 +261,27 @@ const KdsScreen = () => {
   };
 
   const location = useLocation();
-  const [viewMode, setViewMode] = useState(location.state?.viewMode || 'active'); // 'active' | 'history'
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  // State persistence: Load from localStorage or defaults
+  const [viewMode, setViewMode] = useState(() => {
+    const saved = localStorage.getItem('kds_viewMode');
+    return saved || location.state?.viewMode || 'active';
+  });
+
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const saved = localStorage.getItem('kds_selectedDate');
+    if (saved) {
+      try {
+        const d = new Date(saved);
+        if (!isNaN(d.getTime())) return d;
+      } catch (e) { /* fallback */ }
+    }
+    return new Date();
+  });
+
   const [historyOrders, setHistoryOrders] = useState([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
   const [selectedOrderForPayment, setSelectedOrderForPayment] = useState(null);
-  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const navigate = useNavigate();
@@ -275,16 +289,54 @@ const KdsScreen = () => {
   // History Info Modal (shown when unpaid order is moved to history)
   const [historyInfoModal, setHistoryInfoModal] = useState({ isOpen: false, orderNumber: null });
 
+  // Persistence Effects
+  useEffect(() => {
+    localStorage.setItem('kds_viewMode', viewMode);
+  }, [viewMode]);
+
+  useEffect(() => {
+    localStorage.setItem('kds_selectedDate', selectedDate.toISOString());
+  }, [selectedDate]);
+
+  // Debounced Refresh to prevent race conditions
+  const refreshTimeoutRef = React.useRef(null);
+  const refreshControllerRef = React.useRef(null);
+
+  const handleRefresh = useCallback(async () => {
+    if (refreshTimeoutRef.current) return; // Already debouncing
+
+    console.log('🔄 Manual refresh triggered');
+
+    // Abort previous manual fetch if still running
+    if (refreshControllerRef.current) {
+      refreshControllerRef.current.abort();
+    }
+    refreshControllerRef.current = new AbortController();
+
+    try {
+      await Promise.all([
+        fetchOrders(refreshControllerRef.current.signal),
+        viewMode === 'history' ? setHistoryRefreshTrigger(prev => prev + 1) : Promise.resolve()
+      ]);
+    } catch (err) {
+      if (err.name !== 'AbortError') console.error('Refresh failed:', err);
+    } finally {
+      // Debounce: prevent another refresh for 1 second
+      refreshTimeoutRef.current = setTimeout(() => {
+        refreshTimeoutRef.current = null;
+      }, 1000);
+    }
+  }, [fetchOrders, viewMode]);
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+      if (refreshControllerRef.current) refreshControllerRef.current.abort();
+    };
+  }, []);
+
   // Manual refresh trigger for history
   const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
-
-  const handleRefresh = async () => {
-    console.log('🔄 Manual refresh triggered');
-    fetchOrders(); // Always refresh active orders
-    if (viewMode === 'history') {
-      setHistoryRefreshTrigger(prev => prev + 1);
-    }
-  };
 
 
   // Load History Effect with AbortController
@@ -460,7 +512,7 @@ const KdsScreen = () => {
                   ) : (
                     historyOrders.map(order => (
                       <OrderCard
-                        key={`${order.id} -${selectedDate.toISOString().split('T')[0]} `} // Unique Mapping Key
+                        key={`${order.id}-${order.created_at || order.timestamp}-${selectedDate.toISOString().split('T')[0]}`} // Robust Unique Mapping Key
                         order={order}
                         isHistory={true} // New Prop
                         isReady={order.order_status === 'completed'} // Reuse styling
@@ -480,7 +532,9 @@ const KdsScreen = () => {
             </div>
 
             {/* New Animated Date Scroller */}
-            <DateScroller selectedDate={selectedDate} onSelectDate={setSelectedDate} />
+            <div className={isHistoryLoading ? 'pointer-events-none opacity-50' : ''}>
+              <DateScroller selectedDate={selectedDate} onSelectDate={setSelectedDate} />
+            </div>
           </div>
         )}
 
@@ -544,7 +598,9 @@ const KdsScreen = () => {
         <KDSPaymentModal
           isOpen={!!selectedOrderForPayment}
           onClose={(closeInfo) => {
+            // ALWAYS reset carefully to avoid "ghost" state
             setSelectedOrderForPayment(null);
+
             // If unpaid order was moved to history, show the info popup
             if (closeInfo?.showHistoryInfo) {
               setHistoryInfoModal({ isOpen: true, orderNumber: closeInfo.orderNumber });
@@ -553,18 +609,26 @@ const KdsScreen = () => {
           order={selectedOrderForPayment}
           isFromHistory={selectedOrderForPayment?._fromHistory || false}
           onConfirmPayment={async (orderId, paymentMethod) => {
-            await handleConfirmPayment(orderId, paymentMethod);
-            setSelectedOrderForPayment(null);
-            // Refresh history if in history mode
-            if (viewMode === 'history') {
-              setHistoryRefreshTrigger(prev => prev + 1);
+            try {
+              await handleConfirmPayment(orderId, paymentMethod);
+              setSelectedOrderForPayment(null);
+              // Refresh history if in history mode
+              if (viewMode === 'history') {
+                setHistoryRefreshTrigger(prev => prev + 1);
+              }
+            } catch (err) {
+              // error is handled inside handleConfirmPayment (modal)
             }
           }}
           onMoveToHistory={async (orderId) => {
-            // Move to history (completed) without payment
-            await updateOrderStatusBase(orderId, 'completed');
-            await fetchOrders();
-            // Note: onClose will be called by the modal after this, showing the info popup
+            try {
+              // Move to history (completed) without payment
+              await updateOrderStatusBase(orderId, 'completed');
+              await fetchOrders();
+              // Note: onClose will be called by the modal after this, resetting selectedOrderForPayment
+            } catch (err) {
+              console.error('Failed to move to history:', err);
+            }
           }}
         />
 
@@ -575,17 +639,11 @@ const KdsScreen = () => {
           orderNumber={historyInfoModal.orderNumber}
         />
 
-        <StaffQuickAccessModal
-          isOpen={isStaffModalOpen}
-          onClose={() => setIsStaffModalOpen(false)}
-        />
-
-        {/* Order Edit Modal */}
         <OrderEditModal
           isOpen={isEditModalOpen}
           order={editingOrder}
           onClose={handleCloseEditModal}
-          onRefresh={fetchOrders}
+          onRefresh={() => fetchOrders()}
         />
       </div>
     </div>

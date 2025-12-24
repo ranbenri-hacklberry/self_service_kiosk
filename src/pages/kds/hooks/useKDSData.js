@@ -16,13 +16,14 @@ export const useKDSData = () => {
     const [errorModal, setErrorModal] = useState(null);
     const [isSendingSms, setIsSendingSms] = useState(false);
 
-    const fetchOrders = useCallback(async () => {
+    const fetchOrders = useCallback(async (signal) => {
         try {
             setIsLoading(true);
             // מיפוי של כל ה-optionvalues פעם אחת
             const { data: allOptionValues } = await supabase
                 .from('optionvalues')
-                .select('id, value_name');
+                .select('id, value_name')
+                .abortSignal(signal);
 
             const optionMap = new Map();
             allOptionValues?.forEach(ov => {
@@ -51,7 +52,7 @@ export const useKDSData = () => {
             let { data: ordersData, error } = await supabase.rpc('get_kds_orders', {
                 p_date: today.toISOString(),
                 p_business_id: businessId || null // Pass the ID explicitly for PIN users
-            });
+            }).abortSignal(signal);
 
             if (error) throw error;
 
@@ -66,7 +67,8 @@ export const useKDSData = () => {
                         .from('order_items')
                         .select('id, mods, notes, item_status, course_stage, quantity, order_id, menu_items!inner(name, price, kds_routing_logic, is_prep_required)')
                         .in('order_id', orderIds)
-                        .in('item_status', ['ready', 'completed']); // Fetch both ready and completed items
+                        .in('item_status', ['ready', 'completed']) // Fetch both ready and completed items
+                        .abortSignal(signal);
 
                     if (readyItems && readyItems.length > 0) {
                         // Merge ready items into active orders
@@ -733,9 +735,17 @@ export const useKDSData = () => {
 
     // Polling (Reduced from 30s to 5s for better responsiveness)
     useEffect(() => {
-        fetchOrders(); // Initial fetch
-        const interval = setInterval(fetchOrders, 5000); // Every 5 seconds
-        return () => clearInterval(interval);
+        const controller = new AbortController();
+        fetchOrders(controller.signal); // Initial fetch
+
+        const interval = setInterval(() => {
+            fetchOrders(controller.signal);
+        }, 5000); // Every 5 seconds
+
+        return () => {
+            controller.abort();
+            clearInterval(interval);
+        };
     }, [fetchOrders]);
 
     // Realtime

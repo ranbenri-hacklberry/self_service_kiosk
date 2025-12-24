@@ -9,7 +9,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error('Supabase Environment Variables Missing. Check Console.');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+        persistSession: true,
+        storageKey: 'supabase.auth.token',
+        storage: window.localStorage,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+    }
+});
 
 /**
  * Returns a Supabase client scoped to the appropriate schema based on the user.
