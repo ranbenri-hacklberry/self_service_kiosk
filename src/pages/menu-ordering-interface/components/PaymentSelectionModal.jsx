@@ -286,7 +286,7 @@ const PaymentSelectionModal = ({
       >
         <div
           className="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-4 overflow-hidden flex flex-col"
-          style={{ maxHeight: '72vh' }}
+          style={{ maxHeight: '82vh' }}
           onClick={e => e.stopPropagation()}
         >
           <div className="p-4 border-b border-slate-100">
@@ -309,7 +309,7 @@ const PaymentSelectionModal = ({
           </div>
 
           <div className="flex-1 p-6 flex flex-col items-center justify-center space-y-4">
-            <div className={`w-full ${config?.amountBg} border-2 rounded-2xl p-6 text-center`}>
+            <div className={`w-full ${config?.amountBg} border-2 rounded-2xl p-8 text-center`}>
               <p className="text-sm font-bold mb-2 text-slate-600">
                 {isRefund ? 'סכום לזיכוי:' : 'סכום לתשלום:'}
               </p>
@@ -318,12 +318,12 @@ const PaymentSelectionModal = ({
                   <span className="text-2xl font-bold text-slate-400 line-through">
                     {formatPrice(cartTotal)}
                   </span>
-                  <span className={`text-5xl font-black ${config?.amountColor}`}>
+                  <span className={`text-6xl font-black ${config?.amountColor}`}>
                     ₪0
                   </span>
                 </div>
               ) : (
-                <p className={`text-5xl font-black ${config?.amountColor}`}>
+                <p className={`text-6xl font-black ${config?.amountColor}`}>
                   {formatPrice(isRefund ? refundAmount : finalPrice)}{isRefund ? '-' : ''}
                 </p>
               )}
@@ -342,11 +342,11 @@ const PaymentSelectionModal = ({
           </div>
 
           <div className="p-4 border-t border-slate-100">
-            <div className="flex gap-3">
+            <div className="flex gap-4">
               <button
                 onClick={handleCancelInstruction}
                 disabled={isProcessing}
-                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-lg transition disabled:opacity-50"
+                className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-xl transition disabled:opacity-50"
               >
                 חזור
               </button>
@@ -354,13 +354,13 @@ const PaymentSelectionModal = ({
               <button
                 onClick={handleConfirmPayment}
                 disabled={isProcessing}
-                className={`flex-[2] py-3 ${isRefund ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'} text-white rounded-xl font-bold text-lg transition shadow-lg disabled:opacity-50 flex items-center justify-center gap-2`}
+                className={`flex-[2] py-4 ${isRefund ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'} text-white rounded-xl font-bold text-xl transition shadow-lg disabled:opacity-50 flex items-center justify-center gap-2`}
               >
                 {isProcessing ? (
                   <span>מעבד...</span>
                 ) : (
                   <>
-                    <Check size={20} strokeWidth={3} />
+                    <Check size={24} strokeWidth={3} />
                     <span>{config?.confirmText}</span>
                   </>
                 )}
@@ -395,7 +395,7 @@ const PaymentSelectionModal = ({
     >
       <div
         className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden flex flex-col"
-        style={{ maxHeight: '72vh' }}
+        style={{ maxHeight: '90vh' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header - Compact */}
@@ -442,37 +442,37 @@ const PaymentSelectionModal = ({
           {/* Payment Methods Grid - Main (2 big buttons) */}
           <div>
             <h3 className="text-base font-bold text-slate-800 mb-2">אמצעי תשלום</h3>
-            <div className="grid grid-cols-2 gap-2 mb-2">
+            <div className="grid grid-cols-2 gap-3 mb-3">
               {PAYMENT_METHODS_MAIN.map(method => (
                 <button
                   key={method.id}
                   onClick={() => handlePaymentMethodSelect(method.id)}
                   disabled={isProcessing}
                   className={cn(
-                    "flex flex-col items-center justify-center gap-1.5 p-4 rounded-xl transition-all border-2 border-transparent",
+                    "flex flex-col items-center justify-center gap-2 p-6 rounded-xl transition-all border-2 border-transparent",
                     method.color,
                     "hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md"
                   )}
                 >
-                  <method.icon size={24} />
-                  <span className="font-bold text-base">{method.label}</span>
+                  <method.icon size={32} />
+                  <span className="font-bold text-xl">{method.label}</span>
                 </button>
               ))}
             </div>
             {/* Secondary row - 4 smaller buttons */}
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-4 gap-2">
               {PAYMENT_METHODS_SECONDARY.map(method => (
                 <button
                   key={method.id}
                   onClick={() => handlePaymentMethodSelect(method.id)}
                   disabled={isProcessing}
                   className={cn(
-                    "flex flex-col items-center justify-center gap-1 p-2.5 rounded-lg transition-all border border-transparent",
+                    "flex flex-col items-center justify-center gap-1.5 p-4 rounded-xl transition-all border border-transparent",
                     method.color,
                     "hover:scale-[1.02] active:scale-[0.98] shadow-sm text-xs"
                   )}
                 >
-                  <method.icon size={18} />
+                  <method.icon size={22} />
                   <span className="font-bold">{method.label}</span>
                 </button>
               ))}
@@ -486,10 +486,10 @@ const PaymentSelectionModal = ({
           <button
             onClick={handlePayLater}
             disabled={isProcessing}
-            className="w-full py-3 bg-white border-2 border-amber-400 text-amber-700 rounded-xl font-bold text-lg hover:bg-amber-50 transition shadow-sm flex flex-col items-center justify-center gap-0.5"
+            className="w-full py-4 bg-white border-2 border-amber-400 text-amber-700 rounded-xl font-bold text-xl hover:bg-amber-50 transition shadow-sm flex flex-col items-center justify-center gap-0.5"
           >
             <div className="flex items-center gap-2">
-              <Clock size={20} />
+              <Clock size={24} />
               <span>שלח למטבח (תשלום אחר כך)</span>
             </div>
             <span className="text-xs font-medium opacity-70">ההזמנה תופיע ב-KDS כטרם שולמה</span>
