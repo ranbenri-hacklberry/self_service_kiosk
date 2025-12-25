@@ -1207,6 +1207,12 @@ const MenuOrderingInterface = () => {
 
   // Updated handleInitiatePayment to show payment modal
   const handleInitiatePayment = async () => {
+    // ⛔ CRITICAL: Block all processing if cart is empty and not in edit mode
+    if ((!cartItems || cartItems.length === 0) && !isEditMode) {
+      console.error('❌ BLOCKED: handleInitiatePayment called with empty cart!');
+      return;
+    }
+
     // 1. Check for Cancel Order (Edit Mode + Unpaid + Empty Cart)
     const isCancelOrder = isEditMode && editingOrderData && !editingOrderData.isPaid && cartItems.length === 0;
 
@@ -1294,6 +1300,18 @@ const MenuOrderingInterface = () => {
     console.log('💰 Cart Total:', cartTotal);
     console.log('✏️ Is Edit Mode:', isEditMode);
     console.log('📋 Editing Order Data:', editingOrderData);
+
+    // ⛔ CRITICAL GUARD: Prevent empty orders from being created
+    if (!cartItems || cartItems.length === 0) {
+      // Only allow empty cart in edit mode when cancelling an order
+      if (!isEditMode) {
+        console.error('❌ BLOCKED: Attempted to create order with empty cart!');
+        alert('לא ניתן ליצור הזמנה ריקה');
+        return;
+      }
+      // In edit mode with empty cart - this is a cancel operation, handled separately
+      console.log('⚠️ Edit mode with empty cart - assuming cancel operation');
+    }
 
     try {
       setIsProcessingOrder(true);
