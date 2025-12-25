@@ -1856,14 +1856,17 @@ const MenuOrderingInterface = () => {
       {/* Top Navigation Bar */}
       <div className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 sticky top-0 z-30 shadow-sm">
 
-        {/* Right Side Group (RTL): Home Button */}
+        {/* Right Side Group (RTL): Home/Back Button */}
         <div className="flex items-center gap-4">
           <button
             onClick={handleBack}
             className="flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 w-10 h-10 rounded-xl transition-all"
-            title="חזרה לדף הבית"
+            title={sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) === 'kds' ? "חזרה ל-KDS" : "חזרה לדף הבית"}
           >
-            <Icon name="Home" size={20} />
+            <Icon
+              name={sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) === 'kds' ? "ChevronRight" : "Home"}
+              size={20}
+            />
           </button>
         </div>
 
