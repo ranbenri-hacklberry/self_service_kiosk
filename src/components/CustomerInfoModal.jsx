@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Phone, User, Check, Loader2 } from 'lucide-react';
+import { X, Phone, User, Check, Loader2, UserCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import NumericKeypad from '@/pages/customer-phone-input-screen/components/NumericKeypad';
@@ -31,13 +31,16 @@ const CustomerInfoModal = ({
     const [error, setError] = useState('');
     const [lookupResult, setLookupResult] = useState(null);
     const nameInputRef = useRef(null);
+    const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
+    const [pendingCustomer, setPendingCustomer] = useState(null);
 
     // Initialize state when modal opens
     useEffect(() => {
         if (isOpen) {
             // Reset state
             setPhoneNumber(currentCustomer?.phone || '');
-            setCustomerName(currentCustomer?.name || '');
+            // Clear name if it's "הזמנה מהירה" or empty
+            setCustomerName(currentCustomer?.name === 'הזמנה מהירה' ? '' : (currentCustomer?.name || ''));
             setError('');
             setLookupResult(null);
             setIsLoading(false);
@@ -113,20 +116,31 @@ const CustomerInfoModal = ({
 
             if (data?.success && !data?.isNewCustomer) {
                 // Existing customer found
-                const customer = {
+                const foundCustomer = {
                     id: data.customer.id,
                     phone: cleanPhone,
                     name: data.customer.name,
                     loyalty_coffee_count: data.customer.loyalty_coffee_count || 0
                 };
 
+                // Check if this is a different customer than current
+                const isDifferentCustomer = currentCustomer?.id && currentCustomer.id !== foundCustomer.id;
+
+                if (isDifferentCustomer) {
+                    // Show custom confirmation modal
+                    setPendingCustomer(foundCustomer);
+                    setShowSwitchConfirm(true);
+                    setIsLoading(false);
+                    return;
+                }
+
                 // If editing an order (KDS flow), update it
                 if (orderId) {
-                    await updateOrderCustomer(orderId, customer);
+                    await updateOrderCustomer(orderId, foundCustomer);
                 }
 
                 // Return customer data
-                onCustomerUpdate?.(customer);
+                onCustomerUpdate?.(foundCustomer);
                 onClose();
             } else {
                 // New customer - advance to name entry
@@ -134,11 +148,11 @@ const CustomerInfoModal = ({
                     setStep('name');
                     setTimeout(() => nameInputRef.current?.focus(), 100);
                 } else {
-                    // Just phone mode - create anonymous customer
+                    // Just phone mode - use existing name if available, otherwise 'אורח'
                     const customer = {
-                        id: null,
+                        id: currentCustomer?.id || null,
                         phone: cleanPhone,
-                        name: 'אורח',
+                        name: currentCustomer?.name || 'אורח',
                         loyalty_coffee_count: 0
                     };
                     onCustomerUpdate?.(customer);
@@ -151,6 +165,32 @@ const CustomerInfoModal = ({
         } finally {
             setIsLoading(false);
         }
+    };
+
+    // Handle customer switch confirmation
+    const handleConfirmSwitch = async () => {
+        if (!pendingCustomer) return;
+
+        try {
+            // If editing an order (KDS flow), update it
+            if (orderId) {
+                await updateOrderCustomer(orderId, pendingCustomer);
+            }
+
+            // Return customer data
+            onCustomerUpdate?.(pendingCustomer);
+            setShowSwitchConfirm(false);
+            setPendingCustomer(null);
+            onClose();
+        } catch (err) {
+            console.error('Error switching customer:', err);
+            setError('שגיאה בהחלפת לקוח');
+        }
+    };
+
+    const handleCancelSwitch = () => {
+        setShowSwitchConfirm(false);
+        setPendingCustomer(null);
     };
 
     // Handle name submission
@@ -235,17 +275,8 @@ const CustomerInfoModal = ({
     // Render phone entry step
     const renderPhoneStep = () => (
         <>
-            {/* Header */}
-            <div className="p-6 border-b border-gray-200 text-center">
-                <div className="mx-auto w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center mb-3">
-                    <Phone className="w-8 h-8 text-white" />
-                </div>
-                <h2 className="text-2xl font-black text-gray-900">הזן מספר טלפון</h2>
-                <p className="text-gray-500 font-medium mt-1">לזיהוי ומעקב אחר ההזמנה</p>
-            </div>
-
-            {/* Content */}
-            <div className="p-6 space-y-4">
+            {/* Content - No header */}
+            <div className="p-4 space-y-3">
                 {/* Phone Display */}
                 <div
                     className={`w-full h-14 bg-gray-50 rounded-xl border-2 flex items-center justify-center transition-colors ${error ? 'border-red-200 bg-red-50' : 'border-gray-100'
@@ -300,17 +331,8 @@ const CustomerInfoModal = ({
     // Render name entry step
     const renderNameStep = () => (
         <>
-            {/* Header */}
-            <div className="p-6 border-b border-gray-200 text-center">
-                <div className="mx-auto w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center mb-3">
-                    <User className="w-8 h-8 text-white" />
-                </div>
-                <h2 className="text-2xl font-black text-gray-900">מה השם?</h2>
-                <p className="text-gray-500 font-medium mt-1">לזיהוי ההזמנה</p>
-            </div>
-
-            {/* Content */}
-            <div className="p-6 space-y-4">
+            {/* Content - No header */}
+            <div className="p-4 space-y-3">
                 {/* Name Input */}
                 <input
                     ref={nameInputRef}
@@ -385,6 +407,53 @@ const CustomerInfoModal = ({
                 {step === 'phone' && renderPhoneStep()}
                 {step === 'name' && renderNameStep()}
             </div>
+
+            {/* Customer Switch Confirmation Modal */}
+            {showSwitchConfirm && pendingCustomer && (
+                <div
+                    className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                    onClick={handleCancelSwitch}
+                >
+                    <div
+                        className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div className="p-6 border-b border-gray-200 text-center">
+                            <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-3">
+                                <UserCheck size={32} className="text-blue-600" />
+                            </div>
+                            <h2 className="text-2xl font-black text-gray-900">לקוח קיים נמצא</h2>
+                            <p className="text-gray-500 font-medium mt-2">
+                                הטלפון {pendingCustomer.phone} שייך ל-{pendingCustomer.name}
+                            </p>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6">
+                            <p className="text-center text-gray-600 font-medium">
+                                האם להעביר את ההזמנה ללקוח זה?
+                            </p>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-6 border-t border-gray-200 flex gap-3">
+                            <button
+                                onClick={handleCancelSwitch}
+                                className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
+                            >
+                                ביטול
+                            </button>
+                            <button
+                                onClick={handleConfirmSwitch}
+                                className="flex-1 py-4 bg-blue-500 text-white rounded-xl font-bold text-lg hover:bg-blue-600 transition"
+                            >
+                                העבר ללקוח
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

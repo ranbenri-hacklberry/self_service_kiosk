@@ -79,6 +79,7 @@ const MenuOrderingInterface = () => {
   const [modifierOptionsCache, setModifierOptionsCache] = useState({}); // Cache for modifier options
   const [showCustomerInfoModal, setShowCustomerInfoModal] = useState(false);
   const [customerInfoModalMode, setCustomerInfoModalMode] = useState('phone');
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
 
   // ===== Loyalty Hook (replaces loyalty state + fetch logic) =====
   const {
@@ -493,8 +494,12 @@ const MenuOrderingInterface = () => {
       navigate('/kds', { state: { viewMode: 'active' } });
       return;
     }
-    console.log('📞 Navigating to phone input');
-    navigate('/customer-phone-input-screen');
+    console.log('📞 Starting new order');
+    // Clear cart and customer data
+    cartClearCart();
+    localStorage.removeItem('currentCustomer');
+    // Stay on menu ordering interface for new order
+    window.location.reload();
   };
 
   // Handle back button from header
@@ -502,6 +507,16 @@ const MenuOrderingInterface = () => {
     const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
     const editDataRaw = sessionStorage.getItem('editOrderData');
     const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
+
+    // Check if we have customer info but no items
+    const hasCustomerInfo = currentCustomer?.name && currentCustomer?.name !== 'הזמנה מהירה';
+    const hasItems = cartItems.length > 0;
+
+    if (hasCustomerInfo && !hasItems && origin !== 'kds') {
+      // Show custom confirmation modal
+      setShowExitConfirmModal(true);
+      return;
+    }
 
     if (origin === 'kds') {
       console.log('🔙 Header Back clicked - returning to KDS:', editData?.viewMode);
@@ -512,8 +527,8 @@ const MenuOrderingInterface = () => {
       return;
     }
 
-    // Default behavior
-    navigate(-1);
+    // Go to home/mode selection instead of browser back
+    navigate('/mode-selection');
   };
 
   // Use cart hook utilities for normalization and signature
@@ -1627,7 +1642,9 @@ const MenuOrderingInterface = () => {
           const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
           navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
         } else {
-          navigate('/customer-phone-input-screen');
+          // Start new order - clear cart, customer and reload
+          localStorage.removeItem('currentCustomer');
+          window.location.reload();
         }
         return;
       }
@@ -1860,14 +1877,14 @@ const MenuOrderingInterface = () => {
       {/* Top Navigation Bar */}
       <div className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 sticky top-0 z-30 shadow-sm">
 
-        {/* Right Side Group (RTL): Back Button */}
+        {/* Right Side Group (RTL): Home Button */}
         <div className="flex items-center gap-4">
           <button
             onClick={handleBack}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-2 rounded-xl transition-all font-bold"
+            className="flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 w-10 h-10 rounded-xl transition-all"
+            title="חזרה לדף הבית"
           >
-            <Icon name="ArrowRight" size={20} />
-            <span>חזור</span>
+            <Icon name="Home" size={20} />
           </button>
         </div>
 
@@ -2029,6 +2046,61 @@ const MenuOrderingInterface = () => {
         orderDetails={showConfirmationModal}
         onStartNewOrder={handleCloseConfirmation}
       />
+
+      {/* Exit Confirmation Modal */}
+      {showExitConfirmModal && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 font-heebo"
+          onClick={() => setShowExitConfirmModal(false)}
+          dir="rtl"
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-6 border-b border-gray-200 text-center">
+              <div className="mx-auto w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-3">
+                <Icon name="AlertCircle" size={32} className="text-orange-600" />
+              </div>
+              <h2 className="text-2xl font-black text-gray-900">בטל הזמנה?</h2>
+              <p className="text-gray-500 font-medium mt-2">
+                יש לך פרטי לקוח אבל אין פריטים בעגלה
+              </p>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <p className="text-center text-gray-600 font-medium">
+                האם לבטל את ההזמנה ולמחוק את פרטי הלקוח?
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-gray-200 flex gap-3">
+              <button
+                onClick={() => setShowExitConfirmModal(false)}
+                className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
+              >
+                המשך להזמין
+              </button>
+              <button
+                onClick={() => {
+                  // Clear customer data
+                  localStorage.removeItem('currentCustomer');
+                  sessionStorage.removeItem('tempCartState');
+                  cartClearCart();
+                  setShowExitConfirmModal(false);
+                  navigate('/mode-selection');
+                }}
+                className="flex-1 py-4 bg-orange-500 text-white rounded-xl font-bold text-lg hover:bg-orange-600 transition"
+              >
+                בטל הזמנה
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

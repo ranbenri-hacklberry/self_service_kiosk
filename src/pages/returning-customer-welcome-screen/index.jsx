@@ -111,7 +111,7 @@ const ReturningCustomerWelcomeScreen = () => {
       navigate('/kds');
       return;
     }
-    navigate('/customer-phone-input-screen');
+    navigate('/menu-ordering-interface');
   };
 
   return (

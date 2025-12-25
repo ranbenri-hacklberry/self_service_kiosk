@@ -12,6 +12,7 @@ import ModeSelectionScreen from "@/pages/login/ModeSelectionScreen";
 import MenuOrderingInterface from './pages/menu-ordering-interface';
 import KdsScreen from './pages/kds';
 import CustomerPhoneInputScreen from './pages/customer-phone-input-screen';
+// DEPRECATED: Phone input now handled by CustomerInfoModal
 import NewCustomerNameCollectionScreen from './pages/new-customer-name-collection-screen';
 import ReturningCustomerWelcomeScreen from './pages/returning-customer-welcome-screen';
 
@@ -98,7 +99,7 @@ const AppRoutes = () => {
 
       <Route path="/" element={
         <ProtectedRoute>
-          <CustomerPhoneInputScreen />
+          <MenuOrderingInterface />
         </ProtectedRoute>
       } />
 
@@ -133,7 +134,8 @@ const AppRoutes = () => {
       } />
 
       {/* Other Protected Pages */}
-      <Route path="/customer-phone-input-screen" element={<ProtectedRoute><CustomerPhoneInputScreen /></ProtectedRoute>} />
+      {/* REMOVED: Phone input now handled by CustomerInfoModal */}
+      {/* <Route path="/customer-phone-input-screen" element={<ProtectedRoute><CustomerPhoneInputScreen /></ProtectedRoute>} /> */}
       <Route path="/new-customer-name-collection-screen" element={<ProtectedRoute><NewCustomerNameCollectionScreen /></ProtectedRoute>} />
       <Route path="/returning-customer-welcome-screen" element={<ProtectedRoute><ReturningCustomerWelcomeScreen /></ProtectedRoute>} />
       <Route path="/menu-ordering-interface" element={

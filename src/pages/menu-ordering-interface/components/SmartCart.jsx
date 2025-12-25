@@ -302,184 +302,176 @@ const SmartCart = ({
         <div className={`flex flex-col h-full bg-white ${className}`}>
             {/* Header */}
             <div className="p-4 border-b border-gray-100 bg-white z-10 shadow-sm">
-                <div className="flex items-start justify-between">
-                    {/* Left: Icon + Title (with loyalty BELOW) + Order Number */}
-                    <div className="flex items-start gap-2">
-                        <div className="bg-orange-100 p-2 rounded-xl">
-                            <ShoppingBag className="w-5 h-5 text-orange-600" />
-                        </div>
-                        <div className="flex flex-col items-start gap-1">
-                            {/* Title Line */}
-                            <h2 className="text-xl font-black text-gray-800 tracking-tight">
-                                {hasRealCustomer ? customerName : (orderNumber ? `#${orderNumber}` : 'הזמנה מהירה')}
-                            </h2>
-
-                            {/* Customer Info Buttons - Dynamic based on state */}
-                            <div className="flex items-center gap-2 flex-wrap">
-                                {/* Case 1: Quick Order (no customer info) - Show two prominent buttons */}
-                                {(!customerName || customerName === 'הזמנה מהירה') && onAddCustomerDetails && (
-                                    <>
-                                        <button
-                                            onClick={() => onAddCustomerDetails('phone-then-name')}
-                                            className="px-3 py-1.5 rounded-lg bg-orange-500 text-white border border-orange-600 shadow-sm hover:shadow-md hover:bg-orange-600 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1"
-                                        >
-                                            <Phone size={12} />
-                                            הוסף טלפון + שם
-                                        </button>
-                                        <button
-                                            onClick={() => onAddCustomerDetails('name')}
-                                            className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 border border-gray-200 shadow-sm hover:shadow-md hover:bg-gray-200 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1"
-                                        >
-                                            <User size={12} />
-                                            הוסף שם בלבד
-                                        </button>
-                                    </>
-                                )}
-
-                                {/* Case 2: Has name but no phone - Show add phone button */}
-                                {customerName && customerName !== 'הזמנה מהירה' && !customerPhone && onAddCustomerDetails && (
-                                    <button
-                                        onClick={() => onAddCustomerDetails('phone')}
-                                        className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 border border-blue-200 shadow-sm hover:shadow-md hover:bg-blue-200 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1"
-                                    >
-                                        <Phone size={12} />
-                                        הוסף טלפון
-                                    </button>
-                                )}
-
-                                {/* Case 3: Has phone + name - Show info with edit option */}
-                                {customerPhone && customerName && onAddCustomerDetails && (
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs text-gray-600 flex items-center gap-1">
-                                            <Phone size={10} />
-                                            {customerPhone}
-                                        </span>
-                                        <button
-                                            onClick={() => onAddCustomerDetails('phone')}
-                                            className="text-xs text-blue-600 hover:underline font-medium"
-                                        >
-                                            ערוך
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-
-
-                            {/* Loyalty Badge - BELOW title - Only show when customer is identified */}
-                            {hasRealCustomer && (() => {
-                                // Calculate projected points
-                                let cartCoffeeCount = cartItems.reduce((sum, item) =>
-                                    item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
-
-                                // In edit mode where original had discount, only count NEW items
-                                const originalHadDiscount = isEditMode && editingOrderData?.originalRedeemedCount > 0;
-                                if (originalHadDiscount) {
-                                    const originalCoffeeCount = editingOrderData?.originalItems
-                                        ?.filter(i => i.is_hot_drink)
-                                        ?.reduce((sum, i) => sum + i.quantity, 0) || 0;
-                                    // Only count items BEYOND the original
-                                    cartCoffeeCount = Math.max(0, cartCoffeeCount - originalCoffeeCount);
-                                }
-
-                                // Current state
-                                const currentPoints = loyaltyPoints ?? 0;
-                                const currentCredits = loyaltyFreeCoffees ?? 0;
-
-                                let displayContent;
-                                let badgeStyle;
-
-                                // Special Case: User has exactly 1 credit and no points (Standard "Free Coffee Waiting" state)
-                                if (currentCredits === 1 && currentPoints === 0) {
-                                    if (cartCoffeeCount === 0) {
-                                        // Has credit, cart empty -> "9/10 Next is Free"
-                                        displayContent = (
-                                            <>
-                                                <span>☕</span>
-                                                <span>9/10 הקפה הבא חינם!</span>
-                                            </>
-                                        );
-                                        badgeStyle = 'bg-orange-50 text-orange-700 border-orange-100';
-                                    } else {
-                                        // Has credit, item in cart -> "10/10 You get it free!"
-                                        displayContent = (
-                                            <>
-                                                <span>🎉</span>
-                                                <span>10/10 מגיע לך קפה חינם!</span>
-                                            </>
-                                        );
-                                        badgeStyle = 'bg-green-50 text-green-700 border-green-100 animate-pulse';
-                                    }
-                                }
-                                // Case: Multiple credits
-                                else if (currentCredits > 0) {
-                                    displayContent = (
-                                        <>
-                                            <span>🎁</span>
-                                            <span>יש לך {currentCredits} קפה חינם!</span>
-                                        </>
-                                    );
-                                    badgeStyle = 'bg-purple-50 text-purple-700 border-purple-100';
-                                }
-                                // Case: No credits, accumulating points
-                                else {
-                                    // In edit mode, currentPoints is already adjusted (doesn't include original order's coffees)
-                                    // So we add cart items to get the total
-                                    // But in edit mode, cart includes ORIGINAL items too, so we need to be careful
-                                    const totalPoints = currentPoints + cartCoffeeCount;
-
-                                    if (totalPoints >= 10) {
-                                        displayContent = (
-                                            <>
-                                                <span>🎉</span>
-                                                <span>10/10 מגיע לך קפה חינם!</span>
-                                            </>
-                                        );
-                                        badgeStyle = 'bg-green-50 text-green-700 border-green-100 animate-pulse';
-                                    } else if (totalPoints === 9) {
-                                        displayContent = (
-                                            <>
-                                                <span>☕</span>
-                                                <span>9/10 הקפה הבא חינם!</span>
-                                            </>
-                                        );
-                                        badgeStyle = 'bg-orange-50 text-orange-700 border-orange-100';
-                                    } else {
-                                        displayContent = (
-                                            <>
-                                                <span>☕</span>
-                                                <span>{totalPoints}/10 לקפה חינם</span>
-                                            </>
-                                        );
-                                        badgeStyle = 'bg-orange-50 text-orange-700 border-orange-100';
-                                    }
-                                }
-
-                                return (
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${badgeStyle}`}>
-                                        {displayContent}
-                                    </span>
-                                );
-                            })()}
-                        </div>
-                        {orderNumber && customerName && (
-                            <div className="bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
-                                <span className="text-xs text-blue-600 font-bold block text-center leading-none mb-0.5">הזמנה</span>
-                                <span className="text-lg font-black text-blue-700 leading-none">#{orderNumber}</span>
-                            </div>
-                        )}
+                {/* Single row header */}
+                <div className="flex items-center gap-2">
+                    {/* Icon */}
+                    <div className="bg-orange-100 p-2 rounded-xl flex-shrink-0">
+                        <ShoppingBag className="w-5 h-5 text-orange-600" />
                     </div>
 
-                    {/* Right: Undo button */}
-                    <button
-                        onClick={onUndoCart}
-                        disabled={cartHistory.length === 0}
-                        className="text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="ביטול הפעולה האחרונה"
-                    >
-                        <span className="text-base">↩</span>
-                        חזור
-                    </button>
+                    {/* Customer name if exists */}
+                    {hasRealCustomer && (
+                        <h2 className="text-xl font-black text-gray-800 tracking-tight flex-shrink-0">
+                            {customerName}
+                        </h2>
+                    )}
+
+                    {/* Order number if no customer but has order number */}
+                    {!hasRealCustomer && orderNumber && (
+                        <h2 className="text-xl font-black text-gray-800 tracking-tight flex-shrink-0">
+                            #{orderNumber}
+                        </h2>
+                    )}
+
+                    {/* Case 1: No customer - Show two buttons */}
+                    {!hasRealCustomer && onAddCustomerDetails && (
+                        <>
+                            <button
+                                onClick={() => onAddCustomerDetails('phone-then-name')}
+                                className="px-3 py-1.5 rounded-lg bg-orange-500 text-white border border-orange-600 shadow-sm hover:shadow-md hover:bg-orange-600 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
+                            >
+                                <Phone size={12} />
+                                הוסף טלפון + שם
+                            </button>
+                            <button
+                                onClick={() => onAddCustomerDetails('name')}
+                                className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 border border-gray-200 shadow-sm hover:shadow-md hover:bg-gray-200 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
+                            >
+                                <User size={12} />
+                                הוסף שם בלבד
+                            </button>
+                        </>
+                    )}
+
+                    {/* Case 2: Has name but no phone */}
+                    {hasRealCustomer && !customerPhone && onAddCustomerDetails && (
+                        <button
+                            onClick={() => onAddCustomerDetails('phone')}
+                            className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 border border-blue-200 shadow-sm hover:shadow-md hover:bg-blue-200 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1 flex-shrink-0"
+                        >
+                            <Phone size={12} />
+                            הוסף טלפון
+                        </button>
+                    )}
+
+                    {/* Case 3: Has phone + name - Show phone and edit */}
+                    {hasRealCustomer && customerPhone && onAddCustomerDetails && (
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-xs text-gray-600 flex items-center gap-1">
+                                <Phone size={10} />
+                                {customerPhone}
+                            </span>
+                            <button
+                                onClick={() => onAddCustomerDetails('phone-then-name')}
+                                className="text-xs text-blue-600 hover:underline font-medium"
+                            >
+                                ערוך
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Order number badge if has customer */}
+                    {orderNumber && hasRealCustomer && (
+                        <div className="bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 flex-shrink-0 mr-auto">
+                            <span className="text-sm font-black text-blue-700">#{orderNumber}</span>
+                        </div>
+                    )}
                 </div>
+
+                {/* Loyalty Badge - Below main row */}
+                {hasRealCustomer && (() => {
+                    // Calculate projected points
+                    let cartCoffeeCount = cartItems.reduce((sum, item) =>
+                        item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
+
+                    // In edit mode where original had discount, only count NEW items
+                    const originalHadDiscount = isEditMode && editingOrderData?.originalRedeemedCount > 0;
+                    if (originalHadDiscount) {
+                        const originalCoffeeCount = editingOrderData?.originalItems
+                            ?.filter(i => i.is_hot_drink)
+                            ?.reduce((sum, i) => sum + i.quantity, 0) || 0;
+                        // Only count items BEYOND the original
+                        cartCoffeeCount = Math.max(0, cartCoffeeCount - originalCoffeeCount);
+                    }
+
+                    // Current state
+                    const currentPoints = loyaltyPoints ?? 0;
+                    const currentCredits = loyaltyFreeCoffees ?? 0;
+
+                    let displayContent;
+                    let badgeStyle;
+
+                    // Special Case: User has exactly 1 credit and no points (Standard "Free Coffee Waiting" state)
+                    if (currentCredits === 1 && currentPoints === 0) {
+                        if (cartCoffeeCount === 0) {
+                            // Has credit, cart empty -> "9/10 Next is Free"
+                            displayContent = (
+                                <>
+                                    <span>☕</span>
+                                    <span>9/10 הקפה הבא חינם!</span>
+                                </>
+                            );
+                            badgeStyle = 'bg-orange-50 text-orange-700 border-orange-100';
+                        } else {
+                            // Has credit, item in cart -> "10/10 You get it free!"
+                            displayContent = (
+                                <>
+                                    <span>🎉</span>
+                                    <span>10/10 מגיע לך קפה חינם!</span>
+                                </>
+                            );
+                            badgeStyle = 'bg-green-50 text-green-700 border-green-100 animate-pulse';
+                        }
+                    }
+                    // Case: Multiple credits
+                    else if (currentCredits > 0) {
+                        displayContent = (
+                            <>
+                                <span>🎁</span>
+                                <span>יש לך {currentCredits} קפה חינם!</span>
+                            </>
+                        );
+                        badgeStyle = 'bg-purple-50 text-purple-700 border-purple-100';
+                    }
+                    // Case: No credits, accumulating points
+                    else {
+                        const totalPoints = currentPoints + cartCoffeeCount;
+
+                        if (totalPoints >= 10) {
+                            displayContent = (
+                                <>
+                                    <span>🎉</span>
+                                    <span>10/10 מגיע לך קפה חינם!</span>
+                                </>
+                            );
+                            badgeStyle = 'bg-green-50 text-green-700 border-green-100 animate-pulse';
+                        } else if (totalPoints === 9) {
+                            displayContent = (
+                                <>
+                                    <span>☕</span>
+                                    <span>9/10 הקפה הבא חינם!</span>
+                                </>
+                            );
+                            badgeStyle = 'bg-orange-50 text-orange-700 border-orange-100';
+                        } else {
+                            displayContent = (
+                                <>
+                                    <span>☕</span>
+                                    <span>{totalPoints}/10 לקפה חינם</span>
+                                </>
+                            );
+                            badgeStyle = 'bg-orange-50 text-orange-700 border-orange-100';
+                        }
+                    }
+
+                    return (
+                        <div className="mt-2">
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 w-fit ${badgeStyle}`}>
+                                {displayContent}
+                            </span>
+                        </div>
+                    );
+                })()}
             </div>
 
 

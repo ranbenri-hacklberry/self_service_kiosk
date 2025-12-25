@@ -120,7 +120,7 @@ const Header = ({
 
   const handleNewOrder = () => {
     sessionStorage.setItem('order_origin', 'kds');
-    navigate('/customer-phone-input-screen?from=kds');
+    navigate('/menu-ordering-interface');
   };
 
   const handleExit = () => {
