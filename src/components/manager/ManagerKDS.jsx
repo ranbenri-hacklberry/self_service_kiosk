@@ -407,7 +407,7 @@ const ManagerKDS = () => {
     const handlePayment = async (order) => {
         const { error } = await supabase
             .from('orders')
-            .update({ 
+            .update({
                 is_paid: true,
                 paid_amount: order.totalAmount || order.total_amount || 0
             })
@@ -418,7 +418,7 @@ const ManagerKDS = () => {
 
     useEffect(() => {
         fetchKDS();
-        const interval = setInterval(fetchKDS, 5000);
+        const interval = setInterval(fetchKDS, 15000); // Every 15 seconds instead of 5
         return () => clearInterval(interval);
     }, []);
 

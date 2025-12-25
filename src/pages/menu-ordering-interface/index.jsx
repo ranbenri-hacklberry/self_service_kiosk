@@ -102,6 +102,10 @@ const MenuOrderingInterface = () => {
   // --- Edit Mode Logic ---
   const [isRestrictedMode, setIsRestrictedMode] = useState(false);
 
+  // --- Soldier Discount State ---
+  const [soldierDiscountEnabled, setSoldierDiscountEnabled] = useState(false);
+  const [soldierDiscountId, setSoldierDiscountId] = useState(null); // UUID from discounts table
+
   // --- Edit Mode Logic ---
   useEffect(() => {
     console.log('🔄 MenuOrderingInterface mounted, location:', location);
@@ -1198,12 +1202,63 @@ const MenuOrderingInterface = () => {
     }
   }, [cartItems, currentCustomer, loyaltyPoints, loyaltyFreeCoffees, isEditMode, editingOrderData, adjustedLoyaltyPoints]);
 
-  // Calculate finalTotal with useMemo to react to loyaltyDiscount changes
+  // Calculate soldier discount amount
+  const soldierDiscountAmount = useMemo(() => {
+    if (!soldierDiscountEnabled) return 0;
+    // 10% of cart total (before loyalty discount)
+    return Math.floor(cartTotal * 0.10);
+  }, [cartTotal, soldierDiscountEnabled]);
+
+  // Calculate finalTotal with useMemo to react to loyaltyDiscount and soldier discount changes
   const finalTotal = useMemo(() => {
-    const total = Math.max(0, cartTotal - loyaltyDiscount);
-    console.log('💵 Final Total:', { cartTotal, loyaltyDiscount, finalTotal: total });
+    const total = Math.max(0, cartTotal - loyaltyDiscount - soldierDiscountAmount);
+    console.log('💵 Final Total:', { cartTotal, loyaltyDiscount, soldierDiscountAmount, finalTotal: total });
     return total;
-  }, [cartTotal, loyaltyDiscount]);
+  }, [cartTotal, loyaltyDiscount, soldierDiscountAmount]);
+
+  // Toggle soldier discount handler
+  const handleToggleSoldierDiscount = async () => {
+    if (!soldierDiscountEnabled) {
+      // Enable - fetch discount ID from DB
+      try {
+        const { data, error } = await supabase
+          .from('discounts')
+          .select('id')
+          .contains('customer_types', ['soldier'])
+          .eq('is_active', true)
+          .single();
+
+        if (data) {
+          setSoldierDiscountId(data.id);
+          setSoldierDiscountEnabled(true);
+          console.log('🎖️ Soldier discount enabled:', data.id);
+        } else {
+          // Fallback: find any 10% discount
+          const { data: fallback } = await supabase
+            .from('discounts')
+            .select('id')
+            .ilike('name', '%חייל%')
+            .eq('is_active', true)
+            .single();
+
+          if (fallback) {
+            setSoldierDiscountId(fallback.id);
+            setSoldierDiscountEnabled(true);
+          } else {
+            alert('הנחת חיילים לא מוגדרת במערכת');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch soldier discount:', err);
+        // Enable anyway with null ID (will use inline calculation)
+        setSoldierDiscountEnabled(true);
+      }
+    } else {
+      // Disable
+      setSoldierDiscountEnabled(false);
+      setSoldierDiscountId(null);
+    }
+  };
 
   // Updated handleInitiatePayment to show payment modal
   const handleInitiatePayment = async () => {
@@ -1541,8 +1596,9 @@ const MenuOrderingInterface = () => {
         p_final_total: (orderData?.total_amount !== undefined) ? orderData.total_amount : finalTotal,
         p_original_coffee_count: originalCoffeeCount,
         p_is_quick_order: !!currentCustomer?.isQuickOrder && !realPhone,
-        p_discount_id: orderData?.discount_id || null,
-        p_discount_amount: orderData?.discount_amount || 0,
+        // Soldier discount takes priority, then orderData discount
+        p_discount_id: soldierDiscountEnabled ? soldierDiscountId : (orderData?.discount_id || null),
+        p_discount_amount: soldierDiscountEnabled ? soldierDiscountAmount : (orderData?.discount_amount || 0),
         p_business_id: currentUser?.business_id || null
       };
 
@@ -1963,6 +2019,9 @@ const MenuOrderingInterface = () => {
               finalTotal={finalTotal}
               cartHistory={cartHistory}
               isRestrictedMode={isRestrictedMode}
+              soldierDiscountEnabled={soldierDiscountEnabled}
+              onToggleSoldierDiscount={handleToggleSoldierDiscount}
+              soldierDiscountAmount={soldierDiscountAmount}
             />
           </div>
         </div>

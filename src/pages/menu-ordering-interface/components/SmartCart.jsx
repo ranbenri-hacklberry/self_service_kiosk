@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, UserPlus, Check, Phone, User } from 'lucide-react';
+import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, UserPlus, Check, Phone, User, Shield } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
@@ -143,7 +143,10 @@ const SmartCart = ({
     loyaltyFreeCoffees = 0,
     cartHistory = [],
     orderNumber,
-    isRestrictedMode = false // New prop
+    isRestrictedMode = false, // New prop
+    soldierDiscountEnabled = false,
+    onToggleSoldierDiscount,
+    soldierDiscountAmount = 0
 }) => {
 
     // --- Calculations ---
@@ -372,9 +375,24 @@ const SmartCart = ({
 
                     {/* Order number badge if has customer */}
                     {orderNumber && hasRealCustomer && (
-                        <div className="bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 flex-shrink-0 mr-auto">
+                        <div className="bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 flex-shrink-0">
                             <span className="text-sm font-black text-blue-700">#{orderNumber}</span>
                         </div>
+                    )}
+
+                    {/* Soldier Discount Button - Left side with mr-auto */}
+                    {onToggleSoldierDiscount && (
+                        <button
+                            onClick={onToggleSoldierDiscount}
+                            className={`px-3 py-1.5 rounded-lg border shadow-sm transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1 flex-shrink-0 whitespace-nowrap mr-auto ${soldierDiscountEnabled
+                                ? 'bg-green-500 text-white border-green-600 hover:bg-green-600'
+                                : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                                }`}
+                        >
+                            <Shield size={12} />
+                            הנחת חיילים
+                            {soldierDiscountEnabled && <Check size={12} />}
+                        </button>
                     )}
                 </div>
 
@@ -540,6 +558,18 @@ const SmartCart = ({
                         </span>
                         <span className="text-red-700 font-bold dir-ltr">
                             {formatPrice(Math.abs(priceDifference))}
+                        </span>
+                    </div>
+                )}
+
+                {/* Soldier Discount Row */}
+                {soldierDiscountEnabled && soldierDiscountAmount > 0 && (
+                    <div className="flex justify-between items-center mb-3 px-1 bg-emerald-50 p-2 rounded-lg border border-emerald-100">
+                        <span className="text-emerald-700 font-bold flex items-center gap-2 text-sm">
+                            <Shield size={14} /> הנחת חיילים (10%)
+                        </span>
+                        <span className="text-emerald-700 font-bold dir-ltr">
+                            -{formatPrice(soldierDiscountAmount)}
                         </span>
                     </div>
                 )}

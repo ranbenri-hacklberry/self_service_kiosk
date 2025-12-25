@@ -18,7 +18,7 @@ const CustomerPhoneInputScreen = () => {
   const inputRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentUser } = useAuth(); // GET AUTH CONTEXT
+  const { currentUser, isLoading: authLoading } = useAuth(); // GET AUTH CONTEXT + LOADING STATE
 
   const formattedPhoneNumber = useMemo(() => {
     const digits = phoneNumber?.replace(/[^0-9]/g, '')?.split('') || [];
@@ -39,13 +39,27 @@ const CustomerPhoneInputScreen = () => {
       return null;
     }
 
+    // Wait if auth is still loading
+    if (authLoading) {
+      console.log('⏳ Auth still loading, waiting...');
+      return null;
+    }
+
+    // Check for missing business_id
+    if (!currentUser?.business_id) {
+      console.error('❌ No business_id found! CurrentUser:', currentUser);
+      throw new Error('לא ניתן לזהות את העסק. נא להתחבר מחדש.');
+    }
+
     try {
       console.log('🔍 Checking customer:', cleanedPhone);
+      console.log('🏢 Business ID:', currentUser?.business_id);
       const { data, error } = await supabase.rpc('lookup_customer', {
         p_phone: cleanedPhone,
-        p_business_id: currentUser?.business_id || null
+        p_business_id: currentUser.business_id
       });
 
+      console.log('📞 Lookup result:', { data, error });
       if (error) throw error;
       return data;
     } catch (err) {
