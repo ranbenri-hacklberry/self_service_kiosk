@@ -34,13 +34,18 @@ const CustomerInfoModal = ({
     const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
     const [pendingCustomer, setPendingCustomer] = useState(null);
 
+    const wasOpen = useRef(false);
+
     // Initialize state when modal opens
     useEffect(() => {
-        if (isOpen) {
+        if (isOpen && !wasOpen.current) {
             // Reset state
             setPhoneNumber(currentCustomer?.phone || '');
-            // Clear name if it's "הזמנה מהירה" or empty
-            setCustomerName(currentCustomer?.name === 'הזמנה מהירה' ? '' : (currentCustomer?.name || ''));
+            // Clear name if it's a generic placeholder or starts with #
+            const genericNames = ['הזמנה מהירה', 'אורח', 'אורח/ת'];
+            const name = currentCustomer?.name || '';
+            const isGeneric = genericNames.includes(name) || name.startsWith('#');
+            setCustomerName(isGeneric ? '' : name);
             setError('');
             setLookupResult(null);
             setIsLoading(false);
@@ -54,6 +59,7 @@ const CustomerInfoModal = ({
                 setTimeout(() => nameInputRef.current?.focus(), 100);
             }
         }
+        wasOpen.current = isOpen;
     }, [isOpen, mode, currentCustomer]);
 
     if (!isOpen) return null;
@@ -123,8 +129,9 @@ const CustomerInfoModal = ({
                     loyalty_coffee_count: data.customer.loyalty_coffee_count || 0
                 };
 
-                // Check if this is a different customer than current
-                const isDifferentCustomer = currentCustomer?.id && currentCustomer.id !== foundCustomer.id;
+                // Trigger switch confirmation if it's a guest order OR if it's a different customer ID
+                const isGuest = !currentCustomer?.id || ['הזמנה מהירה', 'אורח', 'אורח/ת', 'אורח כללי', 'אורח אנונימי'].includes(currentCustomer?.name) || (typeof currentCustomer?.name === 'string' && currentCustomer.name.startsWith('#'));
+                const isDifferentCustomer = (currentCustomer?.id && currentCustomer.id !== foundCustomer.id) || isGuest;
 
                 if (isDifferentCustomer) {
                     // Show custom confirmation modal
@@ -205,34 +212,22 @@ const CustomerInfoModal = ({
 
         try {
             const cleanPhone = phoneNumber.replace(/\D/g, '');
+            const phoneToUse = cleanPhone.length === 10 ? cleanPhone : null;
             let customerId = currentCustomer?.id;
 
-            // If we have a phone, create/update customer via RPC
-            if (cleanPhone && cleanPhone.length === 10) {
-                // Use RPC to create/update customer (bypasses RLS)
-                const { data: customerData, error: rpcError } = await supabase.rpc('create_or_update_customer', {
-                    p_business_id: currentUser?.business_id,
-                    p_phone: cleanPhone,
-                    p_name: customerName.trim()
-                });
+            // Use RPC to create/update customer (bypasses RLS)
+            const { data: customerData, error: rpcError } = await supabase.rpc('create_or_update_customer', {
+                p_business_id: currentUser?.business_id,
+                p_phone: phoneToUse,
+                p_name: customerName.trim()
+            });
 
-                if (rpcError) throw rpcError;
-                customerId = customerData;
-            } else if (!cleanPhone) {
-                // Name only - use RPC to create customer without phone
-                const { data: customerData, error: rpcError } = await supabase.rpc('create_or_update_customer', {
-                    p_business_id: currentUser?.business_id,
-                    p_phone: null,
-                    p_name: customerName.trim()
-                });
-
-                if (rpcError) throw rpcError;
-                customerId = customerData;
-            }
+            if (rpcError) throw rpcError;
+            customerId = customerData;
 
             const customer = {
                 id: customerId,
-                phone: cleanPhone || null,
+                phone: phoneToUse,
                 name: customerName.trim(),
                 loyalty_coffee_count: 0
             };
@@ -282,9 +277,15 @@ const CustomerInfoModal = ({
                     className={`w-full h-14 bg-gray-50 rounded-xl border-2 flex items-center justify-center transition-colors ${error ? 'border-red-200 bg-red-50' : 'border-gray-100'
                         }`}
                 >
-                    <div className="text-2xl font-mono font-bold text-gray-800 tracking-wider" dir="ltr">
-                        {formatPhoneDisplay(phoneNumber) || '___-___-____'}
-                    </div>
+                    {phoneNumber ? (
+                        <div className="text-2xl font-mono font-bold text-gray-800 tracking-wider" dir="ltr">
+                            {formatPhoneDisplay(phoneNumber)}
+                        </div>
+                    ) : (
+                        <div className="text-lg font-bold text-gray-400">
+                            הקלד טלפון לקוח
+                        </div>
+                    )}
                 </div>
 
                 {/* Error Message */}
@@ -300,30 +301,49 @@ const CustomerInfoModal = ({
             </div>
 
             {/* Footer */}
-            <div className="p-6 border-t border-gray-200 flex gap-3">
-                <button
-                    onClick={onClose}
-                    className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
-                >
-                    ביטול
-                </button>
-                <button
-                    onClick={handlePhoneLookup}
-                    disabled={phoneNumber.length !== 10 || isLoading}
-                    className={`flex-1 py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 ${phoneNumber.length === 10 && !isLoading
-                        ? 'bg-orange-500 text-white hover:bg-orange-600'
-                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        }`}
-                >
-                    {isLoading ? (
-                        <>
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                            בודק...
-                        </>
-                    ) : (
-                        'המשך'
-                    )}
-                </button>
+            <div className="p-4 border-t border-gray-200 flex flex-col gap-3">
+                <div className="flex gap-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
+                    >
+                        ביטול
+                    </button>
+                    <button
+                        onClick={handlePhoneLookup}
+                        disabled={phoneNumber.length !== 10 || isLoading}
+                        className={`flex-1 py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 ${phoneNumber.length === 10 && !isLoading
+                            ? 'bg-orange-500 text-white hover:bg-orange-600'
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            }`}
+                    >
+                        {isLoading ? (
+                            <>
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                                בודק...
+                            </>
+                        ) : (
+                            'המשך'
+                        )}
+                    </button>
+                </div>
+
+                {/* Option for Name Only */}
+                {!isLoading && (
+                    <button
+                        onClick={() => {
+                            setStep('name');
+                            setError('');
+                            // Clear phone if it's incomplete
+                            if (phoneNumber.length < 10) setPhoneNumber('');
+                            setTimeout(() => nameInputRef.current?.focus(), 100);
+                        }}
+                        className="w-full py-3.5 border-2 border-orange-100 text-orange-600 rounded-xl font-bold hover:bg-orange-50 transition flex items-center justify-center gap-2"
+                    >
+                        <User size={20} />
+                        המשך עם שם בלבד
+                    </button>
+                )}
             </div>
         </>
     );

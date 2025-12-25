@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, CreditCard, Clock, Gift, Banknote, Star } from 'lucide-react';
+import { X, Check, CreditCard, Clock, Gift, Banknote, Star, Smartphone, Wallet } from 'lucide-react';
 import Button from '../../../components/ui/Button'; // Assuming Button component exists in this path, based on previous file
 import { cn } from '../../../utils/cn'; // Assuming cn exists
 import { useDiscounts } from '../hooks/useDiscounts';
@@ -236,7 +236,41 @@ const PaymentSelectionModal = ({
       instructions: [
         'ההזמנה תירשם כ"על חשבון הבית"'
       ],
-      confirmText: 'אישור'
+      confirmText: 'אישור',
+      showZeroPrice: true  // Special flag for OTH
+    },
+    bit: {
+      title: 'Bit - העברה ל',
+      phone: '055-6822072',
+      subtitle: 'העברה באפליקציה',
+      icon: Smartphone,
+      iconBg: 'bg-pink-50',
+      iconColor: 'text-pink-600',
+      amountBg: 'bg-pink-50 border-pink-200',
+      amountColor: 'text-pink-600',
+      instructions: [
+        '⚠️ חשוב! בקש מהלקוח להשאיר את שדה הסיבה ריק',
+        'ודא שהלקוח שולח למספר: 055-6822072',
+        'המתן לקבלת אישור העברה על המסך',
+        'אשר רק לאחר שראית את האישור'
+      ],
+      confirmText: 'קיבלתי אישור'
+    },
+    paybox: {
+      title: 'Paybox - העברה ל',
+      phone: '055-6822072',
+      subtitle: 'העברה באפליקציה',
+      icon: Wallet,
+      iconBg: 'bg-cyan-50',
+      iconColor: 'text-cyan-600',
+      amountBg: 'bg-cyan-50 border-cyan-200',
+      amountColor: 'text-cyan-600',
+      instructions: [
+        'ודא שהלקוח שולח למספר: 055-6822072',
+        'המתן לקבלת אישור העברה',
+        'אשר רק לאחר שראית את האישור'
+      ],
+      confirmText: 'קיבלתי אישור'
     }
   };
 
@@ -261,7 +295,14 @@ const PaymentSelectionModal = ({
                 <IconComponent size={20} />
               </div>
               <div>
-                <h2 className="text-xl font-black text-slate-800">{config?.title}</h2>
+                <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                  <span>{config?.title}</span>
+                  {config?.phone && (
+                    <span className="px-2 py-0.5 rounded-xl border-2 border-slate-200 bg-slate-50 text-slate-700 text-lg tabular-nums">
+                      {config?.phone}
+                    </span>
+                  )}
+                </h2>
                 <p className="text-xs text-slate-400">{config?.subtitle}</p>
               </div>
             </div>
@@ -272,9 +313,20 @@ const PaymentSelectionModal = ({
               <p className="text-sm font-bold mb-2 text-slate-600">
                 {isRefund ? 'סכום לזיכוי:' : 'סכום לתשלום:'}
               </p>
-              <p className={`text-5xl font-black ${config?.amountColor}`}>
-                {formatPrice(isRefund ? refundAmount : finalPrice)}{isRefund ? '-' : ''}
-              </p>
+              {config?.showZeroPrice ? (
+                <div className="flex items-center justify-center gap-4">
+                  <span className="text-2xl font-bold text-slate-400 line-through">
+                    {formatPrice(cartTotal)}
+                  </span>
+                  <span className={`text-5xl font-black ${config?.amountColor}`}>
+                    ₪0
+                  </span>
+                </div>
+              ) : (
+                <p className={`text-5xl font-black ${config?.amountColor}`}>
+                  {formatPrice(isRefund ? refundAmount : finalPrice)}{isRefund ? '-' : ''}
+                </p>
+              )}
             </div>
 
             <div className="w-full bg-slate-50 rounded-2xl p-4 space-y-2">
@@ -320,10 +372,16 @@ const PaymentSelectionModal = ({
     );
   }
 
-  // Payment Methods for Selection Grid
-  const PAYMENT_METHODS = [
+  // Payment Methods for Selection Grid - Main row
+  const PAYMENT_METHODS_MAIN = [
     { id: 'cash', label: 'מזומן', icon: Banknote, color: 'bg-green-100 text-green-700 hover:bg-green-200' },
     { id: 'credit_card', label: 'אשראי', icon: CreditCard, color: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
+  ];
+
+  // Payment Methods - Secondary row
+  const PAYMENT_METHODS_SECONDARY = [
+    { id: 'bit', label: 'ביט', icon: Smartphone, color: 'bg-pink-100 text-pink-700 hover:bg-pink-200' },
+    { id: 'paybox', label: 'פייבוקס', icon: Wallet, color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200' },
     { id: 'gift_card', label: 'שובר', icon: Gift, color: 'bg-purple-100 text-purple-700 hover:bg-purple-200' },
     { id: 'oth', label: 'ע״ח הבית', icon: Star, color: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
   ];
@@ -381,11 +439,11 @@ const PaymentSelectionModal = ({
             </div>
           </div>
 
-          {/* Payment Methods Grid - Compact */}
+          {/* Payment Methods Grid - Main (2 big buttons) */}
           <div>
             <h3 className="text-base font-bold text-slate-800 mb-2">אמצעי תשלום</h3>
-            <div className="grid grid-cols-2 gap-2">
-              {PAYMENT_METHODS.map(method => (
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              {PAYMENT_METHODS_MAIN.map(method => (
                 <button
                   key={method.id}
                   onClick={() => handlePaymentMethodSelect(method.id)}
@@ -398,6 +456,24 @@ const PaymentSelectionModal = ({
                 >
                   <method.icon size={24} />
                   <span className="font-bold text-base">{method.label}</span>
+                </button>
+              ))}
+            </div>
+            {/* Secondary row - 4 smaller buttons */}
+            <div className="grid grid-cols-4 gap-1.5">
+              {PAYMENT_METHODS_SECONDARY.map(method => (
+                <button
+                  key={method.id}
+                  onClick={() => handlePaymentMethodSelect(method.id)}
+                  disabled={isProcessing}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-1 p-2.5 rounded-lg transition-all border border-transparent",
+                    method.color,
+                    "hover:scale-[1.02] active:scale-[0.98] shadow-sm text-xs"
+                  )}
+                >
+                  <method.icon size={18} />
+                  <span className="font-bold">{method.label}</span>
                 </button>
               ))}
             </div>

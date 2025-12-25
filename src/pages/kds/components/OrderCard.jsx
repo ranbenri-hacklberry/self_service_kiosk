@@ -292,7 +292,12 @@ const OrderCard = ({
           {/* שם לקוח */}
           <div className="flex items-center gap-2 w-full">
             <div className="flex-1 min-w-0 text-2xl font-black text-slate-900 leading-none tracking-tight truncate" title={order.customerName}>
-              {order.customerName}
+              {(() => {
+                const rawName = order.customerName || '';
+                const name = typeof rawName === 'string' ? rawName.trim() : '';
+                const isGuest = !name || ['אורח', 'אורח/ת', 'הזמנה מהירה', 'אורח כללי', 'אורח אנונימי'].includes(name) || name.startsWith('#');
+                return isGuest ? `הזמנה #${order.orderNumber}` : name;
+              })()}
             </div>
           </div>
           {/* מספר הזמנה (Removed per user request) */}

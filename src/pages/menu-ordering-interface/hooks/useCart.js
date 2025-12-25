@@ -1,13 +1,44 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+
+const CART_STORAGE_KEY = 'pendingCartItems';
 
 /**
  * Custom hook for cart management
  * Handles cart state, history (undo), and item operations
+ * Persists cart to sessionStorage to survive page refresh
  */
 export const useCart = (initialItems = []) => {
-    const [cartItems, setCartItems] = useState(initialItems);
+    // Initialize cart from sessionStorage or initialItems
+    const [cartItems, setCartItems] = useState(() => {
+        try {
+            const saved = sessionStorage.getItem(CART_STORAGE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    console.log('🛒 Restored cart from sessionStorage:', parsed.length, 'items');
+                    return parsed;
+                }
+            }
+        } catch (e) {
+            console.error('Failed to restore cart from sessionStorage:', e);
+        }
+        return initialItems;
+    });
     const [cartHistory, setCartHistory] = useState([]);
+
+    // Save cart to sessionStorage whenever it changes
+    useEffect(() => {
+        try {
+            if (cartItems.length > 0) {
+                sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems));
+            } else {
+                sessionStorage.removeItem(CART_STORAGE_KEY);
+            }
+        } catch (e) {
+            console.error('Failed to save cart to sessionStorage:', e);
+        }
+    }, [cartItems]);
 
     // Calculate cart total
     const cartTotal = useMemo(() => {
@@ -47,10 +78,11 @@ export const useCart = (initialItems = []) => {
         console.log('↩️ Undo: Restored previous cart state');
     }, [cartHistory]);
 
-    // Clear cart
+    // Clear cart (and sessionStorage)
     const clearCart = useCallback(() => {
         setCartItems([]);
         setCartHistory([]);
+        sessionStorage.removeItem(CART_STORAGE_KEY);
     }, []);
 
     // Set cart items (used for edit mode)

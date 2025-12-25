@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, CreditCard, Banknote, Gift, Star, Clock, History } from 'lucide-react';
+import { X, Check, CreditCard, Banknote, Gift, Star, Clock, History, Smartphone, Wallet } from 'lucide-react';
 
 /**
  * KDS Payment Modal - Used to collect payment for orders from KDS
@@ -40,10 +40,15 @@ const KDSPaymentModal = ({
     };
 
     // Payment Methods Config
-    const PAYMENT_METHODS = [
+    const PAYMENT_METHODS_MAIN = [
         { id: 'cash', label: 'מזומן', icon: Banknote, color: 'bg-green-100 text-green-700 hover:bg-green-200' },
         { id: 'credit_card', label: 'אשראי', icon: CreditCard, color: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
-        { id: 'gift_card', label: 'שובר', icon: Gift, color: 'bg-purple-100 text-purple-700 hover:bg-purple-200' },
+    ];
+
+    const PAYMENT_METHODS_SECONDARY = [
+        { id: 'bit', label: 'Bit', icon: Smartphone, color: 'bg-purple-100 text-purple-700 hover:bg-purple-200' },
+        { id: 'paybox', label: 'Paybox', icon: Wallet, color: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
+        { id: 'gift_card', label: 'שובר', icon: Gift, color: 'bg-slate-100 text-slate-700 hover:bg-slate-200' },
         { id: 'oth', label: 'ע״ח הבית', icon: Star, color: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
     ];
 
@@ -104,6 +109,38 @@ const KDSPaymentModal = ({
             amountColor: 'text-orange-600',
             instructions: [
                 'ההזמנה תירשם כ"על חשבון הבית"'
+            ],
+            confirmText: 'אישור'
+        },
+        bit: {
+            title: 'Bit - העברה ל',
+            phone: '055-6822072',
+            subtitle: 'העברה באפליקציה',
+            icon: Smartphone,
+            iconBg: 'bg-purple-50',
+            iconColor: 'text-purple-600',
+            amountBg: 'bg-purple-50 border-purple-200',
+            amountColor: 'text-purple-600',
+            instructions: [
+                'וודא קבלת הודעת Bit מהלקוח',
+                'וודא את הסכום שהועבר',
+                'אשר את קבלת התשלום'
+            ],
+            confirmText: 'אישור'
+        },
+        paybox: {
+            title: 'Paybox - העברה ל',
+            phone: '055-6822072',
+            subtitle: 'העברה באפליקציה',
+            icon: Wallet,
+            iconBg: 'bg-blue-50',
+            iconColor: 'text-blue-600',
+            amountBg: 'bg-blue-50 border-blue-200',
+            amountColor: 'text-blue-600',
+            instructions: [
+                'וודא קבלת הודעת Paybox מהלקוח',
+                'וודא את הסכום שהועבר',
+                'אשר את קבלת התשלום'
             ],
             confirmText: 'אישור'
         }
@@ -174,7 +211,14 @@ const KDSPaymentModal = ({
                                 <IconComponent size={20} />
                             </div>
                             <div>
-                                <h2 className="text-xl font-black text-slate-800">{config?.title}</h2>
+                                <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                                    <span>{config?.title}</span>
+                                    {config?.phone && (
+                                        <span className="px-2 py-0.5 rounded-xl border-2 border-slate-200 bg-slate-50 text-slate-700 text-lg tabular-nums">
+                                            {config?.phone}
+                                        </span>
+                                    )}
+                                </h2>
                                 <p className="text-xs text-slate-400">{config?.subtitle}</p>
                             </div>
                         </div>
@@ -278,8 +322,10 @@ const KDSPaymentModal = ({
                     {/* Payment Methods */}
                     <div>
                         <h3 className="text-base font-bold text-slate-800 mb-2">אמצעי תשלום</h3>
-                        <div className="grid grid-cols-2 gap-2">
-                            {PAYMENT_METHODS.map(method => (
+
+                        {/* Main row (2 big buttons) */}
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                            {PAYMENT_METHODS_MAIN.map(method => (
                                 <button
                                     key={method.id}
                                     onClick={() => handleMethodSelect(method.id)}
@@ -287,6 +333,20 @@ const KDSPaymentModal = ({
                                 >
                                     <method.icon size={24} />
                                     <span className="font-bold text-base">{method.label}</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Secondary row (4 small buttons) */}
+                        <div className="grid grid-cols-4 gap-2">
+                            {PAYMENT_METHODS_SECONDARY.map(method => (
+                                <button
+                                    key={method.id}
+                                    onClick={() => handleMethodSelect(method.id)}
+                                    className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all border border-transparent ${method.color} hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md`}
+                                >
+                                    <method.icon size={18} />
+                                    <span className="font-bold text-[10px] whitespace-nowrap">{method.label}</span>
                                 </button>
                             ))}
                         </div>

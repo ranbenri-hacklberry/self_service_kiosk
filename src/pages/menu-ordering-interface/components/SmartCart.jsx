@@ -5,13 +5,21 @@ import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
 const formatPrice = (price = 0) => {
     // מחזיר רק את המספר ללא סימן שקל - בטוח מ-NaN
+    // מציג אגורות רק אם יש מספר לא שלם
     const num = Number(price);
     if (isNaN(num)) return '0';
-    return new Intl.NumberFormat('he-IL', { maximumFractionDigits: 0 }).format(num);
+
+    // Check if number has decimals
+    const hasDecimals = num % 1 !== 0;
+
+    return new Intl.NumberFormat('he-IL', {
+        minimumFractionDigits: hasDecimals ? 2 : 0,
+        maximumFractionDigits: hasDecimals ? 2 : 0
+    }).format(num);
 };
 
 // Memoized CartItem to prevent unnecessary re-renders
-const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrictedMode }) => {
+const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrictedMode, soldierDiscountEnabled = false }) => {
     const cleanName = item.name ? item.name.replace(/<[^>]+>/g, '').trim() : '';
 
     // Parse modifiers for display - remove duplicates
@@ -47,6 +55,12 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrict
         return [...new Set(modNames)];
     }, [item]);
 
+    // Calculate discounted price
+    const originalPrice = item.price * item.quantity;
+    const discountedPrice = soldierDiscountEnabled
+        ? Math.floor(originalPrice * 0.9)
+        : originalPrice;
+
     return (
         <div
             onClick={() => !isRestrictedMode && onEdit?.(item)}
@@ -66,9 +80,6 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrict
                     {onEdit && !isRestrictedMode && (
                         <Edit2 size={14} className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                     )}
-                    <span className="font-mono font-bold text-gray-900 text-base shrink-0 mr-auto">
-                        {formatPrice(item.price * item.quantity)}
-                    </span>
                 </div>
 
                 {/* Mods in a single line if possible */}
@@ -94,28 +105,41 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrict
                 )}
             </div>
 
-            {/* Left Side: Actions */}
+            {/* Left Side: Delay button | Price | Delete button */}
             <div className="flex items-center gap-2 pl-1">
-                {/* Delay Toggle Button */}
+                {/* Delay Toggle Button - leftmost */}
                 {onToggleDelay && !isRestrictedMode && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onToggleDelay(item.id, item.signature); }}
-                        className={`p-3 rounded-xl transition-all shrink-0 shadow-sm border active:scale-95 ${item.isDelayed
+                        className={`p-2 rounded-xl transition-all shrink-0 shadow-sm border active:scale-95 ${item.isDelayed
                             ? 'text-white bg-amber-500 border-amber-600 hover:bg-amber-600 shadow-amber-200'
                             : 'text-gray-400 bg-white border-gray-200 hover:text-amber-500 hover:bg-amber-50 hover:border-amber-200'
                             }`}
                         title={item.isDelayed ? "הכן עכשיו" : "הגש אחר כך (מנה שניה)"}
                     >
-                        <Clock size={24} strokeWidth={2.5} className={item.isDelayed ? "fill-white/20" : ""} />
+                        <Clock size={20} strokeWidth={2.5} className={item.isDelayed ? "fill-white/20" : ""} />
                     </button>
                 )}
 
+                {/* Price - middle */}
+                <div className="flex flex-col items-end min-w-[50px] mx-1">
+                    {soldierDiscountEnabled ? (
+                        <>
+                            <span className="text-xs text-gray-400 line-through">₪{formatPrice(originalPrice)}</span>
+                            <span className="font-mono font-bold text-green-600 text-base">₪{formatPrice(discountedPrice)}</span>
+                        </>
+                    ) : (
+                        <span className="font-mono font-bold text-gray-900 text-base">₪{formatPrice(originalPrice)}</span>
+                    )}
+                </div>
+
+                {/* Delete button - rightmost */}
                 {onRemove && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onRemove(item.id, item.signature); }}
-                        className="p-3 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-colors shrink-0"
+                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-colors shrink-0"
                     >
-                        <Trash2 size={24} strokeWidth={2} />
+                        <Trash2 size={20} strokeWidth={2} />
                     </button>
                 )}
             </div>
@@ -290,8 +314,13 @@ const SmartCart = ({
     const showCredits = credits > 0;
     const progressToNext = points % 10;
 
-    // Helper to determine if we have a REAL customer (ignoring "Quick Order" placeholder)
-    const hasRealCustomer = customerName && customerName !== 'הזמנה מהירה';
+    // Helper to determine if we have a REAL customer (ignoring placeholders)
+    const hasRealCustomer = useMemo(() => {
+        if (!customerName) return false;
+        const name = customerName.trim();
+        const genericNames = ['אורח', 'אורח/ת', 'הזמנה מהירה', 'אורח כללי', 'אורח אנונימי'];
+        return !genericNames.includes(name) && !name.startsWith('#');
+    }, [customerName]);
 
     // DEBUG: Check why button isn't showing
     console.log('🛒 SmartCart Debug:', {
@@ -307,21 +336,16 @@ const SmartCart = ({
             <div className="p-4 border-b border-gray-100 bg-white z-10 shadow-sm">
                 {/* Single row header */}
                 <div className="flex items-center gap-2">
-                    {/* Icon */}
-                    <div className="bg-orange-100 p-2 rounded-xl flex-shrink-0">
-                        <ShoppingBag className="w-5 h-5 text-orange-600" />
-                    </div>
-
                     {/* Customer name if exists */}
                     {hasRealCustomer && (
-                        <h2 className="text-xl font-black text-gray-800 tracking-tight flex-shrink-0">
+                        <h2 className="text-lg font-black text-gray-800 tracking-tight flex-shrink-0">
                             {customerName}
                         </h2>
                     )}
 
                     {/* Order number if no customer but has order number */}
                     {!hasRealCustomer && orderNumber && (
-                        <h2 className="text-xl font-black text-gray-800 tracking-tight flex-shrink-0">
+                        <h2 className="text-lg font-black text-gray-800 tracking-tight flex-shrink-0">
                             #{orderNumber}
                         </h2>
                     )}
@@ -331,17 +355,17 @@ const SmartCart = ({
                         <>
                             <button
                                 onClick={() => onAddCustomerDetails('phone-then-name')}
-                                className="px-3 py-1.5 rounded-lg bg-orange-500 text-white border border-orange-600 shadow-sm hover:shadow-md hover:bg-orange-600 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
+                                className="px-3 py-2 rounded-xl bg-orange-500 text-white border border-orange-600 shadow-sm hover:bg-orange-600 transition-all active:scale-95 font-bold text-sm flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap"
                             >
-                                <Phone size={12} />
-                                הוסף טלפון + שם
+                                <span>הוסף טלפון+שם</span>
+                                <Phone size={14} />
                             </button>
                             <button
                                 onClick={() => onAddCustomerDetails('name')}
-                                className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 border border-gray-200 shadow-sm hover:shadow-md hover:bg-gray-200 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
+                                className="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 border border-gray-200 shadow-sm hover:bg-gray-200 transition-all active:scale-95 font-bold text-sm flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap"
                             >
-                                <User size={12} />
-                                הוסף שם בלבד
+                                <span>הוסף שם</span>
+                                <User size={14} />
                             </button>
                         </>
                     )}
@@ -350,9 +374,9 @@ const SmartCart = ({
                     {hasRealCustomer && !customerPhone && onAddCustomerDetails && (
                         <button
                             onClick={() => onAddCustomerDetails('phone')}
-                            className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 border border-blue-200 shadow-sm hover:shadow-md hover:bg-blue-200 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1 flex-shrink-0"
+                            className="px-3 py-2 rounded-xl bg-blue-100 text-blue-700 border border-blue-200 shadow-sm hover:bg-blue-200 transition-all active:scale-95 font-bold text-sm flex items-center gap-1.5 flex-shrink-0"
                         >
-                            <Phone size={12} />
+                            <Phone size={14} />
                             הוסף טלפון
                         </button>
                     )}
@@ -360,8 +384,8 @@ const SmartCart = ({
                     {/* Case 3: Has phone + name - Show phone and edit */}
                     {hasRealCustomer && customerPhone && onAddCustomerDetails && (
                         <div className="flex items-center gap-2 flex-shrink-0">
-                            <span className="text-xs text-gray-600 flex items-center gap-1">
-                                <Phone size={10} />
+                            <span className="text-xs text-gray-500 flex items-center gap-1">
+                                <Phone size={12} />
                                 {customerPhone}
                             </span>
                             <button
@@ -380,18 +404,21 @@ const SmartCart = ({
                         </div>
                     )}
 
-                    {/* Soldier Discount Button - Left side with mr-auto */}
+                    {/* Spacer to push soldier button to left */}
+                    <div className="flex-1" />
+
+                    {/* Soldier Discount Button */}
                     {onToggleSoldierDiscount && (
                         <button
                             onClick={onToggleSoldierDiscount}
-                            className={`px-3 py-1.5 rounded-lg border shadow-sm transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1 flex-shrink-0 whitespace-nowrap mr-auto ${soldierDiscountEnabled
+                            className={`px-3 py-2 rounded-xl border shadow-sm transition-all active:scale-95 font-bold text-sm flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap ${soldierDiscountEnabled
                                 ? 'bg-green-500 text-white border-green-600 hover:bg-green-600'
                                 : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
                                 }`}
                         >
-                            <Shield size={12} />
-                            הנחת חיילים
-                            {soldierDiscountEnabled && <Check size={12} />}
+                            <Shield size={14} />
+                            חייל
+                            {soldierDiscountEnabled && <Check size={14} />}
                         </button>
                     )}
                 </div>
@@ -513,6 +540,7 @@ const SmartCart = ({
                                     onRemove={() => onRemoveItem(item.id, item.signature, item.tempId || itemId)}
                                     onEdit={onEditItem}
                                     onToggleDelay={() => onToggleDelay?.(item.id, item.signature, item.tempId || itemId)}
+                                    soldierDiscountEnabled={soldierDiscountEnabled}
                                 />
                             );
                         })}
@@ -540,6 +568,7 @@ const SmartCart = ({
                                     onRemove={() => onRemoveItem(item.id, item.signature, item.tempId || itemId)}
                                     onEdit={onEditItem}
                                     onToggleDelay={() => onToggleDelay?.(item.id, item.signature, item.tempId || itemId)}
+                                    soldierDiscountEnabled={soldierDiscountEnabled}
                                 />
                             );
                         })}

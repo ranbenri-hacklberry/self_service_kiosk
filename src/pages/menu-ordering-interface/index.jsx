@@ -516,7 +516,10 @@ const MenuOrderingInterface = () => {
     const hasCustomerInfo = currentCustomer?.name && currentCustomer?.name !== 'הזמנה מהירה';
     const hasItems = cartItems.length > 0;
 
-    if (hasCustomerInfo && !hasItems && origin !== 'kds') {
+    // Determine if there are unsaved changes
+    const hasChanges = isEditMode ? cartHistory.length > 0 : (hasItems || hasCustomerInfo);
+
+    if (hasChanges) {
       // Show custom confirmation modal
       setShowExitConfirmModal(true);
       return;
@@ -1205,8 +1208,8 @@ const MenuOrderingInterface = () => {
   // Calculate soldier discount amount
   const soldierDiscountAmount = useMemo(() => {
     if (!soldierDiscountEnabled) return 0;
-    // 10% of cart total (before loyalty discount)
-    return Math.floor(cartTotal * 0.10);
+    // 10% of cart total (before loyalty discount) - keep 2 decimal places
+    return Math.round(cartTotal * 0.10 * 100) / 100;
   }, [cartTotal, soldierDiscountEnabled]);
 
   // Calculate finalTotal with useMemo to react to loyaltyDiscount and soldier discount changes
@@ -1219,40 +1222,44 @@ const MenuOrderingInterface = () => {
   // Toggle soldier discount handler
   const handleToggleSoldierDiscount = async () => {
     if (!soldierDiscountEnabled) {
-      // Enable - fetch discount ID from DB
+      // Enable - try to fetch discount ID from DB (optional)
       try {
-        const { data, error } = await supabase
+        // First try: look for discount with customer_types containing 'soldier' for this business
+        const { data } = await supabase
           .from('discounts')
           .select('id')
           .contains('customer_types', ['soldier'])
           .eq('is_active', true)
-          .single();
+          .eq('business_id', currentUser?.business_id)
+          .limit(1);
 
-        if (data) {
-          setSoldierDiscountId(data.id);
-          setSoldierDiscountEnabled(true);
-          console.log('🎖️ Soldier discount enabled:', data.id);
+        if (data && data.length > 0) {
+          setSoldierDiscountId(data[0].id);
+          console.log('🎖️ Soldier discount enabled from DB:', data[0].id);
         } else {
-          // Fallback: find any 10% discount
+          // Fallback: find any discount with "חייל" in name for this business
           const { data: fallback } = await supabase
             .from('discounts')
             .select('id')
             .ilike('name', '%חייל%')
             .eq('is_active', true)
-            .single();
+            .eq('business_id', currentUser?.business_id)
+            .limit(1);
 
-          if (fallback) {
-            setSoldierDiscountId(fallback.id);
-            setSoldierDiscountEnabled(true);
+          if (fallback && fallback.length > 0) {
+            setSoldierDiscountId(fallback[0].id);
+            console.log('🎖️ Soldier discount enabled (fallback):', fallback[0].id);
           } else {
-            alert('הנחת חיילים לא מוגדרת במערכת');
+            // No DB record - that's OK, we calculate 10% inline
+            console.log('🎖️ Soldier discount enabled (no DB record, using 10% inline)');
           }
         }
       } catch (err) {
         console.error('Failed to fetch soldier discount:', err);
-        // Enable anyway with null ID (will use inline calculation)
-        setSoldierDiscountEnabled(true);
+        // Continue anyway - we calculate discount inline
       }
+      // Always enable the discount toggle
+      setSoldierDiscountEnabled(true);
     } else {
       // Disable
       setSoldierDiscountEnabled(false);
@@ -1262,6 +1269,12 @@ const MenuOrderingInterface = () => {
 
   // Updated handleInitiatePayment to show payment modal
   const handleInitiatePayment = async () => {
+    // ⛔ CRITICAL: Block all processing if cart is empty and not in edit mode
+    if ((!cartItems || cartItems.length === 0) && !isEditMode) {
+      console.error('❌ BLOCKED: handleInitiatePayment called with empty cart!');
+      return;
+    }
+
     // 1. Check for Cancel Order (Edit Mode + Unpaid + Empty Cart)
     const isCancelOrder = isEditMode && editingOrderData && !editingOrderData.isPaid && cartItems.length === 0;
 
@@ -1350,6 +1363,18 @@ const MenuOrderingInterface = () => {
     console.log('✏️ Is Edit Mode:', isEditMode);
     console.log('📋 Editing Order Data:', editingOrderData);
 
+    // ⛔ CRITICAL GUARD: Prevent empty orders from being created
+    if (!cartItems || cartItems.length === 0) {
+      // Only allow empty cart in edit mode when cancelling an order
+      if (!isEditMode) {
+        console.error('❌ BLOCKED: Attempted to create order with empty cart!');
+        alert('לא ניתן ליצור הזמנה ריקה');
+        return;
+      }
+      // In edit mode with empty cart - this is a cancel operation, handled separately
+      console.log('⚠️ Edit mode with empty cart - assuming cancel operation');
+    }
+
     try {
       setIsProcessingOrder(true);
       setShowPaymentModal(false);
@@ -1397,7 +1422,7 @@ const MenuOrderingInterface = () => {
       if (!customerNameForOrder && realPhone) {
         customerNameForOrder = `אורח(${realPhone})`;
       } else if (!customerNameForOrder) {
-        customerNameForOrder = 'אורח כללי';
+        customerNameForOrder = null;
       }
 
       let preparedItems = [];
@@ -1482,11 +1507,19 @@ const MenuOrderingInterface = () => {
             finalStatus
           });
 
+          // Calculate discount per item if soldier discount is enabled
+          const itemPrice = item.price || item.unit_price;
+          const discountPercent = soldierDiscountEnabled ? 0.10 : 0;
+          const discountForItem = Math.floor(itemPrice * discountPercent * 100) / 100;
+          const finalPricePerItem = itemPrice - discountForItem;
+
           return {
             item_id: itemId, // menu_item_id (integer)
             order_item_id: orderItemId, // UUID for existing item, null for new items
             quantity: item.quantity,
-            price: item.price || item.unit_price,
+            price: itemPrice,
+            final_price: finalPricePerItem,
+            discount_applied: discountForItem,
             selected_options: options,
             mods: [
               ...options,
@@ -1541,10 +1574,18 @@ const MenuOrderingInterface = () => {
             final_item_id: itemId
           });
 
+          // Calculate discount per item if soldier discount is enabled
+          const itemPrice = item.price || item.unit_price;
+          const discountPercent = soldierDiscountEnabled ? 0.10 : 0;
+          const discountForItem = Math.floor(itemPrice * discountPercent * 100) / 100;
+          const finalPricePerItem = itemPrice - discountForItem;
+
           return {
             item_id: itemId,
             quantity: item.quantity,
-            price: item.price || item.unit_price,
+            price: itemPrice,
+            final_price: finalPricePerItem,
+            discount_applied: discountForItem,
             selected_options: options,
             mods: [
               ...options,
@@ -1643,7 +1684,8 @@ const MenuOrderingInterface = () => {
         name: customerNameForOrder || currentCustomer?.name || null
       };
       // Use the live loyaltyPoints state instead of potentially stale customer data
-      let loyaltyPointsForConfirmation = loyaltyPoints ?? 0;
+      // Only show loyalty points if we have a real customer phone
+      let loyaltyPointsForConfirmation = realPhone ? (loyaltyPoints ?? 0) : null;
 
       // Safety check: If count is 0 but we have a customer, try to fetch fresh count
       if (loyaltyPointsForConfirmation === 0 && customerId && realPhone) {
@@ -1683,30 +1725,14 @@ const MenuOrderingInterface = () => {
           const editDataRaw = sessionStorage.getItem('editOrderData');
           const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
           navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
-        }
-        return;
-      }
-
-      // אם בחרו "תשלום אחר כך" (is_paid = false), דלג על מודאל אישור וחזור ל-KDS
-      if (orderData?.is_paid === false) {
-        console.log('⏭️ Skipping confirmation modal (pay later selected)');
-        cartClearCart();
-        const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
-        if (origin === 'kds') {
-          sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
-          const editDataRaw = sessionStorage.getItem('editOrderData');
-          const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
-          navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
         } else {
-          // Start new order - clear cart, customer and reload
           localStorage.removeItem('currentCustomer');
           window.location.reload();
         }
         return;
       }
 
-      // Show confirmation modal immediately (with orderId as fallback for order_number)
-      // In edit mode with paid orders, show only the additional charge, not full total
+      // Show confirmation modal immediately
       const isAdditionalCharge = isEditMode && editingOrderData?.isPaid && !isRefund;
       const displayTotal = isAdditionalCharge
         ? (cartTotal - (editingOrderData?.originalTotal || 0))
@@ -1714,18 +1740,19 @@ const MenuOrderingInterface = () => {
 
       setShowConfirmationModal({
         orderId,
-        orderNumber: orderNumber || orderId?.slice(0, 8), // Use API response or fallback to short ID
+        orderNumber: orderNumber || (typeof orderId === 'string' ? orderId.slice(0, 8) : ''),
         customerName: customerNameForOrder || 'אורח',
         loyaltyCoffeeCount: loyaltyPointsForConfirmation,
-        loyaltyRewardEarned,
+        loyaltyRewardEarned: false,
         paymentStatus: isAdditionalCharge ? 'תוספת לתשלום' : paymentStatus,
         paymentMethod: orderData?.payment_method,
         total: displayTotal,
         isRefund,
-        refundAmount
+        refundAmount,
+        isPaid: orderData?.is_paid ?? true
       });
 
-      // Fetch order_number in background if not provided by API
+      // Background fetch order number
       if (!orderNumber && orderId) {
         supabase
           .from('orders')
@@ -1734,162 +1761,58 @@ const MenuOrderingInterface = () => {
           .single()
           .then(({ data: fullOrder }) => {
             if (fullOrder?.order_number) {
-              console.log('🔢 Fetched Order Number in background:', fullOrder.order_number);
-              // Update modal with real order number
               setShowConfirmationModal(prev => prev ? { ...prev, orderNumber: fullOrder.order_number } : null);
             }
-          })
-          .catch(e => console.error('Failed to fetch order number:', e));
+          });
       }
 
-      // Process loyalty in background (don't block UI)
-      // FIX: Use realPhone (the phone number) instead of customerId (the UUID)
+      // Process loyalty in background
       if (realPhone) {
-        console.log('🎁 Processing loyalty for phone:', realPhone);
-
         const processLoyalty = async () => {
-          if (!realPhone) {
-            console.log('🚫 No realPhone – skipping loyalty processing');
-            return;
-          }
-
-          console.log('🎁 ========== processLoyalty START ==========');
-          console.log('📞 Phone:', realPhone);
-          console.log('🆔 Order ID:', orderId);
-          console.log('✏️ Is Edit Mode:', isEditMode);
-
-          // Fetch fresh loyalty state
-          const { points: freshPoints, freeCoffees: freshFreeCoffees } = await getLoyaltyCount(realPhone, currentUser);
-
-          console.log('💳 Fresh Loyalty State:', { freshPoints, freshFreeCoffees });
-
-          // Total coffees in cart
-          const currentCoffeeCount = cartItems.reduce((sum, item) =>
-            item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
-
-          // Use the pre-calculated freeItemsCount from the simulation
-          // This includes: existing DB credits + newly earned credits (reaching 10)
+          const { points: freshPoints } = await getLoyaltyCount(realPhone, currentUser);
+          const currentCoffeeCount = cartItems.reduce((sum, item) => item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
           const currentRedeemedCount = loyaltyFreeItemsCount;
 
-          console.log('📊 Loyalty Calculation:', {
-            currentCoffeeCount,
-            loyaltyFreeItemsCount,
-            currentRedeemedCount
-          });
-
-          // Points are earned on PAID coffees only
-          const currentPaidCount = Math.max(0, currentCoffeeCount - currentRedeemedCount);
-
           if (isEditMode && editingOrderData?.originalItems) {
-            // --- EDIT MODE ---
-            const originalCoffeeCount = editingOrderData.originalItems.reduce((sum, item) =>
-              item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
+            const originalCoffeeCount = editingOrderData.originalItems.reduce((sum, item) => item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
             const originalRedeemedCount = editingOrderData.originalRedeemedCount || 0;
-            const originalPaidCount = originalCoffeeCount - originalRedeemedCount;
-
-            const pointsDelta = currentPaidCount - originalPaidCount;
+            const pointsDelta = (currentCoffeeCount - currentRedeemedCount) - (originalCoffeeCount - originalRedeemedCount);
             const redeemedDelta = currentRedeemedCount - originalRedeemedCount;
-
-            console.log('🔥 LOYALTY ADJUSTMENT (Credit System)', {
-              currentCoffeeCount,
-              currentRedeemedCount,
-              currentPaidCount,
-              originalCoffeeCount,
-              originalRedeemedCount,
-              originalPaidCount,
-              pointsDelta,
-              redeemedDelta
-            });
-
-            const result = await handleLoyaltyAdjustment(realPhone, orderId, pointsDelta, currentUser, redeemedDelta);
-            console.log('📥 handleLoyaltyAdjustment result:', result);
-            return result;
+            return await handleLoyaltyAdjustment(realPhone, orderId, pointsDelta, currentUser, redeemedDelta);
           } else {
-            // --- NEW ORDER ---
-            console.log('LOYALTY NEW PURCHASE (Credit System)', {
-              currentCoffeeCount,
-              currentRedeemedCount,
-              currentPaidCount,
-              itemsToEarnPoints: currentCoffeeCount // ALL coffees count toward loyalty
-            });
-
-            // Pass ALL coffees (currentCoffeeCount) to advance points correctly
-            // Even the free 10th coffee counts - it's what resets the counter!
-            // currentRedeemedCount tells RPC how many credits were from DB (not from reaching 10)
             const creditsUsedFromDB = Math.min(loyaltyFreeCoffees, currentRedeemedCount);
-            const result = await addCoffeePurchase(realPhone, orderId, currentCoffeeCount, currentUser, creditsUsedFromDB);
-            console.log('📥 addCoffeePurchase result:', result);
-            return result;
+            return await addCoffeePurchase(realPhone, orderId, currentCoffeeCount, currentUser, creditsUsedFromDB);
           }
         };
 
         processLoyalty().then(loyaltyResult => {
-          console.log('🎁 Loyalty Result:', loyaltyResult);
-
           if (loyaltyResult?.success) {
-            // Get the actual new balance from server
             const newBalance = loyaltyResult?.newCount ?? loyaltyPointsForConfirmation;
-
-            // Calculate display count (modulo 10, but show 10 if exactly divisible)
             let displayCount = newBalance % 10;
-            if (newBalance > 0 && newBalance % 10 === 0) {
-              displayCount = 10;
-            }
+            if (newBalance > 0 && newBalance % 10 === 0) displayCount = 10;
+            const earned = (displayCount === 10);
 
-            // Check if user reached 10 points (free coffee earned)
-            loyaltyRewardEarned = (displayCount === 10);
+            const updatedCustomerFinal = { ...updatedCustomer, loyalty_coffee_count: newBalance };
+            localStorage.setItem('currentCustomer', JSON.stringify(updatedCustomerFinal));
+            setCurrentCustomer(updatedCustomerFinal);
 
-            updatedCustomer = {
-              ...updatedCustomer,
-              loyalty_coffee_count: newBalance
-            };
-
-            // Use newBalance for confirmation modal, not displayCount!
-            loyaltyPointsForConfirmation = newBalance;
-
-            localStorage.setItem('currentCustomer', JSON.stringify(updatedCustomer));
-            setCurrentCustomer(updatedCustomer);
-            // NOTE: Don't call setLoyaltyPoints here - the useLoyalty hook manages this
-            // and will refresh on next customer change or order
-
-            console.log('🎁 Loyalty Update:', {
-              newBalance,
-              displayCount,
-              loyaltyRewardEarned,
-              loyaltyPointsForConfirmation
-            });
-
-            // Update the already open modal with the fresh loyalty data
-            setShowConfirmationModal(prev => {
-              if (!prev) return null;
-              return {
-                ...prev,
-                loyaltyCoffeeCount: newBalance, // Use full balance, not display count
-                loyaltyRewardEarned: loyaltyRewardEarned
-              };
-            });
+            setShowConfirmationModal(prev => prev ? {
+              ...prev,
+              loyaltyCoffeeCount: newBalance,
+              loyaltyRewardEarned: earned
+            } : null);
           }
-        }).catch(err => {
-          console.error('Error processing loyalty:', err);
-        });
+        }).catch(e => console.error('Loyalty background error:', e));
       } else {
         localStorage.setItem('currentCustomer', JSON.stringify(updatedCustomer));
         setCurrentCustomer(updatedCustomer);
       }
 
-      console.log('✅ ========== END handlePaymentSelect (SUCCESS) ==========');
-
-    } catch (err) {
-      console.error('❌ ========== ERROR in handlePaymentSelect ==========');
-      console.error('  - Error Type:', err?.constructor?.name);
-      console.error('  - Error Message:', err?.message);
-      console.error('  - Error Stack:', err?.stack);
-      console.error('  - Full Error:', err);
-      console.error('❌ ========== END ERROR ==========');
-      alert(`שגיאה בעיבוד ההזמנה: ${err?.message || 'שגיאה לא ידועה'} `);
-    } finally {
       setIsProcessingOrder(false);
-      console.log('🏁 handlePaymentSelect finished (finally block)');
+    } catch (err) {
+      console.error('❌ Error in handlePaymentSelect:', err);
+      alert(`שגיאה בעיבוד ההזמנה: ${err.message}`);
+      setIsProcessingOrder(false);
     }
   };
 
@@ -2122,16 +2045,16 @@ const MenuOrderingInterface = () => {
               <div className="mx-auto w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-3">
                 <Icon name="AlertCircle" size={32} className="text-orange-600" />
               </div>
-              <h2 className="text-2xl font-black text-gray-900">בטל הזמנה?</h2>
+              <h2 className="text-2xl font-black text-gray-900">יציאה ללא שמירה?</h2>
               <p className="text-gray-500 font-medium mt-2">
-                יש לך פרטי לקוח אבל אין פריטים בעגלה
+                ישנם שינויים שלא נשמרו בהזמנה
               </p>
             </div>
 
             {/* Content */}
             <div className="p-6">
               <p className="text-center text-gray-600 font-medium">
-                האם לבטל את ההזמנה ולמחוק את פרטי הלקוח?
+                האם לצאת ולבטל את השינויים שבוצעו?
               </p>
             </div>
 
@@ -2141,20 +2064,29 @@ const MenuOrderingInterface = () => {
                 onClick={() => setShowExitConfirmModal(false)}
                 className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
               >
-                המשך להזמין
+                המשך בעבודה
               </button>
               <button
                 onClick={() => {
-                  // Clear customer data
+                  // Clear unsaved data
                   localStorage.removeItem('currentCustomer');
-                  sessionStorage.removeItem('tempCartState');
+                  sessionStorage.removeItem('pendingCartState');
                   cartClearCart();
                   setShowExitConfirmModal(false);
-                  navigate('/mode-selection');
+
+                  const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
+                  if (origin === 'kds') {
+                    const editDataRaw = sessionStorage.getItem('editOrderData');
+                    const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
+                    navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
+                    sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
+                  } else {
+                    navigate('/mode-selection');
+                  }
                 }}
                 className="flex-1 py-4 bg-orange-500 text-white rounded-xl font-bold text-lg hover:bg-orange-600 transition"
               >
-                בטל הזמנה
+                צא ללא שמירה
               </button>
             </div>
           </div>
