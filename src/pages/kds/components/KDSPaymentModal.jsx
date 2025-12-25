@@ -110,7 +110,8 @@ const KDSPaymentModal = ({
             instructions: [
                 'ההזמנה תירשם כ"על חשבון הבית"'
             ],
-            confirmText: 'אישור'
+            confirmText: 'אישור',
+            showZeroPrice: true
         },
         bit: {
             title: 'Bit - העברה ל',
@@ -201,7 +202,7 @@ const KDSPaymentModal = ({
             >
                 <div
                     className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col"
-                    style={{ maxHeight: '72vh' }}
+                    style={{ maxHeight: '82vh' }}
                     onClick={e => e.stopPropagation()}
                 >
                     {/* Header */}
@@ -226,11 +227,22 @@ const KDSPaymentModal = ({
 
                     {/* Content */}
                     <div className="flex-1 p-6 flex flex-col items-center justify-center space-y-4">
-                        <div className={`w-full ${config?.amountBg} border-2 rounded-2xl p-6 text-center`}>
+                        <div className={`w-full ${config?.amountBg} border-2 rounded-2xl p-8 text-center`}>
                             <p className="text-sm font-bold mb-2 text-slate-600">סכום לתשלום:</p>
-                            <p className={`text-5xl font-black ${config?.amountColor}`}>
-                                {formatPrice(orderAmount)}
-                            </p>
+                            {config?.showZeroPrice ? (
+                                <div className="flex items-center justify-center gap-4">
+                                    <span className="text-2xl font-bold text-slate-400 line-through">
+                                        {formatPrice(orderAmount)}
+                                    </span>
+                                    <span className={`text-6xl font-black ${config?.amountColor}`}>
+                                        ₪0
+                                    </span>
+                                </div>
+                            ) : (
+                                <p className={`text-6xl font-black ${config?.amountColor}`}>
+                                    {formatPrice(orderAmount)}
+                                </p>
+                            )}
                         </div>
 
                         <div className="w-full bg-slate-50 rounded-2xl p-4 space-y-2">
@@ -247,11 +259,11 @@ const KDSPaymentModal = ({
 
                     {/* Footer */}
                     <div className="p-4 border-t border-slate-100">
-                        <div className="flex gap-3">
+                        <div className="flex gap-4">
                             <button
                                 onClick={handleBack}
                                 disabled={isProcessing}
-                                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-lg transition disabled:opacity-50"
+                                className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-xl transition disabled:opacity-50"
                             >
                                 חזור
                             </button>
@@ -259,13 +271,13 @@ const KDSPaymentModal = ({
                             <button
                                 onClick={handleConfirm}
                                 disabled={isProcessing}
-                                className="flex-[2] py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-lg transition shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                                className="flex-[2] py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xl transition shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
                             >
                                 {isProcessing ? (
                                     <span>מעבד...</span>
                                 ) : (
                                     <>
-                                        <Check size={20} strokeWidth={3} />
+                                        <Check size={24} strokeWidth={3} />
                                         <span>{config?.confirmText}</span>
                                     </>
                                 )}
@@ -286,7 +298,7 @@ const KDSPaymentModal = ({
         >
             <div
                 className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col"
-                style={{ maxHeight: '80vh' }}
+                style={{ maxHeight: '90vh' }}
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}
@@ -324,15 +336,15 @@ const KDSPaymentModal = ({
                         <h3 className="text-base font-bold text-slate-800 mb-2">אמצעי תשלום</h3>
 
                         {/* Main row (2 big buttons) */}
-                        <div className="grid grid-cols-2 gap-2 mb-2">
+                        <div className="grid grid-cols-2 gap-3 mb-3">
                             {PAYMENT_METHODS_MAIN.map(method => (
                                 <button
                                     key={method.id}
                                     onClick={() => handleMethodSelect(method.id)}
-                                    className={`flex flex-col items-center justify-center gap-1.5 p-4 rounded-xl transition-all border-2 border-transparent ${method.color} hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md`}
+                                    className={`flex flex-col items-center justify-center gap-2 p-6 rounded-xl transition-all border-2 border-transparent ${method.color} hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md`}
                                 >
-                                    <method.icon size={24} />
-                                    <span className="font-bold text-base">{method.label}</span>
+                                    <method.icon size={32} />
+                                    <span className="font-bold text-xl">{method.label}</span>
                                 </button>
                             ))}
                         </div>
@@ -343,10 +355,10 @@ const KDSPaymentModal = ({
                                 <button
                                     key={method.id}
                                     onClick={() => handleMethodSelect(method.id)}
-                                    className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all border border-transparent ${method.color} hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md`}
+                                    className={`flex flex-col items-center justify-center gap-1.5 p-4 rounded-xl transition-all border border-transparent ${method.color} hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md`}
                                 >
-                                    <method.icon size={18} />
-                                    <span className="font-bold text-[10px] whitespace-nowrap">{method.label}</span>
+                                    <method.icon size={22} />
+                                    <span className="font-bold text-xs whitespace-nowrap">{method.label}</span>
                                 </button>
                             ))}
                         </div>
@@ -371,7 +383,7 @@ const KDSPaymentModal = ({
                             <button
                                 onClick={onClose}
                                 disabled={isProcessing}
-                                className="flex-1 py-3 bg-white border-2 border-slate-200 text-slate-600 rounded-xl font-bold text-lg hover:bg-slate-100 transition disabled:opacity-50"
+                                className="flex-1 py-4 bg-white border-2 border-slate-200 text-slate-600 rounded-xl font-bold text-xl hover:bg-slate-100 transition disabled:opacity-50"
                             >
                                 ביטול
                             </button>
@@ -380,13 +392,13 @@ const KDSPaymentModal = ({
                             <button
                                 onClick={handleMoveToHistory}
                                 disabled={isProcessing}
-                                className="flex-[2] py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-base transition shadow-md disabled:opacity-50 flex flex-col items-center justify-center"
+                                className="flex-[2] py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-lg transition shadow-md disabled:opacity-50 flex flex-col items-center justify-center"
                             >
                                 <div className="flex items-center gap-2">
-                                    <History size={18} />
+                                    <History size={20} />
                                     <span>{isProcessing ? 'מעביר...' : 'העבר להיסטוריה'}</span>
                                 </div>
-                                <span className="text-[10px] font-medium opacity-70 mt-0.5">ניתן יהיה לגשת להזמנה דרך טאב היסטוריה</span>
+                                <span className="text-xs font-medium opacity-70 mt-0.5">ניתן יהיה לגשת להזמנה דרך טאב היסטוריה</span>
                             </button>
                         </div>
                     )}
