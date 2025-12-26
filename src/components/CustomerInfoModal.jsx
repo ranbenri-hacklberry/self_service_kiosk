@@ -224,34 +224,40 @@ const CustomerInfoModal = ({
             const existingPhone = currentCustomer?.phone?.replace(/\D/g, '');
             const phoneToUse = cleanPhone.length === 10 ? cleanPhone : (existingPhone?.length === 10 ? existingPhone : null);
 
-            if (!phoneToUse) {
-                setError('נדרש מספר טלפון כדי לשמור לקוח במערכת');
-                setIsLoading(false);
-                return;
+            let finalCustomerId = currentCustomer?.id;
+
+            // Step 1: Handle Customer Table Link (Only if phone is present)
+            if (phoneToUse) {
+                const { data: customerId, error: rpcError } = await supabase.rpc('upsert_customer_v2', {
+                    p_phone: phoneToUse,
+                    p_name: customerName.trim(),
+                    p_business_id: currentUser?.business_id
+                });
+                if (rpcError) throw rpcError;
+                finalCustomerId = customerId;
+            } else if (finalCustomerId) {
+                // If it's an existing customer ID but no phone was provided, try to update the name
+                // This might fail due to RLS if the user isn't an admin, so we ignore errors here
+                await supabase
+                    .from('customers')
+                    .update({ name: customerName.trim() })
+                    .eq('id', finalCustomerId);
             }
 
-            // Use the new robust RPC for upserting
-            const { data: customerId, error: rpcError } = await supabase.rpc('upsert_customer_v2', {
-                p_phone: phoneToUse,
-                p_name: customerName.trim(),
-                p_business_id: currentUser?.business_id
-            });
-
-            if (rpcError) throw rpcError;
-
             const customer = {
-                id: customerId,
+                id: finalCustomerId,
                 phone: phoneToUse,
                 name: customerName.trim(),
                 loyalty_coffee_count: currentCustomer?.loyalty_coffee_count || 0
             };
 
-            // If editing an order (KDS flow), update it
+            // Step 2: Direct Order Update (CRITICAL for KDS visibility)
+            // This RPC bypasses RLS and updates the orders.customer_name field immediately
             if (orderId) {
                 await updateOrderCustomer(orderId, customer);
             }
 
-            // Return customer data
+            // Step 3: Local state update
             onCustomerUpdate?.(customer);
             onClose();
         } catch (err) {
