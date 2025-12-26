@@ -481,6 +481,41 @@ const MenuOrderingInterface = () => {
         console.log('🎁 Applying original loyalty discount:', loyaltyDiscountApplied);
       }
 
+      // CRITICAL: Restore soldier discount if one was applied to this order
+      // First check RPC result, then fallback to direct query
+      let discountId = order.discount_id;
+      let discountAmount = order.discount_amount;
+
+      // Fallback: If RPC doesn't return discount info, fetch directly
+      if (discountId === undefined && discountAmount === undefined) {
+        console.log('🔍 Discount info missing from RPC, fetching directly...');
+        const { data: discountData } = await supabase
+          .from('orders')
+          .select('discount_id, discount_amount')
+          .eq('id', order.id)
+          .single();
+
+        if (discountData) {
+          discountId = discountData.discount_id;
+          discountAmount = discountData.discount_amount;
+          console.log('✅ Discount info fetched directly:', discountData);
+        }
+      }
+
+      if (discountId || discountAmount > 0) {
+        console.log('🎖️ Order has discount - restoring:', {
+          discount_id: discountId,
+          discount_amount: discountAmount
+        });
+
+        // Enable soldier discount and set the ID
+        setSoldierDiscountEnabled(true);
+        if (discountId) {
+          setSoldierDiscountId(discountId);
+        }
+        console.log('🎖️ Soldier discount restored for editing');
+      }
+
       // CRITICAL: After loading order, verify restriction based on actual payment status
       // We check both the RPC result AND do a direct fallback if needed
       let dbIsPaid = order.is_paid || order.isPaid;
@@ -1739,16 +1774,26 @@ const MenuOrderingInterface = () => {
 
       const orderId = orderResult?.order_id;
 
-      // CRITICAL FIX: If we added items to a 'completed' order, reset order_status to 'in_progress'
-      // so it moves back to Active KDS tab.
+      // Only reset order_status to 'in_progress' if we ACTUALLY added new items
+      // This prevents completed orders from appearing in active KDS when just editing details
       if (isEditMode && orderId && editingOrderData?.originalOrderStatus === 'completed') {
-        const hasNewItems = cartHistory.some(h => h.type === 'ADD_ITEM');
+        // Check if any NEW items were added (items without an existing order_item_id)
+        const hasNewItems = cart.some(item => !item.id || item.id.toString().includes('temp'));
+
         if (hasNewItems) {
-          console.log('🔄 Order was COMPLETED, but new items added. Resetting order_status to in_progress...');
-          await supabase
+          console.log('🔄 New items added to completed order. Resetting status to in_progress...');
+          const { error: statusError } = await supabase
             .from('orders')
-            .update({ order_status: 'in_progress' })
+            .update({ order_status: 'in_progress', updated_at: new Date().toISOString() })
             .eq('id', orderId);
+
+          if (statusError) {
+            console.error('Failed to reset order status:', statusError);
+          } else {
+            console.log('✅ Order status reset to in_progress');
+          }
+        } else {
+          console.log('📝 Editing completed order (no new items) - keeping completed status');
         }
       }
       const orderNumber = orderResult?.order_number;

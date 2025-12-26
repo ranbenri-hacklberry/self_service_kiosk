@@ -226,6 +226,13 @@ const CustomerInfoModal = ({
 
             let finalCustomerId = currentCustomer?.id;
 
+            console.log('👤 [CustomerInfoModal] Submitting name:', {
+                name: customerName.trim(),
+                phoneToUse,
+                existingId: finalCustomerId,
+                orderId
+            });
+
             // Step 1: Handle Customer Table Link (Only if phone is present)
             if (phoneToUse) {
                 const { data: customerId, error: rpcError } = await supabase.rpc('upsert_customer_v2', {
@@ -235,13 +242,18 @@ const CustomerInfoModal = ({
                 });
                 if (rpcError) throw rpcError;
                 finalCustomerId = customerId;
-            } else if (finalCustomerId) {
-                // If it's an existing customer ID but no phone was provided, try to update the name
-                // This might fail due to RLS if the user isn't an admin, so we ignore errors here
-                await supabase
-                    .from('customers')
-                    .update({ name: customerName.trim() })
-                    .eq('id', finalCustomerId);
+                console.log('✅ Customer linked via phone:', finalCustomerId);
+            } else if (finalCustomerId && !finalCustomerId.toString().startsWith('local-')) {
+                // If it's an existing DB customer ID (not a local temp ID) but no phone, try to update name
+                // Ignore errors here as RLS might block non-admin updates to the customers table
+                try {
+                    await supabase
+                        .from('customers')
+                        .update({ name: customerName.trim() })
+                        .eq('id', finalCustomerId);
+                } catch (e) {
+                    console.warn('Silent failure updating customers table (expected for guest orders/non-admins):', e);
+                }
             }
 
             const customer = {
@@ -254,7 +266,9 @@ const CustomerInfoModal = ({
             // Step 2: Direct Order Update (CRITICAL for KDS visibility)
             // This RPC bypasses RLS and updates the orders.customer_name field immediately
             if (orderId) {
+                console.log('📝 Updating order record...', orderId);
                 await updateOrderCustomer(orderId, customer);
+                console.log('✅ Order record updated');
             }
 
             // Step 3: Local state update
@@ -271,21 +285,31 @@ const CustomerInfoModal = ({
     // Update order with customer info (KDS flow) - Uses RPC to bypass RLS
     const updateOrderCustomer = async (orderId, customer) => {
         try {
+            // Validate UUID or set to null for guests
+            const isUuid = (str) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
+            const validCustomerId = isUuid(customer.id) ? customer.id : null;
+
+            console.log('📡 [CustomerInfoModal] Calling update_order_customer RPC:', {
+                orderId,
+                validCustomerId,
+                name: customer.name
+            });
+
             // Use RPC to bypass RLS
             const { error } = await supabase.rpc('update_order_customer', {
                 p_order_id: orderId,
-                p_customer_id: customer.id,
+                p_customer_id: validCustomerId,
                 p_customer_phone: customer.phone,
                 p_customer_name: customer.name
             });
 
             if (error) {
                 console.error('RPC update_order_customer failed:', error);
-                // Fallback to direct update (might work if RLS allows)
+                // Fallback attempt
                 const { error: directError } = await supabase
                     .from('orders')
                     .update({
-                        customer_id: customer.id,
+                        customer_id: validCustomerId,
                         customer_phone: customer.phone,
                         customer_name: customer.name
                     })

@@ -332,14 +332,20 @@ export const useKDSData = () => {
                         ? groupedItems
                         : groupOrderItems(stageItems.filter(i => i.status !== 'ready' && i.status !== 'completed' && i.status !== 'cancelled'));
 
+                    // Check if there are other stages/cards for this order (e.g., delayed Course 2)
+                    const otherStagesExist = Object.keys(itemsByStage).length > 1;
+                    // hasPendingItems is true if: some items are ready OR there are other stages waiting
+                    const hasPending = stageItems.some(i => i.status === 'ready' || i.status === 'completed') || otherStagesExist;
+
                     processedOrders.push({
                         ...baseOrder,
                         id: allReady ? `${cardId}-ready` : cardId,
                         originalOrderId: order.id,
                         courseStage: stage,
+                        created_at: order.created_at, // CRITICAL: Preserve original order time for queue sorting
                         fired_at: stageItems[0]?.item_fired_at || order.created_at,
                         isSecondCourse: stage === 2,
-                        hasPendingItems: stageItems.some(i => i.status === 'ready' || i.status === 'completed'), // Visual hint that some items are hidden
+                        hasPendingItems: hasPending, // Shows "+המשך" badge
                         items: displayItems,
                         type: cardType,
                         orderStatus: cardStatus
@@ -352,13 +358,20 @@ export const useKDSData = () => {
                 (o.type === 'active' || o.type === 'delayed')
             );
 
-            // Sort current (Active)
+            // Sort current (Active) - CRITICAL FIX: Always use created_at for queue fairness
+            // Orders that return from "ready" or have items added should maintain their original position
             current.sort((a, b) => {
+                // Delayed orders always go to the end (right side in RTL)
                 if (a.type === 'delayed' && b.type !== 'delayed') return 1;
                 if (a.type !== 'delayed' && b.type === 'delayed') return -1;
-                const timeA = new Date(a.fired_at || a.created_at || 0).getTime();
-                const timeB = new Date(b.fired_at || b.created_at || 0).getTime();
-                if (Math.abs(timeA - timeB) > 1000) return timeA - timeB;
+
+                // Primary sort: Original order time (created_at) - ensures queue fairness
+                // This is the time the customer originally placed their order
+                const createdA = new Date(a.created_at || 0).getTime();
+                const createdB = new Date(b.created_at || 0).getTime();
+                if (createdA !== createdB) return createdA - createdB; // Oldest first
+
+                // Secondary sort: Course stage (if same order, stage 1 before stage 2)
                 return (a.courseStage || 1) - (b.courseStage || 1);
             });
 

@@ -290,7 +290,7 @@ const OrderCard = ({
       <div className="flex justify-between items-start mb-1 border-b border-gray-50 pb-1">
         <div className="flex flex-col overflow-hidden flex-1">
           {/* שם לקוח */}
-          <div className="flex items-center gap-2 w-full">
+          <div className="flex items-center gap-1.5 w-full">
             <div className="flex-1 min-w-0 text-2xl font-black text-slate-900 leading-none tracking-tight truncate" title={order.customerName}>
               {(() => {
                 const rawName = order.customerName || '';
@@ -299,6 +299,15 @@ const OrderCard = ({
                 return isGuest ? `#${order.orderNumber}` : name;
               })()}
             </div>
+            {/* No Phone Icon - compact inline indicator */}
+            {!order.customerPhone && (
+              <div className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center shrink-0" title="ללא טלפון">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+                  <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" />
+                  <line x1="22" x2="2" y1="2" y2="22" />
+                </svg>
+              </div>
+            )}
           </div>
           {/* מספר הזמנה (Removed per user request) */}
           <div className="flex items-center gap-2 mt-0.5">
@@ -308,21 +317,11 @@ const OrderCard = ({
                 מנה שניה
               </span>
             )}
-            {order.hasPendingItems && !isDelayedCard && (
-              <span className="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1 border border-amber-200">
-                <Clock size={10} />
-                +המשך
-              </span>
-            )}
+
             {isDelayedCard && (
               <span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-slate-300 flex items-center gap-1">
                 <Clock size={10} />
                 ממתין ל-'אש'
-              </span>
-            )}
-            {!order.customerPhone && (
-              <span className="bg-gray-100 text-gray-400 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-gray-200">
-                ללא טלפון
               </span>
             )}
           </div>
@@ -355,7 +354,13 @@ const OrderCard = ({
             </div>
           </div>
 
-          {/* Row 2: (Removed Paid Status per user request) */}
+          {/* Row 2: Continuation badge */}
+          {order.hasPendingItems && (
+            <span className="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1 border border-amber-200">
+              <Clock size={10} />
+              +המשך
+            </span>
+          )}
         </div>
       </div>
 
