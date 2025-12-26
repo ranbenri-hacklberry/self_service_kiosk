@@ -122,20 +122,36 @@ const MenuOrderingInterface = () => {
       sessionStorage.setItem(ORDER_ORIGIN_STORAGE_KEY, 'kds'); // Ensure return to KDS
 
       // Check for restricted mode flag in session storage
+      // Default to NOT restricted (allow editing) unless explicitly set
       try {
         const storedEditDataRaw = sessionStorage.getItem('editOrderData');
         if (storedEditDataRaw) {
           const storedEditData = JSON.parse(storedEditDataRaw);
-          // Verify ID matches
-          if (String(storedEditData.id) === String(targetOrderId)) {
+          // Verify ID matches (handle suffixes like '-ready' by comparing base IDs)
+          const storedIdBase = String(storedEditData.id).replace(/-ready$/, '').replace(/-stage-\d+$/, '');
+          const targetIdBase = String(targetOrderId).replace(/-ready$/, '').replace(/-stage-\d+$/, '');
+
+          if (storedIdBase === targetIdBase) {
             if (storedEditData.restrictedMode) {
-              console.log('🔒 Restricted Edit Mode Active (History)');
+              console.log('🔒 Restricted Edit Mode Active (History - Paid Order)');
               setIsRestrictedMode(true);
+            } else {
+              console.log('✏️ Full Edit Mode Active (History - Unpaid Order)');
+              setIsRestrictedMode(false);
             }
+          } else {
+            // ID mismatch - default to unrestricted
+            console.log('⚠️ ID mismatch in editOrderData, defaulting to unrestricted');
+            setIsRestrictedMode(false);
           }
+        } else {
+          // No editOrderData - default to unrestricted for edit mode
+          console.log('⚠️ No editOrderData found, defaulting to unrestricted');
+          setIsRestrictedMode(false);
         }
       } catch (e) {
         console.error('Error reading editOrderData:', e);
+        setIsRestrictedMode(false); // Default to unrestricted on error
       }
 
       fetchOrderForEditing(targetOrderId);
@@ -446,6 +462,7 @@ const MenuOrderingInterface = () => {
         originalTotal: order.total_amount, // Use actual paid amount (after discount) as baseline
         originalItems: loadedCartItems,
         isPaid: order.is_paid,
+        originalOrderStatus: order.order_status, // Store original status
         originalRedeemedCount: originalRedeemedCount,
         originalLoyaltyDiscount: loyaltyDiscountApplied // Store the discount that was applied
       };
@@ -462,6 +479,48 @@ const MenuOrderingInterface = () => {
       if (loyaltyDiscountApplied > 0) {
         setLoyaltyDiscount(loyaltyDiscountApplied);
         console.log('🎁 Applying original loyalty discount:', loyaltyDiscountApplied);
+      }
+
+      // CRITICAL: After loading order, verify restriction based on actual payment status
+      // We check both the RPC result AND do a direct fallback if needed
+      let dbIsPaid = order.is_paid || order.isPaid;
+      let dbStatus = order.order_status || order.orderStatus;
+
+      // If RPC results are missing critical fields, fetch them directly
+      if (dbIsPaid === undefined || dbStatus === undefined) {
+        console.log('🔍 Critical fields missing from RPC, fetching directly from orders table...');
+        const { data: directOrder } = await supabase
+          .from('orders')
+          .select('is_paid, order_status')
+          .eq('id', cleanOrderId)
+          .single();
+
+        if (directOrder) {
+          dbIsPaid = directOrder.is_paid;
+          dbStatus = directOrder.order_status;
+          console.log('✅ Direct fetch result:', { dbIsPaid, dbStatus });
+        }
+      }
+
+      // Final decision on restriction:
+      // - Cancelled orders are ALWAYS restricted
+      // - Paid orders are NOW EDITABLE (can add new items)
+      // - Unpaid orders (even in history) are EDITABLE
+      const shouldBeRestricted = dbStatus === 'cancelled';
+
+      console.log('🛡️ Final Restriction Decision:', {
+        dbIsPaid,
+        dbStatus,
+        shouldBeRestricted,
+        orderId: cleanOrderId
+      });
+
+      if (shouldBeRestricted) {
+        console.log('🔒 Setting Restricted Mode (Cancelled)');
+        setIsRestrictedMode(true);
+      } else {
+        console.log('✅ Setting Full Edit Mode (Active/History/Paid)');
+        setIsRestrictedMode(false);
       }
 
     } catch (err) {
@@ -481,9 +540,20 @@ const MenuOrderingInterface = () => {
   };
   // -----------------------
 
+  // Unified helper to clear all order-related session data
+  const clearOrderSessionState = () => {
+    console.log('🧹 Clearing order session state (Cart & Customer)');
+    cartClearCart();
+    setCurrentCustomer(null);
+    localStorage.removeItem('currentCustomer');
+    sessionStorage.removeItem('editOrderData');
+    sessionStorage.removeItem('pendingCartState');
+    sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
+    // Force a small delay to ensure React state updates if needed, though navigation usually handles it
+  };
+
   const handleCloseConfirmation = () => {
     setShowConfirmationModal(null);
-    cartClearCart();
     const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
     const editDataRaw = sessionStorage.getItem('editOrderData');
     const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
@@ -492,16 +562,14 @@ const MenuOrderingInterface = () => {
 
     if (origin === 'kds') {
       console.log('✅ Navigating back to KDS');
-      sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
-      // After a successful update with changes, we return to the Active tab
-      // as the order likely needs attention (or simply as requested by the user).
-      navigate('/kds', { state: { viewMode: 'active' } });
+      const targetView = cartHistory.some(h => h.type === 'ADD_ITEM') ? 'active' : (editData?.viewMode || 'active');
+      clearOrderSessionState();
+      navigate('/kds', { state: { viewMode: targetView } });
       return;
     }
+
     console.log('📞 Starting new order');
-    // Clear cart and customer data
-    cartClearCart();
-    localStorage.removeItem('currentCustomer');
+    clearOrderSessionState();
     // Stay on menu ordering interface for new order
     window.location.reload();
   };
@@ -513,29 +581,28 @@ const MenuOrderingInterface = () => {
     const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
 
     // Check if we have customer info but no items
-    const hasCustomerInfo = currentCustomer?.name && currentCustomer?.name !== 'הזמנה מהירה';
+    const hasCustomerInfo = currentCustomer?.name && !['הזמנה מהירה', 'אורח', 'אורח/ת', 'אורח כללי', 'אורח אנונימי'].includes(currentCustomer?.name);
     const hasItems = cartItems.length > 0;
 
     // Determine if there are unsaved changes
+    // In edit mode, we check cartHistory. In new order mode, we check if cart or customer is present.
     const hasChanges = isEditMode ? cartHistory.length > 0 : (hasItems || hasCustomerInfo);
 
     if (hasChanges) {
-      // Show custom confirmation modal
+      console.log('⚠️ Unsaved changes detected, showing exit confirmation');
       setShowExitConfirmModal(true);
       return;
     }
 
-    if (origin === 'kds') {
-      console.log('🔙 Header Back clicked - returning to KDS:', editData?.viewMode);
-      // If we clicked back without "saving" (closing confirmation), 
-      // we strictly follow the origin viewMode.
-      navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
-      sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
-      return;
-    }
+    // NO CHANGES - Still needs careful cleanup before navigating
+    console.log('🔙 Header Back clicked (No changes) - Cleaning up and returning');
+    clearOrderSessionState();
 
-    // Go to home/mode selection instead of browser back
-    navigate('/mode-selection');
+    if (origin === 'kds') {
+      navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
+    } else {
+      navigate('/mode-selection');
+    }
   };
 
   // Use cart hook utilities for normalization and signature
@@ -1322,9 +1389,11 @@ const MenuOrderingInterface = () => {
       const originalTotal = editingOrderData?.originalTotal || 0;
       const priceDifference = finalTotal - originalTotal;
 
-      // אם אין שינוי במחיר, בצע עדכון ישיר ללא מודאל תשלום ובלי הודעת אישור
-      if (Math.abs(priceDifference) === 0) {
-        console.log('✏️ No price change, updating directly (skip confirmation)...');
+      // אם אין שינוי במחיר ואין הוספת פריטים חדשים, בצע עדכון ישיר ללא מודאל תשלום ובלי הודעת אישור
+      const hasAddedItems = cartHistory.some(h => h.type === 'ADD_ITEM');
+
+      if (Math.abs(priceDifference) === 0 && !hasAddedItems) {
+        console.log('✏️ No price change and no new items, updating directly (skip confirmation)...');
         handlePaymentSelect({
           paymentMethod: editingOrderData?.paymentMethod || 'cash',
           is_paid: editingOrderData?.isPaid,
@@ -1669,6 +1738,19 @@ const MenuOrderingInterface = () => {
       }
 
       const orderId = orderResult?.order_id;
+
+      // CRITICAL FIX: If we added items to a 'completed' order, reset order_status to 'in_progress'
+      // so it moves back to Active KDS tab.
+      if (isEditMode && orderId && editingOrderData?.originalOrderStatus === 'completed') {
+        const hasNewItems = cartHistory.some(h => h.type === 'ADD_ITEM');
+        if (hasNewItems) {
+          console.log('🔄 Order was COMPLETED, but new items added. Resetting order_status to in_progress...');
+          await supabase
+            .from('orders')
+            .update({ order_status: 'in_progress' })
+            .eq('id', orderId);
+        }
+      }
       const orderNumber = orderResult?.order_number;
       console.log('✅ Order created/updated successfully!');
       console.log('  - Order ID:', orderId);
@@ -1718,25 +1800,71 @@ const MenuOrderingInterface = () => {
       // אם זו עריכה ללא שינויים, דלג על הודעת האישור וחזור ל-KDS
       if (orderData?.skipConfirmation) {
         console.log('⏭️ Skipping confirmation modal (edit with no changes)');
-        cartClearCart();
         const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
+        const editDataRaw = sessionStorage.getItem('editOrderData');
+        const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
+
+        clearOrderSessionState();
+
         if (origin === 'kds') {
-          sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
-          const editDataRaw = sessionStorage.getItem('editOrderData');
-          const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
-          navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
+          // Even if we skip confirmation, if objects were changed (e.g. status) we might want active,
+          // but usually skipConfirmation means no real preparation changes.
+          // Let's check if items were ADDED just in case.
+          const itemsAdded = cartHistory.some(h => h.type === 'ADD_ITEM');
+          const targetView = itemsAdded ? 'active' : (editData?.viewMode || 'active');
+
+          navigate('/kds', { state: { viewMode: targetView } });
         } else {
-          localStorage.removeItem('currentCustomer');
           window.location.reload();
         }
         return;
       }
 
+      // Log full cart history for debugging
+      console.log('📜 Full Cart History:', cartHistory);
+
+      // Determine correct post-edit navigation
+      // If we added items OR it's a new order -> Active Tab
+      // If we refunded items -> Active Tab (to see the changes) or History? 
+      // User requested: "Added dishes or refunded dishes -> Active Screen"
+      // "No changes -> History Screen"
+
+      const itemsAdded = cartHistory.some(h => h.type === 'ADD_ITEM');
+      const itemsRefunded = cartHistory.some(h => h.type === 'REMOVE_ITEM' || h.type === 'DECREASE_QUANTITY');
+      // Recalculate price difference inside this scope to avoid ReferenceError
+      const originalTotal = isEditMode ? (editingOrderData?.originalTotal || 0) : 0;
+      // Note: cartTotal is passed as 'amountToPay' in some contexts, but here 'cartTotal' variable from state is correct?
+      // Wait, 'cartTotal' in handlePaymentSelect might be closure captured or passed in? 
+      // Looking at usage, 'cartTotal' state variable is used.
+      const priceDifference = cartTotal - originalTotal;
+
+      const hasChanges = itemsAdded || itemsRefunded || isRefund || (isEditMode && Math.abs(priceDifference) > 0.01);
+
+      console.log('🧭 Navigation Decision:', {
+        itemsAdded,
+        itemsRefunded,
+        isRefund,
+        priceDifference,
+        hasChanges
+      });
+
       // Show confirmation modal immediately
-      const isAdditionalCharge = isEditMode && editingOrderData?.isPaid && !isRefund;
-      const displayTotal = isAdditionalCharge
-        ? (cartTotal - (editingOrderData?.originalTotal || 0))
-        : cartTotal;
+      const isAdditionalCharge = isEditMode && editingOrderData?.isPaid && priceDifference > 0;
+
+      // Calculate what to show in the modal
+      let displayTotal = cartTotal; // Default for new orders
+
+      if (isEditMode && editingOrderData?.isPaid) {
+        if (isRefund) {
+          displayTotal = refundAmount; // Show amount returned
+        } else if (isAdditionalCharge) {
+          displayTotal = priceDifference; // Show EXTRA amount paid
+        } else {
+          // If paid and no difference (just notes change?), show 0 or full?
+          // Usually implies no charge.
+          displayTotal = 0;
+        }
+      }
 
       setShowConfirmationModal({
         orderId,
@@ -1744,12 +1872,14 @@ const MenuOrderingInterface = () => {
         customerName: customerNameForOrder || 'אורח',
         loyaltyCoffeeCount: loyaltyPointsForConfirmation,
         loyaltyRewardEarned: false,
-        paymentStatus: isAdditionalCharge ? 'תוספת לתשלום' : paymentStatus,
+        paymentStatus: isAdditionalCharge ? 'תוספת לתשלום' : (isRefund ? 'זיכוי' : paymentStatus),
         paymentMethod: orderData?.payment_method,
         total: displayTotal,
         isRefund,
         refundAmount,
-        isPaid: orderData?.is_paid ?? true
+        isPaid: orderData?.is_paid ?? true,
+        // Pass info for navigation after close
+        navigationTarget: hasChanges ? 'active' : 'history'
       });
 
       // Background fetch order number
@@ -2071,10 +2201,7 @@ const MenuOrderingInterface = () => {
               </button>
               <button
                 onClick={() => {
-                  // Clear unsaved data
-                  localStorage.removeItem('currentCustomer');
-                  sessionStorage.removeItem('pendingCartState');
-                  cartClearCart();
+                  clearOrderSessionState();
                   setShowExitConfirmModal(false);
 
                   const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
@@ -2082,7 +2209,6 @@ const MenuOrderingInterface = () => {
                     const editDataRaw = sessionStorage.getItem('editOrderData');
                     const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
                     navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
-                    sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
                   } else {
                     navigate('/mode-selection');
                   }

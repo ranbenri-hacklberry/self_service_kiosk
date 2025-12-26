@@ -319,8 +319,16 @@ const SmartCart = ({
         if (!customerName) return false;
         const name = customerName.trim();
         const genericNames = ['אורח', 'אורח/ת', 'הזמנה מהירה', 'אורח כללי', 'אורח אנונימי'];
-        return !genericNames.includes(name) && !name.startsWith('#');
+        return !genericNames.includes(name) && !name.startsWith('#') && !name.startsWith('GUEST_');
     }, [customerName]);
+
+    // Helper to check if phone is a REAL phone number (not a guest ID)
+    const hasRealPhone = useMemo(() => {
+        if (!customerPhone) return false;
+        const cleanPhone = String(customerPhone).replace(/\D/g, '');
+        // Real Israeli mobile: starts with 05, exactly 10 digits
+        return cleanPhone.length === 10 && cleanPhone.startsWith('05');
+    }, [customerPhone]);
 
     // DEBUG: Check why button isn't showing
     console.log('🛒 SmartCart Debug:', {
@@ -350,57 +358,48 @@ const SmartCart = ({
                         </h2>
                     )}
 
-                    {/* Case 1: No customer - Show two buttons */}
+                    {/* Case 1: No customer - Show buttons */}
                     {!hasRealCustomer && onAddCustomerDetails && (
-                        <>
+                        <div className="flex items-center gap-2 flex-wrap">
                             <button
                                 onClick={() => onAddCustomerDetails('phone-then-name')}
-                                className="px-3 py-2 rounded-xl bg-orange-500 text-white border border-orange-600 shadow-sm hover:bg-orange-600 transition-all active:scale-95 font-bold text-sm flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap"
+                                className="px-4 py-2 rounded-xl bg-orange-500 text-white shadow-sm hover:bg-orange-600 transition-all active:scale-95 font-bold text-sm flex items-center gap-2 flex-shrink-0"
                             >
-                                <span>הוסף טלפון+שם</span>
-                                <Phone size={14} />
+                                <Phone size={16} />
+                                <span>+טלפון</span>
                             </button>
                             <button
                                 onClick={() => onAddCustomerDetails('name')}
-                                className="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 border border-gray-200 shadow-sm hover:bg-gray-200 transition-all active:scale-95 font-bold text-sm flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap"
+                                className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 border border-gray-200 shadow-sm hover:bg-gray-200 transition-all active:scale-95 font-bold text-sm flex items-center gap-2 flex-shrink-0"
                             >
-                                <span>הוסף שם</span>
-                                <User size={14} />
-                            </button>
-                        </>
-                    )}
-
-                    {/* Case 2: Has name but no phone */}
-                    {hasRealCustomer && !customerPhone && onAddCustomerDetails && (
-                        <button
-                            onClick={() => onAddCustomerDetails('phone')}
-                            className="px-3 py-2 rounded-xl bg-blue-100 text-blue-700 border border-blue-200 shadow-sm hover:bg-blue-200 transition-all active:scale-95 font-bold text-sm flex items-center gap-1.5 flex-shrink-0"
-                        >
-                            <Phone size={14} />
-                            הוסף טלפון
-                        </button>
-                    )}
-
-                    {/* Case 3: Has phone + name - Show phone and edit */}
-                    {hasRealCustomer && customerPhone && onAddCustomerDetails && (
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                            <span className="text-xs text-gray-500 flex items-center gap-1">
-                                <Phone size={12} />
-                                {customerPhone}
-                            </span>
-                            <button
-                                onClick={() => onAddCustomerDetails('phone-then-name')}
-                                className="text-xs text-blue-600 hover:underline font-medium"
-                            >
-                                ערוך
+                                <User size={16} />
+                                <span>+שם</span>
                             </button>
                         </div>
                     )}
 
-                    {/* Order number badge if has customer */}
-                    {orderNumber && hasRealCustomer && (
-                        <div className="bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 flex-shrink-0">
-                            <span className="text-sm font-black text-blue-700">#{orderNumber}</span>
+                    {/* Case 2: Has name but no phone */}
+                    {hasRealCustomer && !hasRealPhone && onAddCustomerDetails && (
+                        <button
+                            onClick={() => onAddCustomerDetails('phone')}
+                            className="px-4 py-2 rounded-xl bg-blue-100 text-blue-700 border border-blue-200 shadow-sm hover:bg-blue-200 transition-all active:scale-95 font-bold text-sm flex items-center gap-2 flex-shrink-0"
+                        >
+                            <Phone size={16} />
+                            +טלפון
+                        </button>
+                    )}
+
+                    {/* Case 3: Has REAL phone + name */}
+                    {hasRealCustomer && hasRealPhone && onAddCustomerDetails && (
+                        <div className="flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 flex-shrink-0">
+                            <Phone size={16} className="text-blue-500" />
+                            <span className="text-sm font-bold text-blue-700 font-mono">{customerPhone}</span>
+                            <button
+                                onClick={() => onAddCustomerDetails('phone-then-name')}
+                                className="p-1 hover:bg-blue-200 rounded-md text-blue-400 transition"
+                            >
+                                <Edit2 size={14} />
+                            </button>
                         </div>
                     )}
 
@@ -411,20 +410,19 @@ const SmartCart = ({
                     {onToggleSoldierDiscount && (
                         <button
                             onClick={onToggleSoldierDiscount}
-                            className={`px-3 py-2 rounded-xl border shadow-sm transition-all active:scale-95 font-bold text-sm flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap ${soldierDiscountEnabled
-                                ? 'bg-green-500 text-white border-green-600 hover:bg-green-600'
-                                : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                            className={`px-4 py-2 rounded-xl border shadow-sm transition-all active:scale-95 font-bold text-sm flex items-center gap-2 flex-shrink-0 ${soldierDiscountEnabled
+                                ? 'bg-green-500 text-white border-green-600'
+                                : 'bg-gray-100 text-gray-600 border-gray-200'
                                 }`}
                         >
-                            <Shield size={14} />
+                            <Shield size={16} />
                             חייל
-                            {soldierDiscountEnabled && <Check size={14} />}
                         </button>
                     )}
                 </div>
 
-                {/* Loyalty Badge - Below main row */}
-                {hasRealCustomer && (() => {
+                {/* Loyalty Badge - Only show if customer has REAL phone */}
+                {hasRealCustomer && hasRealPhone && (() => {
                     // Calculate projected points
                     let cartCoffeeCount = cartItems.reduce((sum, item) =>
                         item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
@@ -603,8 +601,8 @@ const SmartCart = ({
                     </div>
                 )}
 
-                {/* Loyalty Discount Row - Don't show in edit mode if original already had discount */}
-                {loyaltyDiscount > 0 && !(isEditMode && originalIsPaid && editingOrderData?.originalRedeemedCount > 0) && (
+                {/* Loyalty Discount Row - Only show if has REAL phone and discount applies */}
+                {loyaltyDiscount > 0 && hasRealPhone && !(isEditMode && originalIsPaid && editingOrderData?.originalRedeemedCount > 0) && (
                     <div className="flex justify-between items-center mb-3 px-1 bg-green-50 p-2 rounded-lg border border-green-100">
                         <span className="text-green-700 font-bold flex items-center gap-2 text-sm">
                             <span>🎁</span> הנחת נאמנות (קפה חינם)

@@ -73,27 +73,17 @@ export const useKDSData = () => {
                     if (readyItems && readyItems.length > 0) {
                         // Merge ready items into active orders
                         ordersData.forEach(order => {
-                            // Only add if not already present
-                            // Note: order.order_items is the property name here based on common usage above
                             if (!order.order_items) order.order_items = [];
-
                             const missingItems = readyItems.filter(ri =>
                                 ri.order_id === order.id &&
                                 !order.order_items.some(oi => oi.id === ri.id)
                             );
-
                             if (missingItems.length > 0) {
-                                // console.log(`🧩 Merging ${missingItems.length} missing ready items into order ${order.id}`);
-
-                                // Map using the joined menu_items data
                                 const mappedItems = missingItems.map(mi => ({
                                     ...mi,
-                                    // Ensure menu_items structure matches what the processing loop expects
                                     menu_items: mi.menu_items || { name: 'Unknown', price: 0 },
-                                    course_stage: mi.course_stage,
-                                    item_status: 'ready'
+                                    item_status: 'ready' // Force status for consistency
                                 }));
-
                                 order.order_items = [...order.order_items, ...mappedItems];
                             }
                         });
@@ -103,24 +93,71 @@ export const useKDSData = () => {
                 }
             }
 
+            // ⚠️ SAFETY NET: Fetch orders that have ANY active items, regardless of order_status.
+            // This ensures orders with new items added (even if previously completed) show up!
+            try {
+                // Look back 12 hours to catch any revived orders from the current shift
+                const lookbackTime = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+
+                // Fetch orders with active items (in_progress, new, pending, ready)
+                const { data: rescueOrders } = await supabase
+                    .from('orders')
+                    .select('*, order_items!inner(id, item_status, mods, notes, course_stage, quantity, menu_items!inner(name, price, kds_routing_logic, is_prep_required))')
+                    .gt('updated_at', lookbackTime)
+                    .in('order_items.item_status', ['in_progress', 'new', 'pending', 'ready'])
+                    .eq('business_id', businessId)
+                    .abortSignal(signal);
+
+                if (rescueOrders && rescueOrders.length > 0) {
+                    console.log(`🛟 Rescued ${rescueOrders.length} orders with active items`);
+
+                    // Merge rescued orders into main list if not already present
+                    rescueOrders.forEach(rescueOrder => {
+                        const existingIndex = ordersData.findIndex(o => o.id === rescueOrder.id);
+                        if (existingIndex === -1) {
+                            // Not in list - add it
+                            ordersData.push(rescueOrder);
+                        } else {
+                            // Already in list - merge items that might be missing
+                            const existing = ordersData[existingIndex];
+                            rescueOrder.order_items.forEach(ri => {
+                                if (!existing.order_items.some(oi => oi.id === ri.id)) {
+                                    existing.order_items.push(ri);
+                                }
+                            });
+                        }
+                    });
+                }
+            } catch (rescueErr) {
+                console.warn('Rescue query failed (non-critical):', rescueErr);
+            }
+
             // NOTE: Completed orders are NOT fetched for active KDS.
             // They belong only in History tab and are fetched separately when viewing history.
 
             const processedOrders = [];
 
             (ordersData || []).forEach(order => {
-                // ALL completed orders belong ONLY in History tab - skip from active KDS
-                // When moving unpaid orders to history, a popup will explain how to access them
-                if (order.order_status === 'completed') {
-                    return; // Skip entirely
+                // Check if order has ANY active items (in_progress, new, pending)
+                // If so, it belongs in Active KDS even if order_status is 'completed'
+                const hasActiveItems = (order.order_items || []).some(item =>
+                    item.item_status === 'in_progress' ||
+                    item.item_status === 'new' ||
+                    item.item_status === 'pending' ||
+                    item.item_status === 'ready'
+                );
+
+                // Only skip to history if order is completed AND has no active items
+                if (order.order_status === 'completed' && !hasActiveItems) {
+                    return; // Skip entirely - belongs in History tab
                 }
 
                 // Filter items logic
                 const rawItems = (order.order_items || [])
                     .filter(item => {
-                        // Allow 'completed' items to pass (they will be shown as Ready)
-                        // Only filter cancelled or missing name
-                        if (item.item_status === 'cancelled' || !item.menu_items?.name) return false;
+                        // Filter out 'completed' items in the Active KDS tab to hide delivered items.
+                        // Filter out 'cancelled' items and items without a name.
+                        if (item.item_status === 'completed' || item.item_status === 'cancelled' || !item.menu_items?.name) return false;
 
                         const kdsLogic = item.menu_items.kds_routing_logic;
                         const isPrepRequired = item.menu_items.is_prep_required;
@@ -287,6 +324,13 @@ export const useKDSData = () => {
 
                     const groupedItems = groupOrderItems(stageItems);
 
+                    // LOGIC CHANGE: Only show pending items in active/delayed cards.
+                    // If all items are ready, it's a ready card - show everything.
+                    // If some items are ready and some are not, it's an active/delayed card - show ONLY non-ready items.
+                    const displayItems = allReady
+                        ? groupedItems
+                        : groupOrderItems(stageItems.filter(i => i.status !== 'ready' && i.status !== 'completed' && i.status !== 'cancelled'));
+
                     processedOrders.push({
                         ...baseOrder,
                         id: allReady ? `${cardId}-ready` : cardId,
@@ -294,7 +338,8 @@ export const useKDSData = () => {
                         courseStage: stage,
                         fired_at: stageItems[0]?.item_fired_at || order.created_at,
                         isSecondCourse: stage === 2,
-                        items: groupedItems,
+                        hasPendingItems: stageItems.some(i => i.status === 'ready' || i.status === 'completed'), // Visual hint that some items are hidden
+                        items: displayItems,
                         type: cardType,
                         orderStatus: cardStatus
                     });
@@ -339,7 +384,9 @@ export const useKDSData = () => {
             setCompletedOrders(completed);
             setLastUpdated(new Date());
         } catch (err) {
-            console.error('שגיאה בטעינת הזמנות:', err);
+            if (err.name !== 'AbortError') {
+                console.error('שגיאה בטעינת הזמנות:', err);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -500,17 +547,15 @@ export const useKDSData = () => {
                 }
 
                 if (itemIdsToReady.length > 0) {
-                    // Direct update blocked by RLS, using complete_order_part_v2 RPC instead
-                    // Always keep order open when marking ready, so it stays in KDS "Ready" view (bottom)
-                    // It will only be closed when moved to "Delivered/Archive"
-                    const { error } = await supabase.rpc('complete_order_part_v2', {
+                    // Use mark_items_ready_v2 to move items to 'ready' status (collection section)
+                    // without closing the whole order or marking items as delivered yet.
+                    const { error } = await supabase.rpc('mark_items_ready_v2', {
                         p_order_id: String(realOrderId).trim(),
-                        p_item_ids: itemIdsToReady,
-                        p_keep_order_open: true
+                        p_item_ids: itemIdsToReady
                     });
                     if (error) throw error;
                 } else {
-                    // Fallback (unsafe) if we can't find items
+                    // Fallback (unsafe) if we can't find specific items
                     console.warn('⚠️ Could not find items for ready mark, falling back to whole order (unsafe)');
                     const { error } = await supabase.rpc('mark_order_ready_v2', {
                         p_order_id: realOrderId
@@ -903,11 +948,22 @@ export const useKDSData = () => {
 
             if (!v2Error && v2Data) {
                 // Filter out cancelled orders (User Request: Hide cancelled orders)
-                // But keep refunded orders
+                // AND FILTER OUT orders that have active items (they belong in Active tab)
                 historyData = v2Data.filter(o => {
                     const isCancelled = o.order_status === 'cancelled';
                     const isRefunded = o.is_refund || o.isRefund;
                     const hasRefundAmount = o.refund_amount > 0;
+
+                    // Critical: Check if this order has items that need work/delivery
+                    const hasActiveItems = (o.order_items || []).some(item =>
+                        item.item_status === 'in_progress' ||
+                        item.item_status === 'ready' ||
+                        item.item_status === 'new' ||
+                        item.item_status === 'pending'
+                    );
+
+                    if (hasActiveItems) return false; // Exclude from history if active
+
                     return !isCancelled || isRefunded || hasRefundAmount;
                 });
 
@@ -929,9 +985,20 @@ export const useKDSData = () => {
 
                 if (!v1Error && v1Data) {
                     // Filter out cancelled orders but keep refunded ones
+                    // AND FILTER OUT active orders
                     historyData = v1Data.filter(o => {
                         const isCancelled = o.order_status === 'cancelled';
                         const isRefunded = o.is_refund || o.isRefund;
+
+                        const hasActiveItems = (o.order_items || []).some(item =>
+                            item.item_status === 'in_progress' ||
+                            item.item_status === 'ready' ||
+                            item.item_status === 'new' ||
+                            item.item_status === 'pending'
+                        );
+
+                        if (hasActiveItems) return false;
+
                         return !isCancelled || isRefunded;
                     });
                     usedRpc = true;

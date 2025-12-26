@@ -40,11 +40,20 @@ const CustomerInfoModal = ({
     useEffect(() => {
         if (isOpen && !wasOpen.current) {
             // Reset state
-            setPhoneNumber(currentCustomer?.phone || '');
+            const rawPhone = currentCustomer?.phone || '';
+            const cleanPhone = rawPhone.replace(/\D/g, '');
+            // Only pre-fill if it's a REAL 10-digit phone starting with 05
+            // Avoid pre-filling internal GUEST_ IDs or UUIDs
+            if (cleanPhone.length === 10 && cleanPhone.startsWith('05')) {
+                setPhoneNumber(cleanPhone);
+            } else {
+                setPhoneNumber('');
+            }
+
             // Clear name if it's a generic placeholder or starts with #
-            const genericNames = ['הזמנה מהירה', 'אורח', 'אורח/ת'];
+            const genericNames = ['הזמנה מהירה', 'אורח', 'אורח/ת', 'אורח כללי', 'אורח אנונימי'];
             const name = currentCustomer?.name || '';
-            const isGeneric = genericNames.includes(name) || name.startsWith('#');
+            const isGeneric = genericNames.includes(name) || name.startsWith('#') || name.startsWith('GUEST_');
             setCustomerName(isGeneric ? '' : name);
             setError('');
             setLookupResult(null);
@@ -248,19 +257,31 @@ const CustomerInfoModal = ({
         }
     };
 
-    // Update order with customer info (KDS flow)
+    // Update order with customer info (KDS flow) - Uses RPC to bypass RLS
     const updateOrderCustomer = async (orderId, customer) => {
         try {
-            const { error } = await supabase
-                .from('orders')
-                .update({
-                    customer_id: customer.id,
-                    customer_phone: customer.phone,
-                    customer_name: customer.name
-                })
-                .eq('id', orderId);
+            // Use RPC to bypass RLS
+            const { error } = await supabase.rpc('update_order_customer', {
+                p_order_id: orderId,
+                p_customer_id: customer.id,
+                p_customer_phone: customer.phone,
+                p_customer_name: customer.name
+            });
 
-            if (error) throw error;
+            if (error) {
+                console.error('RPC update_order_customer failed:', error);
+                // Fallback to direct update (might work if RLS allows)
+                const { error: directError } = await supabase
+                    .from('orders')
+                    .update({
+                        customer_id: customer.id,
+                        customer_phone: customer.phone,
+                        customer_name: customer.name
+                    })
+                    .eq('id', orderId);
+
+                if (directError) throw directError;
+            }
         } catch (err) {
             console.error('Failed to update order customer:', err);
             throw err;

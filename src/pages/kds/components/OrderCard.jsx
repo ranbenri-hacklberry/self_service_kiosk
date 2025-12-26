@@ -296,7 +296,7 @@ const OrderCard = ({
                 const rawName = order.customerName || '';
                 const name = typeof rawName === 'string' ? rawName.trim() : '';
                 const isGuest = !name || ['אורח', 'אורח/ת', 'הזמנה מהירה', 'אורח כללי', 'אורח אנונימי'].includes(name) || name.startsWith('#');
-                return isGuest ? `הזמנה #${order.orderNumber}` : name;
+                return isGuest ? `#${order.orderNumber}` : name;
               })()}
             </div>
           </div>

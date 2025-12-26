@@ -249,7 +249,7 @@ const KdsScreen = () => {
       await updateOrderStatusBase(orderId, currentStatus);
 
       // If we just delivered (moved from ready to completed) an UNPAID order, show info popup
-      if (currentStatus === 'ready' && targetOrder && !targetOrder.isPaid) {
+      if (currentStatus === 'completed' && targetOrder && !targetOrder.isPaid) {
         setHistoryInfoModal({
           isOpen: true,
           orderNumber: targetOrder.orderNumber
@@ -261,10 +261,12 @@ const KdsScreen = () => {
   };
 
   const location = useLocation();
-  // State persistence: Load from localStorage or defaults
+  // State persistence: Prioritize navigation state, fallback to 'active'
+  // When entering from home screen, always go to 'active' tab
   const [viewMode, setViewMode] = useState(() => {
-    const saved = localStorage.getItem('kds_viewMode');
-    return saved || location.state?.viewMode || 'active';
+    // Only use location.state if explicitly provided (coming back from edit)
+    // Otherwise always default to 'active'
+    return location.state?.viewMode || 'active';
   });
 
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -289,10 +291,7 @@ const KdsScreen = () => {
   // History Info Modal (shown when unpaid order is moved to history)
   const [historyInfoModal, setHistoryInfoModal] = useState({ isOpen: false, orderNumber: null });
 
-  // Persistence Effects
-  useEffect(() => {
-    localStorage.setItem('kds_viewMode', viewMode);
-  }, [viewMode]);
+  // Persistence Effects - only for selectedDate, not viewMode
 
   useEffect(() => {
     localStorage.setItem('kds_selectedDate', selectedDate.toISOString());
@@ -393,29 +392,41 @@ const KdsScreen = () => {
       return;
     }
 
-    // HISTORY/COMPLETED ORDERS: Navigate to restricted edit screen
-    const isRestricted = viewMode === 'history' || order.order_status === 'completed' || order.order_status === 'cancelled';
+    // HISTORY ORDERS: Always navigate to menu interface
+    // - Paid orders are restricted (view/refund only)
+    // - Unpaid orders can add items freely
+    const isHistoryOrder = viewMode === 'history' || order.order_status === 'completed' || order.orderStatus === 'completed';
 
-    if (isRestricted) {
-      console.log('🖊️ KDS: Navigating to RESTRICTED edit order (History):', order.id);
-      // Save minimal data to session storage to pass context
+    if (isHistoryOrder) {
+      // Historical orders are restricted IF they are already paid OR if they are cancelled.
+      // Unpaid completed orders remain editable so new items can be added and paid for.
+      const dbIsPaid = order.isPaid === true || order.is_paid === true;
+      const isCancelled = order.order_status === 'cancelled' || order.orderStatus === 'cancelled' || order.type === 'cancelled';
+
+      const isRestricted = dbIsPaid || isCancelled;
+      // Use originalOrderId if available (for cards with modified IDs like '-ready', '-stage-2')
+      const realOrderId = order.originalOrderId || order.id;
+      console.log(`🖊️ KDS: Navigating to ${isRestricted ? 'RESTRICTED' : 'EDITABLE'} order from History:`, realOrderId, '(original order.id was:', order.id, ')');
+
       const editData = {
-        id: order.id,
+        id: realOrderId,
         orderNumber: order.orderNumber,
-        restrictedMode: true,
+        restrictedMode: isRestricted,
         viewMode: viewMode
       };
       sessionStorage.setItem('editOrderData', JSON.stringify(editData));
       sessionStorage.setItem('order_origin', 'kds');
-      // Navigate directly to cart
-      navigate(`/menu-ordering-interface?editOrderId=${order.id}`, {
-        state: { orderId: order.id, viewMode: viewMode }
+
+      navigate(`/menu-ordering-interface?editOrderId=${realOrderId}`, {
+        state: { orderId: realOrderId, viewMode: viewMode }
       });
-    } else {
-      console.log('🖊️ KDS: Opening Edit Modal for Active Order:', order.id);
-      setEditingOrder(order);
-      setIsEditModalOpen(true);
+      return;
     }
+
+    // ACTIVE NON-READY ORDERS: Open the edit modal
+    console.log('🖊️ KDS: Opening Edit Modal for Active Order:', order.id);
+    setEditingOrder(order);
+    setIsEditModalOpen(true);
   };
 
   const handleCloseEditModal = () => {
