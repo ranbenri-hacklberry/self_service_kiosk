@@ -11,10 +11,8 @@ import LoginScreen from "@/pages/login/LoginScreen";
 import ModeSelectionScreen from "@/pages/login/ModeSelectionScreen";
 import MenuOrderingInterface from './pages/menu-ordering-interface';
 import KdsScreen from './pages/kds';
-import CustomerPhoneInputScreen from './pages/customer-phone-input-screen';
-// DEPRECATED: Phone input now handled by CustomerInfoModal
-import NewCustomerNameCollectionScreen from './pages/new-customer-name-collection-screen';
-import ReturningCustomerWelcomeScreen from './pages/returning-customer-welcome-screen';
+import MenuOrderingInterface from './pages/menu-ordering-interface';
+import KdsScreen from './pages/kds';
 
 import DataManagerInterface from './pages/data-manager-interface';
 import SuperAdminDashboard from './pages/super-admin';
@@ -73,7 +71,7 @@ const ProtectedRoute = ({ children }) => {
     } else if (deviceMode === 'music') {
       return <Navigate to="/music" replace />;
     }
-    // For 'kiosk' mode, let it fall through and render children (CustomerPhoneInputScreen)
+    // For 'kiosk' mode, let it fall through and render children (MenuOrderingInterface)
   }
 
   console.log('✅ ProtectedRoute: Access granted for path:', location.pathname);
@@ -134,10 +132,7 @@ const AppRoutes = () => {
       } />
 
       {/* Other Protected Pages */}
-      {/* REMOVED: Phone input now handled by CustomerInfoModal */}
-      {/* <Route path="/customer-phone-input-screen" element={<ProtectedRoute><CustomerPhoneInputScreen /></ProtectedRoute>} /> */}
-      <Route path="/new-customer-name-collection-screen" element={<ProtectedRoute><NewCustomerNameCollectionScreen /></ProtectedRoute>} />
-      <Route path="/returning-customer-welcome-screen" element={<ProtectedRoute><ReturningCustomerWelcomeScreen /></ProtectedRoute>} />
+      {/* REMOVED: Old customer flow pages now handled by CustomerInfoModal */}
       <Route path="/menu-ordering-interface" element={
         <ProtectedRoute>
           <ErrorBoundary>

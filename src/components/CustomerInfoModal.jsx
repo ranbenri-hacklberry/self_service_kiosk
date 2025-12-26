@@ -221,24 +221,29 @@ const CustomerInfoModal = ({
 
         try {
             const cleanPhone = phoneNumber.replace(/\D/g, '');
-            const phoneToUse = cleanPhone.length === 10 ? cleanPhone : null;
-            let customerId = currentCustomer?.id;
+            const existingPhone = currentCustomer?.phone?.replace(/\D/g, '');
+            const phoneToUse = cleanPhone.length === 10 ? cleanPhone : (existingPhone?.length === 10 ? existingPhone : null);
 
-            // Use RPC to create/update customer (bypasses RLS)
-            const { data: customerData, error: rpcError } = await supabase.rpc('create_or_update_customer', {
-                p_business_id: currentUser?.business_id,
+            if (!phoneToUse) {
+                setError('נדרש מספר טלפון כדי לשמור לקוח במערכת');
+                setIsLoading(false);
+                return;
+            }
+
+            // Use the new robust RPC for upserting
+            const { data: customerId, error: rpcError } = await supabase.rpc('upsert_customer_v2', {
                 p_phone: phoneToUse,
-                p_name: customerName.trim()
+                p_name: customerName.trim(),
+                p_business_id: currentUser?.business_id
             });
 
             if (rpcError) throw rpcError;
-            customerId = customerData;
 
             const customer = {
                 id: customerId,
                 phone: phoneToUse,
                 name: customerName.trim(),
-                loyalty_coffee_count: 0
+                loyalty_coffee_count: currentCustomer?.loyalty_coffee_count || 0
             };
 
             // If editing an order (KDS flow), update it

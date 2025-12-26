@@ -275,6 +275,7 @@ export const useKDSData = () => {
                     orderNumber: order.order_number || `#${order.id?.slice(0, 8) || 'N/A'} `,
                     customerName: order.customer_name || 'אורח',
                     customerPhone: order.customer_phone,
+                    customerId: order.customer_id,
                     isPaid: order.is_paid,
                     totalAmount: unpaidAmount > 0 ? unpaidAmount : totalOrderAmount, // Show unpaid amount, or full if nothing paid
                     paidAmount: paidAmount,
