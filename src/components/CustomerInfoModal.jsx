@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Phone, User, Check, Loader2, UserCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import NumericKeypad from '@/pages/customer-phone-input-screen/components/NumericKeypad';
+import NumericKeypad from '@/components/NumericKeypad';
 
 /**
  * CustomerInfoModal - Unified modal for collecting/editing customer phone and name

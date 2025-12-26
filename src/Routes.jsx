@@ -11,8 +11,6 @@ import LoginScreen from "@/pages/login/LoginScreen";
 import ModeSelectionScreen from "@/pages/login/ModeSelectionScreen";
 import MenuOrderingInterface from './pages/menu-ordering-interface';
 import KdsScreen from './pages/kds';
-import MenuOrderingInterface from './pages/menu-ordering-interface';
-import KdsScreen from './pages/kds';
 
 import DataManagerInterface from './pages/data-manager-interface';
 import SuperAdminDashboard from './pages/super-admin';
