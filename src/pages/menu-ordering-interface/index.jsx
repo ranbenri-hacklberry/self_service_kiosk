@@ -342,19 +342,33 @@ const MenuOrderingInterface = () => {
           }
         } else {
           // ONLINE: Fetch from Supabase
+          console.log('🌐 Online: Fetching customer from Supabase for phone:', order.customer_phone);
           const result = await supabase
             .from('customers')
             .select('*')
-            .eq('phone', order.customer_phone)
+            .eq('phone_number', order.customer_phone) // Try phone_number first
             .maybeSingle();
+
           customer = result.data;
           customerError = result.error;
+
+          if (!customer && !customerError) {
+            // Try 'phone' column fallback
+            const secondTry = await supabase
+              .from('customers')
+              .select('*')
+              .eq('phone', order.customer_phone)
+              .maybeSingle();
+            customer = secondTry.data;
+            customerError = secondTry.error;
+          }
 
           // Cache to Dexie for offline
           if (customer) {
             try {
               const { db } = await import('../../db/database');
               await db.customers.put(customer);
+              console.log('💾 Customer cached to Dexie:', customer.name);
             } catch (e) {
               // Ignore cache error
             }

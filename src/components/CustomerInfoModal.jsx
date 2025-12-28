@@ -157,16 +157,21 @@ const CustomerInfoModal = ({
                 }
             } else {
                 // ONLINE: Use Supabase RPC
+                console.log('🌐 Online: Searching customer in Supabase...', { phone: cleanPhone, business_id: currentUser?.business_id });
                 const { data: rpcData, error: lookupError } = await supabase.rpc('lookup_customer', {
                     p_phone: cleanPhone,
                     p_business_id: currentUser?.business_id || null
                 });
 
-                if (lookupError) throw lookupError;
+                if (lookupError) {
+                    console.error('❌ Supabase RPC error:', lookupError);
+                    throw lookupError;
+                }
                 data = rpcData;
             }
 
             if (!data) {
+                console.log('ℹ️ No customer data returned from RPC/Dexie, treating as new');
                 data = { success: true, isNewCustomer: true };
             }
 
@@ -174,9 +179,11 @@ const CustomerInfoModal = ({
 
             if (data?.success && !data?.isNewCustomer) {
                 // Existing customer found
+                console.log('✅ Customer found:', data.customer.name);
                 const foundCustomer = {
                     id: data.customer.id,
                     phone: cleanPhone,
+                    phoneNumber: cleanPhone, // Keep both for safety
                     name: data.customer.name,
                     loyalty_coffee_count: data.customer.loyalty_coffee_count || 0
                 };
