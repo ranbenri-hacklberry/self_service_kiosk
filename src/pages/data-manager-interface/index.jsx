@@ -143,62 +143,50 @@ const ManagerDashboard = () => {
     }
   };
 
+  {/* 
+    =====================================================
+    MANAGER DASHBOARD - MOBILE FIRST DESIGN
+    This screen is designed for MOBILE devices (phones).
+    All layouts must prioritize small screens first.
+    =====================================================
+  */}
   return (
     <div className="h-screen flex flex-col bg-gray-100" dir="rtl">
-      {/* Header */}
-      <header className={`text-white p-2 shadow-md shrink-0 z-20 relative ${isImpersonating ? 'bg-slate-800' : 'bg-blue-600'}`}>
-        <div className="flex items-center justify-between max-w-7xl mx-auto w-full">
-          {/* Right Side Group: Home Button & Connection Status */}
-          <div className="flex items-center gap-3">
+      {/* Floating Mini Music Player - Top Right */}
+      <div className="fixed top-2 left-2 z-30">
+        <MiniMusicPlayer />
+      </div>
+
+      {/* Header - 5 Equal Tabs */}
+      <header className={`text-white shadow-md shrink-0 z-20 ${isImpersonating ? 'bg-slate-800' : 'bg-blue-600'}`}>
+        <nav className="flex w-full">
+          {[
+            {
+              id: 'home', label: isImpersonating ? 'חזור' : 'בית', icon: isImpersonating
+                ? <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" /></svg>
+                : <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>,
+              action: handleLogout
+            },
+            { id: 'sales', label: 'מכירות', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /><path d="m9 16 2 2 4-4" /></svg> },
+            { id: 'menu', label: 'תפריט', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" /><path d="M7 2v20" /><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" /></svg> },
+            { id: 'inventory', label: 'מלאי', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></svg> },
+            { id: 'tasks', label: 'משימות', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg> },
+          ].map((tab) => (
             <button
-              onClick={handleLogout}
-              className={`flex flex-col items-center justify-center w-14 h-14 rounded-xl transition-all text-xs font-bold gap-1 border shadow-sm ${isImpersonating
-                ? 'bg-slate-700/50 hover:bg-slate-600 border-slate-600'
-                : 'bg-white/10 hover:bg-white/20 border-white/10'
+              key={tab.id}
+              onClick={() => tab.action ? tab.action() : setActiveTab(tab.id)}
+              className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 transition-all ${activeTab === tab.id && !tab.action
+                  ? 'bg-white text-blue-600 font-black'
+                  : tab.action
+                    ? 'text-white/70 hover:bg-white/10 font-medium'
+                    : 'text-blue-100 hover:bg-blue-700/50 font-medium'
                 }`}
             >
-              {isImpersonating ? (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" /></svg>
-                  <span>חזור</span>
-                </>
-              ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-home"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>
-                  <span>בית</span>
-                </>
-              )}
+              {tab.icon}
+              <span className="text-[10px] leading-none">{tab.label}</span>
             </button>
-
-            {/* Mini Player & Connection Group */}
-            <div className="flex items-center gap-3 bg-white/10 p-1 px-2 rounded-2xl border border-white/10">
-              <MiniMusicPlayer />
-              <ConnectionStatusBar isIntegrated={true} />
-            </div>
-          </div>
-
-          {/* Left Side: Navigation Tabs (Visual Left in RTL) */}
-          <div className="flex items-center gap-1 overflow-x-auto hide-scrollbar mr-10">
-            {[
-              { id: 'sales', label: 'מכירות', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /><path d="m9 16 2 2 4-4" /></svg> },
-              { id: 'menu', label: 'תפריט', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" /><path d="M7 2v20" /><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" /></svg> },
-              { id: 'inventory', label: 'מלאי', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></svg> },
-              { id: 'tasks', label: 'משימות', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg> },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex flex-col items-center justify-center w-20 h-16 rounded-xl transition-all gap-1 ${activeTab === tab.id
-                  ? 'bg-white text-blue-600 shadow-lg scale-105 font-black ring-2 ring-white/50'
-                  : 'text-blue-100 hover:bg-blue-700/50 hover:text-white font-medium'
-                  }`}
-              >
-                {tab.icon}
-                <span className="text-[11px] leading-none">{tab.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+          ))}
+        </nav>
       </header>
 
       <main className="flex-1 overflow-y-auto bg-gray-100">
