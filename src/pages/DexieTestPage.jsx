@@ -11,9 +11,11 @@ import { initialLoad, syncOrders, isOnline } from '../services/syncService';
 import { syncQueue, getQueueStats, getPendingActions } from '../services/offlineQueue';
 import { useOrders, useMenuItems, useSyncStatus, useHasLocalData } from '../hooks/useLocalDB';
 import { useAuth } from '../context/AuthContext';
-import { Database, RefreshCw, Trash2, Download, Wifi, WifiOff, CheckCircle, XCircle, Upload } from 'lucide-react';
+import { Database, RefreshCw, Trash2, Download, Wifi, WifiOff, CheckCircle, XCircle, Upload, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const DexieTestPage = () => {
+    const navigate = useNavigate();
     const { currentUser } = useAuth();
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
@@ -257,6 +259,13 @@ const DexieTestPage = () => {
                 <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => navigate('/login')}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors mr-2"
+                                title="Back to Login"
+                            >
+                                <ArrowLeft size={24} className="text-gray-600" />
+                            </button>
                             <Database size={32} className="text-blue-600" />
                             <div>
                                 <h1 className="text-2xl font-bold text-gray-800">Dexie.js Test Page</h1>

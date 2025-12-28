@@ -153,11 +153,7 @@ const AppRoutes = () => {
       } />
 
       {/* Dexie Test Page - For debugging offline-first database */}
-      <Route path="/dexie-test" element={
-        <ProtectedRoute>
-          <DexieTestPage />
-        </ProtectedRoute>
-      } />
+      <Route path="/dexie-test" element={<DexieTestPage />} />
 
       {/* Spotify Callback Route - Public */}
       <Route path="/callback/spotify" element={<SpotifyCallback />} />
