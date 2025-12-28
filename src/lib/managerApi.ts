@@ -39,6 +39,20 @@ export const normalizeOptionGroups = (rawGroups: any[] = []): OptionGroup[] => {
     .filter(Boolean)
     .map((group) => {
       const values = Array.isArray(group?.values) ? group.values : [];
+
+      // Map and normalize values - keep original order
+      const normalizedValues = values
+        .filter(Boolean)
+        .map((value) => ({
+          id: String(value?.id ?? value?.value_id ?? crypto.randomUUID?.() ?? Date.now()),
+          name: value?.name || value?.value_name || 'בחירה',
+          price: Number(value?.price ?? value?.price_adjustment ?? 0),
+          priceAdjustment: Number(value?.price_adjustment ?? value?.price ?? 0),
+          is_default: Boolean(value?.is_default),
+          description: value?.description ?? null,
+          metadata: value?.metadata ?? null,
+        }));
+
       return {
         id: String(group?.id ?? group?.group_id ?? crypto.randomUUID?.() ?? Date.now()),
         title: group?.title || group?.name || 'אפשרות',
@@ -46,17 +60,7 @@ export const normalizeOptionGroups = (rawGroups: any[] = []): OptionGroup[] => {
         category: group?.category || categorizeGroup(group?.name),
         required: Boolean(group?.is_required ?? group?.required),
         description: group?.description ?? null,
-        values: values
-          .filter(Boolean)
-          .map((value) => ({
-            id: String(value?.id ?? value?.value_id ?? crypto.randomUUID?.() ?? Date.now()),
-            name: value?.name || value?.value_name || 'בחירה',
-            price: Number(value?.price ?? value?.price_adjustment ?? 0),
-            priceAdjustment: Number(value?.price_adjustment ?? value?.price ?? 0),
-            is_default: Boolean(value?.is_default),
-            description: value?.description ?? null,
-            metadata: value?.metadata ?? null,
-          })),
+        values: normalizedValues,
       };
     });
 };

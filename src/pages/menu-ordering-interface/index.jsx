@@ -321,11 +321,45 @@ const MenuOrderingInterface = () => {
 
       // Set customer if exists
       if (order.customer_phone) {
-        const { data: customer, error: customerError } = await supabase
-          .from('customers')
-          .select('*')
-          .eq('phone', order.customer_phone)
-          .maybeSingle(); // Changed from .single() to avoid PGRST116
+        let customer = null;
+        let customerError = null;
+
+        // OFFLINE FALLBACK: Load customer from Dexie if offline
+        if (!navigator.onLine) {
+          try {
+            const { db } = await import('../../db/database');
+            const customers = await db.customers.where('phone').equals(order.customer_phone).toArray();
+            if (customers.length === 0) {
+              // Try phone_number field as well
+              const byPhoneNumber = await db.customers.where('phone_number').equals(order.customer_phone).toArray();
+              customer = byPhoneNumber[0] || null;
+            } else {
+              customer = customers[0];
+            }
+            console.log('📴 Customer loaded from Dexie:', customer?.name);
+          } catch (e) {
+            console.warn('Dexie customer lookup failed:', e);
+          }
+        } else {
+          // ONLINE: Fetch from Supabase
+          const result = await supabase
+            .from('customers')
+            .select('*')
+            .eq('phone', order.customer_phone)
+            .maybeSingle();
+          customer = result.data;
+          customerError = result.error;
+
+          // Cache to Dexie for offline
+          if (customer) {
+            try {
+              const { db } = await import('../../db/database');
+              await db.customers.put(customer);
+            } catch (e) {
+              // Ignore cache error
+            }
+          }
+        }
 
         if (customerError) {
           console.warn('⚠️ Customer fetch warning:', customerError);
@@ -1761,9 +1795,84 @@ const MenuOrderingInterface = () => {
         isDemo: currentUser?.whatsapp_phone === '0500000000' || currentUser?.whatsapp_phone === '0501111111'
       });
 
-      // Use static supabase client to prevent schema context issues
+      // OFFLINE-FIRST: Check if we're online before attempting to submit
+      let orderResult = null;
+      let orderError = null;
+      const isOnline = navigator.onLine;
 
-      const { data: orderResult, error: orderError } = await supabase.rpc('submit_order_v2', orderPayload);
+      if (isOnline) {
+        // Online: Submit to Supabase normally
+        const response = await supabase.rpc('submit_order_v2', orderPayload);
+        orderResult = response.data;
+        orderError = response.error;
+      } else {
+        // OFFLINE: Save locally and queue for sync
+        console.log('📴 Offline: Saving order locally...');
+
+        try {
+          const { db } = await import('../../db/database');
+          const { queueAction } = await import('../../services/offlineQueue');
+
+          // Generate local order ID (proper UUID!) and number
+          const localOrderId = uuidv4();
+          const localOrderNumber = `L${Date.now().toString().slice(-6)}`;
+
+          // Save order to local Dexie database
+          // IMPORTANT: Use 'in_progress' so order appears in KDS immediately
+          const localOrder = {
+            id: localOrderId,
+            order_number: localOrderNumber,
+            business_id: currentUser?.business_id,
+            customer_id: orderPayload.p_customer_id,
+            customer_name: orderPayload.p_customer_name,
+            customer_phone: orderPayload.p_customer_phone,
+            order_status: 'in_progress', // Shows in KDS immediately
+            is_paid: orderPayload.p_is_paid,
+            total_amount: orderPayload.p_final_total,
+            discount_id: orderPayload.p_discount_id,
+            discount_amount: orderPayload.p_discount_amount,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            is_offline: true, // Flag for offline orders
+            pending_sync: true // Flag to track sync status
+          };
+          await db.orders.put(localOrder);
+
+          // Save order items locally
+          for (const item of preparedItems) {
+            await db.order_items.put({
+              id: uuidv4(), // Use proper UUID
+              order_id: localOrderId,
+              menu_item_id: item.item_id,
+              quantity: item.quantity,
+              price: item.price,
+              mods: item.mods,
+              notes: item.notes,
+              item_status: item.item_status || 'in_progress', // Shows in KDS
+              course_stage: item.course_stage || 1,
+              created_at: new Date().toISOString()
+            });
+          }
+
+          // Queue for later sync
+          await queueAction('CREATE_ORDER', {
+            ...orderPayload,
+            localOrderId: localOrderId
+          });
+
+          // Return as if it succeeded
+          orderResult = {
+            order_id: localOrderId,
+            order_number: localOrderNumber,
+            offline: true
+          };
+
+          console.log('✅ Order saved locally:', localOrderId);
+        } catch (offlineErr) {
+          console.error('❌ Failed to save order offline:', offlineErr);
+          orderError = { message: 'לא ניתן לשמור הזמנה אופליין. נסה שוב.' };
+        }
+      }
 
       if (orderError) {
         console.error('❌ Error creating/updating order:', orderError);

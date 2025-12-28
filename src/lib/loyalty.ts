@@ -9,6 +9,41 @@ import { getSupabase } from './supabase';
 export async function getLoyaltyCount(customerPhone, user) {
   if (!customerPhone) return { points: 0, freeCoffees: 0 };
 
+  // OFFLINE FALLBACK: If offline, calculate from local Dexie
+  if (!navigator.onLine) {
+    try {
+      const { db } = await import('../db/database');
+
+      // Find customer by phone
+      const customers = await db.customers.where('phone_number').equals(customerPhone).toArray();
+      const customer = customers[0];
+      if (!customer) return { points: 0, freeCoffees: 0 };
+
+      // Count loyalty purchases for this customer
+      const purchases = await db.loyalty_purchases
+        .where('customer_id')
+        .equals(customer.id)
+        .toArray();
+
+      // Calculate points (purchases - redemptions)
+      let points = 0;
+      purchases.forEach(p => {
+        if (p.is_redemption) {
+          points -= 10; // Each redemption uses 10 points
+        } else {
+          points += 1; // Each purchase adds 1 point
+        }
+      });
+
+      const freeCoffees = Math.floor(Math.max(0, points) / 10);
+      console.log(`📴 Offline loyalty for ${customerPhone}: ${points} points, ${freeCoffees} free coffees`);
+      return { points: Math.max(0, points), freeCoffees };
+    } catch (e) {
+      console.warn('Offline loyalty lookup failed:', e);
+      return { points: 0, freeCoffees: 0 };
+    }
+  }
+
   try {
     const client = getSupabase(user);
     const { data, error } = await client.rpc('get_loyalty_balance', {
@@ -16,6 +51,16 @@ export async function getLoyaltyCount(customerPhone, user) {
     });
 
     if (error) throw error;
+
+    // Cache to Dexie for offline use
+    try {
+      const { db } = await import('../db/database');
+      // We'd need customer_id here - for now just log
+      console.log(`💾 Loyalty balance for ${customerPhone}: ${data?.balance ?? 0}`);
+    } catch (cacheErr) {
+      // Ignore cache errors
+    }
+
     return {
       points: data?.balance ?? 0,
       freeCoffees: data?.freeCoffees ?? 0

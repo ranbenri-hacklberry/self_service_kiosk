@@ -19,6 +19,7 @@ import InventoryPage from './pages/inventory';
 import PrepPage from './pages/prep';
 import MusicPage from './pages/music';
 import SpotifyCallback from './pages/callback/spotify';
+import DexieTestPage from './pages/DexieTestPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -148,6 +149,13 @@ const AppRoutes = () => {
           <ErrorBoundary>
             <DataManagerInterface />
           </ErrorBoundary>
+        </ProtectedRoute>
+      } />
+
+      {/* Dexie Test Page - For debugging offline-first database */}
+      <Route path="/dexie-test" element={
+        <ProtectedRoute>
+          <DexieTestPage />
         </ProtectedRoute>
       } />
 

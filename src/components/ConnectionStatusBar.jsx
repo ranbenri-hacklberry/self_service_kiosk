@@ -13,14 +13,14 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
 
     // Format relative time
     const formatTime = (date) => {
-        if (!date) return 'לא ידוע';
+        if (!date) return '';
         const dateObj = typeof date === 'string' ? new Date(date) : date;
         const now = new Date();
         const diff = Math.floor((now - dateObj) / 1000);
 
         if (diff < 60) return 'עכשיו';
-        if (diff < 3600) return `לפני ${Math.floor(diff / 60)} דק׳`;
-        if (diff < 86400) return `לפני ${Math.floor(diff / 3600)} שע׳`;
+        if (diff < 3600) return `${Math.floor(diff / 60)}ד׳`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}ש׳`;
         return dateObj.toLocaleDateString('he-IL');
     };
 
@@ -62,10 +62,9 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
         // Local only (Offline mode)
         if (status === 'local-only') {
             return (
-                <div className={`${baseStyles} bg-amber-500/15 text-amber-800 border-amber-200/50 relative`}>
+                <div className={`${baseStyles} bg-amber-500/20 text-amber-800 border-amber-300/60 relative animate-pulse`}>
                     <WifiOff size={11} strokeWidth={2.5} />
-                    <span className="font-medium">אופליין</span>
-                    <span className="text-amber-600 text-[9px]">• {formatTime(lastSync)}</span>
+                    <span className="font-bold">אופליין</span>
                     <button
                         onClick={refresh}
                         className="p-0.5 hover:bg-amber-200/50 rounded-full transition-colors"
@@ -101,10 +100,15 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
         // Completely offline
         if (status === 'offline') {
             return (
-                <div className={`${baseStyles} bg-red-500/15 text-red-800 border-red-200/50 relative`}>
+                <div className={`${baseStyles} bg-red-500/20 text-red-800 border-red-300/60 relative animate-pulse`}>
                     <WifiOff size={11} strokeWidth={2.5} />
-                    <span className="font-medium">אין חיבור</span>
-                    <span className="text-red-600 text-[9px]">• {formatTime(lastSync)}</span>
+                    <span className="font-bold">אופליין</span>
+                    {/* Pending queue counter */}
+                    {syncStatus?.pendingQueue > 0 && (
+                        <span className="bg-orange-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                            {syncStatus.pendingQueue}
+                        </span>
+                    )}
                     <button
                         onClick={refresh}
                         className="p-0.5 hover:bg-red-200/50 rounded-full transition-colors"

@@ -554,6 +554,7 @@ const OrderCard = ({
                   <button
                     disabled={isUpdating}
                     onClick={async (e) => {
+                      console.log('🔙 UNDO BUTTON CLICKED! orderId:', order.id, 'isReady:', isReady);
                       e.stopPropagation(); setIsUpdating(true);
                       try { await onOrderStatusUpdate(order.id, 'undo_ready'); }
                       finally { setIsUpdating(false); }

@@ -553,8 +553,13 @@ const KdsScreen = () => {
 
         {/* SMS Toast Notification */}
         {smsToast && (
-          <div className={`absolute top-20 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300 ${smsToast.isError ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
-            {smsToast.isError ? <AlertTriangle size={24} /> : <Check size={24} />}
+          <div className={`absolute top-20 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300 ${smsToast.isError ? 'bg-red-600 text-white' :
+            smsToast.isWarning ? 'bg-amber-500 text-white' :
+              'bg-green-600 text-white'
+            }`}>
+            {smsToast.isError ? <AlertTriangle size={24} /> :
+              smsToast.isWarning ? <AlertTriangle size={24} /> :
+                <Check size={24} />}
             <span className="text-xl font-bold">{smsToast.message}</span>
           </div>
         )}

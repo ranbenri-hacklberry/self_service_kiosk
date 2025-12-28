@@ -210,56 +210,113 @@ const ModifierModal = (props) => {
 
         console.log('🔄 Fetching Options from DB (Direct) for:', selectedItem.name, 'ID:', targetItemId);
 
-        // Fetch from Supabase Direct
+        // Fetch from Supabase Direct (or Dexie if offline)
         let fetchedOptions = [];
+        const isOnline = navigator.onLine;
+
         try {
-          // 1. Get linked groups
-          const { data: linked } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', targetItemId);
-          const linkedIds = linked?.map(l => l.group_id) || [];
+          if (!isOnline) {
+            // OFFLINE: Load from Dexie
+            console.log('📴 Offline: Loading options from Dexie...');
+            const { db } = await import('../../../db/database');
 
-          // 2. Query groups
-          // Combine: Private groups (menu_item_id match) OR Linked groups (id in linkedIds)
-          let query = supabase.from('optiongroups')
-            .select('*, optionvalues(*)')
-            .order('name');
+            // Get linked group IDs
+            const linkedRecords = await db.menuitemoptions
+              .where('item_id')
+              .equals(targetItemId)
+              .toArray();
+            const linkedIds = linkedRecords.map(l => l.group_id);
 
-          const orCond = [`menu_item_id.eq.${targetItemId}`];
-          if (linkedIds.length > 0) {
-            orCond.push(`id.in.(${linkedIds.join(',')})`);
+            // Get private groups + linked groups
+            let groups = await db.optiongroups.toArray();
+            groups = groups.filter(g =>
+              g.menu_item_id === targetItemId || linkedIds.includes(g.id)
+            );
+
+            // Get values for these groups
+            const groupIds = groups.map(g => g.id);
+            const allValues = await db.optionvalues.toArray();
+            const relevantValues = allValues.filter(v => groupIds.includes(v.group_id));
+
+            // Combine groups with their values - keep original order
+            const enhancedGroups = groups.map(g => {
+              const groupValues = relevantValues.filter(v => v.group_id === g.id);
+              return {
+                ...g,
+                values: groupValues,
+                optionvalues: groupValues,
+                is_required: g.is_required || (g.min_selection > 0)
+              };
+            });
+
+            console.log(`📴 Loaded ${enhancedGroups.length} option groups from Dexie`);
+            fetchedOptions = normalizeOptionGroups(enhancedGroups);
+          } else {
+            // ONLINE: Fetch from Supabase
+            // 1. Get linked groups
+            const { data: linked } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', targetItemId);
+            const linkedIds = linked?.map(l => l.group_id) || [];
+
+            // 2. Query groups
+            // Combine: Private groups (menu_item_id match) OR Linked groups (id in linkedIds)
+            let query = supabase.from('optiongroups')
+              .select('*, optionvalues(*)')
+              .order('name');
+
+            const orCond = [`menu_item_id.eq.${targetItemId}`];
+            if (linkedIds.length > 0) {
+              orCond.push(`id.in.(${linkedIds.join(',')})`);
+            }
+            query = query.or(orCond.join(','));
+
+            const { data: rawGroups, error } = await query;
+
+            console.log('🔍 Modifier Debug:', {
+              itemId: targetItemId,
+              linkedGroupIds: linkedIds,
+              orCondition: orCond.join(','),
+              foundGroupsCount: rawGroups?.length || 0,
+              foundGroupsNames: rawGroups?.map(g => g.name)
+            });
+
+            if (error) {
+              console.warn("Supabase query error, retrying without OR if empty?");
+              throw error;
+            }
+
+            // Map min_selection to required AND optionvalues to values
+            // Keep original order from Supabase - dont re-sort
+            const enhancedRawGroups = rawGroups?.map(g => ({
+              ...g,
+              values: g.optionvalues || [],
+              is_required: g.is_required || (g.min_selection > 0)
+            }));
+
+            console.log('🔍 Raw DB Values for first group:', enhancedRawGroups?.[0]?.values?.map(v => ({
+              name: v.value_name,
+              price: v.price,
+              price_adjustment: v.price_adjustment
+            })));
+
+            fetchedOptions = normalizeOptionGroups(enhancedRawGroups);
+
+            // Cache to Dexie for offline use
+            try {
+              const { db } = await import('../../../db/database');
+              if (rawGroups && rawGroups.length > 0) {
+                await db.optiongroups.bulkPut(rawGroups.map(g => ({ ...g, optionvalues: undefined })));
+                const allValues = rawGroups.flatMap(g => g.optionvalues || []);
+                if (allValues.length > 0) {
+                  await db.optionvalues.bulkPut(allValues);
+                }
+                console.log('💾 Cached options to Dexie');
+              }
+            } catch (cacheErr) {
+              console.warn('Failed to cache options:', cacheErr);
+            }
           }
-          query = query.or(orCond.join(','));
-
-          const { data: rawGroups, error } = await query;
-
-          console.log('🔍 Modifier Debug:', {
-            itemId: targetItemId,
-            linkedGroupIds: linkedIds,
-            orCondition: orCond.join(','),
-            foundGroupsCount: rawGroups?.length || 0,
-            foundGroupsNames: rawGroups?.map(g => g.name)
-          });
-
-          if (error) {
-            console.warn("Supabase query error, retrying without OR if empty?");
-            throw error;
-          }
-
-          // Map min_selection to required AND optionvalues to values
-          const enhancedRawGroups = rawGroups?.map(g => ({
-            ...g,
-            values: g.optionvalues, // Fix: Map Supabase relation to expected key
-            is_required: g.is_required || (g.min_selection > 0) // Polyfill required
-          }));
-
-          console.log('🔍 Raw DB Values for first group:', enhancedRawGroups?.[0]?.values?.map(v => ({
-            name: v.value_name,
-            price: v.price,
-            price_adjustment: v.price_adjustment
-          })));
-
-          fetchedOptions = normalizeOptionGroups(enhancedRawGroups);
         } catch (err) {
-          console.error('Supabase fetch failed:', err);
+          console.error('Options fetch failed:', err);
           fetchedOptions = [];
         }
 

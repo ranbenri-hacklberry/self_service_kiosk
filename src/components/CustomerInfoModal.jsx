@@ -120,12 +120,55 @@ const CustomerInfoModal = ({
         setError('');
 
         try {
-            const { data, error: lookupError } = await supabase.rpc('lookup_customer', {
-                p_phone: cleanPhone,
-                p_business_id: currentUser?.business_id || null
-            });
+            let data = null;
 
-            if (lookupError) throw lookupError;
+            // OFFLINE FALLBACK: Search in local Dexie
+            if (!navigator.onLine) {
+                console.log('📴 Offline: Searching customer locally');
+                try {
+                    const { db } = await import('../db/database');
+
+                    // Search by phone or phone_number
+                    let customer = await db.customers.where('phone').equals(cleanPhone).first();
+                    if (!customer) {
+                        customer = await db.customers.where('phone_number').equals(cleanPhone).first();
+                    }
+
+                    if (customer) {
+                        data = {
+                            success: true,
+                            isNewCustomer: false,
+                            customer: {
+                                id: customer.id,
+                                name: customer.name,
+                                loyalty_coffee_count: customer.loyalty_coffee_count || 0
+                            }
+                        };
+                        console.log('📴 Found customer locally:', customer.name);
+                    } else {
+                        // New customer
+                        data = { success: true, isNewCustomer: true };
+                        console.log('📴 Customer not found locally, treating as new');
+                    }
+                } catch (dexieErr) {
+                    console.warn('Dexie lookup failed:', dexieErr);
+                    // Treat as new customer if Dexie fails
+                    data = { success: true, isNewCustomer: true };
+                }
+            } else {
+                // ONLINE: Use Supabase RPC
+                const { data: rpcData, error: lookupError } = await supabase.rpc('lookup_customer', {
+                    p_phone: cleanPhone,
+                    p_business_id: currentUser?.business_id || null
+                });
+
+                if (lookupError) throw lookupError;
+                data = rpcData;
+            }
+
+            if (!data) {
+                data = { success: true, isNewCustomer: true };
+            }
 
             setLookupResult(data);
 
@@ -289,13 +332,44 @@ const CustomerInfoModal = ({
             const isUuid = (str) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
             const validCustomerId = isUuid(customer.id) ? customer.id : null;
 
-            console.log('📡 [CustomerInfoModal] Calling update_order_customer RPC:', {
+            console.log('📡 [CustomerInfoModal] Updating order customer:', {
                 orderId,
                 validCustomerId,
-                name: customer.name
+                name: customer.name,
+                online: navigator.onLine
             });
 
-            // Use RPC to bypass RLS
+            // OFFLINE FALLBACK: Update locally and queue for sync
+            if (!navigator.onLine) {
+                try {
+                    const { db } = await import('../db/database');
+                    const { queueAction } = await import('../services/offlineQueue');
+
+                    // Update local order
+                    await db.orders.update(orderId, {
+                        customer_id: validCustomerId,
+                        customer_phone: customer.phone,
+                        customer_name: customer.name,
+                        updated_at: new Date().toISOString()
+                    });
+
+                    // Queue for later sync
+                    await queueAction('UPDATE_CUSTOMER', {
+                        orderId,
+                        customerId: validCustomerId,
+                        customerName: customer.name,
+                        customerPhone: customer.phone
+                    });
+
+                    console.log('📴 Customer update saved locally and queued');
+                    return;
+                } catch (offlineErr) {
+                    console.error('Offline customer update failed:', offlineErr);
+                    throw offlineErr;
+                }
+            }
+
+            // ONLINE: Use RPC to bypass RLS
             const { error } = await supabase.rpc('update_order_customer', {
                 p_order_id: orderId,
                 p_customer_id: validCustomerId,
