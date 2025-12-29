@@ -102,6 +102,10 @@ const MenuOrderingInterface = () => {
   // --- Edit Mode Logic ---
   const [isRestrictedMode, setIsRestrictedMode] = useState(false);
 
+  // --- Soldier Discount State ---
+  const [soldierDiscountEnabled, setSoldierDiscountEnabled] = useState(false);
+  const [soldierDiscountId, setSoldierDiscountId] = useState(null); // UUID from discounts table
+
   // --- Edit Mode Logic ---
   useEffect(() => {
     console.log('🔄 MenuOrderingInterface mounted, location:', location);
@@ -118,20 +122,36 @@ const MenuOrderingInterface = () => {
       sessionStorage.setItem(ORDER_ORIGIN_STORAGE_KEY, 'kds'); // Ensure return to KDS
 
       // Check for restricted mode flag in session storage
+      // Default to NOT restricted (allow editing) unless explicitly set
       try {
         const storedEditDataRaw = sessionStorage.getItem('editOrderData');
         if (storedEditDataRaw) {
           const storedEditData = JSON.parse(storedEditDataRaw);
-          // Verify ID matches
-          if (String(storedEditData.id) === String(targetOrderId)) {
+          // Verify ID matches (handle suffixes like '-ready' by comparing base IDs)
+          const storedIdBase = String(storedEditData.id).replace(/-ready$/, '').replace(/-stage-\d+$/, '');
+          const targetIdBase = String(targetOrderId).replace(/-ready$/, '').replace(/-stage-\d+$/, '');
+
+          if (storedIdBase === targetIdBase) {
             if (storedEditData.restrictedMode) {
-              console.log('🔒 Restricted Edit Mode Active (History)');
+              console.log('🔒 Restricted Edit Mode Active (History - Paid Order)');
               setIsRestrictedMode(true);
+            } else {
+              console.log('✏️ Full Edit Mode Active (History - Unpaid Order)');
+              setIsRestrictedMode(false);
             }
+          } else {
+            // ID mismatch - default to unrestricted
+            console.log('⚠️ ID mismatch in editOrderData, defaulting to unrestricted');
+            setIsRestrictedMode(false);
           }
+        } else {
+          // No editOrderData - default to unrestricted for edit mode
+          console.log('⚠️ No editOrderData found, defaulting to unrestricted');
+          setIsRestrictedMode(false);
         }
       } catch (e) {
         console.error('Error reading editOrderData:', e);
+        setIsRestrictedMode(false); // Default to unrestricted on error
       }
 
       fetchOrderForEditing(targetOrderId);
@@ -301,11 +321,59 @@ const MenuOrderingInterface = () => {
 
       // Set customer if exists
       if (order.customer_phone) {
-        const { data: customer, error: customerError } = await supabase
-          .from('customers')
-          .select('*')
-          .eq('phone', order.customer_phone)
-          .maybeSingle(); // Changed from .single() to avoid PGRST116
+        let customer = null;
+        let customerError = null;
+
+        // OFFLINE FALLBACK: Load customer from Dexie if offline
+        if (!navigator.onLine) {
+          try {
+            const { db } = await import('../../db/database');
+            const customers = await db.customers.where('phone').equals(order.customer_phone).toArray();
+            if (customers.length === 0) {
+              // Try phone_number field as well
+              const byPhoneNumber = await db.customers.where('phone_number').equals(order.customer_phone).toArray();
+              customer = byPhoneNumber[0] || null;
+            } else {
+              customer = customers[0];
+            }
+            console.log('📴 Customer loaded from Dexie:', customer?.name);
+          } catch (e) {
+            console.warn('Dexie customer lookup failed:', e);
+          }
+        } else {
+          // ONLINE: Fetch from Supabase
+          console.log('🌐 Online: Fetching customer from Supabase for phone:', order.customer_phone);
+          const result = await supabase
+            .from('customers')
+            .select('*')
+            .eq('phone_number', order.customer_phone) // Try phone_number first
+            .maybeSingle();
+
+          customer = result.data;
+          customerError = result.error;
+
+          if (!customer && !customerError) {
+            // Try 'phone' column fallback
+            const secondTry = await supabase
+              .from('customers')
+              .select('*')
+              .eq('phone', order.customer_phone)
+              .maybeSingle();
+            customer = secondTry.data;
+            customerError = secondTry.error;
+          }
+
+          // Cache to Dexie for offline
+          if (customer) {
+            try {
+              const { db } = await import('../../db/database');
+              await db.customers.put(customer);
+              console.log('💾 Customer cached to Dexie:', customer.name);
+            } catch (e) {
+              // Ignore cache error
+            }
+          }
+        }
 
         if (customerError) {
           console.warn('⚠️ Customer fetch warning:', customerError);
@@ -442,6 +510,7 @@ const MenuOrderingInterface = () => {
         originalTotal: order.total_amount, // Use actual paid amount (after discount) as baseline
         originalItems: loadedCartItems,
         isPaid: order.is_paid,
+        originalOrderStatus: order.order_status, // Store original status
         originalRedeemedCount: originalRedeemedCount,
         originalLoyaltyDiscount: loyaltyDiscountApplied // Store the discount that was applied
       };
@@ -458,6 +527,83 @@ const MenuOrderingInterface = () => {
       if (loyaltyDiscountApplied > 0) {
         setLoyaltyDiscount(loyaltyDiscountApplied);
         console.log('🎁 Applying original loyalty discount:', loyaltyDiscountApplied);
+      }
+
+      // CRITICAL: Restore soldier discount if one was applied to this order
+      // First check RPC result, then fallback to direct query
+      let discountId = order.discount_id;
+      let discountAmount = order.discount_amount;
+
+      // Fallback: If RPC doesn't return discount info, fetch directly
+      if (discountId === undefined && discountAmount === undefined) {
+        console.log('🔍 Discount info missing from RPC, fetching directly...');
+        const { data: discountData } = await supabase
+          .from('orders')
+          .select('discount_id, discount_amount')
+          .eq('id', order.id)
+          .single();
+
+        if (discountData) {
+          discountId = discountData.discount_id;
+          discountAmount = discountData.discount_amount;
+          console.log('✅ Discount info fetched directly:', discountData);
+        }
+      }
+
+      if (discountId || discountAmount > 0) {
+        console.log('🎖️ Order has discount - restoring:', {
+          discount_id: discountId,
+          discount_amount: discountAmount
+        });
+
+        // Enable soldier discount and set the ID
+        setSoldierDiscountEnabled(true);
+        if (discountId) {
+          setSoldierDiscountId(discountId);
+        }
+        console.log('🎖️ Soldier discount restored for editing');
+      }
+
+      // CRITICAL: After loading order, verify restriction based on actual payment status
+      // We check both the RPC result AND do a direct fallback if needed
+      let dbIsPaid = order.is_paid || order.isPaid;
+      let dbStatus = order.order_status || order.orderStatus;
+
+      // If RPC results are missing critical fields, fetch them directly
+      if (dbIsPaid === undefined || dbStatus === undefined) {
+        console.log('🔍 Critical fields missing from RPC, fetching directly from orders table...');
+        const { data: directOrder } = await supabase
+          .from('orders')
+          .select('is_paid, order_status')
+          .eq('id', cleanOrderId)
+          .single();
+
+        if (directOrder) {
+          dbIsPaid = directOrder.is_paid;
+          dbStatus = directOrder.order_status;
+          console.log('✅ Direct fetch result:', { dbIsPaid, dbStatus });
+        }
+      }
+
+      // Final decision on restriction:
+      // - Cancelled orders are ALWAYS restricted
+      // - Paid orders are NOW EDITABLE (can add new items)
+      // - Unpaid orders (even in history) are EDITABLE
+      const shouldBeRestricted = dbStatus === 'cancelled';
+
+      console.log('🛡️ Final Restriction Decision:', {
+        dbIsPaid,
+        dbStatus,
+        shouldBeRestricted,
+        orderId: cleanOrderId
+      });
+
+      if (shouldBeRestricted) {
+        console.log('🔒 Setting Restricted Mode (Cancelled)');
+        setIsRestrictedMode(true);
+      } else {
+        console.log('✅ Setting Full Edit Mode (Active/History/Paid)');
+        setIsRestrictedMode(false);
       }
 
     } catch (err) {
@@ -477,9 +623,20 @@ const MenuOrderingInterface = () => {
   };
   // -----------------------
 
+  // Unified helper to clear all order-related session data
+  const clearOrderSessionState = () => {
+    console.log('🧹 Clearing order session state (Cart & Customer)');
+    cartClearCart();
+    setCurrentCustomer(null);
+    localStorage.removeItem('currentCustomer');
+    sessionStorage.removeItem('editOrderData');
+    sessionStorage.removeItem('pendingCartState');
+    sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
+    // Force a small delay to ensure React state updates if needed, though navigation usually handles it
+  };
+
   const handleCloseConfirmation = () => {
     setShowConfirmationModal(null);
-    cartClearCart();
     const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
     const editDataRaw = sessionStorage.getItem('editOrderData');
     const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
@@ -488,16 +645,14 @@ const MenuOrderingInterface = () => {
 
     if (origin === 'kds') {
       console.log('✅ Navigating back to KDS');
-      sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
-      // After a successful update with changes, we return to the Active tab
-      // as the order likely needs attention (or simply as requested by the user).
-      navigate('/kds', { state: { viewMode: 'active' } });
+      const targetView = cartHistory.some(h => h.type === 'ADD_ITEM') ? 'active' : (editData?.viewMode || 'active');
+      clearOrderSessionState();
+      navigate('/kds', { state: { viewMode: targetView } });
       return;
     }
+
     console.log('📞 Starting new order');
-    // Clear cart and customer data
-    cartClearCart();
-    localStorage.removeItem('currentCustomer');
+    clearOrderSessionState();
     // Stay on menu ordering interface for new order
     window.location.reload();
   };
@@ -509,26 +664,28 @@ const MenuOrderingInterface = () => {
     const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
 
     // Check if we have customer info but no items
-    const hasCustomerInfo = currentCustomer?.name && currentCustomer?.name !== 'הזמנה מהירה';
+    const hasCustomerInfo = currentCustomer?.name && !['הזמנה מהירה', 'אורח', 'אורח/ת', 'אורח כללי', 'אורח אנונימי'].includes(currentCustomer?.name);
     const hasItems = cartItems.length > 0;
 
-    if (hasCustomerInfo && !hasItems && origin !== 'kds') {
-      // Show custom confirmation modal
+    // Determine if there are unsaved changes
+    // In edit mode, we check cartHistory. In new order mode, we check if cart or customer is present.
+    const hasChanges = isEditMode ? cartHistory.length > 0 : (hasItems || hasCustomerInfo);
+
+    if (hasChanges) {
+      console.log('⚠️ Unsaved changes detected, showing exit confirmation');
       setShowExitConfirmModal(true);
       return;
     }
 
-    if (origin === 'kds') {
-      console.log('🔙 Header Back clicked - returning to KDS:', editData?.viewMode);
-      // If we clicked back without "saving" (closing confirmation), 
-      // we strictly follow the origin viewMode.
-      navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
-      sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
-      return;
-    }
+    // NO CHANGES - Still needs careful cleanup before navigating
+    console.log('🔙 Header Back clicked (No changes) - Cleaning up and returning');
+    clearOrderSessionState();
 
-    // Go to home/mode selection instead of browser back
-    navigate('/mode-selection');
+    if (origin === 'kds') {
+      navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
+    } else {
+      navigate('/mode-selection');
+    }
   };
 
   // Use cart hook utilities for normalization and signature
@@ -1198,12 +1355,67 @@ const MenuOrderingInterface = () => {
     }
   }, [cartItems, currentCustomer, loyaltyPoints, loyaltyFreeCoffees, isEditMode, editingOrderData, adjustedLoyaltyPoints]);
 
-  // Calculate finalTotal with useMemo to react to loyaltyDiscount changes
+  // Calculate soldier discount amount
+  const soldierDiscountAmount = useMemo(() => {
+    if (!soldierDiscountEnabled) return 0;
+    // 10% of cart total (before loyalty discount) - keep 2 decimal places
+    return Math.round(cartTotal * 0.10 * 100) / 100;
+  }, [cartTotal, soldierDiscountEnabled]);
+
+  // Calculate finalTotal with useMemo to react to loyaltyDiscount and soldier discount changes
   const finalTotal = useMemo(() => {
-    const total = Math.max(0, cartTotal - loyaltyDiscount);
-    console.log('💵 Final Total:', { cartTotal, loyaltyDiscount, finalTotal: total });
+    const total = Math.max(0, cartTotal - loyaltyDiscount - soldierDiscountAmount);
+    console.log('💵 Final Total:', { cartTotal, loyaltyDiscount, soldierDiscountAmount, finalTotal: total });
     return total;
-  }, [cartTotal, loyaltyDiscount]);
+  }, [cartTotal, loyaltyDiscount, soldierDiscountAmount]);
+
+  // Toggle soldier discount handler
+  const handleToggleSoldierDiscount = async () => {
+    if (!soldierDiscountEnabled) {
+      // Enable - try to fetch discount ID from DB (optional)
+      try {
+        // First try: look for discount with customer_types containing 'soldier' for this business
+        const { data } = await supabase
+          .from('discounts')
+          .select('id')
+          .contains('customer_types', ['soldier'])
+          .eq('is_active', true)
+          .eq('business_id', currentUser?.business_id)
+          .limit(1);
+
+        if (data && data.length > 0) {
+          setSoldierDiscountId(data[0].id);
+          console.log('🎖️ Soldier discount enabled from DB:', data[0].id);
+        } else {
+          // Fallback: find any discount with "חייל" in name for this business
+          const { data: fallback } = await supabase
+            .from('discounts')
+            .select('id')
+            .ilike('name', '%חייל%')
+            .eq('is_active', true)
+            .eq('business_id', currentUser?.business_id)
+            .limit(1);
+
+          if (fallback && fallback.length > 0) {
+            setSoldierDiscountId(fallback[0].id);
+            console.log('🎖️ Soldier discount enabled (fallback):', fallback[0].id);
+          } else {
+            // No DB record - that's OK, we calculate 10% inline
+            console.log('🎖️ Soldier discount enabled (no DB record, using 10% inline)');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch soldier discount:', err);
+        // Continue anyway - we calculate discount inline
+      }
+      // Always enable the discount toggle
+      setSoldierDiscountEnabled(true);
+    } else {
+      // Disable
+      setSoldierDiscountEnabled(false);
+      setSoldierDiscountId(null);
+    }
+  };
 
   // Updated handleInitiatePayment to show payment modal
   const handleInitiatePayment = async () => {
@@ -1260,9 +1472,11 @@ const MenuOrderingInterface = () => {
       const originalTotal = editingOrderData?.originalTotal || 0;
       const priceDifference = finalTotal - originalTotal;
 
-      // אם אין שינוי במחיר, בצע עדכון ישיר ללא מודאל תשלום ובלי הודעת אישור
-      if (Math.abs(priceDifference) === 0) {
-        console.log('✏️ No price change, updating directly (skip confirmation)...');
+      // אם אין שינוי במחיר ואין הוספת פריטים חדשים, בצע עדכון ישיר ללא מודאל תשלום ובלי הודעת אישור
+      const hasAddedItems = cartHistory.some(h => h.type === 'ADD_ITEM');
+
+      if (Math.abs(priceDifference) === 0 && !hasAddedItems) {
+        console.log('✏️ No price change and no new items, updating directly (skip confirmation)...');
         handlePaymentSelect({
           paymentMethod: editingOrderData?.paymentMethod || 'cash',
           is_paid: editingOrderData?.isPaid,
@@ -1360,7 +1574,7 @@ const MenuOrderingInterface = () => {
       if (!customerNameForOrder && realPhone) {
         customerNameForOrder = `אורח(${realPhone})`;
       } else if (!customerNameForOrder) {
-        customerNameForOrder = 'אורח כללי';
+        customerNameForOrder = null;
       }
 
       let preparedItems = [];
@@ -1445,11 +1659,19 @@ const MenuOrderingInterface = () => {
             finalStatus
           });
 
+          // Calculate discount per item if soldier discount is enabled
+          const itemPrice = item.price || item.unit_price;
+          const discountPercent = soldierDiscountEnabled ? 0.10 : 0;
+          const discountForItem = Math.floor(itemPrice * discountPercent * 100) / 100;
+          const finalPricePerItem = itemPrice - discountForItem;
+
           return {
             item_id: itemId, // menu_item_id (integer)
             order_item_id: orderItemId, // UUID for existing item, null for new items
             quantity: item.quantity,
-            price: item.price || item.unit_price,
+            price: itemPrice,
+            final_price: finalPricePerItem,
+            discount_applied: discountForItem,
             selected_options: options,
             mods: [
               ...options,
@@ -1504,10 +1726,18 @@ const MenuOrderingInterface = () => {
             final_item_id: itemId
           });
 
+          // Calculate discount per item if soldier discount is enabled
+          const itemPrice = item.price || item.unit_price;
+          const discountPercent = soldierDiscountEnabled ? 0.10 : 0;
+          const discountForItem = Math.floor(itemPrice * discountPercent * 100) / 100;
+          const finalPricePerItem = itemPrice - discountForItem;
+
           return {
             item_id: itemId,
             quantity: item.quantity,
-            price: item.price || item.unit_price,
+            price: itemPrice,
+            final_price: finalPricePerItem,
+            discount_applied: discountForItem,
             selected_options: options,
             mods: [
               ...options,
@@ -1559,8 +1789,9 @@ const MenuOrderingInterface = () => {
         p_final_total: (orderData?.total_amount !== undefined) ? orderData.total_amount : finalTotal,
         p_original_coffee_count: originalCoffeeCount,
         p_is_quick_order: !!currentCustomer?.isQuickOrder && !realPhone,
-        p_discount_id: orderData?.discount_id || null,
-        p_discount_amount: orderData?.discount_amount || 0,
+        // Soldier discount takes priority, then orderData discount
+        p_discount_id: soldierDiscountEnabled ? soldierDiscountId : (orderData?.discount_id || null),
+        p_discount_amount: soldierDiscountEnabled ? soldierDiscountAmount : (orderData?.discount_amount || 0),
         p_business_id: currentUser?.business_id || null
       };
 
@@ -1578,9 +1809,87 @@ const MenuOrderingInterface = () => {
         isDemo: currentUser?.whatsapp_phone === '0500000000' || currentUser?.whatsapp_phone === '0501111111'
       });
 
-      // Use static supabase client to prevent schema context issues
+      // OFFLINE-FIRST: Check if we're online before attempting to submit
+      let orderResult = null;
+      let orderError = null;
+      const isOnline = navigator.onLine;
 
-      const { data: orderResult, error: orderError } = await supabase.rpc('submit_order_v2', orderPayload);
+      if (isOnline) {
+        // Online: Submit to Supabase normally
+        const response = await supabase.rpc('submit_order_v2', orderPayload);
+        orderResult = response.data;
+        orderError = response.error;
+
+        // Note: We don't cache to Dexie here - the sync service will handle it
+        // This prevents duplicate items when editing orders
+      } else {
+        // OFFLINE: Save locally and queue for sync
+        console.log('📴 Offline: Saving order locally...');
+
+        try {
+          const { db } = await import('../../db/database');
+          const { queueAction } = await import('../../services/offlineQueue');
+
+          // Generate local order ID (proper UUID!) and number
+          const localOrderId = uuidv4();
+          const localOrderNumber = `L${Date.now().toString().slice(-6)}`;
+
+          // Save order to local Dexie database
+          // IMPORTANT: Use 'in_progress' so order appears in KDS immediately
+          const localOrder = {
+            id: localOrderId,
+            order_number: localOrderNumber,
+            business_id: currentUser?.business_id,
+            customer_id: orderPayload.p_customer_id,
+            customer_name: orderPayload.p_customer_name,
+            customer_phone: orderPayload.p_customer_phone,
+            order_status: 'in_progress', // Shows in KDS immediately
+            is_paid: orderPayload.p_is_paid,
+            total_amount: orderPayload.p_final_total,
+            discount_id: orderPayload.p_discount_id,
+            discount_amount: orderPayload.p_discount_amount,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            is_offline: true, // Flag for offline orders
+            pending_sync: true // Flag to track sync status
+          };
+          await db.orders.put(localOrder);
+
+          // Save order items locally
+          for (const item of preparedItems) {
+            await db.order_items.put({
+              id: uuidv4(), // Use proper UUID
+              order_id: localOrderId,
+              menu_item_id: item.item_id,
+              quantity: item.quantity,
+              price: item.price,
+              mods: item.mods,
+              notes: item.notes,
+              item_status: item.item_status || 'in_progress', // Shows in KDS
+              course_stage: item.course_stage || 1,
+              created_at: new Date().toISOString()
+            });
+          }
+
+          // Queue for later sync
+          await queueAction('CREATE_ORDER', {
+            ...orderPayload,
+            localOrderId: localOrderId
+          });
+
+          // Return as if it succeeded
+          orderResult = {
+            order_id: localOrderId,
+            order_number: localOrderNumber,
+            offline: true
+          };
+
+          console.log('✅ Order saved locally:', localOrderId);
+        } catch (offlineErr) {
+          console.error('❌ Failed to save order offline:', offlineErr);
+          orderError = { message: 'לא ניתן לשמור הזמנה אופליין. נסה שוב.' };
+        }
+      }
 
       if (orderError) {
         console.error('❌ Error creating/updating order:', orderError);
@@ -1590,13 +1899,36 @@ const MenuOrderingInterface = () => {
       }
 
       const orderId = orderResult?.order_id;
+
+      // Only reset order_status to 'in_progress' if we ACTUALLY added new items
+      // This prevents completed orders from appearing in active KDS when just editing details
+      if (isEditMode && orderId && editingOrderData?.originalOrderStatus === 'completed') {
+        // Check if any NEW items were added (items without an existing order_item_id)
+        const hasNewItems = cart.some(item => !item.id || item.id.toString().includes('temp'));
+
+        if (hasNewItems) {
+          console.log('🔄 New items added to completed order. Resetting status to in_progress...');
+          const { error: statusError } = await supabase
+            .from('orders')
+            .update({ order_status: 'in_progress', updated_at: new Date().toISOString() })
+            .eq('id', orderId);
+
+          if (statusError) {
+            console.error('Failed to reset order status:', statusError);
+          } else {
+            console.log('✅ Order status reset to in_progress');
+          }
+        } else {
+          console.log('📝 Editing completed order (no new items) - keeping completed status');
+        }
+      }
       const orderNumber = orderResult?.order_number;
       console.log('✅ Order created/updated successfully!');
       console.log('  - Order ID:', orderId);
       console.log('  - Order Number:', orderNumber);
 
       // Don't clear cart yet - wait for confirmation modal to close
-      // setCartItems([]);
+      setCartItems([]);
 
       let updatedCustomer = {
         ...currentCustomer,
@@ -1605,7 +1937,8 @@ const MenuOrderingInterface = () => {
         name: customerNameForOrder || currentCustomer?.name || null
       };
       // Use the live loyaltyPoints state instead of potentially stale customer data
-      let loyaltyPointsForConfirmation = loyaltyPoints ?? 0;
+      // Only show loyalty points if we have a real customer phone
+      let loyaltyPointsForConfirmation = realPhone ? (loyaltyPoints ?? 0) : null;
 
       // Safety check: If count is 0 but we have a customer, try to fetch fresh count
       if (loyaltyPointsForConfirmation === 0 && customerId && realPhone) {
@@ -1638,56 +1971,89 @@ const MenuOrderingInterface = () => {
       // אם זו עריכה ללא שינויים, דלג על הודעת האישור וחזור ל-KDS
       if (orderData?.skipConfirmation) {
         console.log('⏭️ Skipping confirmation modal (edit with no changes)');
-        cartClearCart();
         const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
-        if (origin === 'kds') {
-          sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
-          const editDataRaw = sessionStorage.getItem('editOrderData');
-          const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
-          navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
-        }
-        return;
-      }
+        const editDataRaw = sessionStorage.getItem('editOrderData');
+        const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
 
-      // אם בחרו "תשלום אחר כך" (is_paid = false), דלג על מודאל אישור וחזור ל-KDS
-      if (orderData?.is_paid === false) {
-        console.log('⏭️ Skipping confirmation modal (pay later selected)');
-        cartClearCart();
-        const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
+        clearOrderSessionState();
+
         if (origin === 'kds') {
-          sessionStorage.removeItem(ORDER_ORIGIN_STORAGE_KEY);
-          const editDataRaw = sessionStorage.getItem('editOrderData');
-          const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
-          navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
+          // Even if we skip confirmation, if objects were changed (e.g. status) we might want active,
+          // but usually skipConfirmation means no real preparation changes.
+          // Let's check if items were ADDED just in case.
+          const itemsAdded = cartHistory.some(h => h.type === 'ADD_ITEM');
+          const targetView = itemsAdded ? 'active' : (editData?.viewMode || 'active');
+
+          navigate('/kds', { state: { viewMode: targetView } });
         } else {
-          // Start new order - clear cart, customer and reload
-          localStorage.removeItem('currentCustomer');
           window.location.reload();
         }
         return;
       }
 
-      // Show confirmation modal immediately (with orderId as fallback for order_number)
-      // In edit mode with paid orders, show only the additional charge, not full total
-      const isAdditionalCharge = isEditMode && editingOrderData?.isPaid && !isRefund;
-      const displayTotal = isAdditionalCharge
-        ? (cartTotal - (editingOrderData?.originalTotal || 0))
-        : cartTotal;
+      // Log full cart history for debugging
+      console.log('📜 Full Cart History:', cartHistory);
+
+      // Determine correct post-edit navigation
+      // If we added items OR it's a new order -> Active Tab
+      // If we refunded items -> Active Tab (to see the changes) or History? 
+      // User requested: "Added dishes or refunded dishes -> Active Screen"
+      // "No changes -> History Screen"
+
+      const itemsAdded = cartHistory.some(h => h.type === 'ADD_ITEM');
+      const itemsRefunded = cartHistory.some(h => h.type === 'REMOVE_ITEM' || h.type === 'DECREASE_QUANTITY');
+      // Recalculate price difference inside this scope to avoid ReferenceError
+      const originalTotal = isEditMode ? (editingOrderData?.originalTotal || 0) : 0;
+      // Note: cartTotal is passed as 'amountToPay' in some contexts, but here 'cartTotal' variable from state is correct?
+      // Wait, 'cartTotal' in handlePaymentSelect might be closure captured or passed in? 
+      // Looking at usage, 'cartTotal' state variable is used.
+      const priceDifference = cartTotal - originalTotal;
+
+      const hasChanges = itemsAdded || itemsRefunded || isRefund || (isEditMode && Math.abs(priceDifference) > 0.01);
+
+      console.log('🧭 Navigation Decision:', {
+        itemsAdded,
+        itemsRefunded,
+        isRefund,
+        priceDifference,
+        hasChanges
+      });
+
+      // Show confirmation modal immediately
+      const isAdditionalCharge = isEditMode && editingOrderData?.isPaid && priceDifference > 0;
+
+      // Calculate what to show in the modal
+      let displayTotal = cartTotal; // Default for new orders
+
+      if (isEditMode && editingOrderData?.isPaid) {
+        if (isRefund) {
+          displayTotal = refundAmount; // Show amount returned
+        } else if (isAdditionalCharge) {
+          displayTotal = priceDifference; // Show EXTRA amount paid
+        } else {
+          // If paid and no difference (just notes change?), show 0 or full?
+          // Usually implies no charge.
+          displayTotal = 0;
+        }
+      }
 
       setShowConfirmationModal({
         orderId,
-        orderNumber: orderNumber || orderId?.slice(0, 8), // Use API response or fallback to short ID
+        orderNumber: orderNumber || (typeof orderId === 'string' ? orderId.slice(0, 8) : ''),
         customerName: customerNameForOrder || 'אורח',
         loyaltyCoffeeCount: loyaltyPointsForConfirmation,
-        loyaltyRewardEarned,
-        paymentStatus: isAdditionalCharge ? 'תוספת לתשלום' : paymentStatus,
+        loyaltyRewardEarned: false,
+        paymentStatus: isAdditionalCharge ? 'תוספת לתשלום' : (isRefund ? 'זיכוי' : paymentStatus),
         paymentMethod: orderData?.payment_method,
         total: displayTotal,
         isRefund,
-        refundAmount
+        refundAmount,
+        isPaid: orderData?.is_paid ?? true,
+        // Pass info for navigation after close
+        navigationTarget: hasChanges ? 'active' : 'history'
       });
 
-      // Fetch order_number in background if not provided by API
+      // Background fetch order number
       if (!orderNumber && orderId) {
         supabase
           .from('orders')
@@ -1696,162 +2062,58 @@ const MenuOrderingInterface = () => {
           .single()
           .then(({ data: fullOrder }) => {
             if (fullOrder?.order_number) {
-              console.log('🔢 Fetched Order Number in background:', fullOrder.order_number);
-              // Update modal with real order number
               setShowConfirmationModal(prev => prev ? { ...prev, orderNumber: fullOrder.order_number } : null);
             }
-          })
-          .catch(e => console.error('Failed to fetch order number:', e));
+          });
       }
 
-      // Process loyalty in background (don't block UI)
-      // FIX: Use realPhone (the phone number) instead of customerId (the UUID)
+      // Process loyalty in background
       if (realPhone) {
-        console.log('🎁 Processing loyalty for phone:', realPhone);
-
         const processLoyalty = async () => {
-          if (!realPhone) {
-            console.log('🚫 No realPhone – skipping loyalty processing');
-            return;
-          }
-
-          console.log('🎁 ========== processLoyalty START ==========');
-          console.log('📞 Phone:', realPhone);
-          console.log('🆔 Order ID:', orderId);
-          console.log('✏️ Is Edit Mode:', isEditMode);
-
-          // Fetch fresh loyalty state
-          const { points: freshPoints, freeCoffees: freshFreeCoffees } = await getLoyaltyCount(realPhone, currentUser);
-
-          console.log('💳 Fresh Loyalty State:', { freshPoints, freshFreeCoffees });
-
-          // Total coffees in cart
-          const currentCoffeeCount = cartItems.reduce((sum, item) =>
-            item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
-
-          // Use the pre-calculated freeItemsCount from the simulation
-          // This includes: existing DB credits + newly earned credits (reaching 10)
+          const { points: freshPoints } = await getLoyaltyCount(realPhone, currentUser);
+          const currentCoffeeCount = cartItems.reduce((sum, item) => item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
           const currentRedeemedCount = loyaltyFreeItemsCount;
 
-          console.log('📊 Loyalty Calculation:', {
-            currentCoffeeCount,
-            loyaltyFreeItemsCount,
-            currentRedeemedCount
-          });
-
-          // Points are earned on PAID coffees only
-          const currentPaidCount = Math.max(0, currentCoffeeCount - currentRedeemedCount);
-
           if (isEditMode && editingOrderData?.originalItems) {
-            // --- EDIT MODE ---
-            const originalCoffeeCount = editingOrderData.originalItems.reduce((sum, item) =>
-              item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
+            const originalCoffeeCount = editingOrderData.originalItems.reduce((sum, item) => item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
             const originalRedeemedCount = editingOrderData.originalRedeemedCount || 0;
-            const originalPaidCount = originalCoffeeCount - originalRedeemedCount;
-
-            const pointsDelta = currentPaidCount - originalPaidCount;
+            const pointsDelta = (currentCoffeeCount - currentRedeemedCount) - (originalCoffeeCount - originalRedeemedCount);
             const redeemedDelta = currentRedeemedCount - originalRedeemedCount;
-
-            console.log('🔥 LOYALTY ADJUSTMENT (Credit System)', {
-              currentCoffeeCount,
-              currentRedeemedCount,
-              currentPaidCount,
-              originalCoffeeCount,
-              originalRedeemedCount,
-              originalPaidCount,
-              pointsDelta,
-              redeemedDelta
-            });
-
-            const result = await handleLoyaltyAdjustment(realPhone, orderId, pointsDelta, currentUser, redeemedDelta);
-            console.log('📥 handleLoyaltyAdjustment result:', result);
-            return result;
+            return await handleLoyaltyAdjustment(realPhone, orderId, pointsDelta, currentUser, redeemedDelta);
           } else {
-            // --- NEW ORDER ---
-            console.log('LOYALTY NEW PURCHASE (Credit System)', {
-              currentCoffeeCount,
-              currentRedeemedCount,
-              currentPaidCount,
-              itemsToEarnPoints: currentCoffeeCount // ALL coffees count toward loyalty
-            });
-
-            // Pass ALL coffees (currentCoffeeCount) to advance points correctly
-            // Even the free 10th coffee counts - it's what resets the counter!
-            // currentRedeemedCount tells RPC how many credits were from DB (not from reaching 10)
             const creditsUsedFromDB = Math.min(loyaltyFreeCoffees, currentRedeemedCount);
-            const result = await addCoffeePurchase(realPhone, orderId, currentCoffeeCount, currentUser, creditsUsedFromDB);
-            console.log('📥 addCoffeePurchase result:', result);
-            return result;
+            return await addCoffeePurchase(realPhone, orderId, currentCoffeeCount, currentUser, creditsUsedFromDB);
           }
         };
 
         processLoyalty().then(loyaltyResult => {
-          console.log('🎁 Loyalty Result:', loyaltyResult);
-
           if (loyaltyResult?.success) {
-            // Get the actual new balance from server
             const newBalance = loyaltyResult?.newCount ?? loyaltyPointsForConfirmation;
-
-            // Calculate display count (modulo 10, but show 10 if exactly divisible)
             let displayCount = newBalance % 10;
-            if (newBalance > 0 && newBalance % 10 === 0) {
-              displayCount = 10;
-            }
+            if (newBalance > 0 && newBalance % 10 === 0) displayCount = 10;
+            const earned = (displayCount === 10);
 
-            // Check if user reached 10 points (free coffee earned)
-            loyaltyRewardEarned = (displayCount === 10);
+            const updatedCustomerFinal = { ...updatedCustomer, loyalty_coffee_count: newBalance };
+            localStorage.setItem('currentCustomer', JSON.stringify(updatedCustomerFinal));
+            setCurrentCustomer(updatedCustomerFinal);
 
-            updatedCustomer = {
-              ...updatedCustomer,
-              loyalty_coffee_count: newBalance
-            };
-
-            // Use newBalance for confirmation modal, not displayCount!
-            loyaltyPointsForConfirmation = newBalance;
-
-            localStorage.setItem('currentCustomer', JSON.stringify(updatedCustomer));
-            setCurrentCustomer(updatedCustomer);
-            // NOTE: Don't call setLoyaltyPoints here - the useLoyalty hook manages this
-            // and will refresh on next customer change or order
-
-            console.log('🎁 Loyalty Update:', {
-              newBalance,
-              displayCount,
-              loyaltyRewardEarned,
-              loyaltyPointsForConfirmation
-            });
-
-            // Update the already open modal with the fresh loyalty data
-            setShowConfirmationModal(prev => {
-              if (!prev) return null;
-              return {
-                ...prev,
-                loyaltyCoffeeCount: newBalance, // Use full balance, not display count
-                loyaltyRewardEarned: loyaltyRewardEarned
-              };
-            });
+            setShowConfirmationModal(prev => prev ? {
+              ...prev,
+              loyaltyCoffeeCount: newBalance,
+              loyaltyRewardEarned: earned
+            } : null);
           }
-        }).catch(err => {
-          console.error('Error processing loyalty:', err);
-        });
+        }).catch(e => console.error('Loyalty background error:', e));
       } else {
         localStorage.setItem('currentCustomer', JSON.stringify(updatedCustomer));
         setCurrentCustomer(updatedCustomer);
       }
 
-      console.log('✅ ========== END handlePaymentSelect (SUCCESS) ==========');
-
-    } catch (err) {
-      console.error('❌ ========== ERROR in handlePaymentSelect ==========');
-      console.error('  - Error Type:', err?.constructor?.name);
-      console.error('  - Error Message:', err?.message);
-      console.error('  - Error Stack:', err?.stack);
-      console.error('  - Full Error:', err);
-      console.error('❌ ========== END ERROR ==========');
-      alert(`שגיאה בעיבוד ההזמנה: ${err?.message || 'שגיאה לא ידועה'} `);
-    } finally {
       setIsProcessingOrder(false);
-      console.log('🏁 handlePaymentSelect finished (finally block)');
+    } catch (err) {
+      console.error('❌ Error in handlePaymentSelect:', err);
+      alert(`שגיאה בעיבוד ההזמנה: ${err.message}`);
+      setIsProcessingOrder(false);
     }
   };
 
@@ -1895,14 +2157,45 @@ const MenuOrderingInterface = () => {
       {/* Top Navigation Bar */}
       <div className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 sticky top-0 z-30 shadow-sm">
 
-        {/* Right Side Group (RTL): Home Button */}
-        <div className="flex items-center gap-4">
+        {/* Right Side Group (RTL): Home/Back Button + Sync */}
+        <div className="flex items-center gap-2">
           <button
             onClick={handleBack}
             className="flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 w-10 h-10 rounded-xl transition-all"
-            title="חזרה לדף הבית"
+            title={sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) === 'kds' ? "חזרה ל-KDS" : "חזרה לדף הבית"}
           >
-            <Icon name="Home" size={20} />
+            <Icon
+              name={sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) === 'kds' ? "ChevronRight" : "Home"}
+              size={20}
+            />
+          </button>
+
+          {/* Sync Button */}
+          <button
+            onClick={async (e) => {
+              console.log('🔄 Sync button clicked!');
+              const btn = e.currentTarget;
+              btn.classList.add('animate-spin');
+              btn.disabled = true;
+
+              try {
+                console.log('📥 Starting sync...');
+                const { initialLoad } = await import('../../services/syncService');
+                const result = await initialLoad(currentUser?.business_id);
+                console.log('✅ Sync result:', result);
+                alert('✅ סנכרון הושלם! רענן את הדף.');
+              } catch (err) {
+                console.error('❌ Sync error:', err);
+                alert('❌ שגיאה בסנכרון: ' + err.message);
+              } finally {
+                btn.classList.remove('animate-spin');
+                btn.disabled = false;
+              }
+            }}
+            className="flex items-center justify-center text-blue-600 hover:text-blue-700 hover:bg-blue-50 w-10 h-10 rounded-xl transition-all disabled:opacity-50"
+            title="סנכרון נתונים"
+          >
+            <Icon name="RefreshCw" size={18} />
           </button>
         </div>
 
@@ -1981,6 +2274,9 @@ const MenuOrderingInterface = () => {
               finalTotal={finalTotal}
               cartHistory={cartHistory}
               isRestrictedMode={isRestrictedMode}
+              soldierDiscountEnabled={soldierDiscountEnabled}
+              onToggleSoldierDiscount={handleToggleSoldierDiscount}
+              soldierDiscountAmount={soldierDiscountAmount}
             />
           </div>
         </div>
@@ -2081,16 +2377,16 @@ const MenuOrderingInterface = () => {
               <div className="mx-auto w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-3">
                 <Icon name="AlertCircle" size={32} className="text-orange-600" />
               </div>
-              <h2 className="text-2xl font-black text-gray-900">בטל הזמנה?</h2>
+              <h2 className="text-2xl font-black text-gray-900">יציאה ללא שמירה?</h2>
               <p className="text-gray-500 font-medium mt-2">
-                יש לך פרטי לקוח אבל אין פריטים בעגלה
+                ישנם שינויים שלא נשמרו בהזמנה
               </p>
             </div>
 
             {/* Content */}
             <div className="p-6">
               <p className="text-center text-gray-600 font-medium">
-                האם לבטל את ההזמנה ולמחוק את פרטי הלקוח?
+                האם לצאת ולבטל את השינויים שבוצעו?
               </p>
             </div>
 
@@ -2100,20 +2396,25 @@ const MenuOrderingInterface = () => {
                 onClick={() => setShowExitConfirmModal(false)}
                 className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
               >
-                המשך להזמין
+                המשך בעבודה
               </button>
               <button
                 onClick={() => {
-                  // Clear customer data
-                  localStorage.removeItem('currentCustomer');
-                  sessionStorage.removeItem('tempCartState');
-                  cartClearCart();
+                  clearOrderSessionState();
                   setShowExitConfirmModal(false);
-                  navigate('/mode-selection');
+
+                  const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
+                  if (origin === 'kds') {
+                    const editDataRaw = sessionStorage.getItem('editOrderData');
+                    const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
+                    navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
+                  } else {
+                    navigate('/mode-selection');
+                  }
                 }}
                 className="flex-1 py-4 bg-orange-500 text-white rounded-xl font-bold text-lg hover:bg-orange-600 transition"
               >
-                בטל הזמנה
+                צא ללא שמירה
               </button>
             </div>
           </div>

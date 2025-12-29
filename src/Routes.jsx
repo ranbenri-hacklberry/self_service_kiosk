@@ -5,6 +5,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import NotFound from "@/pages/NotFound";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { MusicProvider } from "@/context/MusicContext";
+import SyncStatusModal from "@/components/SyncStatusModal";
 
 // Pages
 import LoginScreen from "@/pages/login/LoginScreen";
@@ -171,6 +172,7 @@ const Routes = () => {
     <BrowserRouter>
       <ErrorBoundary>
         <AuthProvider>
+          <SyncStatusModal />
           <MusicProvider>
             <ScrollToTop />
             <AppRoutes />
