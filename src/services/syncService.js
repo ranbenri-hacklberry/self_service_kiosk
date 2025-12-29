@@ -170,14 +170,20 @@ export const initialLoad = async (businessId, onProgress = null) => {
     console.log('🚀 Starting initial data load...');
     const startTime = Date.now();
     const results = {};
+    const totalTables = SYNC_CONFIG.tables.length;
 
-    for (const table of SYNC_CONFIG.tables) {
+    for (let i = 0; i < SYNC_CONFIG.tables.length; i++) {
+        const table = SYNC_CONFIG.tables[i];
         const result = await syncTable(table.local, table.remote, table.filter, businessId);
         results[table.local] = result;
 
+        // Calculate and report progress
+        const progress = Math.round(((i + 1) / totalTables) * 100);
+        console.log(`📊 Sync progress: ${progress}% (${i + 1}/${totalTables}) - ${table.local}`);
+
         // Call progress callback if provided
-        if (onProgress && result.success) {
-            onProgress(table.local, result.recordCount || 0);
+        if (onProgress) {
+            onProgress(table.local, result.count || 0, progress);
         }
     }
 

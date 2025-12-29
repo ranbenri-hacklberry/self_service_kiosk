@@ -449,6 +449,42 @@ const DexieTestPage = () => {
         setLoading(false);
     };
 
+    // Export Orders only (for server debugging)
+    const exportOrdersOnly = async () => {
+        setLoading(true);
+        setMessage('📦 מייצא הזמנות...');
+
+        try {
+            const orders = await db.orders.toArray();
+            const orderItems = await db.order_items.toArray();
+
+            const exportObj = {
+                exportDate: new Date().toISOString(),
+                businessId: businessId,
+                ordersCount: orders.length,
+                itemsCount: orderItems.length,
+                orders: orders,
+                order_items: orderItems
+            };
+
+            const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `orders-debug-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            setMessage(`✅ יוצאו ${orders.length} הזמנות + ${orderItems.length} פריטים!`);
+        } catch (err) {
+            setMessage(`❌ שגיאה בייצוא: ${err.message}`);
+        }
+
+        setLoading(false);
+    };
+
 
     // Tab Filtering Logic
     const counts = {
@@ -607,6 +643,15 @@ const DexieTestPage = () => {
                     >
                         <Download size={24} className="text-emerald-600" />
                         <span className="font-medium">ייצא גיבוי</span>
+                    </button>
+
+                    <button
+                        onClick={exportOrdersOnly}
+                        disabled={loading}
+                        className="flex flex-col items-center gap-2 p-4 bg-white rounded-xl shadow hover:shadow-lg transition disabled:opacity-50"
+                    >
+                        <Download size={24} className="text-blue-600" />
+                        <span className="font-medium">ייצא הזמנות</span>
                     </button>
                 </div>
 

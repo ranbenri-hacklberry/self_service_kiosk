@@ -530,11 +530,23 @@ export const useKDSData = () => {
 
                         // Build order objects in the same format as Supabase
                         localOrders.forEach(localOrder => {
-                            // Find if this order is already in ordersData (synced version from Supabase)
-                            // Map localOrderId -> serverId check
-                            const existingIdx = ordersData?.findIndex(o =>
-                                o.id === localOrder.id || (localOrder.serverOrderId && o.id === localOrder.serverOrderId)
-                            );
+                            // CRITICAL FIX: If order has serverOrderId, only use that for matching
+                            // This prevents duplicates when local and server IDs differ
+                            let existingIdx = -1;
+
+                            if (localOrder.serverOrderId) {
+                                // Order was synced - find by server ID only
+                                existingIdx = ordersData?.findIndex(o => o.id === localOrder.serverOrderId) ?? -1;
+
+                                if (existingIdx !== -1) {
+                                    // Server version exists - skip adding local version entirely
+                                    console.log(`🔄 Order ${localOrder.order_number} has serverOrderId ${localOrder.serverOrderId}, using server version`);
+                                    return; // Skip this local order - server version takes priority
+                                }
+                            } else {
+                                // No serverOrderId - check by local ID
+                                existingIdx = ordersData?.findIndex(o => o.id === localOrder.id) ?? -1;
+                            }
 
                             const orderItems = localItems
                                 .filter(i => i.order_id === localOrder.id)
@@ -1007,11 +1019,6 @@ export const useKDSData = () => {
                     item_status: itemStatus
                 });
 
-                // Send SMS if moving to ready
-                if (nextStatus === 'ready' && order?.customerPhone) {
-                    handleSendSms(orderId, order.customerName, order.customerPhone);
-                }
-
                 // ALWAYS queue status updates - they will be synced AFTER the CREATE_ORDER completes
                 // For local orders, we store the localOrderId so the sync can match them up
                 await queueAction('UPDATE_ORDER_STATUS', {
@@ -1020,6 +1027,12 @@ export const useKDSData = () => {
                     newStatus: nextStatus,
                     isLocalOrder: isLocalOnly
                 });
+
+                // Send SMS if moving to ready (only if online - SMS requires network)
+                // Note: In true offline mode, SMS will fail silently
+                if (nextStatus === 'ready' && order?.customerPhone && navigator.onLine) {
+                    handleSendSms(orderId, order.customerName, order.customerPhone);
+                }
 
                 console.log(`✅ Local update complete for ${smartOrderId} -> ${nextStatus}`);
 
@@ -1124,10 +1137,6 @@ export const useKDSData = () => {
                 // Moving to READY
                 nextStatus = 'ready'; // Explicitly set for fallback use
 
-                if (order && order.customerPhone) {
-                    handleSendSms(orderId, order.customerName, order.customerPhone);
-                }
-
                 const smartOrderId = getSmartId(orderId);
 
                 const itemIds = order.items ? order.items.flatMap(i => i.ids || [i.id]) : [];
@@ -1151,6 +1160,11 @@ export const useKDSData = () => {
                     .eq('id', smartOrderId);
 
                 if (orderError) throw orderError;
+
+                // CRITICAL FIX: Send SMS only AFTER successful update
+                if (order && order.customerPhone) {
+                    handleSendSms(orderId, order.customerName, order.customerPhone);
+                }
 
             } else if (statusLower === 'ready' || currentStatus === 'ready') {
                 // Moving to COMPLETED

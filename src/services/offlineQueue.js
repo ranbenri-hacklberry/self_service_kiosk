@@ -12,6 +12,7 @@ import { supabase } from '../lib/supabase';
 // For now, we'll use a simple IndexedDB pattern
 
 const QUEUE_STORE = 'offline_queue_v2';
+const MAX_RETRIES = 5; // Maximum retry attempts before marking as permanently failed
 
 // MUTEX: Prevent concurrent syncQueue executions
 let isSyncing = false;
@@ -134,12 +135,11 @@ export const markActionFailed = async (actionId, error) => {
  * Handle sync error with exponential backoff
  */
 const handleSyncError = async (action, error) => {
-    const maxRetries = 5;
     const retryDelay = Math.pow(2, action.retries || 0) * 1000; // 1s, 2s, 4s, 8s...
 
     console.warn(`⚠️ Sync failed for ${action.type} (Attempt ${action.retries || 0}):`, error.message);
 
-    if ((action.retries || 0) < maxRetries) {
+    if ((action.retries || 0) < MAX_RETRIES) {
         // Schedule retry
         await db.offline_queue_v2.update(action.id, {
             status: 'pending',
@@ -168,7 +168,7 @@ const handleSyncError = async (action, error) => {
                 console.warn('Failed to update local record with error:', e);
             }
         }
-        console.error(`❌ Action ${action.id} permanently failed after ${maxRetries} retries`);
+        console.error(`❌ Action ${action.id} permanently failed after ${MAX_RETRIES} retries`);
     }
 };
 
@@ -367,14 +367,23 @@ const processAction = async (action) => {
                         updated_at: new Date().toISOString()
                     });
 
-                    // 3. Move items to the new ID
-                    for (const item of localItems) {
-                        await db.order_items.put({
-                            ...item,
-                            order_id: data.order_id
-                        });
-                        // Delete old item record
-                        await db.order_items.delete(item.id);
+                    // 3. Move items to the new ID (atomic operation with rollback)
+                    try {
+                        // First, delete all old items at once
+                        await db.order_items.where('order_id').equals(localOrderId).delete();
+
+                        // Then add items with new order_id
+                        for (const item of localItems) {
+                            await db.order_items.put({
+                                ...item,
+                                order_id: data.order_id
+                            });
+                        }
+                    } catch (itemMigrationError) {
+                        console.error('❌ Item migration failed, rolling back:', itemMigrationError);
+                        // Rollback: delete any new items we created
+                        await db.order_items.where('order_id').equals(data.order_id).delete();
+                        throw itemMigrationError;
                     }
 
                     // 4. Update any other pending actions in the queue for this local ID
