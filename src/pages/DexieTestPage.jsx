@@ -37,6 +37,7 @@ const DexieTestPage = () => {
     const [orderItemsMap, setOrderItemsMap] = useState({});
     const [activeTab, setActiveTab] = useState('all'); // 'all', 'in_progress', 'ready', 'completed', 'pending'
     const [expandedOrderId, setExpandedOrderId] = useState(null); // Which order is expanded
+    const [validationResult, setValidationResult] = useState(null); // Dexie vs Supabase comparison
 
     // Live queries - these auto-update!
     const orders = useOrders();
@@ -325,6 +326,129 @@ const DexieTestPage = () => {
         setLoading(false);
     };
 
+    // Validate: Compare Dexie data with Supabase
+    const validateData = async () => {
+        setLoading(true);
+        setMessage('🔍 בודק התאמה בין Dexie ל-Supabase...');
+        setValidationResult(null);
+
+        try {
+            const { supabase } = await import('../lib/supabase');
+
+            // Get orders from Supabase using RPC (same 30 days as sync)
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+            const { data: supabaseData, error } = await supabase.rpc('get_orders_history', {
+                p_from_date: thirtyDaysAgo.toISOString(),
+                p_to_date: new Date().toISOString(),
+                p_business_id: businessId
+            });
+
+            if (error) throw error;
+
+            // RPC returns JSONB array
+            const supabaseOrders = Array.isArray(supabaseData) ? supabaseData : (supabaseData || []);
+
+            // Get Dexie orders (filter to same date range for fair comparison)
+            const dexieOrders = (await db.orders.toArray()).filter(o =>
+                new Date(o.created_at) >= thirtyDaysAgo
+            );
+
+            // Compare
+            const supabaseIds = new Set(supabaseOrders.map(o => o.id));
+            const dexieIds = new Set(dexieOrders.map(o => o.id));
+
+            const inSupabaseOnly = supabaseOrders.filter(o => !dexieIds.has(o.id));
+            const inDexieOnly = dexieOrders.filter(o => !supabaseIds.has(o.id));
+
+            // Status mismatches
+            const statusMismatches = [];
+            for (const sOrder of supabaseOrders) {
+                const dOrder = dexieOrders.find(d => d.id === sOrder.id);
+                if (dOrder && dOrder.order_status !== sOrder.order_status) {
+                    statusMismatches.push({
+                        id: sOrder.id,
+                        order_number: sOrder.order_number,
+                        supabase: sOrder.order_status,
+                        dexie: dOrder.order_status
+                    });
+                }
+            }
+
+            // Valid only if counts match and no mismatches
+            const isValid =
+                inSupabaseOnly.length === 0 &&
+                inDexieOnly.length === 0 &&
+                statusMismatches.length === 0;
+
+            const result = {
+                supabaseCount: supabaseOrders.length,
+                dexieCount: dexieOrders.length,
+                inSupabaseOnly: inSupabaseOnly.length,
+                inDexieOnly: inDexieOnly.length,
+                statusMismatches: statusMismatches.length,
+                mismatches: statusMismatches.slice(0, 10), // Show first 10
+                isValid
+            };
+
+            setValidationResult(result);
+
+            if (isValid) {
+                setMessage('✅ הנתונים מסונכרנים בהצלחה!');
+            } else {
+                const issues = [];
+                if (inSupabaseOnly.length > 0) issues.push(`${inSupabaseOnly.length} חסרים ב-Dexie`);
+                if (inDexieOnly.length > 0) issues.push(`${inDexieOnly.length} עודפים ב-Dexie`);
+                if (statusMismatches.length > 0) issues.push(`${statusMismatches.length} סטטוסים שונים`);
+                setMessage(`⚠️ אי-התאמות: ${issues.join(', ')}`);
+            }
+
+        } catch (err) {
+            setMessage(`❌ שגיאה באימות: ${err.message}`);
+        }
+
+        setLoading(false);
+    };
+
+    // Export all Dexie data as JSON backup
+    const exportData = async () => {
+        setLoading(true);
+        setMessage('📦 מייצא נתונים...');
+
+        try {
+            const exportObj = {
+                exportDate: new Date().toISOString(),
+                businessId: businessId,
+                tables: {}
+            };
+
+            // Export all tables
+            for (const table of db.tables) {
+                const data = await table.toArray();
+                exportObj.tables[table.name] = data;
+            }
+
+            // Create and download file
+            const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `dexie-backup-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            const totalRecords = Object.values(exportObj.tables).reduce((sum, arr) => sum + arr.length, 0);
+            setMessage(`✅ יוצאו ${totalRecords} רשומות בהצלחה!`);
+        } catch (err) {
+            setMessage(`❌ שגיאה בייצוא: ${err.message}`);
+        }
+
+        setLoading(false);
+    };
+
 
     // Tab Filtering Logic
     const counts = {
@@ -466,7 +590,73 @@ const DexieTestPage = () => {
                         <Trash2 size={24} className="text-gray-500" />
                         <span className="font-medium">Clear Queue Done</span>
                     </button>
+
+                    <button
+                        onClick={validateData}
+                        disabled={loading || !businessId}
+                        className="flex flex-col items-center gap-2 p-4 bg-white rounded-xl shadow hover:shadow-lg transition disabled:opacity-50"
+                    >
+                        <CheckCircle size={24} className="text-indigo-600" />
+                        <span className="font-medium">בדוק התאמה</span>
+                    </button>
+
+                    <button
+                        onClick={exportData}
+                        disabled={loading}
+                        className="flex flex-col items-center gap-2 p-4 bg-white rounded-xl shadow hover:shadow-lg transition disabled:opacity-50"
+                    >
+                        <Download size={24} className="text-emerald-600" />
+                        <span className="font-medium">ייצא גיבוי</span>
+                    </button>
                 </div>
+
+                {/* Validation Results */}
+                {validationResult && (
+                    <div className={`bg-white rounded-2xl shadow-lg p-6 mb-6 border-2 ${validationResult.isValid ? 'border-green-300' : 'border-orange-300'
+                        }`}>
+                        <h2 className="text-lg font-bold text-gray-800 mb-4">
+                            {validationResult.isValid ? '✅ אימות נתונים - תקין' : '⚠️ אימות נתונים - נמצאו הפרשים'}
+                        </h2>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                            <div className="bg-blue-50 p-3 rounded-lg text-center">
+                                <div className="text-2xl font-bold text-blue-600">{validationResult.supabaseCount}</div>
+                                <div className="text-xs text-gray-500">Supabase</div>
+                            </div>
+                            <div className="bg-teal-50 p-3 rounded-lg text-center">
+                                <div className="text-2xl font-bold text-teal-600">{validationResult.dexieCount}</div>
+                                <div className="text-xs text-gray-500">Dexie</div>
+                            </div>
+                            <div className={`p-3 rounded-lg text-center ${validationResult.inSupabaseOnly > 0 ? 'bg-red-50' : 'bg-green-50'}`}>
+                                <div className={`text-2xl font-bold ${validationResult.inSupabaseOnly > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                    {validationResult.inSupabaseOnly}
+                                </div>
+                                <div className="text-xs text-gray-500">חסר ב-Dexie</div>
+                            </div>
+                            <div className={`p-3 rounded-lg text-center ${validationResult.statusMismatches > 0 ? 'bg-orange-50' : 'bg-green-50'}`}>
+                                <div className={`text-2xl font-bold ${validationResult.statusMismatches > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                                    {validationResult.statusMismatches}
+                                </div>
+                                <div className="text-xs text-gray-500">סטטוס שונה</div>
+                            </div>
+                        </div>
+
+                        {validationResult.mismatches.length > 0 && (
+                            <div className="mt-4 bg-gray-50 rounded-lg p-3">
+                                <div className="text-sm font-bold text-gray-600 mb-2">הפרשי סטטוס:</div>
+                                <div className="space-y-1 text-xs max-h-40 overflow-y-auto">
+                                    {validationResult.mismatches.map(m => (
+                                        <div key={m.id} className="flex justify-between bg-white p-2 rounded">
+                                            <span>#{m.order_number}</span>
+                                            <span>Supabase: <strong>{m.supabase}</strong></span>
+                                            <span>Dexie: <strong>{m.dexie}</strong></span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Database Stats used as Navigation */}
                 <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
@@ -679,9 +869,9 @@ const DexieTestPage = () => {
                                                                     </span>
                                                                 )}
                                                                 <span className={`px-2 py-1 rounded text-xs font-medium ${order.order_status === 'completed' ? 'bg-green-100 text-green-700' :
-                                                                        order.order_status === 'ready' ? 'bg-blue-100 text-blue-700' :
-                                                                            order.order_status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
-                                                                                'bg-gray-100 text-gray-700'
+                                                                    order.order_status === 'ready' ? 'bg-blue-100 text-blue-700' :
+                                                                        order.order_status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
+                                                                            'bg-gray-100 text-gray-700'
                                                                     }`}>
                                                                     {order.order_status === 'completed' ? '✓ הושלם' :
                                                                         order.order_status === 'ready' ? '🍽 מוכן' :
@@ -724,9 +914,9 @@ const DexieTestPage = () => {
                                                                                         <span className="font-bold text-blue-600">{item.quantity}×</span> {item.menu_item_name}
                                                                                     </span>
                                                                                     <span className={`px-2 py-0.5 rounded text-xs ${item.item_status === 'completed' ? 'bg-green-100 text-green-700' :
-                                                                                            item.item_status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
-                                                                                                item.item_status === 'ready' ? 'bg-blue-100 text-blue-700' :
-                                                                                                    'bg-gray-200 text-gray-600'
+                                                                                        item.item_status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
+                                                                                            item.item_status === 'ready' ? 'bg-blue-100 text-blue-700' :
+                                                                                                'bg-gray-200 text-gray-600'
                                                                                         }`}>
                                                                                         {item.item_status || 'pending'}
                                                                                     </span>
