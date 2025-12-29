@@ -189,6 +189,7 @@ export const initialLoad = async (businessId, onProgress = null) => {
 
 /**
  * Sync orders and order items (real-time sync for KDS)
+ * Uses RPC to bypass RLS restrictions
  * @param {string} businessId - Business ID
  */
 export const syncOrders = async (businessId) => {
@@ -199,60 +200,98 @@ export const syncOrders = async (businessId) => {
         return { success: false, reason: 'offline' };
     }
 
-    // Get today's orders - use UTC to avoid timezone issues
-    const now = new Date();
-    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
-    const todayISO = todayUTC.toISOString();
+    // Use date from 30 days ago to get full history
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 30); // 30 days of history
+    const fromDateISO = fromDate.toISOString();
+    const toDateISO = new Date().toISOString();
 
-    console.log('📅 [syncOrders] Filtering from:', todayISO);
-    console.log('🔍 [syncOrders] Query params:', { business_id: businessId, created_at_gte: todayISO });
+    console.log('📅 [syncOrders] Filtering from:', fromDateISO, 'to:', toDateISO);
 
-    const { data: orders, error: ordersError } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('business_id', businessId)
-        .gte('created_at', todayISO)
-        .order('created_at', { ascending: false });
-
-    console.log('📦 [syncOrders] Supabase response:', {
-        ordersCount: orders?.length,
-        hasError: !!ordersError,
-        error: ordersError
-    });
-
-    if (ordersError) {
-        console.error('❌ Orders sync error:', ordersError);
-        return { success: false, error: ordersError };
-    }
-
-    if (orders && orders.length > 0) {
-        console.log(`💾 [syncOrders] Saving ${orders.length} orders to Dexie...`);
-        await db.orders.bulkPut(orders);
-
-        // Get order items for these orders
-        const orderIds = orders.map(o => o.id);
-        console.log(`🔍 [syncOrders] Fetching items for ${orderIds.length} orders...`);
-
-        const { data: items, error: itemsError } = await supabase
-            .from('order_items')
-            .select('*')
-            .in('order_id', orderIds);
-
-        console.log(`📦 [syncOrders] Items response:`, {
-            itemsCount: items?.length,
-            hasError: !!itemsError
+    try {
+        // Use get_orders_history RPC to get ALL orders (not just active)
+        const { data: ordersData, error: ordersError } = await supabase.rpc('get_orders_history', {
+            p_from_date: fromDateISO,
+            p_to_date: toDateISO,
+            p_business_id: businessId
         });
 
-        if (!itemsError && items) {
-            await db.order_items.bulkPut(items);
+        // RPC returns JSONB, parse if needed
+        const orders = Array.isArray(ordersData) ? ordersData : (ordersData || []);
+
+        console.log('📦 [syncOrders] RPC response:', {
+            ordersCount: orders?.length,
+            hasError: !!ordersError,
+            error: ordersError
+        });
+
+        if (ordersError) {
+            console.error('❌ Orders sync error:', ordersError);
+            return { success: false, error: ordersError };
         }
 
-        console.log(`✅ Synced ${orders.length} orders, ${items?.length || 0} items`);
-    } else {
-        console.log('📭 [syncOrders] No orders found matching criteria');
-    }
+        if (orders && orders.length > 0) {
+            console.log(`💾 [syncOrders] Saving ${orders.length} orders to Dexie (bulk)...`);
 
-    return { success: true, ordersCount: orders?.length || 0 };
+            // Prepare bulk arrays
+            const ordersToSave = [];
+            const itemsToSave = [];
+
+            for (const order of orders) {
+                // RPC uses 'items_detail', local expects 'order_items'
+                const orderItems = order.order_items || order.items_detail || [];
+
+                ordersToSave.push({
+                    id: order.id,
+                    order_number: order.order_number,
+                    order_status: order.order_status,
+                    is_paid: order.is_paid,
+                    customer_id: order.customer_id,
+                    customer_name: order.customer_name,
+                    customer_phone: order.customer_phone,
+                    total_amount: order.total_amount,
+                    business_id: order.business_id || businessId,
+                    created_at: order.created_at,
+                    updated_at: order.updated_at || new Date().toISOString()
+                });
+
+                // Collect items
+                for (const item of orderItems) {
+                    itemsToSave.push({
+                        id: item.id,
+                        order_id: order.id,
+                        menu_item_id: item.menu_item_id || item.menu_items?.id,
+                        quantity: item.quantity,
+                        price: item.price,
+                        mods: item.mods,
+                        notes: item.notes,
+                        item_status: item.item_status,
+                        course_stage: item.course_stage || 1,
+                        created_at: item.created_at || order.created_at
+                    });
+                }
+            }
+
+            // Bulk save (much faster!)
+            await db.orders.bulkPut(ordersToSave);
+            console.log(`✅ Saved ${ordersToSave.length} orders`);
+
+            if (itemsToSave.length > 0) {
+                await db.order_items.bulkPut(itemsToSave);
+                console.log(`✅ Saved ${itemsToSave.length} items`);
+            }
+
+            console.log(`✅ Synced ${orders.length} orders to Dexie`);
+        } else {
+            console.log('📭 [syncOrders] No orders found matching criteria');
+        }
+
+        return { success: true, ordersCount: orders?.length || 0 };
+
+    } catch (err) {
+        console.error('❌ syncOrders exception:', err);
+        return { success: false, error: err.message };
+    }
 };
 
 /**

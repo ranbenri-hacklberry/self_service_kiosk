@@ -122,6 +122,39 @@ export const AuthProvider = ({ children }) => {
         checkAuth();
     }, []);
 
+    // Background sync every 5 minutes (when user is logged in)
+    useEffect(() => {
+        if (!currentUser?.business_id) return;
+
+        const runBackgroundSync = async () => {
+            try {
+                console.log('🔄 [Background] Starting periodic sync...');
+                const { syncOrders, isOnline } = await import('../services/syncService');
+
+                if (!isOnline()) {
+                    console.log('📴 [Background] Offline, skipping sync');
+                    return;
+                }
+
+                const result = await syncOrders(currentUser.business_id);
+                if (result.success) {
+                    console.log(`✅ [Background] Synced ${result.ordersCount} orders`);
+                    localStorage.setItem('last_sync_time', Date.now().toString());
+                }
+            } catch (err) {
+                console.warn('⚠️ [Background] Sync failed:', err.message);
+            }
+        };
+
+        // Run immediately on login
+        runBackgroundSync();
+
+        // Then run every 5 minutes
+        const interval = setInterval(runBackgroundSync, 5 * 60 * 1000);
+
+        return () => clearInterval(interval);
+    }, [currentUser?.business_id]);
+
     const login = (employee) => {
         setCurrentUser(employee);
         localStorage.setItem('kiosk_user', JSON.stringify(employee));

@@ -9,11 +9,20 @@ import React, { useState } from 'react';
 import { db, clearAllData, getSyncStatus, isDatabaseReady } from '../db/database';
 import { initialLoad, syncOrders, isOnline } from '../services/syncService';
 import { syncQueue, getQueueStats, getPendingActions } from '../services/offlineQueue';
-import { useOrders, useMenuItems, useSyncStatus, useHasLocalData } from '../hooks/useLocalDB';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useAuth } from '../context/AuthContext';
 import { Database, RefreshCw, Trash2, Download, Wifi, WifiOff, CheckCircle, XCircle, Upload, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
+
+// Local Hooks Definitions
+const useOrders = () => useLiveQuery(() => db.orders.orderBy('created_at').reverse().toArray()) || [];
+const useMenuItems = () => useLiveQuery(() => db.menu_items.toArray()) || [];
+const useSyncStatus = () => useLiveQuery(() => db.sync_status.toArray()) || [];
+const useHasLocalData = () => useLiveQuery(async () => {
+    const count = await db.orders.count();
+    return count > 0;
+}) || false;
 
 const DexieTestPage = () => {
     const navigate = useNavigate();
@@ -26,6 +35,8 @@ const DexieTestPage = () => {
     const [expandedTable, setExpandedTable] = useState(null); // Which table is expanded
     const [tableData, setTableData] = useState([]); // Data for expanded table
     const [orderItemsMap, setOrderItemsMap] = useState({});
+    const [activeTab, setActiveTab] = useState('all'); // 'all', 'in_progress', 'ready', 'completed', 'pending'
+    const [expandedOrderId, setExpandedOrderId] = useState(null); // Which order is expanded
 
     // Live queries - these auto-update!
     const orders = useOrders();
@@ -182,41 +193,52 @@ const DexieTestPage = () => {
         setDbStats(stats);
     };
 
-    // Initial stats load
+    // Initial stats load + AUTO SYNC
     React.useEffect(() => {
         updateStats();
         updateQueueStats();
 
-        // AUTO-CHECK: Immediately query Dexie for orders on page load
-        // Using DYNAMIC import to match what KDS uses
+        // AUTO-SYNC: Fetch from Supabase on load if online
         (async () => {
             try {
+                setLoading(true);
+                setMessage('🔄 Auto-syncing orders from Supabase...');
+
+                // Only sync if we have a business ID and are online
+                if (businessId && isOnline()) {
+                    console.log('🚀 [DexieTestPage] Auto-sync starting for business:', businessId);
+
+                    // Sync orders from Supabase to Dexie
+                    const result = await syncOrders(businessId);
+                    console.log('📦 [DexieTestPage] Sync result:', result);
+
+                    if (result.success) {
+                        setMessage(`✅ Synced ${result.ordersCount || 0} orders from today`);
+                    } else {
+                        setMessage(`⚠️ Sync issue: ${result.reason || 'Unknown'}`);
+                    }
+                } else {
+                    console.log('📴 [DexieTestPage] Skipping auto-sync (offline or no businessId)');
+                    setMessage(businessId ? '📴 Offline - showing cached data' : '⚠️ No business ID');
+                }
+
+                // Now read from Dexie (whether synced or cached)
                 const { db: dynamicDb } = await import('../db/database');
-                await dynamicDb.open(); // Ensure DB is open
-                const ordersInDexie = await dynamicDb.orders.count();
+                await dynamicDb.open();
                 const allOrders = await dynamicDb.orders.toArray();
-                console.log(`🔍 [DexieTestPage] Dexie: Found ${ordersInDexie} orders`);
+                console.log(`🔍 [DexieTestPage] Dexie now has ${allOrders.length} orders`);
                 setDirectOrders(allOrders);
 
-                // NATIVE IndexedDB check (bypass Dexie completely)
-                const nativeRequest = indexedDB.open('KDSDatabase');
-                nativeRequest.onsuccess = (e) => {
-                    const nativeDb = e.target.result;
-                    const tx = nativeDb.transaction('orders', 'readonly');
-                    const store = tx.objectStore('orders');
-                    const countReq = store.count();
-                    countReq.onsuccess = () => {
-                        console.log(`🔍 [DexieTestPage] NATIVE IndexedDB: Found ${countReq.result} orders`);
-                    };
-                };
-                nativeRequest.onerror = (e) => {
-                    console.error('Native IndexedDB error:', e);
-                };
+                await updateStats();
+                setLoading(false);
+
             } catch (err) {
-                console.error('❌ [DexieTestPage] DB Error:', err);
+                console.error('❌ [DexieTestPage] Sync/Load Error:', err);
+                setMessage(`❌ Error: ${err.message}`);
+                setLoading(false);
             }
         })();
-    }, []);
+    }, [businessId]);
 
     // Manual refresh stats (direct from DB, not hooks)
     const manualRefreshStats = async () => {
@@ -302,6 +324,22 @@ const DexieTestPage = () => {
         }
         setLoading(false);
     };
+
+
+    // Tab Filtering Logic
+    const counts = {
+        all: directOrders.length,
+        in_progress: directOrders.filter(o => o.order_status === 'in_progress').length,
+        ready: directOrders.filter(o => o.order_status === 'ready').length,
+        completed: directOrders.filter(o => o.order_status === 'completed').length,
+        pending: directOrders.filter(o => o.pending_sync).length
+    };
+
+    const filteredOrders = directOrders.filter(o => {
+        if (activeTab === 'all') return true;
+        if (activeTab === 'pending') return o.pending_sync;
+        return o.order_status === activeTab;
+    });
 
     return (
         <div className="min-h-screen bg-gray-100 p-6" dir="ltr">
@@ -511,96 +549,207 @@ const DexieTestPage = () => {
 
                 {/* Detailed Orders List - Full Width */}
                 <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-lg font-bold text-gray-800">
-                            📦 Orders in Dexie
-                            <span className="text-sm font-normal text-gray-500 ml-2">
-                                {directOrders.length} total
-                            </span>
-                        </h2>
+                    {/* Tabs Navigation */}
+                    <div className="flex flex-col lg:flex-row items-center justify-between mb-4 gap-4">
+                        <div className="flex bg-gray-100 p-1 rounded-xl overflow-x-auto max-w-full">
+                            {[
+                                { id: 'all', label: 'All' },
+                                { id: 'in_progress', label: 'Active' },
+                                { id: 'ready', label: 'Ready' },
+                                { id: 'completed', label: 'History' },
+                                { id: 'pending', label: 'Unsynced' },
+                            ].map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id
+                                        ? 'bg-white text-blue-600 shadow-sm'
+                                        : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                >
+                                    <span>{tab.label}</span>
+                                    {counts[tab.id] > 0 && (
+                                        <span className={`px-1.5 py-0.5 rounded-md text-[10px] min-w-[20px] text-center ${activeTab === tab.id ? 'bg-blue-100' : 'bg-gray-200'
+                                            }`}>
+                                            {counts[tab.id]}
+                                        </span>
+                                    )}
+                                </button>
+                            ))}
+                        </div>
+
                         <button
                             onClick={manualRefreshStats}
-                            className="text-xs bg-teal-100 text-teal-700 px-3 py-2 rounded-lg hover:bg-teal-200 font-medium"
+                            className="text-xs bg-teal-100 text-teal-700 px-3 py-2 rounded-lg hover:bg-teal-200 font-medium whitespace-nowrap flex items-center gap-1"
                         >
-                            🔄 Refresh
+                            <RefreshCw size={14} /> Refresh
                         </button>
                     </div>
 
-                    <div className="space-y-4 max-h-96 overflow-y-auto">
-                        {directOrders.length > 0 ? (
-                            directOrders.map(order => (
-                                <div key={order.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
-                                    {/* Order Header */}
-                                    <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-100">
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-xl font-bold text-blue-600">#{order.order_number || 'N/A'}</span>
-                                            <span className="text-gray-600">{order.customer_name || 'Guest'}</span>
-                                            {order.is_offline && <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">Offline</span>}
-                                            {order.pending_sync && <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded">⏳ Pending Sync</span>}
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${order.order_status === 'completed' ? 'bg-green-100 text-green-700' :
-                                                order.order_status === 'ready' ? 'bg-blue-100 text-blue-700' :
-                                                    order.order_status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
-                                                        'bg-gray-100 text-gray-700'
-                                                }`}>
-                                                {order.order_status}
-                                            </span>
-                                            <span className="text-lg font-bold text-gray-800">
-                                                ₪{order.total_amount || '0'}
-                                            </span>
-                                            {order.is_paid ? (
-                                                <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">✓ Paid</span>
-                                            ) : (
-                                                <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">Unpaid</span>
-                                            )}
-                                        </div>
-                                    </div>
+                    {(() => {
+                        // Sort by order_number descending (newest first)
+                        const sortedOrders = [...filteredOrders].sort((a, b) => {
+                            const numA = parseInt(a.order_number) || 0;
+                            const numB = parseInt(b.order_number) || 0;
+                            return numB - numA;
+                        });
 
-                                    {/* Order Details */}
-                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 mb-3">
-                                        <div><strong>ID:</strong> {String(order.id).substring(0, 20)}...</div>
-                                        <div><strong>Phone:</strong> {order.customer_phone || 'N/A'}</div>
-                                        <div><strong>Created:</strong> {new Date(order.created_at).toLocaleString('he-IL')}</div>
-                                        <div><strong>Updated:</strong> {order.updated_at ? new Date(order.updated_at).toLocaleString('he-IL') : 'N/A'}</div>
-                                    </div>
+                        // Group by date
+                        const groupedByDate = sortedOrders.reduce((groups, order) => {
+                            const date = new Date(order.created_at).toLocaleDateString('he-IL', {
+                                weekday: 'long',
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
+                            });
+                            if (!groups[date]) groups[date] = [];
+                            groups[date].push(order);
+                            return groups;
+                        }, {});
 
-                                    {/* Items Display */}
-                                    <div className="bg-gray-50 rounded p-3 mt-3">
-                                        <div className="text-xs font-bold text-gray-600 mb-2 border-b border-gray-200 pb-1">
-                                            ITEMS ({orderItemsMap[order.id]?.length || 0})
-                                        </div>
-                                        {orderItemsMap[order.id]?.length > 0 ? (
-                                            <div className="space-y-1">
-                                                {orderItemsMap[order.id].map(item => (
-                                                    <div key={item.id} className="flex justify-between text-xs">
-                                                        <span>
-                                                            <span className="font-bold">{item.quantity}x</span> {item.menu_item_name}
-                                                        </span>
-                                                        <span className={`px-1.5 rounded text-[10px] ${item.item_status === 'completed' ? 'bg-green-100 text-green-700' :
-                                                                item.item_status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
-                                                                    'bg-gray-200 text-gray-600'
-                                                            }`}>
-                                                            {item.item_status}
-                                                        </span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="text-xs text-red-400 italic">
-                                                No items found for this order in Dexie!
-                                            </div>
-                                        )}
-                                    </div>
+                        // Calculate prep time helper
+                        const calcPrepTime = (order) => {
+                            if (!order.updated_at || !order.created_at) return null;
+                            if (order.order_status !== 'completed' && order.order_status !== 'ready') return null;
+                            const start = new Date(order.created_at);
+                            const end = new Date(order.updated_at);
+                            const diffMs = end - start;
+                            const mins = Math.floor(diffMs / 60000);
+                            if (mins < 1) return '< 1 דק׳';
+                            if (mins < 60) return `${mins} דק׳`;
+                            return `${Math.floor(mins / 60)} שע׳ ${mins % 60} דק׳`;
+                        };
+
+                        if (sortedOrders.length === 0) {
+                            return (
+                                <div className="text-center py-8">
+                                    <p className="text-gray-400 mb-2">אין הזמנות בקטגוריה זו</p>
+                                    <p className="text-xs text-gray-300">לחץ על "Refresh" לעדכון</p>
                                 </div>
-                            ))
-                        ) : (
-                            <div className="text-center py-8">
-                                <p className="text-gray-400 mb-2">No orders in Dexie</p>
-                                <p className="text-xs text-gray-300">Click "Sync Orders" or "Initial Load" to populate</p>
+                            );
+                        }
+
+                        return (
+                            <div className="space-y-6 max-h-[600px] overflow-y-auto pr-2">
+                                {Object.entries(groupedByDate).map(([date, orders]) => (
+                                    <div key={date}>
+                                        {/* Date Header */}
+                                        <div className="sticky top-0 bg-gray-100 py-2 px-3 rounded-lg mb-3 z-10">
+                                            <span className="font-bold text-gray-700">📅 {date}</span>
+                                            <span className="text-gray-500 text-sm ml-2">({orders.length} הזמנות)</span>
+                                        </div>
+
+                                        {/* Orders for this date */}
+                                        <div className="space-y-2">
+                                            {orders.map(order => {
+                                                const isExpanded = expandedOrderId === order.id;
+                                                const prepTime = calcPrepTime(order);
+                                                const phone = order.customer_phone?.startsWith('GUEST_')
+                                                    ? null
+                                                    : order.customer_phone;
+
+                                                return (
+                                                    <div
+                                                        key={order.id}
+                                                        className={`border rounded-lg overflow-hidden transition-all ${isExpanded ? 'border-blue-300 shadow-md' : 'border-gray-200'
+                                                            }`}
+                                                    >
+                                                        {/* Collapsed Header - Always Visible */}
+                                                        <div
+                                                            onClick={() => setExpandedOrderId(isExpanded ? null : order.id)}
+                                                            className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50 transition"
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <span className="text-lg font-bold text-blue-600">
+                                                                    #{order.order_number || '?'}
+                                                                </span>
+                                                                <span className="text-gray-700 font-medium">
+                                                                    {order.customer_name || 'אורח'}
+                                                                </span>
+                                                                {phone && (
+                                                                    <span className="text-gray-400 text-sm">
+                                                                        📱 {phone}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                {prepTime && (
+                                                                    <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                                                                        ⏱ {prepTime}
+                                                                    </span>
+                                                                )}
+                                                                <span className={`px-2 py-1 rounded text-xs font-medium ${order.order_status === 'completed' ? 'bg-green-100 text-green-700' :
+                                                                        order.order_status === 'ready' ? 'bg-blue-100 text-blue-700' :
+                                                                            order.order_status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
+                                                                                'bg-gray-100 text-gray-700'
+                                                                    }`}>
+                                                                    {order.order_status === 'completed' ? '✓ הושלם' :
+                                                                        order.order_status === 'ready' ? '🍽 מוכן' :
+                                                                            order.order_status === 'in_progress' ? '⏳ בהכנה' :
+                                                                                order.order_status}
+                                                                </span>
+                                                                <span className="font-bold text-gray-800">
+                                                                    ₪{order.total_amount || 0}
+                                                                </span>
+                                                                {order.is_paid && (
+                                                                    <span className="text-green-600">💳</span>
+                                                                )}
+                                                                <span className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                                                                    ▼
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Expanded Content */}
+                                                        {isExpanded && (
+                                                            <div className="border-t border-gray-200 p-4 bg-gray-50">
+                                                                {/* Meta Info */}
+                                                                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 mb-3">
+                                                                    <div>🕐 נוצר: {new Date(order.created_at).toLocaleTimeString('he-IL')}</div>
+                                                                    <div>🔄 עודכן: {order.updated_at ? new Date(order.updated_at).toLocaleTimeString('he-IL') : '-'}</div>
+                                                                    <div>🆔 {String(order.id).substring(0, 12)}...</div>
+                                                                    {order.pending_sync && <div className="text-orange-600 font-bold">⏳ ממתין לסנכרון</div>}
+                                                                </div>
+
+                                                                {/* Items */}
+                                                                <div className="bg-white rounded p-3 border border-gray-200">
+                                                                    <div className="text-xs font-bold text-gray-600 mb-2 border-b pb-1">
+                                                                        פריטים ({orderItemsMap[order.id]?.length || 0})
+                                                                    </div>
+                                                                    {orderItemsMap[order.id]?.length > 0 ? (
+                                                                        <div className="space-y-1">
+                                                                            {orderItemsMap[order.id].map(item => (
+                                                                                <div key={item.id} className="flex justify-between text-sm py-1 border-b border-gray-100 last:border-0">
+                                                                                    <span>
+                                                                                        <span className="font-bold text-blue-600">{item.quantity}×</span> {item.menu_item_name}
+                                                                                    </span>
+                                                                                    <span className={`px-2 py-0.5 rounded text-xs ${item.item_status === 'completed' ? 'bg-green-100 text-green-700' :
+                                                                                            item.item_status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
+                                                                                                item.item_status === 'ready' ? 'bg-blue-100 text-blue-700' :
+                                                                                                    'bg-gray-200 text-gray-600'
+                                                                                        }`}>
+                                                                                        {item.item_status || 'pending'}
+                                                                                    </span>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="text-xs text-red-400 italic">
+                                                                            אין פריטים מקומיים להזמנה זו
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
-                        )}
-                    </div>
+                        );
+                    })()}
                 </div>
 
                 {/* Stats Grid */}

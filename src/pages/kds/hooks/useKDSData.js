@@ -212,8 +212,9 @@ export const useKDSData = () => {
                                 }
 
                                 // PROTECTION: Don't overwrite local changes that haven't synced yet!
+                                // EXCEPTION: If server says it's COMPLETED, server wins (to fix stuck orders)
                                 const existingLocal = await db.orders.get(smartId);
-                                if (existingLocal && existingLocal.pending_sync) {
+                                if (existingLocal && existingLocal.pending_sync && order.order_status !== 'completed') {
                                     continue;
                                 }
 
@@ -287,8 +288,7 @@ export const useKDSData = () => {
                                 !activeServerOrderIds.has(String(o.id)) && // Loose check (in case Dexie has string)
                                 !activeServerOrderIds.has(Number(o.id)) && // Loose check (in case Dexie has number)
                                 !o.pending_sync &&
-                                !String(o.id).startsWith('L') &&
-                                new Date(o.created_at) >= today
+                                !String(o.id).startsWith('L')
                             )
                             .toArray();
 

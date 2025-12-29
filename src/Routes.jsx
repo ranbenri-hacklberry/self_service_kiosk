@@ -23,7 +23,9 @@ import ManagerKDS from './components/manager/ManagerKDS';
 import InventoryPage from './pages/inventory';
 import PrepPage from './pages/prep';
 import MusicPage from './pages/music';
+
 import SpotifyCallback from './pages/callback/spotify';
+import DexieTestPage from './pages/DexieTestPage';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -161,6 +163,13 @@ const AppRoutes = () => {
 
       {/* Spotify Callback Route - Public */}
       <Route path="/callback/spotify" element={<SpotifyCallback />} />
+
+      {/* Debug/Internal Tools */}
+      <Route path="/dexie-test" element={
+        <ProtectedRoute>
+          <DexieTestPage />
+        </ProtectedRoute>
+      } />
 
       <Route path="*" element={<NotFound />} />
     </RouterRoutes>
