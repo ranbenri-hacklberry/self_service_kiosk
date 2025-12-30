@@ -5,12 +5,17 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import NotFound from "@/pages/NotFound";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { MusicProvider } from "@/context/MusicContext";
+import SyncStatusModal from "@/components/SyncStatusModal";
 
 // Pages
 import LoginScreen from "@/pages/login/LoginScreen";
 import ModeSelectionScreen from "@/pages/login/ModeSelectionScreen";
 import MenuOrderingInterface from './pages/menu-ordering-interface';
 import KdsScreen from './pages/kds';
+import CustomerPhoneInputScreen from './pages/customer-phone-input-screen';
+// DEPRECATED: Phone input now handled by CustomerInfoModal
+import NewCustomerNameCollectionScreen from './pages/new-customer-name-collection-screen';
+import ReturningCustomerWelcomeScreen from './pages/returning-customer-welcome-screen';
 
 import DataManagerInterface from './pages/data-manager-interface';
 import SuperAdminDashboard from './pages/super-admin';
@@ -18,6 +23,7 @@ import ManagerKDS from './components/manager/ManagerKDS';
 import InventoryPage from './pages/inventory';
 import PrepPage from './pages/prep';
 import MusicPage from './pages/music';
+
 import SpotifyCallback from './pages/callback/spotify';
 import DexieTestPage from './pages/DexieTestPage';
 
@@ -70,7 +76,7 @@ const ProtectedRoute = ({ children }) => {
     } else if (deviceMode === 'music') {
       return <Navigate to="/music" replace />;
     }
-    // For 'kiosk' mode, let it fall through and render children (MenuOrderingInterface)
+    // For 'kiosk' mode, let it fall through and render children (CustomerPhoneInputScreen)
   }
 
   console.log('✅ ProtectedRoute: Access granted for path:', location.pathname);
@@ -131,7 +137,10 @@ const AppRoutes = () => {
       } />
 
       {/* Other Protected Pages */}
-      {/* REMOVED: Old customer flow pages now handled by CustomerInfoModal */}
+      {/* REMOVED: Phone input now handled by CustomerInfoModal */}
+      {/* <Route path="/customer-phone-input-screen" element={<ProtectedRoute><CustomerPhoneInputScreen /></ProtectedRoute>} /> */}
+      <Route path="/new-customer-name-collection-screen" element={<ProtectedRoute><NewCustomerNameCollectionScreen /></ProtectedRoute>} />
+      <Route path="/returning-customer-welcome-screen" element={<ProtectedRoute><ReturningCustomerWelcomeScreen /></ProtectedRoute>} />
       <Route path="/menu-ordering-interface" element={
         <ProtectedRoute>
           <ErrorBoundary>
@@ -152,11 +161,15 @@ const AppRoutes = () => {
         </ProtectedRoute>
       } />
 
-      {/* Dexie Test Page - For debugging offline-first database */}
-      <Route path="/dexie-test" element={<DexieTestPage />} />
-
       {/* Spotify Callback Route - Public */}
       <Route path="/callback/spotify" element={<SpotifyCallback />} />
+
+      {/* Debug/Internal Tools */}
+      <Route path="/dexie-test" element={
+        <ProtectedRoute>
+          <DexieTestPage />
+        </ProtectedRoute>
+      } />
 
       <Route path="*" element={<NotFound />} />
     </RouterRoutes>
@@ -168,6 +181,7 @@ const Routes = () => {
     <BrowserRouter>
       <ErrorBoundary>
         <AuthProvider>
+          <SyncStatusModal />
           <MusicProvider>
             <ScrollToTop />
             <AppRoutes />

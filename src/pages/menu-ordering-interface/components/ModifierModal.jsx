@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { fetchManagerItemOptions, clearOptionsCache, normalizeOptionGroups } from '@/lib/managerApi';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../../../db/database';
 
 const formatPrice = (price = 0) => {
   const numPrice = Number(price);
@@ -144,12 +146,12 @@ const ModifierModal = (props) => {
   const { isOpen, selectedItem, onClose, onAddItem } = props;
 
   // ⚠️ CRITICAL: All hooks MUST be called before any early returns (React Rules of Hooks)
-  const [optionGroups, setOptionGroups] = useState([]);
+  // const [optionGroups, setOptionGroups] = useState([]); // Removed, now derived
   const [orderNote, setOrderNote] = useState('');
   const [isNoteOpen, setIsNoteOpen] = useState(false);
   const [optionSelections, setOptionSelections] = useState({});
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [isLoadingOptions, setIsLoadingOptions] = useState(false);
+  // const [isLoadingOptions, setIsLoadingOptions] = useState(false); // Derived
 
   // Check if this is an espresso item
   const isEspresso = selectedItem?.name?.includes('אספרסו');
@@ -157,7 +159,6 @@ const ModifierModal = (props) => {
   // Reset state when selectedItem changes
   useEffect(() => {
     if (selectedItem) {
-      setOptionGroups([]);
       setOptionSelections({});
       setShowAdvanced(false);
       setOrderNote('');
@@ -165,293 +166,221 @@ const ModifierModal = (props) => {
     }
   }, [selectedItem?.id]);
 
+  // --- LOCAL FIRST DATA FETCHING ---
+  const targetItemId = useMemo(() => {
+    if (!selectedItem) return null;
+    return selectedItem.menu_item_id || selectedItem.menuItemId || selectedItem.id;
+  }, [selectedItem]);
+
+  // DEBUG: Check Dexie data on mount
   useEffect(() => {
+    console.log('🔍 [DEBUG] useEffect triggered:', { isOpen, hasSelectedItem: !!selectedItem, targetItemId });
+
     if (!isOpen || !selectedItem) {
+      console.log('⚠️ [DEBUG] Skipping - modal not open or no item');
       return;
     }
 
-    const loadOptions = async () => {
-      console.log('🏁 ModifierModal useEffect STARTED for:', selectedItem?.name, 'ID:', selectedItem?.id);
-
+    (async () => {
       try {
-        setIsLoadingOptions(true);
-        // Determine the correct ID to fetch options for
-        // 1. menu_item_id - Standard backend format
-        // 2. menuItemId - KDS frontend format 
-        // 3. id - Item template ID or order item UUID fallback
-        const targetItemId = selectedItem.menu_item_id || selectedItem.menuItemId || selectedItem.id;
-
-        // LocalStorage cache check removed to prevent stale data issues
-
-        // Check cache (from props)
-        if (props.optionsCache && props.optionsCache[targetItemId]) {
-          console.log('⚡ Using Cached Options for:', selectedItem.name);
-          const cachedOptions = props.optionsCache[targetItemId];
-          setOptionGroups(cachedOptions);
-          setIsLoadingOptions(false);
-
-          // If cached options are empty, auto-add item immediately
-          if ((!cachedOptions || cachedOptions.length === 0) && props.allowAutoAdd !== false) {
-            onAddItem?.({
-              ...selectedItem,
-              selectedOptions: [],
-              totalPrice: selectedItem.price,
-              price: selectedItem.price
-            });
-            onClose();
-            return;
-          }
-
-          setOptionGroups(cachedOptions);
-          processDefaults(cachedOptions);
-          return;
-        }
-
-
-        console.log('🔄 Fetching Options from DB (Direct) for:', selectedItem.name, 'ID:', targetItemId);
-
-        // Fetch from Supabase Direct (or Dexie if offline)
-        let fetchedOptions = [];
-        const isOnline = navigator.onLine;
-
-        try {
-          if (!isOnline) {
-            // OFFLINE: Load from Dexie
-            console.log('📴 Offline: Loading options from Dexie...');
-            const { db } = await import('../../../db/database');
-
-            // Get linked group IDs
-            const linkedRecords = await db.menuitemoptions
-              .where('item_id')
-              .equals(targetItemId)
-              .toArray();
-            const linkedIds = linkedRecords.map(l => l.group_id);
-
-            // Get private groups + linked groups
-            let groups = await db.optiongroups.toArray();
-            groups = groups.filter(g =>
-              g.menu_item_id === targetItemId || linkedIds.includes(g.id)
-            );
-
-            // Get values for these groups
-            const groupIds = groups.map(g => g.id);
-            const allValues = await db.optionvalues.toArray();
-            const relevantValues = allValues.filter(v => groupIds.includes(v.group_id));
-
-            // Combine groups with their values - keep original order
-            const enhancedGroups = groups.map(g => {
-              const groupValues = relevantValues.filter(v => v.group_id === g.id);
-              return {
-                ...g,
-                values: groupValues,
-                optionvalues: groupValues,
-                is_required: g.is_required || (g.min_selection > 0)
-              };
-            });
-
-            console.log(`📴 Loaded ${enhancedGroups.length} option groups from Dexie`);
-            fetchedOptions = normalizeOptionGroups(enhancedGroups);
-          } else {
-            // ONLINE: Fetch from Supabase
-            // 1. Get linked groups
-            const { data: linked } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', targetItemId);
-            const linkedIds = linked?.map(l => l.group_id) || [];
-
-            // 2. Query groups
-            // Combine: Private groups (menu_item_id match) OR Linked groups (id in linkedIds)
-            let query = supabase.from('optiongroups')
-              .select('*, optionvalues(*)')
-              .order('name');
-
-            const orCond = [`menu_item_id.eq.${targetItemId}`];
-            if (linkedIds.length > 0) {
-              orCond.push(`id.in.(${linkedIds.join(',')})`);
-            }
-            query = query.or(orCond.join(','));
-
-            const { data: rawGroups, error } = await query;
-
-            console.log('🔍 Modifier Debug:', {
-              itemId: targetItemId,
-              linkedGroupIds: linkedIds,
-              orCondition: orCond.join(','),
-              foundGroupsCount: rawGroups?.length || 0,
-              foundGroupsNames: rawGroups?.map(g => g.name)
-            });
-
-            if (error) {
-              console.warn("Supabase query error, retrying without OR if empty?");
-              throw error;
-            }
-
-            // Map min_selection to required AND optionvalues to values
-            // Keep original order from Supabase - dont re-sort
-            const enhancedRawGroups = rawGroups?.map(g => ({
-              ...g,
-              values: g.optionvalues || [],
-              is_required: g.is_required || (g.min_selection > 0)
-            }));
-
-            console.log('🔍 Raw DB Values for first group:', enhancedRawGroups?.[0]?.values?.map(v => ({
-              name: v.value_name,
-              price: v.price,
-              price_adjustment: v.price_adjustment
-            })));
-
-            fetchedOptions = normalizeOptionGroups(enhancedRawGroups);
-
-            // Cache to Dexie for offline use
-            try {
-              const { db } = await import('../../../db/database');
-              if (rawGroups && rawGroups.length > 0) {
-                await db.optiongroups.bulkPut(rawGroups.map(g => ({ ...g, optionvalues: undefined })));
-                const allValues = rawGroups.flatMap(g => g.optionvalues || []);
-                if (allValues.length > 0) {
-                  await db.optionvalues.bulkPut(allValues);
-                }
-                console.log('💾 Cached options to Dexie');
-              }
-            } catch (cacheErr) {
-              console.warn('Failed to cache options:', cacheErr);
-            }
-          }
-        } catch (err) {
-          console.error('Options fetch failed:', err);
-          fetchedOptions = [];
-        }
-
-        // const fetchedOptions = await fetchManagerItemOptions(targetItemId);
-
-        // Combine with injected extra groups (e.g. for Salad Prep)
-        const allOptions = [...(fetchedOptions || []), ...(props.extraGroups || [])];
-
-        // Update cache (only with fetched options to keep cache clean)
-        if (props.onCacheUpdate && fetchedOptions?.length > 0) {
-          props.onCacheUpdate(prev => ({
-            ...prev,
-            [targetItemId]: fetchedOptions
-          }));
-        }
-
-        setOptionGroups(allOptions);
-        setIsLoadingOptions(false);
-
-        // If NO options at all (fetched or extra), auto-add item immediately ONLY if allowed
-        console.log('🔍 ModifierModal AutoAdd Check:', {
-          item: selectedItem.name,
-          optionsCount: allOptions.length,
-          allowAutoAdd: props.allowAutoAdd
+        const groups = await db.optiongroups.toArray();
+        const values = await db.optionvalues.toArray();
+        const links = await db.menuitemoptions.toArray();
+        console.log('🔍 [DEBUG] Dexie Data Check:', {
+          totalGroups: groups.length,
+          totalValues: values.length,
+          totalLinks: links.length,
+          sampleGroup: groups[0],
+          sampleValue: values[0],
+          itemId: targetItemId
         });
-
-        if (allOptions.length === 0 && props.allowAutoAdd !== false) {
-          console.log('⚡ Auto-adding item (no options & allowed)');
-          onAddItem?.({
-            ...selectedItem,
-            selectedOptions: [],
-            totalPrice: selectedItem.price,
-            price: selectedItem.price
-          });
-          onClose();
-          return;
-        }
-
-        processDefaults(allOptions);
-
-      } catch (error) {
-        console.error('Error loading options:', error);
-        setIsLoadingOptions(false);
-
-        // Only auto-add on error if allowed. Otherwise show modal (allows notes)
-        if (props.allowAutoAdd !== false) {
-          onAddItem?.(selectedItem);
-          onClose();
-        }
+      } catch (err) {
+        console.error('❌ [DEBUG] Failed to check Dexie:', err);
       }
-    };
+    })();
+  }, [isOpen, selectedItem, targetItemId]);
 
-    const processDefaults = (options) => {
-      const defaults = {};
-      const existingSelections = selectedItem.selectedOptions || [];
 
-      options.forEach(group => {
-        const isMultipleSelect = group.is_multiple_select || group.type === 'multi';
-        if (isMultipleSelect) {
-          const existingToppings = existingSelections
-            .filter(opt => String(opt.groupId) === String(group.id))
-            .map(opt => String(opt.valueId));
+  const liveOptions = useLiveQuery(async () => {
+    try {
+      if (!targetItemId) {
+        console.log('⚠️ [ModifierModal] No targetItemId');
+        return [];
+      }
 
-          if (existingToppings.length > 0) {
-            defaults[group.id] = existingToppings;
-          } else {
-            defaults[group.id] = [];
-          }
-          return;
+      console.log(`🏁 [ModifierModal] liveOptions query started for item: ${targetItemId}`);
+
+      // db is imported at top level
+
+      // 1. Get linked group IDs
+      const linked = await db.menuitemoptions.where('item_id').equals(targetItemId).toArray();
+      console.log(`🔗 [ModifierModal] Found ${linked.length} links:`, linked);
+      const linkedIds = linked.map(l => l.group_id);
+
+      // 2. Get private groups
+      const privateGroups = await db.optiongroups.where('menu_item_id').equals(targetItemId).toArray();
+      console.log(`🔒 [ModifierModal] Found ${privateGroups.length} private groups:`, privateGroups);
+
+      // 3. Get shared groups
+      let sharedGroups = [];
+      if (linkedIds.length > 0) {
+        sharedGroups = await db.optiongroups.bulkGet(linkedIds);
+        sharedGroups = sharedGroups.filter(Boolean); // remove undefined
+        console.log(`🌐 [ModifierModal] Found ${sharedGroups.length} shared groups:`, sharedGroups);
+      }
+
+      // 4. Combine and Unique
+      const allGroupsMap = new Map();
+      [...privateGroups, ...sharedGroups].forEach(g => allGroupsMap.set(g.id, g));
+      const uniqueGroups = Array.from(allGroupsMap.values());
+
+      console.log(`📊 [ModifierModal] Found ${uniqueGroups.length} unique groups`);
+
+      if (uniqueGroups.length === 0) return [];
+
+      // 5. Fetch Values
+      const groupIds = uniqueGroups.map(g => g.id);
+      console.log(`🎯 [ModifierModal] Fetching values for group IDs:`, groupIds);
+      const rawValues = await db.optionvalues.where('group_id').anyOf(groupIds).toArray();
+
+      // Normalize: Dexie uses value_name, but code expects name
+      const values = rawValues.map(v => ({
+        ...v,
+        name: v.name || v.value_name,
+        priceAdjustment: v.priceAdjustment || v.price_adjustment || 0
+      }));
+
+      console.log(`💎 [ModifierModal] Found ${values.length} values:`, values);
+
+      // 6. Merge values into groups
+      const enhanced = uniqueGroups.map(g => ({
+        ...g,
+        values: values.filter(v => v.group_id === g.id).sort((a, b) => (a.display_order || 0) - (b.display_order || 0)),
+        is_required: g.is_required || (g.min_selection > 0)
+      }));
+
+      console.log(`✨ [ModifierModal] Final enhanced groups:`, enhanced);
+
+      // Sort groups by name (or display_order if we had it)
+      return enhanced.sort((a, b) => a.name.localeCompare(b.name));
+    } catch (err) {
+      console.error('❌ [ModifierModal] Error in useLiveQuery:', err);
+      return []; // Return empty array on error to stop spinner
+    }
+  }, [targetItemId]);
+
+  const isLoadingOptions = liveOptions === undefined;
+
+  // Combine with extra groups from props
+  const optionGroups = useMemo(() => {
+    return [...(liveOptions || []), ...(props.extraGroups || [])];
+  }, [liveOptions, props.extraGroups]);
+
+  // Handle Defaults & Auto-Add
+  useEffect(() => {
+    // Only run when we have loaded options
+    if (isLoadingOptions) return;
+
+    // Auto-Add Logic
+    if (optionGroups.length === 0 && props.allowAutoAdd !== false) {
+      console.log('⚡ Auto-adding item (no options & allowed)');
+      onAddItem?.({
+        ...selectedItem,
+        selectedOptions: [],
+        totalPrice: selectedItem.price,
+        price: selectedItem.price
+      });
+      onClose();
+      return;
+    }
+
+    // Process Defaults logic (moved here from loadOptions)
+    processDefaults(optionGroups);
+
+  }, [isLoadingOptions, optionGroups, props.allowAutoAdd, selectedItem?.id]); // depend on optionGroups result
+
+  const processDefaults = (options) => {
+    const defaults = {};
+    const existingSelections = selectedItem.selectedOptions || [];
+
+    options.forEach(group => {
+      const isMultipleSelect = group.is_multiple_select || group.type === 'multi';
+      if (isMultipleSelect) {
+        const existingToppings = existingSelections
+          .filter(opt => String(opt.groupId) === String(group.id))
+          .map(opt => String(opt.valueId));
+
+        if (existingToppings.length > 0) {
+          defaults[group.id] = existingToppings;
+        } else {
+          defaults[group.id] = [];
         }
+        return;
+      }
 
-        // Try to find match by ID first
-        let existingChoice = existingSelections.find(opt =>
-          opt.groupId && String(opt.groupId) === String(group.id)
+      // Try to find match by ID first
+      let existingChoice = existingSelections.find(opt =>
+        opt.groupId && String(opt.groupId) === String(group.id)
+      );
+
+      // If not found by ID, try to find by matching value names across all selections
+      // This handles cases where we only stored names in the DB (legacy/simple format)
+      if (!existingChoice) {
+        const matchingValue = group.values?.find(v =>
+          existingSelections.some(sel => {
+            // If selection is just a string (legacy)
+            if (typeof sel === 'string') return sel === v.name;
+            // If selection is object but only has names
+            return sel.valueName === v.name;
+          })
         );
 
-        // If not found by ID, try to find by matching value names across all selections
-        // This handles cases where we only stored names in the DB (legacy/simple format)
-        if (!existingChoice) {
-          const matchingValue = group.values?.find(v =>
-            existingSelections.some(sel => {
-              // If selection is just a string (legacy)
-              if (typeof sel === 'string') return sel === v.name;
-              // If selection is object but only has names
-              return sel.valueName === v.name;
-            })
-          );
-
-          if (matchingValue) {
-            defaults[group.id] = String(matchingValue.id);
-            return;
-          }
+        if (matchingValue) {
+          defaults[group.id] = String(matchingValue.id);
+          return;
         }
-
-        if (existingChoice) {
-          const existingVal = group.values?.find(v =>
-            String(v.id) === String(existingChoice.valueId)
-          );
-          if (existingVal) {
-            defaults[group.id] = String(existingVal.id);
-            return;
-          }
-        }
-
-        // --- FIXED DEFAULT LOGIC ---
-        const defaultVal = group.values?.find(v => v.is_default) ||
-          group.values?.find(v => v.name?.includes('רגיל'));
-
-        if (defaultVal) {
-          defaults[group.id] = String(defaultVal.id);
-        } else if (group.required) {
-          // Only auto-select first option if the group is REQUIRED
-          const firstVal = group.values?.[0];
-          if (firstVal) defaults[group.id] = String(firstVal.id);
-        }
-      });
-
-      setOptionSelections(defaults);
-
-      const hasOtherGroupSelections = options.some((group) => {
-        const isMilkGroup = group.name?.toLowerCase().includes('חלב');
-        if (isMilkGroup) return false;
-        return existingSelections.some(opt =>
-          String(opt.groupId) === String(group.id)
-        );
-      });
-
-      const hasMilkGroup = options.some(g => g.name?.toLowerCase().includes('חלב'));
-      if ((hasOtherGroupSelections && options.length > 1) || !hasMilkGroup) {
-        setShowAdvanced(true);
       }
-    };
 
-    loadOptions();
-  }, [isOpen, selectedItem?.id]);
+      if (existingChoice) {
+        const existingVal = group.values?.find(v =>
+          String(v.id) === String(existingChoice.valueId)
+        );
+        if (existingVal) {
+          defaults[group.id] = String(existingVal.id);
+          return;
+        }
+      }
+
+      // --- FIXED DEFAULT LOGIC ---
+      const defaultVal = group.values?.find(v => v.is_default) ||
+        group.values?.find(v => v.name?.includes('רגיל'));
+
+      if (defaultVal) {
+        defaults[group.id] = String(defaultVal.id);
+      } else if (group.required) {
+        // Only auto-select first option if the group is REQUIRED
+        const firstVal = group.values?.[0];
+        if (firstVal) defaults[group.id] = String(firstVal.id);
+      }
+    });
+
+    // Avoid resetting selections if we already have some (from previous run) unless component reset
+    // Use functional update to check if empty? No, reset handles that.
+    setOptionSelections(defaults);
+
+    const hasOtherGroupSelections = options.some((group) => {
+      const isMilkGroup = group.name?.toLowerCase().includes('חלב');
+      if (isMilkGroup) return false;
+      return existingSelections.some(opt =>
+        String(opt.groupId) === String(group.id)
+      );
+    });
+
+    const hasMilkGroup = options.some(g => g.name?.toLowerCase().includes('חלב'));
+    if ((hasOtherGroupSelections && options.length > 1) || !hasMilkGroup) {
+      setShowAdvanced(true);
+    }
+  };
 
   const { milkGroup, foamGroup, tempGroup, baseGroup, strengthGroup, otherGroups } = useMemo(() => {
     if (!optionGroups?.length) return {
@@ -513,7 +442,7 @@ const ModifierModal = (props) => {
 
     if (base && isCoffeeItem) {
       const hasWaterOrMilkBase = base.values.some(v =>
-        v.name.includes('מים') || v.name.includes('חלב') || v.name.includes('סודה')
+        v?.name?.includes('מים') || v?.name?.includes('חלב') || v?.name?.includes('סודה')
       );
 
       if (!hasWaterOrMilkBase) {
@@ -715,14 +644,14 @@ const ModifierModal = (props) => {
                       });
 
                       return values.map(value => {
-                        let displayName = value.name;
+                        let displayName = value?.name || '';
                         if (displayName.includes('סויה')) displayName = 'סויה';
                         else if (displayName.includes('שיבולת')) displayName = 'שיבולת';
                         else if (displayName.includes('שקדים')) displayName = 'שקדים';
                         else if (displayName.includes('רגיל')) displayName = 'רגיל';
 
                         // FIX: Pass 'milk' explicitly
-                        const IconComponent = getIconForValue(value.name, 'milk');
+                        const IconComponent = getIconForValue(value?.name || '', 'milk');
                         const isSelected = String(optionSelections[milkGroup.id]) === String(value.id);
                         const effectivePrice = value.priceAdjustment || 0;
                         if (effectivePrice > 0) console.log(`🥛 Milk option price: ${value.name} = ${effectivePrice}`);

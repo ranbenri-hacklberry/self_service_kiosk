@@ -114,7 +114,18 @@ const MenuDisplay = () => {
 
   const handleAddCategory = () => {
     if (!newCategoryName.trim()) return;
-    setSelectedItem({ name: '', price: '', category: newCategoryName.trim(), is_in_stock: true });
+    const catName = newCategoryName.trim();
+
+    // Save to localStorage for persistence
+    const storeKey = `empty_categories_${currentUser?.business_id}`;
+    const existing = JSON.parse(localStorage.getItem(storeKey) || '[]');
+    if (!existing.includes(catName) && !categoriesList.includes(catName)) {
+      existing.push(catName);
+      localStorage.setItem(storeKey, JSON.stringify(existing));
+    }
+
+    // Navigate to the new empty category
+    setActiveCategory(catName);
     setNewCategoryName('');
     setIsAddingCategory(false);
   };
@@ -132,7 +143,22 @@ const MenuDisplay = () => {
     }, {});
   }, [items]);
 
-  const categoriesList = useMemo(() => Object.keys(groupedCategories), [groupedCategories]);
+  // Merge empty categories from localStorage
+  const categoriesList = useMemo(() => {
+    const fromItems = Object.keys(groupedCategories);
+    const storeKey = `empty_categories_${currentUser?.business_id}`;
+    const emptyCategories = JSON.parse(localStorage.getItem(storeKey) || '[]');
+
+    // Filter out empty categories that now have items
+    const stillEmpty = emptyCategories.filter(cat => !fromItems.includes(cat));
+
+    // Update localStorage to remove categories that now have items
+    if (stillEmpty.length !== emptyCategories.length) {
+      localStorage.setItem(storeKey, JSON.stringify(stillEmpty));
+    }
+
+    return [...fromItems, ...stillEmpty];
+  }, [groupedCategories, currentUser?.business_id]);
 
   const displayItems = useMemo(() => {
     let relevantItems = activeCategory ? groupedCategories[activeCategory] || [] : items;

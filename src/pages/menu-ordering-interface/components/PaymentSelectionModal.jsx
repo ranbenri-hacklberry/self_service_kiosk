@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, CreditCard, Clock, Gift, Banknote, Star, Smartphone, Wallet } from 'lucide-react';
+import { X, Check, CreditCard, Clock, Gift, Banknote, Star } from 'lucide-react';
 import Button from '../../../components/ui/Button'; // Assuming Button component exists in this path, based on previous file
 import { cn } from '../../../utils/cn'; // Assuming cn exists
 import { useDiscounts } from '../hooks/useDiscounts';
@@ -11,9 +11,11 @@ const PaymentSelectionModal = ({
   cartTotal = 0,
   subtotal = 0,
   loyaltyDiscount = 0,
+  soldierDiscountAmount = 0,
   cartItems = [],
   isRefund = false,
   refundAmount = 0,
+  originalPaymentMethod = null,
   businessId = null
 }) => {
   const [step, setStep] = useState('selection'); // 'selection' or 'pos_instruction'
@@ -64,11 +66,14 @@ const PaymentSelectionModal = ({
   if (!isOpen) return null;
 
   const formatPrice = (price) => {
+    const num = Number(price);
+    const hasDecimals = num % 1 !== 0;
     return new Intl.NumberFormat('he-IL', {
       style: 'currency',
       currency: 'ILS',
-      minimumFractionDigits: 0
-    })?.format(price);
+      minimumFractionDigits: hasDecimals ? 2 : 0,
+      maximumFractionDigits: 2
+    })?.format(num);
   };
 
   const buildModsString = (item) => {
@@ -236,18 +241,16 @@ const PaymentSelectionModal = ({
       instructions: [
         'ההזמנה תירשם כ"על חשבון הבית"'
       ],
-      confirmText: 'אישור',
-      showZeroPrice: true  // Special flag for OTH
+      confirmText: 'אישור'
     },
     bit: {
-      title: 'Bit - העברה ל',
-      phone: '055-6822072',
+      title: 'Bit - להעברה ל 055-6822072',
       subtitle: 'העברה באפליקציה',
-      icon: Smartphone,
-      iconBg: 'bg-pink-50',
-      iconColor: 'text-pink-600',
-      amountBg: 'bg-pink-50 border-pink-200',
-      amountColor: 'text-pink-600',
+      icon: CreditCard,
+      iconBg: 'bg-cyan-50',
+      iconColor: 'text-cyan-600',
+      amountBg: 'bg-cyan-50 border-cyan-200',
+      amountColor: 'text-cyan-600',
       instructions: [
         '⚠️ חשוב! בקש מהלקוח להשאיר את שדה הסיבה ריק',
         'ודא שהלקוח שולח למספר: 055-6822072',
@@ -257,14 +260,13 @@ const PaymentSelectionModal = ({
       confirmText: 'קיבלתי אישור'
     },
     paybox: {
-      title: 'Paybox - העברה ל',
-      phone: '055-6822072',
+      title: 'Paybox - להעברה ל 055-6822072',
       subtitle: 'העברה באפליקציה',
-      icon: Wallet,
-      iconBg: 'bg-cyan-50',
-      iconColor: 'text-cyan-600',
-      amountBg: 'bg-cyan-50 border-cyan-200',
-      amountColor: 'text-cyan-600',
+      icon: CreditCard,
+      iconBg: 'bg-pink-50',
+      iconColor: 'text-pink-600',
+      amountBg: 'bg-pink-50 border-pink-200',
+      amountColor: 'text-pink-600',
       instructions: [
         'ודא שהלקוח שולח למספר: 055-6822072',
         'המתן לקבלת אישור העברה',
@@ -286,67 +288,61 @@ const PaymentSelectionModal = ({
       >
         <div
           className="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-4 overflow-hidden flex flex-col"
-          style={{ maxHeight: '82vh' }}
           onClick={e => e.stopPropagation()}
         >
-          <div className="p-4 border-b border-slate-100">
+          {/* Header - More spacious like GitHub version */}
+          <div className="p-6 border-b border-slate-100">
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 ${config?.iconBg} rounded-full flex items-center justify-center ${config?.iconColor} border border-slate-100`}>
-                <IconComponent size={20} />
+              <div className={`w-12 h-12 ${config?.iconBg} rounded-full flex items-center justify-center ${config?.iconColor} border border-slate-100`}>
+                <IconComponent size={24} />
               </div>
               <div>
-                <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                  <span>{config?.title}</span>
-                  {config?.phone && (
-                    <span className="px-2 py-0.5 rounded-xl border-2 border-slate-200 bg-slate-50 text-slate-700 text-lg tabular-nums">
-                      {config?.phone}
-                    </span>
-                  )}
-                </h2>
-                <p className="text-xs text-slate-400">{config?.subtitle}</p>
+                <h2 className="text-xl font-black text-slate-800">{config?.title}</h2>
+                <p className="text-sm text-slate-400">{config?.subtitle}</p>
               </div>
             </div>
           </div>
 
-          <div className="flex-1 p-6 flex flex-col items-center justify-center space-y-4">
-            <div className={`w-full ${config?.amountBg} border-2 rounded-2xl p-8 text-center`}>
-              <p className="text-sm font-bold mb-2 text-slate-600">
+          <div className="flex-1 p-8 flex flex-col items-center justify-center space-y-8">
+            {/* Amount Display - BOLD & LARGE (7xl) like GitHub version */}
+            <div className={`w-full ${config?.amountBg} border-2 rounded-3xl p-8 text-center`}>
+              {/* Show discounts breakdown if any */}
+              {(soldierDiscountAmount > 0 || loyaltyDiscount > 0) && (
+                <div className="text-sm text-slate-500 mb-4 space-y-1">
+                  <p>סהכ לפני הנחות: {formatPrice(subtotal)}</p>
+                  {soldierDiscountAmount > 0 && (
+                    <p className="text-blue-600">🎖️ הנחת חייל (10%): -{formatPrice(soldierDiscountAmount)}</p>
+                  )}
+                  {loyaltyDiscount > 0 && (
+                    <p className="text-green-600">🎁 הנחת נאמנות: -{formatPrice(loyaltyDiscount)}</p>
+                  )}
+                </div>
+              )}
+              <p className="text-sm font-bold mb-3 text-slate-600">
                 {isRefund ? 'סכום לזיכוי:' : 'סכום לתשלום:'}
               </p>
-              {config?.showZeroPrice ? (
-                <div className="flex items-center justify-center gap-4">
-                  <span className="text-2xl font-bold text-slate-400 line-through">
-                    {formatPrice(cartTotal)}
-                  </span>
-                  <span className={`text-6xl font-black ${config?.amountColor}`}>
-                    ₪0
-                  </span>
-                </div>
-              ) : (
-                <p className={`text-6xl font-black ${config?.amountColor}`}>
-                  {formatPrice(isRefund ? refundAmount : finalPrice)}{isRefund ? '-' : ''}
-                </p>
-              )}
+              <p className={`text-5xl font-black ${config?.amountColor}`}>
+                {pendingPaymentMethod === 'oth' ? formatPrice(0) : formatPrice(isRefund ? refundAmount : finalPrice)}{isRefund && pendingPaymentMethod !== 'oth' ? '-' : ''}
+              </p>
             </div>
 
-            <div className="w-full bg-slate-50 rounded-2xl p-4 space-y-2">
+            {/* Instructions */}
+            <div className="w-full space-y-2 text-center">
               {config?.instructions.map((instruction, idx) => (
-                <div key={idx} className="flex items-start gap-3">
-                  <div className="w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center text-sm font-bold text-slate-600 flex-shrink-0">
-                    {idx + 1}
-                  </div>
-                  <p className="text-sm text-slate-700 font-medium">{instruction}</p>
-                </div>
+                <p key={idx} className="text-base text-slate-700 font-medium">
+                  {instruction}
+                </p>
               ))}
             </div>
           </div>
 
-          <div className="p-4 border-t border-slate-100">
-            <div className="flex gap-4">
+          {/* Footer Buttons - Larger (h-14) like GitHub version */}
+          <div className="p-6 border-t border-slate-100">
+            <div className="flex gap-3">
               <button
                 onClick={handleCancelInstruction}
                 disabled={isProcessing}
-                className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-xl transition disabled:opacity-50"
+                className="flex-1 h-14 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-xl transition disabled:opacity-50"
               >
                 חזור
               </button>
@@ -354,7 +350,7 @@ const PaymentSelectionModal = ({
               <button
                 onClick={handleConfirmPayment}
                 disabled={isProcessing}
-                className={`flex-[2] py-4 ${isRefund ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'} text-white rounded-xl font-bold text-xl transition shadow-lg disabled:opacity-50 flex items-center justify-center gap-2`}
+                className={`flex-[2] h-14 ${isRefund ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'} text-white rounded-2xl font-bold text-xl transition shadow-lg disabled:opacity-50 flex items-center justify-center gap-2`}
               >
                 {isProcessing ? (
                   <span>מעבד...</span>
@@ -372,18 +368,14 @@ const PaymentSelectionModal = ({
     );
   }
 
-  // Payment Methods for Selection Grid - Main row
-  const PAYMENT_METHODS_MAIN = [
+  // Payment Methods for Selection Grid
+  const PAYMENT_METHODS = [
     { id: 'cash', label: 'מזומן', icon: Banknote, color: 'bg-green-100 text-green-700 hover:bg-green-200' },
     { id: 'credit_card', label: 'אשראי', icon: CreditCard, color: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
-  ];
-
-  // Payment Methods - Secondary row
-  const PAYMENT_METHODS_SECONDARY = [
-    { id: 'bit', label: 'ביט', icon: Smartphone, color: 'bg-pink-100 text-pink-700 hover:bg-pink-200' },
-    { id: 'paybox', label: 'פייבוקס', icon: Wallet, color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200' },
+    { id: 'bit', label: 'ביט', icon: CreditCard, color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200' },
+    { id: 'paybox', label: 'פייבוקס', icon: CreditCard, color: 'bg-pink-100 text-pink-700 hover:bg-pink-200' },
     { id: 'gift_card', label: 'שובר', icon: Gift, color: 'bg-purple-100 text-purple-700 hover:bg-purple-200' },
-    { id: 'oth', label: 'ע״ח הבית', icon: Star, color: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
+    { id: 'oth', label: 'OTH', icon: Star, color: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
   ];
 
   // Selection Screen - Compact Design (reduced 20%)
@@ -395,7 +387,7 @@ const PaymentSelectionModal = ({
     >
       <div
         className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden flex flex-col"
-        style={{ maxHeight: '90vh' }}
+        style={{ maxHeight: '72vh' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header - Compact */}
@@ -426,8 +418,8 @@ const PaymentSelectionModal = ({
           </div>
         </div>
 
-        {/* Main Content - Compact, No Scroll */}
-        <div className="flex-1 p-4 space-y-4 overflow-hidden">
+        {/* Main Content - Compact, Scrollable */}
+        <div className="flex-1 p-4 space-y-4 overflow-y-auto">
 
           {/* Totals Summary - Compact */}
           <div className={`${isRefund ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'} border-2 rounded-2xl p-4`}>
@@ -439,43 +431,44 @@ const PaymentSelectionModal = ({
             </div>
           </div>
 
-          {/* Payment Methods Grid - Main (2 big buttons) */}
+          {/* Payment Methods Grid - Compact */}
           <div>
-            <h3 className="text-base font-bold text-slate-800 mb-2">אמצעי תשלום</h3>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              {PAYMENT_METHODS_MAIN.map(method => (
-                <button
-                  key={method.id}
-                  onClick={() => handlePaymentMethodSelect(method.id)}
-                  disabled={isProcessing}
-                  className={cn(
-                    "flex flex-col items-center justify-center gap-2 p-6 rounded-xl transition-all border-2 border-transparent",
-                    method.color,
-                    "hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md"
-                  )}
-                >
-                  <method.icon size={32} />
-                  <span className="font-bold text-xl">{method.label}</span>
-                </button>
-              ))}
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-base font-bold text-slate-800">אמצעי {isRefund ? 'החזר' : 'תשלום'}</h3>
+              {isRefund && originalPaymentMethod && (
+                <div className="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded-full font-black border border-amber-200 animate-pulse">
+                  תשלום מקורי: {PAYMENT_METHODS.find(m => m.id === originalPaymentMethod)?.label || originalPaymentMethod}
+                </div>
+              )}
             </div>
-            {/* Secondary row - 4 smaller buttons */}
+
             <div className="grid grid-cols-4 gap-2">
-              {PAYMENT_METHODS_SECONDARY.map(method => (
-                <button
-                  key={method.id}
-                  onClick={() => handlePaymentMethodSelect(method.id)}
-                  disabled={isProcessing}
-                  className={cn(
-                    "flex flex-col items-center justify-center gap-1.5 p-4 rounded-xl transition-all border border-transparent",
-                    method.color,
-                    "hover:scale-[1.02] active:scale-[0.98] shadow-sm text-xs"
-                  )}
-                >
-                  <method.icon size={22} />
-                  <span className="font-bold">{method.label}</span>
-                </button>
-              ))}
+              {PAYMENT_METHODS.map(method => {
+                const isOriginal = isRefund && method.id === originalPaymentMethod;
+
+                return (
+                  <button
+                    key={method.id}
+                    onClick={() => handlePaymentMethodSelect(method.id)}
+                    disabled={isProcessing}
+                    className={cn(
+                      "flex flex-col items-center justify-center gap-1.5 rounded-xl transition-all border-2",
+                      method.color,
+                      isOriginal ? "border-amber-500 ring-4 ring-amber-200 shadow-lg scale-[1.05] z-10" : "border-transparent",
+                      "hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md",
+                      ['cash', 'credit_card'].includes(method.id) ? 'col-span-2 h-32 p-4' : 'col-span-1 h-20 p-2'
+                    )}
+                  >
+                    <method.icon size={24} />
+                    <span className="font-bold text-sm truncate w-full text-center">
+                      {isRefund ? `זיכוי ${method.label}` : method.label}
+                    </span>
+                    {isOriginal && (
+                      <span className="text-[10px] font-black opacity-80 mt-1">מומלץ</span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -486,10 +479,10 @@ const PaymentSelectionModal = ({
           <button
             onClick={handlePayLater}
             disabled={isProcessing}
-            className="w-full py-4 bg-white border-2 border-amber-400 text-amber-700 rounded-xl font-bold text-xl hover:bg-amber-50 transition shadow-sm flex flex-col items-center justify-center gap-0.5"
+            className="w-full py-3 bg-white border-2 border-amber-400 text-amber-700 rounded-xl font-bold text-lg hover:bg-amber-50 transition shadow-sm flex flex-col items-center justify-center gap-0.5"
           >
             <div className="flex items-center gap-2">
-              <Clock size={24} />
+              <Clock size={20} />
               <span>שלח למטבח (תשלום אחר כך)</span>
             </div>
             <span className="text-xs font-medium opacity-70">ההזמנה תופיע ב-KDS כטרם שולמה</span>

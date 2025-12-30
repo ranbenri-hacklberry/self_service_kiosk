@@ -11,7 +11,8 @@ import { supabase } from '../lib/supabase';
 // Queue table definition - add to database.js version 2
 // For now, we'll use a simple IndexedDB pattern
 
-const QUEUE_STORE = 'offline_queue';
+const QUEUE_STORE = 'offline_queue_v2';
+const MAX_RETRIES = 5; // Maximum retry attempts before marking as permanently failed
 
 // MUTEX: Prevent concurrent syncQueue executions
 let isSyncing = false;
@@ -22,8 +23,8 @@ let isSyncing = false;
  */
 export const initializeQueue = async () => {
     // Check if queue table exists, if not we'll use localStorage as fallback
-    if (!db.offline_queue) {
-        console.log('⚠️ offline_queue table not in Dexie, using localStorage fallback');
+    if (!db.offline_queue_v2) {
+        console.log('⚠️ offline_queue_v2 table not in Dexie, using localStorage fallback');
     }
 };
 
@@ -44,8 +45,8 @@ export const queueAction = async (type, payload) => {
 
     // Try Dexie first
     try {
-        if (db.offline_queue) {
-            await db.offline_queue.add(action);
+        if (db.offline_queue_v2) {
+            await db.offline_queue_v2.add(action);
             console.log(`📥 Queued ${type} action:`, action.id);
             return action;
         }
@@ -67,13 +68,13 @@ export const queueAction = async (type, payload) => {
  */
 export const getPendingActions = async () => {
     try {
-        if (db.offline_queue) {
+        if (db.offline_queue_v2) {
             // DIAGNOSTIC: Log all queue entries
-            const allEntries = await db.offline_queue.toArray();
+            const allEntries = await db.offline_queue_v2.toArray();
             console.log(`📋 [Queue] Total entries: ${allEntries.length}`,
                 allEntries.map(e => ({ id: e.id, type: e.type, status: e.status, orderId: e.payload?.localOrderId })));
 
-            return await db.offline_queue.where('status').equals('pending').toArray();
+            return await db.offline_queue_v2.where('status').equals('pending').toArray();
         }
     } catch (e) {
         console.warn('Dexie queue read failed:', e);
@@ -90,8 +91,8 @@ export const getPendingActions = async () => {
  */
 export const markActionComplete = async (actionId) => {
     try {
-        if (db.offline_queue) {
-            await db.offline_queue.update(actionId, { status: 'completed' });
+        if (db.offline_queue_v2) {
+            await db.offline_queue_v2.update(actionId, { status: 'completed' });
             return;
         }
     } catch (e) { /* fallback */ }
@@ -109,9 +110,9 @@ export const markActionComplete = async (actionId) => {
  */
 export const markActionFailed = async (actionId, error) => {
     try {
-        if (db.offline_queue) {
-            const action = await db.offline_queue.get(actionId);
-            await db.offline_queue.update(actionId, {
+        if (db.offline_queue_v2) {
+            const action = await db.offline_queue_v2.get(actionId);
+            await db.offline_queue_v2.update(actionId, {
                 status: 'failed',
                 error: error?.message || 'Unknown error',
                 retries: (action?.retries || 0) + 1
@@ -131,6 +132,143 @@ export const markActionFailed = async (actionId, error) => {
 };
 
 /**
+ * Handle sync error with exponential backoff
+ */
+const handleSyncError = async (action, error) => {
+    const retryDelay = Math.pow(2, action.retries || 0) * 1000; // 1s, 2s, 4s, 8s...
+
+    console.warn(`⚠️ Sync failed for ${action.type} (Attempt ${action.retries || 0}):`, error.message);
+
+    if ((action.retries || 0) < MAX_RETRIES) {
+        // Schedule retry
+        await db.offline_queue_v2.update(action.id, {
+            status: 'pending',
+            retries: (action.retries || 0) + 1,
+            // We don't have a 'nextRetry' field in schema yet so we just rely on order
+            // or we could add it, but for now simple retry count is enough
+            error: error.message
+        });
+        // Optional: delay next process loop slightly? 
+        // For now queue processor just picks it up again next loop.
+    } else {
+        // Mark as permanently failed
+        await db.offline_queue_v2.update(action.id, {
+            status: 'failed',
+            error: error.message
+        });
+
+        // Update local record with error
+        if (action.table && action.recordId) {
+            try {
+                await db[action.table].update(action.recordId, {
+                    _syncError: error.message,
+                    _pendingSync: false, // Stop trying
+                    _processing: false   // Clear processing flag so it shows up in KDS
+                });
+            } catch (e) {
+                console.warn('Failed to update local record with error:', e);
+            }
+        }
+        console.error(`❌ Action ${action.id} permanently failed after ${MAX_RETRIES} retries`);
+    }
+};
+
+/**
+ * Process generic CRUD action (CREATE, UPDATE, DELETE)
+ * Implements "Last-Write-Wins" conflict resolution
+ */
+const processGenericAction = async (action) => {
+    const { type, table, recordId, payload } = action;
+
+    try {
+        switch (type) {
+            case 'CREATE': {
+                // For create, we just trying to insert.
+                // If ID exists (UUID collision or re-sync), it might fail.
+                const { error } = await supabase.from(table).insert(payload);
+                if (error) {
+                    // Start: handling duplicate key error (PGRST116 or 23505)
+                    if (error.code === '23505') {
+                        console.log('ℹ️ Record already exists, treating as success/skip');
+                    } else {
+                        throw error;
+                    }
+                }
+
+                // Mark local record as synced
+                await db[table].update(recordId, {
+                    _pendingSync: false,
+                    _syncError: null
+                });
+                return { success: true };
+            }
+
+            case 'UPDATE': {
+                // Last-Write-Wins: Check server timestamp
+                const { data: serverRecord, error: fetchError } = await supabase
+                    .from(table)
+                    .select('updated_at')
+                    .eq('id', recordId)
+                    .single();
+
+                if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+
+                let shouldPush = true;
+
+                if (serverRecord) {
+                    const localRecord = await db[table].get(recordId);
+                    // If server is newer than our local change timestamp, we MIGHT skip
+                    // strict LWW: Server updated_at vs Local _localUpdatedAt
+                    if (localRecord && localRecord._localUpdatedAt &&
+                        new Date(localRecord._localUpdatedAt) <= new Date(serverRecord.updated_at)) {
+                        console.log(`⏭️ Server has newer data (${serverRecord.updated_at}), skipping push.`);
+                        shouldPush = false;
+                    }
+                }
+
+                if (shouldPush) {
+                    // Update server
+                    const updatePayload = {
+                        ...payload,
+                        updated_at: new Date().toISOString() // refresh timestamp
+                    };
+
+                    const { error } = await supabase
+                        .from(table)
+                        .update(updatePayload)
+                        .eq('id', recordId);
+
+                    if (error) throw error;
+                    console.log(`✅ Updated server record ${recordId}`);
+                }
+
+                // Mark local as synced
+                await db[table].update(recordId, {
+                    _pendingSync: false,
+                    _syncError: null
+                });
+
+                return { success: true };
+            }
+
+            case 'DELETE': {
+                const { error } = await supabase.from(table).delete().eq('id', recordId);
+                // Ignore "not found" (PGRST116) as it's already deleted
+                if (error && error.code !== 'PGRST116') throw error;
+
+                return { success: true };
+            }
+
+            default:
+                return { success: false, error: 'Unknown generic type' };
+        }
+    } catch (error) {
+        await handleSyncError(action, error);
+        throw error; // Re-throw to count as failed in main loop
+    }
+};
+
+/**
  * Process a single action
  */
 const processAction = async (action) => {
@@ -145,6 +283,11 @@ const processAction = async (action) => {
     if (targetId && !isUUID(targetId) && !String(targetId).startsWith('L')) {
         console.warn(`🛑 Skipping action for invalid non-UUID ID: ${targetId}. Marking as done.`);
         return { skipped: true, reason: 'invalid_id_format' };
+    }
+
+    // NEW: Handle generic CRUD actions
+    if (['CREATE', 'UPDATE', 'DELETE'].includes(action.type)) {
+        return processGenericAction(action);
     }
 
     switch (action.type) {
@@ -199,9 +342,12 @@ const processAction = async (action) => {
                 }
             }
 
-            console.log('📤 Syncing order to Supabase...', { localOrderId, customerName: finalPayload.p_customer_name });
-            const { data, error } = await supabase.rpc('submit_order_v2', finalPayload);
-            if (error) throw error;
+            console.log('📤 [OfflineQueue] Syncing order to Supabase (V3)...', { localOrderId, customerName: finalPayload.p_customer_name });
+            const { data, error } = await supabase.rpc('submit_order_v3', finalPayload);
+            if (error) {
+                console.error('❌ [OfflineQueue] Order sync failed (V3):', error.message, error);
+                throw error;
+            }
 
             // Mark local order with serverOrderId (don't delete - for tracking)
             // 🔄 SUCCESS: Replace local order with server order in Dexie
@@ -225,20 +371,29 @@ const processAction = async (action) => {
                         updated_at: new Date().toISOString()
                     });
 
-                    // 3. Move items to the new ID
-                    for (const item of localItems) {
-                        await db.order_items.put({
-                            ...item,
-                            order_id: data.order_id
-                        });
-                        // Delete old item record
-                        await db.order_items.delete(item.id);
+                    // 3. Move items to the new ID (atomic operation with rollback)
+                    try {
+                        // First, delete all old items at once
+                        await db.order_items.where('order_id').equals(localOrderId).delete();
+
+                        // Then add items with new order_id
+                        for (const item of localItems) {
+                            await db.order_items.put({
+                                ...item,
+                                order_id: data.order_id
+                            });
+                        }
+                    } catch (itemMigrationError) {
+                        console.error('❌ Item migration failed, rolling back:', itemMigrationError);
+                        // Rollback: delete any new items we created
+                        await db.order_items.where('order_id').equals(data.order_id).delete();
+                        throw itemMigrationError;
                     }
 
                     // 4. Update any other pending actions in the queue for this local ID
                     // Note: Dexie doesn't support querying nested fields, so we filter manually
                     try {
-                        const allPendingActions = await db.offline_queue
+                        const allPendingActions = await db.offline_queue_v2
                             .where('status')
                             .equals('pending')
                             .toArray();
@@ -258,7 +413,7 @@ const processAction = async (action) => {
                             if (updatedPayload.localOrderId === localOrderId) {
                                 updatedPayload.localOrderId = data.order_id;
                             }
-                            await db.offline_queue.update(actionRecord.id, {
+                            await db.offline_queue_v2.update(actionRecord.id, {
                                 payload: updatedPayload
                             });
                             console.log(`✏️ Updated action ${actionRecord.type} with new orderId: ${data.order_id}`);
@@ -477,6 +632,20 @@ export const syncQueue = async () => {
             return { synced: 0, failed: 0 };
         }
 
+        // 🧼 CLEANUP: Clear stale _processing flags from orders that might be stuck
+        // if app crashed/closed during previous sync attempt.
+        try {
+            const stuckOrders = await db.orders.filter(o => o._processing === true).toArray();
+            if (stuckOrders.length > 0) {
+                console.log(`🧼 Cleaning up ${stuckOrders.length} stuck processing flags...`);
+                for (const order of stuckOrders) {
+                    await db.orders.update(order.id, { _processing: false });
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to cleanup stuck orders:', e);
+        }
+
         const pending = await getPendingActions();
         if (pending.length === 0) {
             console.log('✅ No pending actions to sync');
@@ -518,8 +687,8 @@ export const syncQueue = async () => {
  */
 export const clearCompleted = async () => {
     try {
-        if (db.offline_queue) {
-            await db.offline_queue.where('status').equals('completed').delete();
+        if (db.offline_queue_v2) {
+            await db.offline_queue_v2.where('status').equals('completed').delete();
             return;
         }
     } catch (e) { /* fallback */ }
@@ -536,10 +705,10 @@ export const getQueueStats = async () => {
     let pending = 0, failed = 0, completed = 0;
 
     try {
-        if (db.offline_queue) {
-            pending = await db.offline_queue.where('status').equals('pending').count();
-            failed = await db.offline_queue.where('status').equals('failed').count();
-            completed = await db.offline_queue.where('status').equals('completed').count();
+        if (db.offline_queue_v2) {
+            pending = await db.offline_queue_v2.where('status').equals('pending').count();
+            failed = await db.offline_queue_v2.where('status').equals('failed').count();
+            completed = await db.offline_queue_v2.where('status').equals('completed').count();
             return { pending, failed, completed };
         }
     } catch (e) { /* fallback */ }

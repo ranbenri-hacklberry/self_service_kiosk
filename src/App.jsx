@@ -1,7 +1,9 @@
 import React, { useEffect } from "react";
 import Routes from "./Routes";
 import { ConnectionProvider } from "@/context/ConnectionContext";
+import OfflineProvider from "@/context/OfflineContext";
 import ConnectionStatusBar from "@/components/ConnectionStatusBar";
+import SyncStatusModal from "@/components/SyncStatusModal";
 
 function App() {
   // Fix for Cloudflare Error 1013: Clear large/overlapping cookies to reduce header size

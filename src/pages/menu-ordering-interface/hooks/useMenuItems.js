@@ -54,7 +54,7 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
         return false;
     }, []);
 
-    // Fetch menu items - OFFLINE FIRST
+    // Fetch menu items from Supabase with Caching
     const fetchMenuItems = useCallback(async () => {
         if (!businessId) {
             console.log('⏳ useMenuItems: Waiting for businessId...');
@@ -65,52 +65,26 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
         const targetBusinessId = businessId;
         const CACHE_KEY = `menu_items_cache_${targetBusinessId}`;
         const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-        const isOnline = navigator.onLine;
 
-        // 1. Try sessionStorage cache first (fastest)
+        // 1. Try to load from Cache first
         try {
             const cachedRaw = sessionStorage.getItem(CACHE_KEY);
             if (cachedRaw) {
                 const cached = JSON.parse(cachedRaw);
                 const age = Date.now() - cached.timestamp;
 
-                if (age < CACHE_DURATION || !isOnline) {
-                    console.log(isOnline ? '⚡ Using cached menu items' : '📴 Offline: Using cached menu items');
+                if (age < CACHE_DURATION) {
+                    console.log('⚡ Using cached menu items');
                     setRawMenuData(cached.data);
-                    setMenuLoading(false);
-                    if (!isOnline || age < CACHE_DURATION) return;
+                    setMenuLoading(false); // Show immediately
+                    return; // Skip network fetch if cache is fresh
                 }
             }
         } catch (e) {
             console.warn('Failed to read menu cache', e);
         }
 
-        // 2. If offline and no sessionStorage, try Dexie
-        if (!isOnline) {
-            console.log('📴 Offline: Trying Dexie local database...');
-            try {
-                const { db } = await import('../../../db/database');
-                const localItems = await db.menu_items
-                    .where('business_id')
-                    .equals(targetBusinessId)
-                    .toArray();
-
-                if (localItems && localItems.length > 0) {
-                    console.log(`📴 Loaded ${localItems.length} items from Dexie`);
-                    setRawMenuData(localItems);
-                    setMenuLoading(false);
-                    return;
-                }
-            } catch (e) {
-                console.warn('Dexie fallback failed:', e);
-            }
-
-            setError('אין חיבור לאינטרנט ואין נתונים מקומיים');
-            setMenuLoading(false);
-            return;
-        }
-
-        // 3. Online: Network Fetch
+        // 2. Network Fetch (if no cache or expired)
         try {
             setMenuLoading(true);
             setError(null);
@@ -119,7 +93,7 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
 
             let query = supabase
                 .from('menu_items')
-                .select('id, name, price, category, image_url, is_hot_drink, kds_routing_logic, allow_notes, is_in_stock, description, business_id')
+                .select('id, name, price, category, image_url, is_hot_drink, kds_routing_logic, allow_notes, is_in_stock, description')
                 .eq('business_id', targetBusinessId)
                 .not('is_in_stock', 'eq', false)
                 .order('category', { ascending: true })
@@ -136,59 +110,26 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
             // Update State
             setRawMenuData(cleanData);
 
-            // Update sessionStorage Cache
+            // Update Cache
             try {
                 sessionStorage.setItem(CACHE_KEY, JSON.stringify({
                     timestamp: Date.now(),
                     data: cleanData
                 }));
             } catch (e) {
-                console.warn('Failed to save menu to sessionStorage', e);
-            }
-
-            // Also save to Dexie for offline access
-            try {
-                const { db } = await import('../../../db/database');
-                await db.menu_items.bulkPut(cleanData);
-                console.log(`💾 Saved ${cleanData.length} items to Dexie`);
-
-                // Pre-cache images for offline use (fire and forget)
-                import('../../../services/imageCache').then(({ preCacheMenuImages }) => {
-                    preCacheMenuImages(cleanData);
-                }).catch(e => console.warn('Image pre-cache failed:', e));
-            } catch (e) {
-                console.warn('Failed to save menu to Dexie:', e);
+                console.warn('Failed to save menu to cache', e);
             }
 
         } catch (err) {
-            console.error('Network fetch failed:', err);
+            console.error('Unexpected error:', err);
             setError('שגיאה בטעינת התפריט. אנא נסה שוב.');
 
-            // Fallback: Use expired sessionStorage cache
-            try {
-                const cachedRaw = sessionStorage.getItem(CACHE_KEY);
-                if (cachedRaw) {
-                    const cached = JSON.parse(cachedRaw);
-                    setRawMenuData(cached.data);
-                    console.log('⚠️ Network failed, using expired cache');
-                    return;
-                }
-            } catch (e) { /* ignore */ }
-
-            // Fallback: Try Dexie
-            try {
-                const { db } = await import('../../../db/database');
-                const localItems = await db.menu_items
-                    .where('business_id')
-                    .equals(targetBusinessId)
-                    .toArray();
-
-                if (localItems && localItems.length > 0) {
-                    setRawMenuData(localItems);
-                    console.log('⚠️ Network failed, using Dexie cache');
-                }
-            } catch (e) {
-                console.warn('Dexie fallback failed:', e);
+            // Fallback: Use expired cache if network fails
+            const cachedRaw = sessionStorage.getItem(CACHE_KEY);
+            if (cachedRaw) {
+                const cached = JSON.parse(cachedRaw);
+                setRawMenuData(cached.data);
+                console.log('⚠️ Network failed, using expired cache');
             }
         } finally {
             setMenuLoading(false);

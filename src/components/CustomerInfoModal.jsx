@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Phone, User, Check, Loader2, UserCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import NumericKeypad from '@/components/NumericKeypad';
+import NumericKeypad from '@/pages/customer-phone-input-screen/components/NumericKeypad';
 
 /**
  * CustomerInfoModal - Unified modal for collecting/editing customer phone and name
@@ -34,27 +34,13 @@ const CustomerInfoModal = ({
     const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
     const [pendingCustomer, setPendingCustomer] = useState(null);
 
-    const wasOpen = useRef(false);
-
     // Initialize state when modal opens
     useEffect(() => {
-        if (isOpen && !wasOpen.current) {
+        if (isOpen) {
             // Reset state
-            const rawPhone = currentCustomer?.phone || '';
-            const cleanPhone = rawPhone.replace(/\D/g, '');
-            // Only pre-fill if it's a REAL 10-digit phone starting with 05
-            // Avoid pre-filling internal GUEST_ IDs or UUIDs
-            if (cleanPhone.length === 10 && cleanPhone.startsWith('05')) {
-                setPhoneNumber(cleanPhone);
-            } else {
-                setPhoneNumber('');
-            }
-
-            // Clear name if it's a generic placeholder or starts with #
-            const genericNames = ['הזמנה מהירה', 'אורח', 'אורח/ת', 'אורח כללי', 'אורח אנונימי'];
-            const name = currentCustomer?.name || '';
-            const isGeneric = genericNames.includes(name) || name.startsWith('#') || name.startsWith('GUEST_');
-            setCustomerName(isGeneric ? '' : name);
+            setPhoneNumber(currentCustomer?.phone || '');
+            // Clear name if it's "הזמנה מהירה" or empty
+            setCustomerName(currentCustomer?.name === 'הזמנה מהירה' ? '' : (currentCustomer?.name || ''));
             setError('');
             setLookupResult(null);
             setIsLoading(false);
@@ -68,7 +54,6 @@ const CustomerInfoModal = ({
                 setTimeout(() => nameInputRef.current?.focus(), 100);
             }
         }
-        wasOpen.current = isOpen;
     }, [isOpen, mode, currentCustomer]);
 
     if (!isOpen) return null;
@@ -121,20 +106,26 @@ const CustomerInfoModal = ({
 
         try {
             let data = null;
+            let lookupError = null;
 
-            // OFFLINE FALLBACK: Search in local Dexie
+            // OFFLINE FALLBACK: Check Dexie first if offline
             if (!navigator.onLine) {
-                console.log('📴 Offline: Searching customer locally');
+                console.log('📴 Offline: Looking up customer in Dexie...');
                 try {
-                    const { db } = await import('../db/database');
+                    const { db: dynamicDb } = await import('../db/database');
+                    const allCustomers = await dynamicDb.customers.toArray();
+                    console.log(`📴 Dexie Lookup: Total customers in cache: ${allCustomers.length}`);
 
-                    // Search by phone or phone_number
-                    let customer = await db.customers.where('phone').equals(cleanPhone).first();
-                    if (!customer) {
-                        customer = await db.customers.where('phone_number').equals(cleanPhone).first();
-                    }
+                    const matchingCustomers = allCustomers.filter(c => {
+                        const storedPhone = (c.phone_number || c.phone || '').toString().replace(/\D/g, '');
+                        const phoneMatch = storedPhone === cleanPhone;
+                        const businessMatch = !currentUser?.business_id || c.business_id === currentUser.business_id;
+                        return phoneMatch && businessMatch;
+                    });
 
-                    if (customer) {
+                    if (matchingCustomers.length > 0) {
+                        const customer = matchingCustomers[0];
+                        console.log(`✅ Found customer offline: ${customer.name}`);
                         data = {
                             success: true,
                             isNewCustomer: false,
@@ -144,30 +135,28 @@ const CustomerInfoModal = ({
                                 loyalty_coffee_count: customer.loyalty_coffee_count || 0
                             }
                         };
-                        console.log('📴 Found customer locally:', customer.name);
                     } else {
-                        // New customer
                         data = { success: true, isNewCustomer: true };
-                        console.log('📴 Customer not found locally, treating as new');
                     }
-                } catch (dexieErr) {
-                    console.warn('Dexie lookup failed:', dexieErr);
-                    // Treat as new customer if Dexie fails
+                } catch (e) {
+                    console.warn('Dexie customer lookup failed:', e);
                     data = { success: true, isNewCustomer: true };
                 }
             } else {
-                // ONLINE: Use Supabase RPC
-                const { data: rpcData, error: lookupError } = await supabase.rpc('lookup_customer', {
+                // ONLINE: Use RPC
+                const result = await supabase.rpc('lookup_customer', {
                     p_phone: cleanPhone,
                     p_business_id: currentUser?.business_id || null
                 });
 
-                if (lookupError) throw lookupError;
-                data = rpcData;
-            }
+                data = result.data;
+                lookupError = result.error;
 
-            if (!data) {
-                data = { success: true, isNewCustomer: true };
+                if (lookupError) {
+                    console.error('❌ RPC Lookup Error:', lookupError);
+                    throw lookupError;
+                }
+                console.log('📡 RPC Lookup result:', data);
             }
 
             setLookupResult(data);
@@ -181,33 +170,17 @@ const CustomerInfoModal = ({
                     loyalty_coffee_count: data.customer.loyalty_coffee_count || 0
                 };
 
-                // Trigger switch confirmation if it's a guest order OR if it's a different customer ID
-                const isGuest = !currentCustomer?.id || ['הזמנה מהירה', 'אורח', 'אורח/ת', 'אורח כללי', 'אורח אנונימי'].includes(currentCustomer?.name) || (typeof currentCustomer?.name === 'string' && currentCustomer.name.startsWith('#'));
-                const isDifferentCustomer = (currentCustomer?.id && currentCustomer.id !== foundCustomer.id) || isGuest;
-
-                if (isDifferentCustomer) {
-                    // Show custom confirmation modal
-                    setPendingCustomer(foundCustomer);
-                    setShowSwitchConfirm(true);
-                    setIsLoading(false);
-                    return;
-                }
-
-                // If editing an order (KDS flow), update it
-                if (orderId) {
-                    await updateOrderCustomer(orderId, foundCustomer);
-                }
-
-                // Return customer data
-                onCustomerUpdate?.(foundCustomer);
-                onClose();
+                // ALWAYS show custom confirmation modal - "Existing customer found"
+                setPendingCustomer(foundCustomer);
+                setShowSwitchConfirm(true);
+                setIsLoading(false);
+                return;
             } else {
                 // New customer - advance to name entry
                 if (mode === 'phone-then-name') {
                     setStep('name');
                     setTimeout(() => nameInputRef.current?.focus(), 100);
                 } else {
-                    // Just phone mode - use existing name if available, otherwise 'אורח'
                     const customer = {
                         id: currentCustomer?.id || null,
                         phone: cleanPhone,
@@ -250,6 +223,11 @@ const CustomerInfoModal = ({
     const handleCancelSwitch = () => {
         setShowSwitchConfirm(false);
         setPendingCustomer(null);
+        // Go to name entry for new customer with the entered phone
+        if (mode === 'phone-then-name') {
+            setStep('name');
+            setTimeout(() => nameInputRef.current?.focus(), 100);
+        }
     };
 
     // Handle name submission
@@ -264,57 +242,102 @@ const CustomerInfoModal = ({
 
         try {
             const cleanPhone = phoneNumber.replace(/\D/g, '');
-            const existingPhone = currentCustomer?.phone?.replace(/\D/g, '');
-            const phoneToUse = cleanPhone.length === 10 ? cleanPhone : (existingPhone?.length === 10 ? existingPhone : null);
+            let customerId = currentCustomer?.id;
 
-            let finalCustomerId = currentCustomer?.id;
+            // OFFLINE MODE: Save customer locally in Dexie
+            if (!navigator.onLine) {
+                console.log('📴 Offline: Creating/Updating customer locally in Dexie...');
+                const { db: dynamicDb } = await import('../db/database');
 
-            console.log('👤 [CustomerInfoModal] Submitting name:', {
-                name: customerName.trim(),
-                phoneToUse,
-                existingId: finalCustomerId,
-                orderId
+                // CRITICAL: Check if this phone ALREADY exists in Dexie to avoid duplicates
+                if (cleanPhone && cleanPhone.length === 10) {
+                    const allCustomers = await dynamicDb.customers.toArray();
+                    const existing = allCustomers.find(c => {
+                        const stored = (c.phone_number || c.phone || '').toString().replace(/\D/g, '');
+                        return stored === cleanPhone && (!currentUser?.business_id || c.business_id === currentUser.business_id);
+                    });
+
+                    if (existing) {
+                        console.log('♻️ Found existing customer in Dexie by phone, updating instead of creating duplicate');
+                        customerId = existing.id;
+                    }
+                }
+
+                // Generate a temporary local ID if not updating
+                const finalId = customerId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+                const updatedCustomer = {
+                    id: finalId,
+                    name: customerName.trim(),
+                    phone_number: cleanPhone || null,
+                    phone: cleanPhone || null,
+                    business_id: currentUser?.business_id,
+                    updated_at: new Date().toISOString(),
+                    pending_sync: true // Mark for sync
+                };
+
+                await dynamicDb.customers.put(updatedCustomer);
+                console.log('✅ Customer saved locally:', updatedCustomer.name);
+
+                // Queue for sync
+                try {
+                    const { queueAction } = await import('../services/offlineQueue');
+                    await queueAction(customerId ? 'UPDATE_CUSTOMER' : 'CREATE_CUSTOMER', updatedCustomer);
+                } catch (queueError) {
+                    console.warn('Could not queue customer for sync:', queueError);
+                }
+
+                const resultCustomer = {
+                    id: finalId,
+                    phone: cleanPhone || null,
+                    name: customerName.trim(),
+                    loyalty_coffee_count: currentCustomer?.loyalty_coffee_count || 0
+                };
+
+                if (orderId) await updateOrderCustomer(orderId, resultCustomer);
+                onCustomerUpdate?.(resultCustomer);
+                onClose();
+                return;
+            }
+
+            // ONLINE MODE: Use RPC (Passing p_id to ensure update instead of duplicate)
+            const { data: customerData, error: rpcError } = await supabase.rpc('create_or_update_customer', {
+                p_business_id: currentUser?.business_id,
+                p_phone: cleanPhone || null,
+                p_name: customerName.trim(),
+                p_id: customerId || null
             });
 
-            // Step 1: Handle Customer Table Link (Only if phone is present)
-            if (phoneToUse) {
-                const { data: customerId, error: rpcError } = await supabase.rpc('upsert_customer_v2', {
-                    p_phone: phoneToUse,
-                    p_name: customerName.trim(),
-                    p_business_id: currentUser?.business_id
-                });
-                if (rpcError) throw rpcError;
-                finalCustomerId = customerId;
-                console.log('✅ Customer linked via phone:', finalCustomerId);
-            } else if (finalCustomerId && !finalCustomerId.toString().startsWith('local-')) {
-                // If it's an existing DB customer ID (not a local temp ID) but no phone, try to update name
-                // Ignore errors here as RLS might block non-admin updates to the customers table
-                try {
-                    await supabase
-                        .from('customers')
-                        .update({ name: customerName.trim() })
-                        .eq('id', finalCustomerId);
-                } catch (e) {
-                    console.warn('Silent failure updating customers table (expected for guest orders/non-admins):', e);
-                }
-            }
+            if (rpcError) throw rpcError;
+            customerId = customerData;
 
             const customer = {
-                id: finalCustomerId,
-                phone: phoneToUse,
+                id: customerId,
+                phone: cleanPhone || null,
                 name: customerName.trim(),
-                loyalty_coffee_count: currentCustomer?.loyalty_coffee_count || 0
+                loyalty_coffee_count: 0
             };
 
-            // Step 2: Direct Order Update (CRITICAL for KDS visibility)
-            // This RPC bypasses RLS and updates the orders.customer_name field immediately
-            if (orderId) {
-                console.log('📝 Updating order record...', orderId);
-                await updateOrderCustomer(orderId, customer);
-                console.log('✅ Order record updated');
+            // Cache to Dexie for offline use
+            try {
+                const { db } = await import('../db/database');
+                await db.customers.put({
+                    ...customer,
+                    phone_number: cleanPhone || null,
+                    business_id: currentUser?.business_id,
+                    updated_at: new Date().toISOString()
+                });
+                console.log('💾 Customer cached to Dexie');
+            } catch (e) {
+                console.warn('Could not cache customer:', e);
             }
 
-            // Step 3: Local state update
+            // If editing an order (KDS flow), update it
+            if (orderId) {
+                await updateOrderCustomer(orderId, customer);
+            }
+
+            // Return customer data
             onCustomerUpdate?.(customer);
             onClose();
         } catch (err) {
@@ -325,75 +348,84 @@ const CustomerInfoModal = ({
         }
     };
 
-    // Update order with customer info (KDS flow) - Uses RPC to bypass RLS
+    // Update order with customer info (KDS flow)
     const updateOrderCustomer = async (orderId, customer) => {
+        if (!orderId) return;
+
+        // CRITICAL: Clean the ID to be a valid UUID for the RPC
+        const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+        const match = orderId.toString().match(uuidRegex);
+        const cleanOrderId = match ? match[0] : orderId.toString();
+
+        const updateData = {
+            customer_id: customer.id,
+            customer_phone: customer.phone,
+            customer_name: customer.name
+        };
+
+        console.log('🔄 updateOrderCustomer starting...', { originalId: orderId, cleanId: cleanOrderId, updateData });
+
         try {
-            // Validate UUID or set to null for guests
-            const isUuid = (str) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
-            const validCustomerId = isUuid(customer.id) ? customer.id : null;
+            // 1. Update local Dexie immediately regardless of online status
+            // This ensures UI consistency across components even for staged orders
+            try {
+                const { db: dynamicDb } = await import('../db/database');
 
-            console.log('📡 [CustomerInfoModal] Updating order customer:', {
-                orderId,
-                validCustomerId,
-                name: customer.name,
-                online: navigator.onLine
-            });
-
-            // OFFLINE FALLBACK: Update locally and queue for sync
-            if (!navigator.onLine) {
-                try {
-                    const { db } = await import('../db/database');
-                    const { queueAction } = await import('../services/offlineQueue');
-
-                    // Update local order
-                    await db.orders.update(orderId, {
-                        customer_id: validCustomerId,
-                        customer_phone: customer.phone,
-                        customer_name: customer.name,
+                // Update ALL related orders (base + any stages)
+                const count = await dynamicDb.orders
+                    .where('id')
+                    .startsWith(cleanOrderId)
+                    .modify({
+                        ...updateData,
                         updated_at: new Date().toISOString()
                     });
 
-                    // Queue for later sync
-                    await queueAction('UPDATE_CUSTOMER', {
-                        orderId,
-                        customerId: validCustomerId,
-                        customerName: customer.name,
-                        customerPhone: customer.phone
-                    });
-
-                    console.log('📴 Customer update saved locally and queued');
-                    return;
-                } catch (offlineErr) {
-                    console.error('Offline customer update failed:', offlineErr);
-                    throw offlineErr;
-                }
+                console.log(`✅ Local Dexie updated: ${count} records modified`);
+            } catch (e) {
+                console.warn('Failed to update local cache:', e);
             }
 
-            // ONLINE: Use RPC to bypass RLS
-            const { error } = await supabase.rpc('update_order_customer', {
-                p_order_id: orderId,
+            // 2. If OFFLINE: Queue for later sync
+            if (!navigator.onLine) {
+                console.log('📴 Offline: Queuing order update for sync...');
+                try {
+                    const { queueAction } = await import('../services/offlineQueue');
+                    await queueAction('PATCH_ORDER', {
+                        id: cleanOrderId,
+                        ...updateData
+                    });
+                } catch (queueErr) {
+                    console.error('Failed to queue offline update:', queueErr);
+                }
+                return;
+            }
+
+            // 3. ONLINE: Update Supabase using RPC to bypass RLS
+            // We use the cleaned UUID for the database update
+            console.log('📡 Online: Updating order in Supabase via RPC...', cleanOrderId);
+
+            // VALIDATE: customer_id must be a valid UUID, otherwise send null
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            const validCustomerId = (updateData.customer_id && uuidRegex.test(updateData.customer_id))
+                ? updateData.customer_id
+                : null;
+
+            const { error: rpcError } = await supabase.rpc('update_order_customer', {
+                p_order_id: cleanOrderId,
                 p_customer_id: validCustomerId,
-                p_customer_phone: customer.phone,
-                p_customer_name: customer.name
+                p_customer_phone: updateData.customer_phone,
+                p_customer_name: updateData.customer_name
             });
 
-            if (error) {
-                console.error('RPC update_order_customer failed:', error);
-                // Fallback attempt
-                const { error: directError } = await supabase
-                    .from('orders')
-                    .update({
-                        customer_id: validCustomerId,
-                        customer_phone: customer.phone,
-                        customer_name: customer.name
-                    })
-                    .eq('id', orderId);
-
-                if (directError) throw directError;
+            if (rpcError) {
+                console.error('❌ RPC Order Update Error:', rpcError);
+                window.confirm(`שגיאת עדכון בשרת: ${rpcError.message}. נסה שוב?`);
+                throw rpcError;
             }
+            console.log('✅ Order updated in Supabase via RPC');
+
         } catch (err) {
             console.error('Failed to update order customer:', err);
-            throw err;
         }
     };
 
@@ -407,15 +439,9 @@ const CustomerInfoModal = ({
                     className={`w-full h-14 bg-gray-50 rounded-xl border-2 flex items-center justify-center transition-colors ${error ? 'border-red-200 bg-red-50' : 'border-gray-100'
                         }`}
                 >
-                    {phoneNumber ? (
-                        <div className="text-2xl font-mono font-bold text-gray-800 tracking-wider" dir="ltr">
-                            {formatPhoneDisplay(phoneNumber)}
-                        </div>
-                    ) : (
-                        <div className="text-lg font-bold text-gray-400">
-                            הקלד טלפון לקוח
-                        </div>
-                    )}
+                    <div className="text-2xl font-mono font-bold text-gray-800 tracking-wider" dir="ltr">
+                        {formatPhoneDisplay(phoneNumber) || '___-___-____'}
+                    </div>
                 </div>
 
                 {/* Error Message */}
@@ -431,49 +457,30 @@ const CustomerInfoModal = ({
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-gray-200 flex flex-col gap-3">
-                <div className="flex gap-3">
-                    <button
-                        onClick={onClose}
-                        className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
-                    >
-                        ביטול
-                    </button>
-                    <button
-                        onClick={handlePhoneLookup}
-                        disabled={phoneNumber.length !== 10 || isLoading}
-                        className={`flex-1 py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 ${phoneNumber.length === 10 && !isLoading
-                            ? 'bg-orange-500 text-white hover:bg-orange-600'
-                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            }`}
-                    >
-                        {isLoading ? (
-                            <>
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                                בודק...
-                            </>
-                        ) : (
-                            'המשך'
-                        )}
-                    </button>
-                </div>
-
-                {/* Option for Name Only */}
-                {!isLoading && (
-                    <button
-                        onClick={() => {
-                            setStep('name');
-                            setError('');
-                            // Clear phone if it's incomplete
-                            if (phoneNumber.length < 10) setPhoneNumber('');
-                            setTimeout(() => nameInputRef.current?.focus(), 100);
-                        }}
-                        className="w-full py-3.5 border-2 border-orange-100 text-orange-600 rounded-xl font-bold hover:bg-orange-50 transition flex items-center justify-center gap-2"
-                    >
-                        <User size={20} />
-                        המשך עם שם בלבד
-                    </button>
-                )}
+            <div className="p-6 border-t border-gray-200 flex gap-3">
+                <button
+                    onClick={onClose}
+                    className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
+                >
+                    ביטול
+                </button>
+                <button
+                    onClick={handlePhoneLookup}
+                    disabled={phoneNumber.length !== 10 || isLoading}
+                    className={`flex-1 py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 ${phoneNumber.length === 10 && !isLoading
+                        ? 'bg-orange-500 text-white hover:bg-orange-600'
+                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        }`}
+                >
+                    {isLoading ? (
+                        <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            בודק...
+                        </>
+                    ) : (
+                        'המשך'
+                    )}
+                </button>
             </div>
         </>
     );
@@ -582,7 +589,7 @@ const CustomerInfoModal = ({
                         {/* Content */}
                         <div className="p-6">
                             <p className="text-center text-gray-600 font-medium">
-                                האם להעביר את ההזמנה ללקוח זה?
+                                להשתמש בפרטי לקוח זה עבור ההזמנה?
                             </p>
                         </div>
 
@@ -592,13 +599,13 @@ const CustomerInfoModal = ({
                                 onClick={handleCancelSwitch}
                                 className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
                             >
-                                ביטול
+                                לקוח חדש
                             </button>
                             <button
                                 onClick={handleConfirmSwitch}
                                 className="flex-1 py-4 bg-blue-500 text-white rounded-xl font-bold text-lg hover:bg-blue-600 transition"
                             >
-                                העבר ללקוח
+                                ✅ כן, זהו הלקוח
                             </button>
                         </div>
                     </div>

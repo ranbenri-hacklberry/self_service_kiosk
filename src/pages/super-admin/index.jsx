@@ -375,7 +375,7 @@ const SuperAdminDashboard = () => {
         let interval;
         if (isAuthenticated) {
             fetchBusinesses(); // Initial fetch on auth
-            interval = setInterval(fetchBusinesses, 30000); // Poll every 30 seconds instead of 10
+            interval = setInterval(fetchBusinesses, 10000); // Poll every 10 seconds
         }
         return () => clearInterval(interval);
     }, [isAuthenticated]);
@@ -697,10 +697,11 @@ const SuperAdminDashboard = () => {
                                                     <div className="flex items-center justify-between mb-1">
                                                         <div className="flex items-center gap-2">
                                                             <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                                                            <span className={`font-bold ${device.device_type === 'kds' ? 'text-orange-400' :
-                                                                    device.device_type === 'kiosk' ? 'text-blue-400' :
-                                                                        'text-purple-400'
-                                                                }`}>
+                                                            <span className={`font-bold ${
+                                                                device.device_type === 'kds' ? 'text-orange-400' :
+                                                                device.device_type === 'kiosk' ? 'text-blue-400' :
+                                                                'text-purple-400'
+                                                            }`}>
                                                                 {device.device_type?.toUpperCase()}
                                                             </span>
                                                             {device.user_name && (

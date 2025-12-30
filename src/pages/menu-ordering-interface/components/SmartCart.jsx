@@ -1,25 +1,37 @@
 import React, { useMemo } from 'react';
-import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, UserPlus, Check, Phone, User, Shield } from 'lucide-react';
+import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, UserPlus, Check, Phone, User } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
+/**
+ * ⚠️⚠️⚠️ WARNING - DO NOT EDIT ⚠️⚠️⚠️
+ * 🚨🚨🚨 אין לערוך קובץ זה ללא אישור מפורש של המשתמש! 🚨🚨🚨
+ * 🔒 LOCKED FILE - Changes require explicit user approval
+ * 📆 Last approved edit: 2025-12-30
+ */
+const PAYMENT_LABELS = {
+    cash: 'מזומן',
+    credit_card: 'אשראי',
+    bit: 'ביט',
+    paybox: 'פייבוקס',
+    gift_card: 'שובר',
+    oth: 'ע״ח הבית',
+};
+
 const formatPrice = (price = 0) => {
-    // מחזיר רק את המספר ללא סימן שקל - בטוח מ-NaN
-    // מציג אגורות רק אם יש מספר לא שלם
+    // מחזיר מספר עם אגורות אם יש (לדוגמה: 8.10)
     const num = Number(price);
     if (isNaN(num)) return '0';
-
-    // Check if number has decimals
+    // If it has decimals, show 2 decimal places. Otherwise show as integer.
     const hasDecimals = num % 1 !== 0;
-
     return new Intl.NumberFormat('he-IL', {
         minimumFractionDigits: hasDecimals ? 2 : 0,
-        maximumFractionDigits: hasDecimals ? 2 : 0
+        maximumFractionDigits: 2
     }).format(num);
 };
 
 // Memoized CartItem to prevent unnecessary re-renders
-const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrictedMode, soldierDiscountEnabled = false }) => {
+const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrictedMode }) => {
     const cleanName = item.name ? item.name.replace(/<[^>]+>/g, '').trim() : '';
 
     // Parse modifiers for display - remove duplicates
@@ -55,12 +67,6 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrict
         return [...new Set(modNames)];
     }, [item]);
 
-    // Calculate discounted price
-    const originalPrice = item.price * item.quantity;
-    const discountedPrice = soldierDiscountEnabled
-        ? Math.floor(originalPrice * 0.9)
-        : originalPrice;
-
     return (
         <div
             onClick={() => !isRestrictedMode && onEdit?.(item)}
@@ -80,6 +86,9 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrict
                     {onEdit && !isRestrictedMode && (
                         <Edit2 size={14} className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                     )}
+                    <span className="font-mono font-bold text-gray-900 text-base shrink-0 mr-auto">
+                        {formatPrice(item.price * item.quantity)}
+                    </span>
                 </div>
 
                 {/* Mods in a single line if possible */}
@@ -105,41 +114,28 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrict
                 )}
             </div>
 
-            {/* Left Side: Delay button | Price | Delete button */}
+            {/* Left Side: Actions */}
             <div className="flex items-center gap-2 pl-1">
-                {/* Delay Toggle Button - leftmost */}
+                {/* Delay Toggle Button */}
                 {onToggleDelay && !isRestrictedMode && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onToggleDelay(item.id, item.signature); }}
-                        className={`p-2 rounded-xl transition-all shrink-0 shadow-sm border active:scale-95 ${item.isDelayed
+                        className={`p-3 rounded-xl transition-all shrink-0 shadow-sm border active:scale-95 ${item.isDelayed
                             ? 'text-white bg-amber-500 border-amber-600 hover:bg-amber-600 shadow-amber-200'
                             : 'text-gray-400 bg-white border-gray-200 hover:text-amber-500 hover:bg-amber-50 hover:border-amber-200'
                             }`}
                         title={item.isDelayed ? "הכן עכשיו" : "הגש אחר כך (מנה שניה)"}
                     >
-                        <Clock size={20} strokeWidth={2.5} className={item.isDelayed ? "fill-white/20" : ""} />
+                        <Clock size={24} strokeWidth={2.5} className={item.isDelayed ? "fill-white/20" : ""} />
                     </button>
                 )}
 
-                {/* Price - middle */}
-                <div className="flex flex-col items-end min-w-[50px] mx-1">
-                    {soldierDiscountEnabled ? (
-                        <>
-                            <span className="text-xs text-gray-400 line-through">₪{formatPrice(originalPrice)}</span>
-                            <span className="font-mono font-bold text-green-600 text-base">₪{formatPrice(discountedPrice)}</span>
-                        </>
-                    ) : (
-                        <span className="font-mono font-bold text-gray-900 text-base">₪{formatPrice(originalPrice)}</span>
-                    )}
-                </div>
-
-                {/* Delete button - rightmost */}
                 {onRemove && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onRemove(item.id, item.signature); }}
-                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-colors shrink-0"
+                        className="p-3 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-colors shrink-0"
                     >
-                        <Trash2 size={20} strokeWidth={2} />
+                        <Trash2 size={24} strokeWidth={2} />
                     </button>
                 )}
             </div>
@@ -168,6 +164,7 @@ const SmartCart = ({
     cartHistory = [],
     orderNumber,
     isRestrictedMode = false, // New prop
+    // Soldier discount props
     soldierDiscountEnabled = false,
     onToggleSoldierDiscount,
     soldierDiscountAmount = 0
@@ -282,6 +279,7 @@ const SmartCart = ({
 
         if (isNoPriceChange && isEditMode) return {
             text: originalIsPaid ? 'שולם' : 'עדכון הזמנה',
+            paymentLabel: originalIsPaid ? (PAYMENT_LABELS[editingOrderData?.paymentMethod] || editingOrderData?.paymentMethod) : null,
             subtext: hasChanges ? 'לחץ לשמירת שינויים' : 'ללא שינוי במחיר',
             color: 'bg-white',
             buttonColor: hasChanges
@@ -314,21 +312,8 @@ const SmartCart = ({
     const showCredits = credits > 0;
     const progressToNext = points % 10;
 
-    // Helper to determine if we have a REAL customer (ignoring placeholders)
-    const hasRealCustomer = useMemo(() => {
-        if (!customerName) return false;
-        const name = customerName.trim();
-        const genericNames = ['אורח', 'אורח/ת', 'הזמנה מהירה', 'אורח כללי', 'אורח אנונימי'];
-        return !genericNames.includes(name) && !name.startsWith('#') && !name.startsWith('GUEST_');
-    }, [customerName]);
-
-    // Helper to check if phone is a REAL phone number (not a guest ID)
-    const hasRealPhone = useMemo(() => {
-        if (!customerPhone) return false;
-        const cleanPhone = String(customerPhone).replace(/\D/g, '');
-        // Real Israeli mobile: starts with 05, exactly 10 digits
-        return cleanPhone.length === 10 && cleanPhone.startsWith('05');
-    }, [customerPhone]);
+    // Helper to determine if we have a REAL customer (ignoring "Quick Order" placeholder)
+    const hasRealCustomer = customerName && customerName !== 'הזמנה מהירה';
 
     // DEBUG: Check why button isn't showing
     console.log('🛒 SmartCart Debug:', {
@@ -344,85 +329,103 @@ const SmartCart = ({
             <div className="p-4 border-b border-gray-100 bg-white z-10 shadow-sm">
                 {/* Single row header */}
                 <div className="flex items-center gap-2">
-                    {/* Customer name if exists */}
-                    {hasRealCustomer && (
-                        <h2 className="text-lg font-black text-gray-800 tracking-tight flex-shrink-0">
-                            {customerName}
-                        </h2>
-                    )}
 
-                    {/* Order number if no customer but has order number */}
-                    {!hasRealCustomer && orderNumber && (
-                        <h2 className="text-lg font-black text-gray-800 tracking-tight flex-shrink-0">
-                            #{orderNumber}
-                        </h2>
-                    )}
+                    {/* Logic: If name is 'Anonymous Guest', treat as no customer */}
+                    {(() => {
+                        const isAnonymous = !customerName || customerName.includes('אורח אנונימי') || customerName === 'אורח';
+                        const isValidPhone = customerPhone && /^[0-9+\-\s]+$/.test(customerPhone) && customerPhone.length < 15;
+                        const showAddButtons = isAnonymous || !isValidPhone;
 
-                    {/* Case 1: No customer - Show buttons */}
-                    {!hasRealCustomer && onAddCustomerDetails && (
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <button
-                                onClick={() => onAddCustomerDetails('phone-then-name')}
-                                className="px-4 py-2 rounded-xl bg-orange-500 text-white shadow-sm hover:bg-orange-600 transition-all active:scale-95 font-bold text-sm flex items-center gap-2 flex-shrink-0"
-                            >
-                                <Phone size={16} />
-                                <span>+טלפון</span>
-                            </button>
-                            <button
-                                onClick={() => onAddCustomerDetails('name')}
-                                className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 border border-gray-200 shadow-sm hover:bg-gray-200 transition-all active:scale-95 font-bold text-sm flex items-center gap-2 flex-shrink-0"
-                            >
-                                <User size={16} />
-                                <span>+שם</span>
-                            </button>
-                        </div>
-                    )}
+                        return (
+                            <>
+                                {/* Icon */}
+                                {/* <div className="bg-orange-100 p-2 rounded-xl flex-shrink-0">
+                                    <ShoppingBag className="w-5 h-5 text-orange-600" />
+                                </div> */}
+                                {/* User wanted exactly like screenshot - no icon shown there? Actually let's keep it minimal or hide if needed. 
+                                   Screenshot shows buttons on the right. Let's follow the screenshot layout.
+                                   Screenshot has: [Orange +Phone] [Gray +Name] ...
+                                */}
 
-                    {/* Case 2: Has name but no phone */}
-                    {hasRealCustomer && !hasRealPhone && onAddCustomerDetails && (
-                        <button
-                            onClick={() => onAddCustomerDetails('phone')}
-                            className="px-4 py-2 rounded-xl bg-blue-100 text-blue-700 border border-blue-200 shadow-sm hover:bg-blue-200 transition-all active:scale-95 font-bold text-sm flex items-center gap-2 flex-shrink-0"
-                        >
-                            <Phone size={16} />
-                            +טלפון
-                        </button>
-                    )}
+                                {/* Case: No valid customer (or anonymous) - Show buttons */}
+                                {showAddButtons ? (
+                                    <>
+                                        {/* Phone Button */}
+                                        {!isValidPhone && onAddCustomerDetails && (
+                                            <button
+                                                onClick={() => onAddCustomerDetails('phone')}
+                                                className="px-4 py-2 rounded-xl bg-orange-500 text-white shadow-md hover:bg-orange-600 transition-all font-bold text-sm flex items-center gap-2 flex-shrink-0"
+                                            >
+                                                <Phone size={16} />
+                                                <span>+טלפון</span>
+                                            </button>
+                                        )}
 
-                    {/* Case 3: Has REAL phone + name */}
-                    {hasRealCustomer && hasRealPhone && onAddCustomerDetails && (
-                        <div className="flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 flex-shrink-0">
-                            <Phone size={16} className="text-blue-500" />
-                            <span className="text-sm font-bold text-blue-700 font-mono">{customerPhone}</span>
-                            <button
-                                onClick={() => onAddCustomerDetails('phone-then-name')}
-                                className="p-1 hover:bg-blue-200 rounded-md text-blue-400 transition"
-                            >
-                                <Edit2 size={14} />
-                            </button>
-                        </div>
-                    )}
+                                        {/* Name Button - only if name is missing/anonymous */}
+                                        {isAnonymous && onAddCustomerDetails && (
+                                            <button
+                                                onClick={() => onAddCustomerDetails('name')}
+                                                className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 transition-all font-bold text-sm flex items-center gap-2 flex-shrink-0"
+                                            >
+                                                <User size={16} />
+                                                <span>+שם</span>
+                                            </button>
+                                        )}
 
-                    {/* Spacer to push soldier button to left */}
-                    <div className="flex-1" />
+                                        {/* If we have a valid name but no phone, show name */}
+                                        {!isAnonymous && (
+                                            <h2 className="text-xl font-black text-gray-800 tracking-tight flex-shrink-0 mr-2">
+                                                {customerName}
+                                            </h2>
+                                        )}
+                                    </>
+                                ) : (
+                                    /* Case: Valid Customer with Phone */
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex flex-col">
+                                            <h2 className="text-xl font-black text-gray-800 tracking-tight leading-none">
+                                                {customerName}
+                                            </h2>
+                                            <div className="flex items-center gap-2 text-gray-500 text-sm font-mono mt-0.5">
+                                                <Phone size={12} />
+                                                <span>{customerPhone}</span>
+                                            </div>
+                                        </div>
 
-                    {/* Soldier Discount Button */}
-                    {onToggleSoldierDiscount && (
-                        <button
-                            onClick={onToggleSoldierDiscount}
-                            className={`px-4 py-2 rounded-xl border shadow-sm transition-all active:scale-95 font-bold text-sm flex items-center gap-2 flex-shrink-0 ${soldierDiscountEnabled
-                                ? 'bg-green-500 text-white border-green-600'
-                                : 'bg-gray-100 text-gray-600 border-gray-200'
-                                }`}
-                        >
-                            <Shield size={16} />
-                            חייל
-                        </button>
-                    )}
+                                        {onAddCustomerDetails && (
+                                            <button
+                                                onClick={() => onAddCustomerDetails('phone-then-name')}
+                                                className="p-2 bg-gray-50 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                                            >
+                                                <Edit2 size={16} />
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Soldier Discount Button - Far Left in RTL */}
+                                <div className="mr-auto">
+                                    {onToggleSoldierDiscount && !isRestrictedMode && (
+                                        <button
+                                            onClick={onToggleSoldierDiscount}
+                                            className={`px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition-all ${soldierDiscountEnabled
+                                                ? 'bg-blue-600 text-white shadow-md'
+                                                : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100'
+                                                }`}
+                                        >
+                                            <span>🎖️</span>
+                                            <span>{soldierDiscountEnabled ? 'חייל ✓' : '+חייל'}</span>
+                                        </button>
+                                    )}
+                                </div>
+
+                            </>
+                        );
+                    })()}
                 </div>
 
-                {/* Loyalty Badge - Only show if customer has REAL phone */}
-                {hasRealCustomer && hasRealPhone && (() => {
+                {/* Loyalty Badge - Below main row */}
+                {hasRealCustomer && (() => {
                     // Calculate projected points
                     let cartCoffeeCount = cartItems.reduce((sum, item) =>
                         item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
@@ -538,7 +541,6 @@ const SmartCart = ({
                                     onRemove={() => onRemoveItem(item.id, item.signature, item.tempId || itemId)}
                                     onEdit={onEditItem}
                                     onToggleDelay={() => onToggleDelay?.(item.id, item.signature, item.tempId || itemId)}
-                                    soldierDiscountEnabled={soldierDiscountEnabled}
                                 />
                             );
                         })}
@@ -566,7 +568,6 @@ const SmartCart = ({
                                     onRemove={() => onRemoveItem(item.id, item.signature, item.tempId || itemId)}
                                     onEdit={onEditItem}
                                     onToggleDelay={() => onToggleDelay?.(item.id, item.signature, item.tempId || itemId)}
-                                    soldierDiscountEnabled={soldierDiscountEnabled}
                                 />
                             );
                         })}
@@ -589,20 +590,8 @@ const SmartCart = ({
                     </div>
                 )}
 
-                {/* Soldier Discount Row */}
-                {soldierDiscountEnabled && soldierDiscountAmount > 0 && (
-                    <div className="flex justify-between items-center mb-3 px-1 bg-emerald-50 p-2 rounded-lg border border-emerald-100">
-                        <span className="text-emerald-700 font-bold flex items-center gap-2 text-sm">
-                            <Shield size={14} /> הנחת חיילים (10%)
-                        </span>
-                        <span className="text-emerald-700 font-bold dir-ltr">
-                            -{formatPrice(soldierDiscountAmount)}
-                        </span>
-                    </div>
-                )}
-
-                {/* Loyalty Discount Row - Only show if has REAL phone and discount applies */}
-                {loyaltyDiscount > 0 && hasRealPhone && !(isEditMode && originalIsPaid && editingOrderData?.originalRedeemedCount > 0) && (
+                {/* Loyalty Discount Row - Only show if real customer AND has discount */}
+                {loyaltyDiscount > 0 && hasRealCustomer && !(isEditMode && originalIsPaid && editingOrderData?.originalRedeemedCount > 0) && (
                     <div className="flex justify-between items-center mb-3 px-1 bg-green-50 p-2 rounded-lg border border-green-100">
                         <span className="text-green-700 font-bold flex items-center gap-2 text-sm">
                             <span>🎁</span> הנחת נאמנות (קפה חינם)
@@ -613,13 +602,32 @@ const SmartCart = ({
                     </div>
                 )}
 
+                {/* Soldier Discount Display - only show amount if enabled */}
+                {soldierDiscountEnabled && soldierDiscountAmount > 0 && (
+                    <div className="flex justify-between items-center mb-3 px-1 bg-blue-50 p-2 rounded-lg border border-blue-100">
+                        <span className="text-blue-700 font-bold flex items-center gap-2 text-sm">
+                            <span>🎖️</span> הנחת חייל (10%)
+                        </span>
+                        <span className="text-blue-700 font-bold dir-ltr">
+                            -{formatPrice(soldierDiscountAmount)}
+                        </span>
+                    </div>
+                )}
+
                 {/* Main Action Button */}
                 <button
                     onClick={handleAction}
                     disabled={isDisabled}
                     className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all active:scale-[0.98] flex items-center justify-between px-6 ${statusConfig.buttonColor}`}
                 >
-                    <span>{statusConfig.text}</span>
+                    <div className="flex items-center gap-2">
+                        <span>{statusConfig.text}</span>
+                        {statusConfig.paymentLabel && (
+                            <span className="text-xs bg-white text-orange-600 px-2 py-0.5 rounded-lg border border-orange-100 shadow-sm">
+                                {statusConfig.paymentLabel}
+                            </span>
+                        )}
+                    </div>
                     {statusConfig.amount !== null && (
                         <span className="bg-white/20 px-2 py-0.5 rounded text-base">
                             {formatPrice(statusConfig.amount)}

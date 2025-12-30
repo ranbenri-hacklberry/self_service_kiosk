@@ -61,20 +61,6 @@ export const useLoyalty = ({
 
     // Calculate discount based on cart items and loyalty
     useEffect(() => {
-        // CRITICAL: No REAL phone = No loyalty at all
-        const phoneNumber = currentCustomer?.phone_number || currentCustomer?.phone;
-
-        // Validate phone is a REAL Israeli mobile (starts with 05, exactly 10 digits)
-        // Reject GUEST_ IDs and other invalid formats
-        const cleanPhone = phoneNumber ? String(phoneNumber).replace(/\D/g, '') : '';
-        const isRealPhone = cleanPhone.length === 10 && cleanPhone.startsWith('05');
-
-        if (!isRealPhone) {
-            setLoyaltyDiscount(0);
-            setLoyaltyFreeItemsCount(0);
-            return;
-        }
-
         // Calculate how many free coffees the customer can redeem
         let freeItemsCount = loyaltyFreeCoffees;
 
@@ -114,7 +100,7 @@ export const useLoyalty = ({
 
         setLoyaltyDiscount(discount);
         setLoyaltyFreeItemsCount(freeItemsCount);
-    }, [coffeeItems, loyaltyPoints, loyaltyFreeCoffees, isEditMode, editingOrderData, adjustedLoyaltyPoints, currentCustomer]);
+    }, [coffeeItems, loyaltyPoints, loyaltyFreeCoffees, isEditMode, editingOrderData, adjustedLoyaltyPoints]);
 
     // Refresh loyalty data
     const refreshLoyalty = useCallback(async (phone) => {

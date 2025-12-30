@@ -14,7 +14,7 @@ const SalesDashboard = () => {
     user: currentUser,
     userProfile: currentUser?.user_metadata
   });
-  
+
   const [viewMode, setViewMode] = useState('daily'); // 'daily', 'weekly', 'monthly'
   const [currentSales, setCurrentSales] = useState([]); // Data for current period (Flattened Items)
   const [currentRawOrders, setCurrentRawOrders] = useState([]); // Raw Orders for Orders List
@@ -62,11 +62,11 @@ const SalesDashboard = () => {
         .from('orders')
         .select('created_at')
         .order('created_at', { ascending: false });
-      
+
       if (currentUser?.business_id) {
         query = query.eq('business_id', currentUser.business_id);
       }
-      
+
       const { data } = await query;
 
       if (data && data.length > 0) {
@@ -157,7 +157,7 @@ const SalesDashboard = () => {
     setLoading(true);
     setSelectedGraphBar(null);
     setError(null);
-    
+
     try {
       const { currentStart, currentEnd, previousStart, previousEnd } = getDateRanges(viewMode, selectedDate);
 
@@ -175,7 +175,7 @@ const SalesDashboard = () => {
           p_start_date: start.toISOString(),
           p_end_date: end.toISOString()
         });
-        
+
         if (error) throw error;
 
         const flattened = [];
@@ -302,16 +302,68 @@ const SalesDashboard = () => {
       return result;
 
     } else {
+      // Weekly/Monthly: Show all days in the range
       const buckets = {};
+
+      // Create buckets for data
       currentSales.forEach(item => {
         const d = new Date(item.date);
         const key = `${d.getDate()}/${d.getMonth() + 1}`;
         if (!buckets[key]) buckets[key] = 0;
         buckets[key] += (item.price * item.quantity);
       });
-      return Object.entries(buckets).map(([name, amount]) => ({ name, key: name, amount }));
+
+      const result = [];
+      const dayMs = 24 * 60 * 60 * 1000;
+      const now = new Date();
+      now.setHours(23, 59, 59, 999);
+
+      let rangeStart, rangeEnd;
+
+      if (viewMode === 'weekly') {
+        // Sunday of the selected week
+        rangeStart = new Date(selectedDate);
+        rangeStart.setDate(rangeStart.getDate() - rangeStart.getDay());
+        rangeStart.setHours(0, 0, 0, 0);
+
+        // Saturday of that week
+        rangeEnd = new Date(rangeStart);
+        rangeEnd.setDate(rangeEnd.getDate() + 6);
+        rangeEnd.setHours(23, 59, 59, 999);
+
+        // Current week: end at today
+        if (rangeEnd > now) rangeEnd = new Date(now);
+      } else {
+        // Monthly: 1st to end of month
+        rangeStart = new Date(selectedDate);
+        rangeStart.setDate(1);
+        rangeStart.setHours(0, 0, 0, 0);
+
+        rangeEnd = new Date(rangeStart);
+        rangeEnd.setMonth(rangeEnd.getMonth() + 1);
+        rangeEnd.setDate(0);
+        rangeEnd.setHours(23, 59, 59, 999);
+
+        // Current month: end at today
+        if (rangeEnd > now) rangeEnd = new Date(now);
+      }
+
+      let currentDay = new Date(rangeStart);
+
+      while (currentDay <= rangeEnd) {
+        const key = `${currentDay.getDate()}/${currentDay.getMonth() + 1}`;
+        const displayName = viewMode === 'monthly' ? `${currentDay.getDate()}` : key;
+        result.push({
+          name: displayName,
+          key: key,
+          amount: buckets[key] || 0
+        });
+        currentDay = new Date(currentDay.getTime() + dayMs);
+      }
+
+      return result;
     }
-  }, [currentSales, viewMode]);
+  }, [currentSales, viewMode, selectedDate]);
 
   // Navigation (Unchanged Logic - Copied for context)
   const goToPreviousPeriod = () => {
@@ -526,6 +578,130 @@ const SalesDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Preparation Time Chart - Shows average prep time per hour/day */}
+      {displayedOrders.length > 0 && (() => {
+        // Calculate average prep time per bucket (hour for daily, day for weekly/monthly)
+        const prepTimeByBucket = new Map();
+        displayedOrders.forEach(order => {
+          const start = new Date(order.created_at).getTime();
+          const end = order.ready_at
+            ? new Date(order.ready_at).getTime()
+            : order.updated_at
+              ? new Date(order.updated_at).getTime()
+              : null;
+          if (!end || isNaN(start)) return;
+          const mins = Math.max(0, Math.floor((end - start) / 60000));
+          if (mins > 120) return; // Skip outliers
+
+          // Bucket key depends on view mode
+          let bucketKey;
+          if (viewMode === 'daily') {
+            bucketKey = new Date(order.created_at).getHours();
+          } else {
+            const d = new Date(order.created_at);
+            bucketKey = `${d.getDate()}/${d.getMonth() + 1}`;
+          }
+
+          if (!prepTimeByBucket.has(bucketKey)) {
+            prepTimeByBucket.set(bucketKey, { total: 0, count: 0 });
+          }
+          prepTimeByBucket.get(bucketKey).total += mins;
+          prepTimeByBucket.get(bucketKey).count += 1;
+        });
+
+        // Build chart data matching the same buckets as graphData
+        const prepChartData = graphData.map(g => {
+          const bucketData = prepTimeByBucket.get(g.key);
+          const avgMins = bucketData && bucketData.count > 0
+            ? Math.round(bucketData.total / bucketData.count)
+            : 0;
+          return {
+            name: g.name,
+            key: g.key,
+            avgMins,
+            orderCount: bucketData?.count || 0
+          };
+        });
+
+        // Calculate overall average
+        const allTimes = displayedOrders.map(order => {
+          const start = new Date(order.created_at).getTime();
+          const end = order.ready_at
+            ? new Date(order.ready_at).getTime()
+            : order.updated_at
+              ? new Date(order.updated_at).getTime()
+              : null;
+          if (!end || isNaN(start)) return null;
+          return Math.max(0, Math.floor((end - start) / 60000));
+        }).filter(t => t !== null && t < 120);
+
+        const overallAvg = allTimes.length > 0
+          ? (allTimes.reduce((a, b) => a + b, 0) / allTimes.length).toFixed(1)
+          : '-';
+
+        const periodLabel = viewMode === 'daily' ? 'לפי שעות' : 'לפי ימים';
+        const avgLabel = viewMode === 'daily' ? 'ממוצע יומי' : viewMode === 'weekly' ? 'ממוצע שבועי' : 'ממוצע חודשי';
+
+        return (
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <h3 className="font-bold text-gray-800 mb-1 text-sm px-2 flex justify-between items-center h-6">
+              <span className="flex items-center gap-2">
+                <Clock size={16} className="text-purple-500" />
+                זמן הכנה ממוצע {periodLabel} (דקות)
+              </span>
+              <span className="text-xs text-gray-500 font-normal">
+                {avgLabel}: {overallAvg} דק׳
+              </span>
+            </h3>
+            <div className="h-28 w-full text-xs mt-1">
+              {prepChartData.every(d => d.avgMins === 0) ? (
+                <div className="h-full flex items-center justify-center text-gray-400 text-xs text-center border-2 border-dashed border-gray-100 rounded-lg">אין נתוני זמן הכנה</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={prepChartData} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
+                    <XAxis
+                      dataKey="name"
+                      fontSize={9}
+                      tickLine={false}
+                      axisLine={false}
+                      interval={0}
+                    />
+                    <YAxis
+                      fontSize={9}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={val => `${val}`}
+                      domain={[0, 'auto']}
+                    />
+                    <Bar
+                      dataKey="avgMins"
+                      radius={[3, 3, 0, 0]}
+                    >
+                      {prepChartData.map((entry, index) => {
+                        // Color based on avg time (user-defined thresholds)
+                        let color = '#4ade80'; // green - up to 10 min
+                        if (entry.avgMins >= 25) color = '#f87171'; // red - 25+ min
+                        else if (entry.avgMins >= 20) color = '#fb923c'; // orange - 20-24 min
+                        else if (entry.avgMins >= 15) color = '#facc15'; // yellow - 15-19 min
+                        else if (entry.avgMins > 10) color = '#a3e635'; // light green - 10-14 min
+                        return <Cell key={`prep-cell-${index}`} fill={color} />;
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+            {/* Legend */}
+            <div className="flex justify-center gap-3 mt-1 text-[10px] text-gray-500">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-green-400"></span> עד 10</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-yellow-400"></span> 15</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-orange-400"></span> 20</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-400"></span> 25+</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Detailed Category Breakdown */}
       <div className="space-y-3">

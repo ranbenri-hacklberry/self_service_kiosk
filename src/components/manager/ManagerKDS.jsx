@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { Clock, CheckCircle, RotateCcw, AlertTriangle, LayoutGrid, Check, Plus, Edit, Flame } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import KDSPaymentModal from '../../pages/kds/components/KDSPaymentModal';
 
 // --- Shared Helpers ---
 const isDrink = (item) => {
@@ -190,7 +191,25 @@ const ManagerOrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPayme
                     {!order.isPaid ? (
                         <span className="text-[10px] font-black bg-red-100 text-red-600 px-2 py-0.5 rounded">לא שולם</span>
                     ) : (
-                        <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded">שולם</span>
+                        <span className="flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded">
+                            <span>שולם</span>
+                            {order.paymentMethod && (
+                                <span className="font-extrabold opacity-80">
+                                    ({order.paymentMethod === 'oth' ? 'הבית' :
+                                        order.paymentMethod === 'credit_card' ? 'אשראי' :
+                                            order.paymentMethod === 'bit' ? 'ביט' :
+                                                order.paymentMethod === 'paybox' ? 'פייבוקס' :
+                                                    order.paymentMethod === 'gift_card' ? 'שובר' :
+                                                        order.paymentMethod === 'cash' ? 'מזומן' :
+                                                            order.paymentMethod})
+                                </span>
+                            )}
+                        </span>
+                    )}
+                    {order.soldierDiscount > 0 && (
+                        <span className="text-[9px] font-bold text-blue-600 mt-0.5 px-1 bg-blue-50 rounded border border-blue-100">
+                            הנחת חייל (-₪{order.soldierDiscount})
+                        </span>
                     )}
                 </div>
             </div>
@@ -279,6 +298,7 @@ const ManagerKDS = () => {
     const [orders, setOrders] = useState([]);
     const [statusTab, setStatusTab] = useState('prep');
     const [loading, setLoading] = useState(false);
+    const [paymentModalData, setPaymentModalData] = useState({ isOpen: false, order: null });
 
     // Reuse RPC update logic from original KDS for consistency
     const handleStatusUpdate = async (orderId, currentStatus) => {
@@ -399,26 +419,35 @@ const ManagerKDS = () => {
             statusGroup: statusGroup,
             orderStatus: order.order_status,
             isPaid: isPaid,
+            paymentMethod: order.payment_method,
+            soldierDiscount: order.discount_amount || order.soldier_discount || 0,
             type: type,
             totalAmount
         };
     };
 
-    const handlePayment = async (order) => {
-        const { error } = await supabase
-            .from('orders')
-            .update({
-                is_paid: true,
-                paid_amount: order.totalAmount || order.total_amount || 0
-            })
-            .eq('id', order.id);
-        if (error) console.error("Error paying:", error);
-        else fetchKDS();
+    const handlePayment = (order) => {
+        setPaymentModalData({ isOpen: true, order });
+    };
+
+    const handleConfirmPayment = async (orderId, paymentMethod) => {
+        try {
+            const { error } = await supabase.rpc('confirm_order_payment', {
+                p_order_id: orderId,
+                p_payment_method: paymentMethod
+            });
+            if (error) throw error;
+            setPaymentModalData({ isOpen: false, order: null });
+            fetchKDS();
+        } catch (err) {
+            console.error('Error confirming payment:', err);
+            alert('שגיאה באישור תשלום: ' + err.message);
+        }
     };
 
     useEffect(() => {
         fetchKDS();
-        const interval = setInterval(fetchKDS, 15000); // Every 15 seconds instead of 5
+        const interval = setInterval(fetchKDS, 5000);
         return () => clearInterval(interval);
     }, []);
 
@@ -430,22 +459,22 @@ const ManagerKDS = () => {
 
     return (
         <div className="h-full flex flex-col bg-gray-100">
-            {/* Tab Switcher */}
-            <div className="p-3 bg-white shadow-sm z-10 sticky top-0">
-                <div className="flex bg-gray-100 p-1 rounded-xl">
+            {/* Tab Switcher - Modern Mobile Design */}
+            <div className="p-3 sticky top-0 z-20 bg-gray-100/90 backdrop-blur-sm">
+                <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-gray-200">
                     <button
                         onClick={() => setStatusTab('prep')}
-                        className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${statusTab === 'prep' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}
+                        className={`flex-1 py-3 text-sm font-black rounded-xl transition-all flex items-center justify-center gap-2 ${statusTab === 'prep' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}
                     >
-                        <LayoutGrid size={16} />
-                        בהכנה ({orders.filter(o => o.statusGroup === 'prep').length})
+                        <LayoutGrid size={18} strokeWidth={2.5} />
+                        <span>בהכנה ({orders.filter(o => o.statusGroup === 'prep').length})</span>
                     </button>
                     <button
                         onClick={() => setStatusTab('ready')}
-                        className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${statusTab === 'ready' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500'}`}
+                        className={`flex-1 py-3 text-sm font-black rounded-xl transition-all flex items-center justify-center gap-2 ${statusTab === 'ready' ? 'bg-green-600 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}
                     >
-                        <CheckCircle size={16} />
-                        מוכנים ({orders.filter(o => o.statusGroup === 'ready' || (o.orderStatus === 'completed' && !o.isPaid)).length})
+                        <CheckCircle size={18} strokeWidth={2.5} />
+                        <span>מוכנים ({orders.filter(o => o.statusGroup === 'ready' || (o.orderStatus === 'completed' && !o.isPaid)).length})</span>
                     </button>
                 </div>
             </div>
@@ -491,6 +520,14 @@ const ManagerKDS = () => {
             >
                 <RotateCcw size={20} className={loading ? 'animate-spin' : ''} />
             </button>
+
+            <KDSPaymentModal
+                isOpen={paymentModalData.isOpen}
+                onClose={() => setPaymentModalData({ ...paymentModalData, isOpen: false })}
+                order={paymentModalData.order}
+                onConfirmPayment={handleConfirmPayment}
+                isFromHistory={true}
+            />
         </div>
     );
 };

@@ -249,7 +249,7 @@ const KdsScreen = () => {
       await updateOrderStatusBase(orderId, currentStatus);
 
       // If we just delivered (moved from ready to completed) an UNPAID order, show info popup
-      if (currentStatus === 'completed' && targetOrder && !targetOrder.isPaid) {
+      if (currentStatus === 'ready' && targetOrder && !targetOrder.isPaid) {
         setHistoryInfoModal({
           isOpen: true,
           orderNumber: targetOrder.orderNumber
@@ -261,12 +261,10 @@ const KdsScreen = () => {
   };
 
   const location = useLocation();
-  // State persistence: Prioritize navigation state, fallback to 'active'
-  // When entering from home screen, always go to 'active' tab
+  // State persistence: Load from localStorage or defaults
   const [viewMode, setViewMode] = useState(() => {
-    // Only use location.state if explicitly provided (coming back from edit)
-    // Otherwise always default to 'active'
-    return location.state?.viewMode || 'active';
+    const saved = localStorage.getItem('kds_viewMode');
+    return saved || location.state?.viewMode || 'active';
   });
 
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -291,7 +289,10 @@ const KdsScreen = () => {
   // History Info Modal (shown when unpaid order is moved to history)
   const [historyInfoModal, setHistoryInfoModal] = useState({ isOpen: false, orderNumber: null });
 
-  // Persistence Effects - only for selectedDate, not viewMode
+  // Persistence Effects
+  useEffect(() => {
+    localStorage.setItem('kds_viewMode', viewMode);
+  }, [viewMode]);
 
   useEffect(() => {
     localStorage.setItem('kds_selectedDate', selectedDate.toISOString());
@@ -348,15 +349,6 @@ const KdsScreen = () => {
           // Pass signal to hook
           const data = await fetchHistoryOrders(selectedDate, controller.signal);
           if (!controller.signal.aborted) {
-            // If data is empty, try to find the nearest date with orders
-            if ((!data || data.length === 0)) {
-              const nearestDate = await findNearestActiveDate(selectedDate);
-              if (nearestDate && !controller.signal.aborted) {
-                console.log('📅 jumping back to nearest date with orders:', nearestDate);
-                setSelectedDate(nearestDate);
-                return; // Effect will re-run with new selectedDate
-              }
-            }
             setHistoryOrders(data || []);
           }
         } catch (err) {
@@ -392,41 +384,35 @@ const KdsScreen = () => {
       return;
     }
 
-    // HISTORY ORDERS: Always navigate to menu interface
-    // - Paid orders are restricted (view/refund only)
-    // - Unpaid orders can add items freely
-    const isHistoryOrder = viewMode === 'history' || order.order_status === 'completed' || order.orderStatus === 'completed';
+    // HISTORY/COMPLETED ORDERS: Navigate to restricted edit screen
+    const isRestricted = viewMode === 'history' || order.order_status === 'completed' || order.order_status === 'cancelled';
+    const isFromHistory = viewMode === 'history';
 
-    if (isHistoryOrder) {
-      // Historical orders are restricted IF they are already paid OR if they are cancelled.
-      // Unpaid completed orders remain editable so new items can be added and paid for.
-      const dbIsPaid = order.isPaid === true || order.is_paid === true;
-      const isCancelled = order.order_status === 'cancelled' || order.orderStatus === 'cancelled' || order.type === 'cancelled';
-
-      const isRestricted = dbIsPaid || isCancelled;
-      // Use originalOrderId if available (for cards with modified IDs like '-ready', '-stage-2')
-      const realOrderId = order.originalOrderId || order.id;
-      console.log(`🖊️ KDS: Navigating to ${isRestricted ? 'RESTRICTED' : 'EDITABLE'} order from History:`, realOrderId, '(original order.id was:', order.id, ')');
-
+    if (isRestricted) {
+      console.log('🖊️ KDS: Navigating to RESTRICTED edit order (History):', order.id);
+      // Save minimal data to session storage to pass context
       const editData = {
-        id: realOrderId,
+        id: order.id,
         orderNumber: order.orderNumber,
-        restrictedMode: isRestricted,
-        viewMode: viewMode
+        restrictedMode: true,
+        viewMode: viewMode,
+        returnToActiveOnChange: isFromHistory // NEW: Flag to indicate we should switch to active tab if changes are made
       };
       sessionStorage.setItem('editOrderData', JSON.stringify(editData));
       sessionStorage.setItem('order_origin', 'kds');
-
-      navigate(`/menu-ordering-interface?editOrderId=${realOrderId}`, {
-        state: { orderId: realOrderId, viewMode: viewMode }
+      // Navigate directly to cart
+      navigate(`/menu-ordering-interface?editOrderId=${order.id}`, {
+        state: {
+          orderId: order.id,
+          viewMode: viewMode,
+          returnToActiveOnChange: isFromHistory // Pass in state as well
+        }
       });
-      return;
+    } else {
+      console.log('🖊️ KDS: Opening Edit Modal for Active Order:', order.id);
+      setEditingOrder(order);
+      setIsEditModalOpen(true);
     }
-
-    // ACTIVE NON-READY ORDERS: Open the edit modal
-    console.log('🖊️ KDS: Opening Edit Modal for Active Order:', order.id);
-    setEditingOrder(order);
-    setIsEditModalOpen(true);
   };
 
   const handleCloseEditModal = () => {
@@ -501,20 +487,14 @@ const KdsScreen = () => {
           </div>
         ) : (
           <div className="flex-1 relative bg-purple-50/30 flex flex-col min-h-0 pb-safe">
-            {/* History Toolbar / Badge */}
-            <div className="absolute top-3 right-4 bg-purple-100 border border-purple-200 px-3 py-1 rounded-full text-xs font-bold text-purple-700 z-10 shadow-sm flex items-center gap-2">
-              <History size={12} />
-              היסטוריית הזמנות ({historyOrders.length})
-            </div>
-
             {/* History List - Horizontal Scroll similar to active */}
-            <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-20 custom-scrollbar">
+            <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-2 pt-2 pb-2 custom-scrollbar">
               {isHistoryLoading ? (
                 <div className="h-full w-full flex items-center justify-center text-purple-400 gap-2">
                   <RefreshCw className="animate-spin" /> טוען היסטוריה...
                 </div>
               ) : (
-                <div className="flex h-full flex-row justify-start gap-4 items-stretch">
+                <div className="flex h-full flex-row justify-start gap-1 items-stretch">
                   {historyOrders.length === 0 ? (
                     <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 opacity-60 ml-20">
                       <History size={48} className="mb-2" />
@@ -553,13 +533,8 @@ const KdsScreen = () => {
 
         {/* SMS Toast Notification */}
         {smsToast && (
-          <div className={`absolute top-20 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300 ${smsToast.isError ? 'bg-red-600 text-white' :
-            smsToast.isWarning ? 'bg-amber-500 text-white' :
-              'bg-green-600 text-white'
-            }`}>
-            {smsToast.isError ? <AlertTriangle size={24} /> :
-              smsToast.isWarning ? <AlertTriangle size={24} /> :
-                <Check size={24} />}
+          <div className={`absolute top-20 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300 ${smsToast.isError ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
+            {smsToast.isError ? <AlertTriangle size={24} /> : <Check size={24} />}
             <span className="text-xl font-bold">{smsToast.message}</span>
           </div>
         )}
@@ -628,10 +603,10 @@ const KdsScreen = () => {
             try {
               await handleConfirmPayment(orderId, paymentMethod);
               setSelectedOrderForPayment(null);
-              // Refresh history if in history mode
-              if (viewMode === 'history') {
-                setHistoryRefreshTrigger(prev => prev + 1);
-              }
+              // Switch back to active view as requested by user
+              setViewMode('active');
+              // Refresh orders to see the change if needed
+              fetchOrders();
             } catch (err) {
               // error is handled inside handleConfirmPayment (modal)
             }

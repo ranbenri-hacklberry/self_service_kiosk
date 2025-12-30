@@ -636,16 +636,40 @@ const MenuOrderingInterface = () => {
   };
 
   const handleCloseConfirmation = () => {
+    // Save confirmation data BEFORE clearing it
+    const confirmationData = showConfirmationModal;
+    const navigationFromConfirmation = confirmationData?.navigationTarget;
+
     setShowConfirmationModal(null);
     const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
     const editDataRaw = sessionStorage.getItem('editOrderData');
     const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
 
-    console.log('🔙 handleCloseConfirmation - origin:', origin, 'viewMode:', editData?.viewMode);
+    console.log('🔙 handleCloseConfirmation - origin:', origin, 'viewMode:', editData?.viewMode, 'navigationTarget:', navigationFromConfirmation);
 
     if (origin === 'kds') {
       console.log('✅ Navigating back to KDS');
-      const targetView = cartHistory.some(h => h.type === 'ADD_ITEM') ? 'active' : (editData?.viewMode || 'active');
+
+      // Determine if changes were made (any ADD_ITEM or REMOVE_ITEM in cart history)
+      const hadChanges = cartHistory.some(h =>
+        h.type === 'ADD_ITEM' ||
+        h.type === 'REMOVE_ITEM' ||
+        h.type === 'UPDATE_ITEM'
+      );
+
+      // Priority: use navigationTarget from confirmation if available
+      // Otherwise, use returnToActiveOnChange logic
+      let targetView = 'active';
+      if (navigationFromConfirmation) {
+        targetView = navigationFromConfirmation;
+        console.log(`📋 Using navigationTarget from confirmation: ${targetView}`);
+      } else if (editData?.returnToActiveOnChange) {
+        targetView = hadChanges ? 'active' : 'history';
+        console.log(`📋 From history: hadChanges=${hadChanges}, returning to ${targetView}`);
+      } else {
+        targetView = editData?.viewMode || 'active';
+      }
+
       clearOrderSessionState();
       navigate('/kds', { state: { viewMode: targetView } });
       return;
@@ -1358,13 +1382,14 @@ const MenuOrderingInterface = () => {
   // Calculate soldier discount amount
   const soldierDiscountAmount = useMemo(() => {
     if (!soldierDiscountEnabled) return 0;
-    // 10% of cart total (before loyalty discount) - keep 2 decimal places
-    return Math.round(cartTotal * 0.10 * 100) / 100;
+    // 10% of cart total - keep decimals (agorot) for accurate display
+    return cartTotal * 0.10;
   }, [cartTotal, soldierDiscountEnabled]);
 
   // Calculate finalTotal with useMemo to react to loyaltyDiscount and soldier discount changes
   const finalTotal = useMemo(() => {
     const total = Math.max(0, cartTotal - loyaltyDiscount - soldierDiscountAmount);
+    // Keep decimals (agorot) for accurate display
     console.log('💵 Final Total:', { cartTotal, loyaltyDiscount, soldierDiscountAmount, finalTotal: total });
     return total;
   }, [cartTotal, loyaltyDiscount, soldierDiscountAmount]);
@@ -1772,7 +1797,7 @@ const MenuOrderingInterface = () => {
         console.log('☕ Original Coffee Count calculated:', originalCoffeeCount);
       }
 
-      // Build payload matching submit_order_v2 function signature exactly
+      // Build payload matching submit_order_v3 function signature exactly
       const client = supabase;
       const orderPayload = {
         p_customer_phone: guestPhone,
@@ -1782,16 +1807,18 @@ const MenuOrderingInterface = () => {
         p_customer_id: customerId || null,
         p_payment_method: orderData?.payment_method || null,
         p_refund: isRefund,
-        edit_mode: isEditMode || false,
-        order_id: isEditMode ? editingOrderData.orderId : null,
-        original_total: isEditMode ? editingOrderData.originalTotal : null,
+        p_refund_amount: isRefund ? Number(originalTotalForRefund - finalTotal) : 0,
+        p_refund_method: isRefund ? (orderData?.payment_method || editingOrderData?.paymentMethod) : null,
+        p_edit_mode: isEditMode || false,
+        p_order_id: isEditMode ? editingOrderData.orderId : null,
+        p_original_total: isEditMode ? Number(editingOrderData.originalTotal) : 0,
         p_cancelled_items: isEditMode && cancelledItems.length > 0 ? cancelledItems.map(i => ({ id: i.id })) : [],
-        p_final_total: (orderData?.total_amount !== undefined) ? orderData.total_amount : finalTotal,
-        p_original_coffee_count: originalCoffeeCount,
+        p_final_total: Number((orderData?.total_amount !== undefined) ? orderData.total_amount : finalTotal),
+        p_original_coffee_count: Number(originalCoffeeCount),
         p_is_quick_order: !!currentCustomer?.isQuickOrder && !realPhone,
         // Soldier discount takes priority, then orderData discount
         p_discount_id: soldierDiscountEnabled ? soldierDiscountId : (orderData?.discount_id || null),
-        p_discount_amount: soldierDiscountEnabled ? soldierDiscountAmount : (orderData?.discount_amount || 0),
+        p_discount_amount: Number(soldierDiscountEnabled ? soldierDiscountAmount : (orderData?.discount_amount || 0)),
         p_business_id: currentUser?.business_id || null
       };
 
@@ -1803,7 +1830,7 @@ const MenuOrderingInterface = () => {
       console.log('  - Order ID:', orderPayload.order_id || 'N/A');
 
 
-      console.log('📤 Calling submit_order_v2 with payload');
+      console.log('📤 Calling submit_order_v3 with payload');
       console.log('🔍 User Context for RPC:', {
         phone: currentUser?.whatsapp_phone,
         isDemo: currentUser?.whatsapp_phone === '0500000000' || currentUser?.whatsapp_phone === '0501111111'
@@ -1816,9 +1843,12 @@ const MenuOrderingInterface = () => {
 
       if (isOnline) {
         // Online: Submit to Supabase normally
-        const response = await supabase.rpc('submit_order_v2', orderPayload);
+        const response = await supabase.rpc('submit_order_v3', orderPayload);
         orderResult = response.data;
         orderError = response.error;
+
+        // Note: We don't cache to Dexie here - the sync service will handle it
+        // This prevents duplicate items when editing orders
       } else {
         // OFFLINE: Save locally and queue for sync
         console.log('📴 Offline: Saving order locally...');
@@ -1901,7 +1931,7 @@ const MenuOrderingInterface = () => {
       // This prevents completed orders from appearing in active KDS when just editing details
       if (isEditMode && orderId && editingOrderData?.originalOrderStatus === 'completed') {
         // Check if any NEW items were added (items without an existing order_item_id)
-        const hasNewItems = cart.some(item => !item.id || item.id.toString().includes('temp'));
+        const hasNewItems = cartItems.some(item => !item.id || item.id.toString().includes('temp'));
 
         if (hasNewItems) {
           console.log('🔄 New items added to completed order. Resetting status to in_progress...');
@@ -1924,8 +1954,8 @@ const MenuOrderingInterface = () => {
       console.log('  - Order ID:', orderId);
       console.log('  - Order Number:', orderNumber);
 
-      // Don't clear cart yet - wait for confirmation modal to close
-      // setCartItems([]);
+      // Clear cart
+      cartClearCart();
 
       let updatedCustomer = {
         ...currentCustomer,
@@ -2019,14 +2049,15 @@ const MenuOrderingInterface = () => {
       // Show confirmation modal immediately
       const isAdditionalCharge = isEditMode && editingOrderData?.isPaid && priceDifference > 0;
 
-      // Calculate what to show in the modal
-      let displayTotal = cartTotal; // Default for new orders
+      // Calculate what to show in the modal - use finalTotal which includes discounts
+      let displayTotal = finalTotal; // Default for new orders (includes soldier discount)
 
       if (isEditMode && editingOrderData?.isPaid) {
         if (isRefund) {
           displayTotal = refundAmount; // Show amount returned
         } else if (isAdditionalCharge) {
-          displayTotal = priceDifference; // Show EXTRA amount paid
+          // For additional charge, calculate difference with discounts
+          displayTotal = finalTotal - originalTotal; // Show EXTRA amount paid
         } else {
           // If paid and no difference (just notes change?), show 0 or full?
           // Usually implies no charge.
@@ -2043,9 +2074,13 @@ const MenuOrderingInterface = () => {
         paymentStatus: isAdditionalCharge ? 'תוספת לתשלום' : (isRefund ? 'זיכוי' : paymentStatus),
         paymentMethod: orderData?.payment_method,
         total: displayTotal,
+        subtotal: cartTotal,
+        soldierDiscountAmount: soldierDiscountAmount,
+        loyaltyDiscount: loyaltyDiscount,
         isRefund,
         refundAmount,
         isPaid: orderData?.is_paid ?? true,
+        isEdit: isEditMode,
         // Pass info for navigation after close
         navigationTarget: hasChanges ? 'active' : 'history'
       });
@@ -2154,8 +2189,8 @@ const MenuOrderingInterface = () => {
       {/* Top Navigation Bar */}
       <div className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 sticky top-0 z-30 shadow-sm">
 
-        {/* Right Side Group (RTL): Home/Back Button */}
-        <div className="flex items-center gap-4">
+        {/* Right Side Group (RTL): Home/Back Button + Sync */}
+        <div className="flex items-center gap-2">
           <button
             onClick={handleBack}
             className="flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 w-10 h-10 rounded-xl transition-all"
@@ -2165,6 +2200,34 @@ const MenuOrderingInterface = () => {
               name={sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) === 'kds' ? "ChevronRight" : "Home"}
               size={20}
             />
+          </button>
+
+          {/* Sync Button */}
+          <button
+            onClick={async (e) => {
+              console.log('🔄 Sync button clicked!');
+              const btn = e.currentTarget;
+              btn.classList.add('animate-spin');
+              btn.disabled = true;
+
+              try {
+                console.log('📥 Starting sync...');
+                const { initialLoad } = await import('../../services/syncService');
+                const result = await initialLoad(currentUser?.business_id);
+                console.log('✅ Sync result:', result);
+                alert('✅ סנכרון הושלם! רענן את הדף.');
+              } catch (err) {
+                console.error('❌ Sync error:', err);
+                alert('❌ שגיאה בסנכרון: ' + err.message);
+              } finally {
+                btn.classList.remove('animate-spin');
+                btn.disabled = false;
+              }
+            }}
+            className="flex items-center justify-center text-blue-600 hover:text-blue-700 hover:bg-blue-50 w-10 h-10 rounded-xl transition-all disabled:opacity-50"
+            title="סנכרון נתונים"
+          >
+            <Icon name="RefreshCw" size={18} />
           </button>
         </div>
 
@@ -2192,7 +2255,7 @@ const MenuOrderingInterface = () => {
           setShowCustomerInfoModal(false);
           refreshLoyalty(); // Refresh loyalty after customer update
         }}
-        orderId={null}
+        orderId={isEditMode && editingOrderData?.id ? String(editingOrderData.id).replace(/-ready$/, '').replace(/-stage-\d+$/, '') : null}
       />
 
       {/* Main Content - Menu (Right) and Cart (Left) */}
@@ -2316,9 +2379,11 @@ const MenuOrderingInterface = () => {
             cartTotal={amountToPay}
             subtotal={cartTotal}
             loyaltyDiscount={loyaltyDiscount}
+            soldierDiscountAmount={soldierDiscountAmount}
             cartItems={cartItems}
             isRefund={isEditMode && editingOrderData?.isPaid && priceDifference < 0}
             refundAmount={Math.abs(priceDifference)}
+            originalPaymentMethod={editingOrderData?.paymentMethod}
             businessId={currentUser?.business_id}
           />
         );

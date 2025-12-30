@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, CreditCard, Banknote, Gift, Star, Clock, History, Smartphone, Wallet } from 'lucide-react';
+import { X, Check, CreditCard, Banknote, Gift, Star, Clock, History } from 'lucide-react';
 
 /**
  * KDS Payment Modal - Used to collect payment for orders from KDS
@@ -32,24 +32,24 @@ const KDSPaymentModal = ({
     const customerName = order.customerName || 'לקוח';
 
     const formatPrice = (price) => {
+        const num = Number(price);
+        const hasDecimals = num % 1 !== 0;
         return new Intl.NumberFormat('he-IL', {
             style: 'currency',
             currency: 'ILS',
-            minimumFractionDigits: 0
-        }).format(price);
+            minimumFractionDigits: hasDecimals ? 2 : 0,
+            maximumFractionDigits: 2
+        }).format(num);
     };
 
     // Payment Methods Config
-    const PAYMENT_METHODS_MAIN = [
+    const PAYMENT_METHODS = [
         { id: 'cash', label: 'מזומן', icon: Banknote, color: 'bg-green-100 text-green-700 hover:bg-green-200' },
         { id: 'credit_card', label: 'אשראי', icon: CreditCard, color: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
-    ];
-
-    const PAYMENT_METHODS_SECONDARY = [
-        { id: 'bit', label: 'Bit', icon: Smartphone, color: 'bg-purple-100 text-purple-700 hover:bg-purple-200' },
-        { id: 'paybox', label: 'Paybox', icon: Wallet, color: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
-        { id: 'gift_card', label: 'שובר', icon: Gift, color: 'bg-slate-100 text-slate-700 hover:bg-slate-200' },
-        { id: 'oth', label: 'ע״ח הבית', icon: Star, color: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
+        { id: 'bit', label: 'ביט', icon: CreditCard, color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200' },
+        { id: 'paybox', label: 'פייבוקס', icon: CreditCard, color: 'bg-pink-100 text-pink-700 hover:bg-pink-200' },
+        { id: 'gift_card', label: 'שובר', icon: Gift, color: 'bg-purple-100 text-purple-700 hover:bg-purple-200' },
+        { id: 'oth', label: 'OTH', icon: Star, color: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
     ];
 
     // Payment Instructions Config
@@ -110,40 +110,38 @@ const KDSPaymentModal = ({
             instructions: [
                 'ההזמנה תירשם כ"על חשבון הבית"'
             ],
-            confirmText: 'אישור',
-            showZeroPrice: true
+            confirmText: 'אישור'
         },
         bit: {
-            title: 'Bit - העברה ל',
-            phone: '055-6822072',
+            title: 'Bit - להעברה ל 055-6822072',
             subtitle: 'העברה באפליקציה',
-            icon: Smartphone,
-            iconBg: 'bg-purple-50',
-            iconColor: 'text-purple-600',
-            amountBg: 'bg-purple-50 border-purple-200',
-            amountColor: 'text-purple-600',
+            icon: CreditCard,
+            iconBg: 'bg-cyan-50',
+            iconColor: 'text-cyan-600',
+            amountBg: 'bg-cyan-50 border-cyan-200',
+            amountColor: 'text-cyan-600',
             instructions: [
-                'וודא קבלת הודעת Bit מהלקוח',
-                'וודא את הסכום שהועבר',
-                'אשר את קבלת התשלום'
+                '⚠️ חשוב! בקש מהלקוח להשאיר את שדה הסיבה ריק',
+                'ודא שהלקוח שולח למספר: 055-6822072',
+                'המתן לקבלת אישור העברה על המסך',
+                'אשר רק לאחר שראית את האישור'
             ],
-            confirmText: 'אישור'
+            confirmText: 'קיבלתי אישור'
         },
         paybox: {
-            title: 'Paybox - העברה ל',
-            phone: '055-6822072',
+            title: 'Paybox - להעברה ל 055-6822072',
             subtitle: 'העברה באפליקציה',
-            icon: Wallet,
-            iconBg: 'bg-blue-50',
-            iconColor: 'text-blue-600',
-            amountBg: 'bg-blue-50 border-blue-200',
-            amountColor: 'text-blue-600',
+            icon: CreditCard,
+            iconBg: 'bg-pink-50',
+            iconColor: 'text-pink-600',
+            amountBg: 'bg-pink-50 border-pink-200',
+            amountColor: 'text-pink-600',
             instructions: [
-                'וודא קבלת הודעת Paybox מהלקוח',
-                'וודא את הסכום שהועבר',
-                'אשר את קבלת התשלום'
+                'ודא שהלקוח שולח למספר: 055-6822072',
+                'המתן לקבלת אישור העברה',
+                'אשר רק לאחר שראית את האישור'
             ],
-            confirmText: 'אישור'
+            confirmText: 'קיבלתי אישור'
         }
     };
 
@@ -202,7 +200,7 @@ const KDSPaymentModal = ({
             >
                 <div
                     className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col"
-                    style={{ maxHeight: '82vh' }}
+                    style={{ maxHeight: '72vh' }}
                     onClick={e => e.stopPropagation()}
                 >
                     {/* Header */}
@@ -212,14 +210,7 @@ const KDSPaymentModal = ({
                                 <IconComponent size={20} />
                             </div>
                             <div>
-                                <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                                    <span>{config?.title}</span>
-                                    {config?.phone && (
-                                        <span className="px-2 py-0.5 rounded-xl border-2 border-slate-200 bg-slate-50 text-slate-700 text-lg tabular-nums">
-                                            {config?.phone}
-                                        </span>
-                                    )}
-                                </h2>
+                                <h2 className="text-xl font-black text-slate-800">{config?.title}</h2>
                                 <p className="text-xs text-slate-400">{config?.subtitle}</p>
                             </div>
                         </div>
@@ -227,22 +218,11 @@ const KDSPaymentModal = ({
 
                     {/* Content */}
                     <div className="flex-1 p-6 flex flex-col items-center justify-center space-y-4">
-                        <div className={`w-full ${config?.amountBg} border-2 rounded-2xl p-8 text-center`}>
+                        <div className={`w-full ${config?.amountBg} border-2 rounded-2xl p-6 text-center`}>
                             <p className="text-sm font-bold mb-2 text-slate-600">סכום לתשלום:</p>
-                            {config?.showZeroPrice ? (
-                                <div className="flex items-center justify-center gap-4">
-                                    <span className="text-2xl font-bold text-slate-400 line-through">
-                                        {formatPrice(orderAmount)}
-                                    </span>
-                                    <span className={`text-6xl font-black ${config?.amountColor}`}>
-                                        ₪0
-                                    </span>
-                                </div>
-                            ) : (
-                                <p className={`text-6xl font-black ${config?.amountColor}`}>
-                                    {formatPrice(orderAmount)}
-                                </p>
-                            )}
+                            <p className={`text-5xl font-black ${config?.amountColor}`}>
+                                {selectedMethod === 'oth' ? formatPrice(0) : formatPrice(orderAmount)}
+                            </p>
                         </div>
 
                         <div className="w-full bg-slate-50 rounded-2xl p-4 space-y-2">
@@ -259,11 +239,11 @@ const KDSPaymentModal = ({
 
                     {/* Footer */}
                     <div className="p-4 border-t border-slate-100">
-                        <div className="flex gap-4">
+                        <div className="flex gap-3">
                             <button
                                 onClick={handleBack}
                                 disabled={isProcessing}
-                                className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-xl transition disabled:opacity-50"
+                                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-lg transition disabled:opacity-50"
                             >
                                 חזור
                             </button>
@@ -271,13 +251,13 @@ const KDSPaymentModal = ({
                             <button
                                 onClick={handleConfirm}
                                 disabled={isProcessing}
-                                className="flex-[2] py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xl transition shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                                className="flex-[2] py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-lg transition shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
                             >
                                 {isProcessing ? (
                                     <span>מעבד...</span>
                                 ) : (
                                     <>
-                                        <Check size={24} strokeWidth={3} />
+                                        <Check size={20} strokeWidth={3} />
                                         <span>{config?.confirmText}</span>
                                     </>
                                 )}
@@ -298,7 +278,7 @@ const KDSPaymentModal = ({
         >
             <div
                 className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col"
-                style={{ maxHeight: '90vh' }}
+                style={{ maxHeight: '80vh' }}
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}
@@ -320,7 +300,7 @@ const KDSPaymentModal = ({
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 p-4 space-y-4 overflow-hidden">
+                <div className="flex-1 p-4 space-y-4 overflow-y-auto">
                     {/* Amount Display */}
                     <div className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 text-center">
                         <div className="flex justify-between items-center">
@@ -332,33 +312,18 @@ const KDSPaymentModal = ({
                     </div>
 
                     {/* Payment Methods */}
-                    <div>
-                        <h3 className="text-base font-bold text-slate-800 mb-2">אמצעי תשלום</h3>
-
-                        {/* Main row (2 big buttons) */}
-                        <div className="grid grid-cols-2 gap-3 mb-3">
-                            {PAYMENT_METHODS_MAIN.map(method => (
-                                <button
-                                    key={method.id}
-                                    onClick={() => handleMethodSelect(method.id)}
-                                    className={`flex flex-col items-center justify-center gap-2 p-6 rounded-xl transition-all border-2 border-transparent ${method.color} hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md`}
-                                >
-                                    <method.icon size={32} />
-                                    <span className="font-bold text-xl">{method.label}</span>
-                                </button>
-                            ))}
-                        </div>
-
-                        {/* Secondary row (4 small buttons) */}
+                    <div className="flex-1 overflow-hidden flex flex-col">
+                        <h3 className="text-base font-bold text-slate-800 mb-2 shrink-0">אמצעי תשלום</h3>
                         <div className="grid grid-cols-4 gap-2">
-                            {PAYMENT_METHODS_SECONDARY.map(method => (
+                            {PAYMENT_METHODS.map(method => (
                                 <button
                                     key={method.id}
                                     onClick={() => handleMethodSelect(method.id)}
-                                    className={`flex flex-col items-center justify-center gap-1.5 p-4 rounded-xl transition-all border border-transparent ${method.color} hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md`}
+                                    className={`flex flex-col items-center justify-center gap-1.5 rounded-xl transition-all border-2 border-transparent ${method.color} hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md 
+                                    ${['cash', 'credit_card'].includes(method.id) ? 'col-span-2 h-32 p-4' : 'col-span-1 h-20 p-2'}`}
                                 >
-                                    <method.icon size={22} />
-                                    <span className="font-bold text-xs whitespace-nowrap">{method.label}</span>
+                                    <method.icon size={['cash', 'credit_card'].includes(method.id) ? 24 : 20} />
+                                    <span className={`font-bold ${['cash', 'credit_card'].includes(method.id) ? 'text-base' : 'text-sm'}`}>{method.label}</span>
                                 </button>
                             ))}
                         </div>
@@ -383,7 +348,7 @@ const KDSPaymentModal = ({
                             <button
                                 onClick={onClose}
                                 disabled={isProcessing}
-                                className="flex-1 py-4 bg-white border-2 border-slate-200 text-slate-600 rounded-xl font-bold text-xl hover:bg-slate-100 transition disabled:opacity-50"
+                                className="flex-1 py-3 bg-white border-2 border-slate-200 text-slate-600 rounded-xl font-bold text-lg hover:bg-slate-100 transition disabled:opacity-50"
                             >
                                 ביטול
                             </button>
@@ -392,13 +357,13 @@ const KDSPaymentModal = ({
                             <button
                                 onClick={handleMoveToHistory}
                                 disabled={isProcessing}
-                                className="flex-[2] py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-lg transition shadow-md disabled:opacity-50 flex flex-col items-center justify-center"
+                                className="flex-[2] py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-base transition shadow-md disabled:opacity-50 flex flex-col items-center justify-center"
                             >
                                 <div className="flex items-center gap-2">
-                                    <History size={20} />
+                                    <History size={18} />
                                     <span>{isProcessing ? 'מעביר...' : 'העבר להיסטוריה'}</span>
                                 </div>
-                                <span className="text-xs font-medium opacity-70 mt-0.5">ניתן יהיה לגשת להזמנה דרך טאב היסטוריה</span>
+                                <span className="text-[10px] font-medium opacity-70 mt-0.5">ניתן יהיה לגשת להזמנה דרך טאב היסטוריה</span>
                             </button>
                         </div>
                     )}
@@ -409,4 +374,3 @@ const KDSPaymentModal = ({
 };
 
 export default KDSPaymentModal;
-

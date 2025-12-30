@@ -1,6 +1,4 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { getQueueStats, syncQueue } from '../services/offlineQueue';
-import OfflineAlert from '../components/OfflineAlert';
 
 const AuthContext = createContext(null);
 
@@ -13,72 +11,12 @@ export const AuthProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
     const [deviceMode, setDeviceMode] = useState(null); // 'kiosk', 'kds', 'manager', 'music'
     const [isLoading, setIsLoading] = useState(true);
-    const [isOnline, setIsOnline] = useState(navigator.onLine);
-    const [showOfflineAlert, setShowOfflineAlert] = useState(false);
-    const [offlineAlertDismissed, setOfflineAlertDismissed] = useState(false);
     const [syncStatus, setSyncStatus] = useState({
         inProgress: false,
         lastSync: null,
         progress: 0,
-        error: null,
-        pendingQueue: 0 // Count of offline actions waiting to sync
+        error: null
     });
-
-    // Check and update pending queue count
-    const updatePendingCount = async () => {
-        try {
-            const stats = await getQueueStats();
-            setSyncStatus(prev => ({ ...prev, pendingQueue: stats.pending }));
-        } catch (e) {
-            console.warn('Failed to get queue stats:', e);
-        }
-    };
-
-    // Sync offline queue when coming back online AND detect offline
-    useEffect(() => {
-        const handleOnline = async () => {
-            console.log('🌐 Back online! Syncing offline queue...');
-            setIsOnline(true);
-            setShowOfflineAlert(false);
-            setOfflineAlertDismissed(false); // Reset for next offline event
-
-            const result = await syncQueue();
-            if (result.synced > 0) {
-                console.log(`✅ Synced ${result.synced} pending actions`);
-            }
-            updatePendingCount();
-        };
-
-        const handleOffline = () => {
-            console.log('📴 Gone offline!');
-            setIsOnline(false);
-            // Only show alert if not already dismissed this session
-            if (!offlineAlertDismissed) {
-                setShowOfflineAlert(true);
-            }
-            // Note: SMS alerts are handled by the heartbeat-monitor Cloud Function
-            // which monitors device_sessions in Supabase
-        };
-
-        window.addEventListener('online', handleOnline);
-        window.addEventListener('offline', handleOffline);
-
-        // Check pending count periodically
-        const interval = setInterval(updatePendingCount, 5000);
-        updatePendingCount(); // Initial check
-
-        return () => {
-            window.removeEventListener('online', handleOnline);
-            window.removeEventListener('offline', handleOffline);
-            clearInterval(interval);
-        };
-    }, [offlineAlertDismissed]);
-
-    // Handle offline alert dismissal
-    const handleOfflineAlertDismiss = () => {
-        setShowOfflineAlert(false);
-        setOfflineAlertDismissed(true);
-    };
 
     // Trigger cloud-to-local sync
     const triggerSync = async (businessId = null) => {
@@ -184,6 +122,65 @@ export const AuthProvider = ({ children }) => {
         checkAuth();
     }, []);
 
+    // Auto-sync queue when coming back online
+    useEffect(() => {
+        const handleOnline = async () => {
+            if (currentUser?.business_id) {
+                console.log('🌐 [AuthContext] Back online - syncing pending changes...');
+                try {
+                    const { syncQueue } = await import('../services/offlineQueue');
+                    const result = await syncQueue();
+                    if (result.synced > 0) {
+                        console.log(`✅ [AuthContext] Synced ${result.synced} pending actions`);
+                    }
+                } catch (err) {
+                    console.error('Failed to sync queue:', err);
+                }
+            }
+        };
+
+        window.addEventListener('online', handleOnline);
+        return () => window.removeEventListener('online', handleOnline);
+    }, [currentUser?.business_id]);
+
+    // Background sync every 5 minutes (when user is logged in)
+    useEffect(() => {
+        if (!currentUser?.business_id) return;
+
+        const runBackgroundSync = async () => {
+            try {
+                console.log('🔄 [Background] Starting periodic sync...');
+                const { syncOrders, isOnline } = await import('../services/syncService');
+                const { syncQueue } = await import('../services/offlineQueue');
+
+                if (!isOnline()) {
+                    console.log('📴 [Background] Offline, skipping sync');
+                    return;
+                }
+
+                // First, sync local changes TO cloud
+                await syncQueue();
+
+                // Then, sync cloud changes TO local
+                const result = await syncOrders(currentUser.business_id);
+                if (result.success) {
+                    console.log(`✅ [Background] Synced ${result.ordersCount} orders`);
+                    localStorage.setItem('last_sync_time', Date.now().toString());
+                }
+            } catch (err) {
+                console.warn('⚠️ [Background] Sync failed:', err.message);
+            }
+        };
+
+        // Run immediately on login
+        runBackgroundSync();
+
+        // Then run every 5 minutes
+        const interval = setInterval(runBackgroundSync, 5 * 60 * 1000);
+
+        return () => clearInterval(interval);
+    }, [currentUser?.business_id]);
+
     const login = (employee) => {
         setCurrentUser(employee);
         localStorage.setItem('kiosk_user', JSON.stringify(employee));
@@ -216,16 +213,10 @@ export const AuthProvider = ({ children }) => {
             logout,
             setMode,
             isLoading,
-            isOnline,
             syncStatus,
             triggerSync
         }}>
             {children}
-
-            {/* Offline Alert Modal */}
-            {showOfflineAlert && (
-                <OfflineAlert onDismiss={handleOfflineAlertDismiss} />
-            )}
         </AuthContext.Provider>
     );
 };

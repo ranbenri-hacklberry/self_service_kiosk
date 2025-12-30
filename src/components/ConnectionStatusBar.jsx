@@ -1,7 +1,8 @@
 import React from 'react';
 import { useConnection } from '@/context/ConnectionContext';
 import { useAuth } from '@/context/AuthContext';
-import { Wifi, WifiOff, Cloud, CloudOff, Server, ServerOff, RefreshCw, CloudDownload } from 'lucide-react';
+import { Wifi, WifiOff, Cloud, CloudOff, Server, ServerOff, RefreshCw, CloudDownload, Database } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 /**
  * Connection status indicator - can be floating or integrated into headers
@@ -10,17 +11,33 @@ import { Wifi, WifiOff, Cloud, CloudOff, Server, ServerOff, RefreshCw, CloudDown
 const ConnectionStatusBar = ({ isIntegrated = false }) => {
     const { status, lastSync, lastLocalAvailable, lastCloudAvailable, refresh } = useConnection();
     const { currentUser, syncStatus, triggerSync } = useAuth();
+    const navigate = useNavigate();
+
+    // Debug Dashboard Access
+    const handleDebugClick = () => {
+        const pin = window.prompt("הכנס קוד מנהל לכניסה לדשבורד דיאגנוסטיקה:");
+        if (!pin) return;
+
+        // Check if PIN matches current user's PIN or a master code (e.g. 9999)
+        const userPin = currentUser?.pin_code || currentUser?.pin;
+
+        if (pin === '9999' || pin === '2102' || (userPin && pin === String(userPin))) {
+            navigate('/dexie-test');
+        } else {
+            alert("קוד שגוי");
+        }
+    };
 
     // Format relative time
     const formatTime = (date) => {
-        if (!date) return '';
+        if (!date) return 'לא ידוע';
         const dateObj = typeof date === 'string' ? new Date(date) : date;
         const now = new Date();
         const diff = Math.floor((now - dateObj) / 1000);
 
         if (diff < 60) return 'עכשיו';
-        if (diff < 3600) return `${Math.floor(diff / 60)}ד׳`;
-        if (diff < 86400) return `${Math.floor(diff / 3600)}ש׳`;
+        if (diff < 3600) return `לפני ${Math.floor(diff / 60)} דק׳`;
+        if (diff < 86400) return `לפני ${Math.floor(diff / 3600)} שע׳`;
         return dateObj.toLocaleDateString('he-IL');
     };
 
@@ -34,7 +51,16 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
         ? "text-[10px] px-2.5 py-1 rounded-full flex items-center gap-1.5 border transition-all duration-300 h-7"
         : "fixed top-3 left-3 z-[100] text-[10px] px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-lg backdrop-blur-md border transition-all duration-300";
 
-    // Sync indicator (shown as a separate small badge when syncing)
+    const debugButton = (
+        <button
+            onClick={handleDebugClick}
+            className="p-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded-full transition-all mx-1.5"
+            title="דיאגנוסטיקה (מנהל בלבד)"
+        >
+            <Database size={14} strokeWidth={2.5} />
+        </button>
+    );
+
     const syncIndicator = syncStatus?.inProgress ? (
         <div className="absolute -bottom-5 left-0 right-0 flex justify-center">
             <div className="bg-purple-500/20 text-purple-700 text-[8px] px-2 py-0.5 rounded-full flex items-center gap-1 border border-purple-200/50 animate-pulse">
@@ -54,6 +80,7 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
                     {syncStatus?.lastSync && (
                         <span className="text-green-600 text-[9px]">• סונכרן {formatTime(syncStatus.lastSync)}</span>
                     )}
+                    {debugButton}
                     {syncIndicator}
                 </div>
             );
@@ -62,9 +89,10 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
         // Local only (Offline mode)
         if (status === 'local-only') {
             return (
-                <div className={`${baseStyles} bg-amber-500/20 text-amber-800 border-amber-300/60 relative animate-pulse`}>
+                <div className={`${baseStyles} bg-amber-500/15 text-amber-800 border-amber-200/50 relative`}>
                     <WifiOff size={11} strokeWidth={2.5} />
-                    <span className="font-bold">אופליין</span>
+                    <span className="font-medium">אופליין</span>
+                    <span className="text-amber-600 text-[9px]">• {formatTime(lastSync)}</span>
                     <button
                         onClick={refresh}
                         className="p-0.5 hover:bg-amber-200/50 rounded-full transition-colors"
@@ -72,6 +100,7 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
                     >
                         <RefreshCw size={9} />
                     </button>
+                    {debugButton}
                     {syncIndicator}
                 </div>
             );
@@ -92,6 +121,7 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
                     >
                         <CloudDownload size={9} className={syncStatus?.inProgress ? 'animate-spin' : ''} />
                     </button>
+                    {debugButton}
                     {syncIndicator}
                 </div>
             );
@@ -100,15 +130,10 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
         // Completely offline
         if (status === 'offline') {
             return (
-                <div className={`${baseStyles} bg-red-500/20 text-red-800 border-red-300/60 relative animate-pulse`}>
+                <div className={`${baseStyles} bg-red-500/15 text-red-800 border-red-200/50 relative`}>
                     <WifiOff size={11} strokeWidth={2.5} />
-                    <span className="font-bold">אופליין</span>
-                    {/* Pending queue counter */}
-                    {syncStatus?.pendingQueue > 0 && (
-                        <span className="bg-orange-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                            {syncStatus.pendingQueue}
-                        </span>
-                    )}
+                    <span className="font-medium">אין חיבור</span>
+                    <span className="text-red-600 text-[9px]">• {formatTime(lastSync)}</span>
                     <button
                         onClick={refresh}
                         className="p-0.5 hover:bg-red-200/50 rounded-full transition-colors"
@@ -116,6 +141,7 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
                     >
                         <RefreshCw size={9} />
                     </button>
+                    {debugButton}
                 </div>
             );
         }

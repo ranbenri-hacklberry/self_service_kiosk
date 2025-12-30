@@ -27,11 +27,23 @@ const OrderEditModal = ({
     const [customerInfoModalMode, setCustomerInfoModalMode] = useState('phone');
 
     // memoize customer data to prevent unnecessary re-renders of the sub-modal
-    const currentCustomerData = React.useMemo(() => ({
-        phone: orderData?.customer_phone,
-        name: orderData?.customer_name,
-        id: orderData?.customer_id
-    }), [orderData?.customer_phone, orderData?.customer_name, orderData?.customer_id]);
+    const currentCustomerData = React.useMemo(() => {
+        // Filter phone number: If it contains 'GUEST' or is likely an ID (not a real phone), return empty string
+        const phone = orderData?.customer_phone || '';
+        const phoneStr = phone.toString();
+        const sanitizedPhone = (phoneStr.includes('GUEST') || phoneStr.includes('_') || phoneStr.length > 15) ? '' : phoneStr;
+
+        // Similarly for name
+        const name = orderData?.customer_name || '';
+        const nameStr = typeof name === 'string' ? name : '';
+        const sanitizedName = (nameStr.includes('GUEST') || ['אורח', 'אורח אנונימי'].includes(nameStr)) ? '' : nameStr;
+
+        return {
+            phone: sanitizedPhone,
+            name: sanitizedName,
+            id: orderData?.customer_id
+        };
+    }, [orderData?.customer_phone, orderData?.customer_name, orderData?.customer_id]);
 
     const loadItemsFromOrder = () => {
         if (!order || !order.items) return;
@@ -47,7 +59,8 @@ const OrderEditModal = ({
             customer_phone: order.customerPhone,
             customer_id: order.customerId,
             order_number: order.orderNumber,
-            is_paid: order.isPaid
+            is_paid: order.isPaid,
+            payment_method: order.paymentMethod || order.payment_method
         });
 
         // 1. Flatten items: Each ID in 'ids' becomes an individual row
@@ -94,7 +107,7 @@ const OrderEditModal = ({
     if (!isOpen || !order) return null;
 
     const handleToggleEarlyDelivered = async (item) => {
-        if (processingItemId) return;
+        if (processingItemId || isHistoryMode) return;
 
         setProcessingItemId(item.id);
         const newValue = !item.is_early_delivered;
@@ -154,6 +167,7 @@ const OrderEditModal = ({
                 customerId: order.customerId,
                 customerPhone: order.customerPhone,
                 isPaid: orderData.is_paid || order.isPaid,
+                paymentMethod: orderData.payment_method || order.paymentMethod || order.payment_method,
                 totalAmount: totalToUse,
                 originalTotal: totalToUse,
                 originalPaidAmount: order.paidAmount || totalToUse,
@@ -173,14 +187,10 @@ const OrderEditModal = ({
 
     const formatPrice = (price) => {
         if (!price) return '';
-        return `₪${Number(price).toFixed(0)}`;
+        const num = Number(price);
+        const hasDecimals = num % 1 !== 0;
+        return `₪${hasDecimals ? num.toFixed(2) : num.toFixed(0)}`;
     };
-
-    // Check if customer is a guest
-    const rawName = orderData?.customer_name || '';
-    const customerName = typeof rawName === 'string' ? rawName.trim() : '';
-    const isGuest = !customerName || ['אורח', 'אורח/ת', 'הזמנה מהירה', 'אורח כללי', 'אורח אנונימי'].includes(customerName) || customerName.startsWith('#');
-    const hasPhone = !!orderData?.customer_phone;
 
     return (
         <div
@@ -192,14 +202,8 @@ const OrderEditModal = ({
                 onClick={e => e.stopPropagation()}
                 dir="rtl"
             >
-                {/* Header - White with order number and edit button */}
+                {/* Header: #Order (Left) | עריכה מלאה (Right) */}
                 <div className="bg-white p-4 flex items-center justify-between">
-                    {/* Order number - Right side (in RTL) */}
-                    <h2 className="text-xl font-bold text-slate-800">
-                        #{orderData?.order_number}
-                    </h2>
-
-                    {/* Edit button - Left side (in RTL) */}
                     <button
                         onClick={handleOpenFullEditor}
                         className="px-4 py-2 rounded-xl bg-orange-100 text-orange-500 font-bold text-sm flex items-center gap-2 hover:bg-orange-200 transition"
@@ -207,6 +211,10 @@ const OrderEditModal = ({
                         <Edit size={18} />
                         <span>עריכה מלאה</span>
                     </button>
+
+                    <h2 className="text-xl font-bold text-slate-800">
+                        #{orderData?.order_number}
+                    </h2>
                 </div>
 
                 {/* Items List */}
@@ -224,27 +232,24 @@ const OrderEditModal = ({
                                     onClick={() => handleToggleEarlyDelivered(item)}
                                     className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl cursor-pointer hover:bg-gray-100 transition-all active:scale-[0.99]"
                                 >
-                                    {/* Right side: Checkbox + Name */}
-                                    <div className="flex items-center gap-3 flex-1">
-                                        {/* Checkbox */}
-                                        <div className={`
-                                            w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0
-                                            ${isMarked
-                                                ? 'bg-green-500 text-white'
-                                                : 'bg-gray-200 text-gray-400'}
-                                        `}>
-                                            <Check size={20} strokeWidth={3} />
-                                        </div>
-
-                                        {/* Item name */}
+                                    {/* Right side: Name + Price */}
+                                    <div className="flex-1 flex items-center justify-between gap-3">
                                         <span className={`text-lg font-bold ${isMarked ? 'text-gray-400 line-through' : 'text-slate-800'}`}>
                                             {item.name}
                                         </span>
+                                        <div className={`text-base font-bold ${isMarked ? 'text-gray-400' : 'text-gray-600'}`}>
+                                            {formatPrice(item.price * (item.quantity || 1))}
+                                        </div>
                                     </div>
 
-                                    {/* Left side: Price */}
-                                    <div className={`text-base font-bold ${isMarked ? 'text-gray-400' : 'text-gray-600'}`}>
-                                        {formatPrice(item.price * (item.quantity || 1))}
+                                    {/* Left side: Checkbox */}
+                                    <div className={`
+                                        w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 ms-3
+                                        ${isMarked
+                                            ? 'bg-green-500 text-white'
+                                            : 'bg-gray-200 text-gray-400'}
+                                    `}>
+                                        <Check size={20} strokeWidth={3} />
                                     </div>
                                 </div>
                             );
@@ -309,7 +314,7 @@ const OrderEditModal = ({
                     setTimeout(() => {
                         onRefresh?.();
                         onClose();
-                    }, 300);
+                    }, 1000);
                 }}
                 orderId={orderData?.id}
             />
