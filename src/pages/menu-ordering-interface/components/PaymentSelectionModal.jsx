@@ -11,6 +11,7 @@ const PaymentSelectionModal = ({
   cartTotal = 0,
   subtotal = 0,
   loyaltyDiscount = 0,
+  soldierDiscountAmount = 0,
   cartItems = [],
   isRefund = false,
   refundAmount = 0,
@@ -65,11 +66,14 @@ const PaymentSelectionModal = ({
   if (!isOpen) return null;
 
   const formatPrice = (price) => {
+    const num = Number(price);
+    const hasDecimals = num % 1 !== 0;
     return new Intl.NumberFormat('he-IL', {
       style: 'currency',
       currency: 'ILS',
-      minimumFractionDigits: 0
-    })?.format(price);
+      minimumFractionDigits: hasDecimals ? 2 : 0,
+      maximumFractionDigits: 2
+    })?.format(num);
   };
 
   const buildModsString = (item) => {
@@ -302,6 +306,18 @@ const PaymentSelectionModal = ({
           <div className="flex-1 p-8 flex flex-col items-center justify-center space-y-8">
             {/* Amount Display - BOLD & LARGE (7xl) like GitHub version */}
             <div className={`w-full ${config?.amountBg} border-2 rounded-3xl p-8 text-center`}>
+              {/* Show discounts breakdown if any */}
+              {(soldierDiscountAmount > 0 || loyaltyDiscount > 0) && (
+                <div className="text-sm text-slate-500 mb-4 space-y-1">
+                  <p>סהכ לפני הנחות: {formatPrice(subtotal)}</p>
+                  {soldierDiscountAmount > 0 && (
+                    <p className="text-blue-600">🎖️ הנחת חייל (10%): -{formatPrice(soldierDiscountAmount)}</p>
+                  )}
+                  {loyaltyDiscount > 0 && (
+                    <p className="text-green-600">🎁 הנחת נאמנות: -{formatPrice(loyaltyDiscount)}</p>
+                  )}
+                </div>
+              )}
               <p className="text-sm font-bold mb-3 text-slate-600">
                 {isRefund ? 'סכום לזיכוי:' : 'סכום לתשלום:'}
               </p>

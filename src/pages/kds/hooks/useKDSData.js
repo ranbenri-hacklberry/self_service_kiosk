@@ -771,16 +771,10 @@ export const useKDSData = () => {
 
             log('🚀 [START-PROCESSING] About to process ' + (ordersData?.length || 0) + ' orders');
 
-            (ordersData || []).forEach(order => {
-                // LOG: Start of processing for specific order
-                if (String(order.order_number) === '1790' || order.id === 'd264b6c9-3dcd-4b0f-adb3-8d50f355906f') {
-                    console.log(`🔍 [PROCESSING-START] Found order ${order.order_number}:`, {
-                        id: String(order.id).slice(0, 8),
-                        order_status: order.order_status,
-                        _useLocalStatus: order._useLocalStatus,
-                        pending_sync: order.pending_sync,
-                        itemCount: order.order_items?.length || 0
-                    });
+            (ordersData || []).forEach((order, idx) => {
+                // CRITICAL: Map items_detail to order_items FIRST (RPC returns items_detail)
+                if (!order.order_items && order.items_detail) {
+                    order.order_items = order.items_detail;
                 }
 
                 // Check if order has ANY active items (in_progress, new, pending)
@@ -794,6 +788,7 @@ export const useKDSData = () => {
 
                 // Only skip to history if order is completed AND has no active items
                 if (order.order_status === 'completed' && !hasActiveItems) {
+                    if (idx < 3) console.log(`⏭️ [DIAG] Skipping order ${order.order_number} - completed with no active items`);
                     return; // Skip entirely - belongs in History tab
                 }
 
@@ -836,11 +831,9 @@ export const useKDSData = () => {
                             return false;
                         }
 
-                        // 3. Drop Completed if order not in_progress
-                        if (item.item_status === 'completed' && order.order_status !== 'in_progress') {
-                            if (isTargetOrder) console.log(`🔍 [ITEM-FILTER] Dropping completed item ${item.id} (Standard)`);
-                            return false;
-                        }
+                        // 3. (REMOVED) Drop Completed if order not in_progress
+                        // Old Logic: if (item.item_status === 'completed' && order.order_status !== 'in_progress') return false;
+                        // Fix: We need completed items to display orders in the "Completed/Ready" column!
 
                         // 4. Routing Logic (Grab & Go)
                         const kdsLogic = item.menu_items?.kds_routing_logic;

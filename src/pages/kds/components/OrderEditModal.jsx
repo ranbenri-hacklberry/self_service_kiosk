@@ -187,7 +187,9 @@ const OrderEditModal = ({
 
     const formatPrice = (price) => {
         if (!price) return '';
-        return `₪${Number(price).toFixed(0)}`;
+        const num = Number(price);
+        const hasDecimals = num % 1 !== 0;
+        return `₪${hasDecimals ? num.toFixed(2) : num.toFixed(0)}`;
     };
 
     return (

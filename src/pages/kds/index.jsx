@@ -386,6 +386,7 @@ const KdsScreen = () => {
 
     // HISTORY/COMPLETED ORDERS: Navigate to restricted edit screen
     const isRestricted = viewMode === 'history' || order.order_status === 'completed' || order.order_status === 'cancelled';
+    const isFromHistory = viewMode === 'history';
 
     if (isRestricted) {
       console.log('🖊️ KDS: Navigating to RESTRICTED edit order (History):', order.id);
@@ -394,13 +395,18 @@ const KdsScreen = () => {
         id: order.id,
         orderNumber: order.orderNumber,
         restrictedMode: true,
-        viewMode: viewMode
+        viewMode: viewMode,
+        returnToActiveOnChange: isFromHistory // NEW: Flag to indicate we should switch to active tab if changes are made
       };
       sessionStorage.setItem('editOrderData', JSON.stringify(editData));
       sessionStorage.setItem('order_origin', 'kds');
       // Navigate directly to cart
       navigate(`/menu-ordering-interface?editOrderId=${order.id}`, {
-        state: { orderId: order.id, viewMode: viewMode }
+        state: {
+          orderId: order.id,
+          viewMode: viewMode,
+          returnToActiveOnChange: isFromHistory // Pass in state as well
+        }
       });
     } else {
       console.log('🖊️ KDS: Opening Edit Modal for Active Order:', order.id);

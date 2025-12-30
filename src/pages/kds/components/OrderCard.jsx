@@ -338,8 +338,8 @@ const OrderCard = ({
 
             {/* Badges Row */}
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {/* Payment Method Badge (Small, in header) */}
-              {order.isPaid && !isHistory && (
+              {/* Payment Method Badge - Only in History */}
+              {order.isPaid && isHistory && (
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold border ${PAYMENT_STYLES[order.payment_method] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                   {PAYMENT_LABELS[order.payment_method] || order.payment_method}
                 </span>

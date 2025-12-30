@@ -32,11 +32,14 @@ const KDSPaymentModal = ({
     const customerName = order.customerName || 'לקוח';
 
     const formatPrice = (price) => {
+        const num = Number(price);
+        const hasDecimals = num % 1 !== 0;
         return new Intl.NumberFormat('he-IL', {
             style: 'currency',
             currency: 'ILS',
-            minimumFractionDigits: 0
-        }).format(price);
+            minimumFractionDigits: hasDecimals ? 2 : 0,
+            maximumFractionDigits: 2
+        }).format(num);
     };
 
     // Payment Methods Config

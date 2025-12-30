@@ -3,6 +3,12 @@ import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, U
 import { v4 as uuidv4 } from 'uuid';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
+/**
+ * ⚠️⚠️⚠️ WARNING - DO NOT EDIT ⚠️⚠️⚠️
+ * 🚨🚨🚨 אין לערוך קובץ זה ללא אישור מפורש של המשתמש! 🚨🚨🚨
+ * 🔒 LOCKED FILE - Changes require explicit user approval
+ * 📆 Last approved edit: 2025-12-30
+ */
 const PAYMENT_LABELS = {
     cash: 'מזומן',
     credit_card: 'אשראי',
@@ -13,10 +19,15 @@ const PAYMENT_LABELS = {
 };
 
 const formatPrice = (price = 0) => {
-    // מחזיר רק את המספר ללא סימן שקל - בטוח מ-NaN
+    // מחזיר מספר עם אגורות אם יש (לדוגמה: 8.10)
     const num = Number(price);
     if (isNaN(num)) return '0';
-    return new Intl.NumberFormat('he-IL', { maximumFractionDigits: 0 }).format(num);
+    // If it has decimals, show 2 decimal places. Otherwise show as integer.
+    const hasDecimals = num % 1 !== 0;
+    return new Intl.NumberFormat('he-IL', {
+        minimumFractionDigits: hasDecimals ? 2 : 0,
+        maximumFractionDigits: 2
+    }).format(num);
 };
 
 // Memoized CartItem to prevent unnecessary re-renders
@@ -152,7 +163,11 @@ const SmartCart = ({
     loyaltyFreeCoffees = 0,
     cartHistory = [],
     orderNumber,
-    isRestrictedMode = false // New prop
+    isRestrictedMode = false, // New prop
+    // Soldier discount props
+    soldierDiscountEnabled = false,
+    onToggleSoldierDiscount,
+    soldierDiscountAmount = 0
 }) => {
 
     // --- Calculations ---
@@ -388,8 +403,21 @@ const SmartCart = ({
                                     </div>
                                 )}
 
-                                {/* Soldier Discount Badge (from Screenshot) - Assuming logic exists or simplistic placement */}
-                                <div className="mr-auto"></div>
+                                {/* Soldier Discount Button - Far Left in RTL */}
+                                <div className="mr-auto">
+                                    {onToggleSoldierDiscount && !isRestrictedMode && (
+                                        <button
+                                            onClick={onToggleSoldierDiscount}
+                                            className={`px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition-all ${soldierDiscountEnabled
+                                                ? 'bg-blue-600 text-white shadow-md'
+                                                : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100'
+                                                }`}
+                                        >
+                                            <span>🎖️</span>
+                                            <span>{soldierDiscountEnabled ? 'חייל ✓' : '+חייל'}</span>
+                                        </button>
+                                    )}
+                                </div>
 
                             </>
                         );
@@ -562,14 +590,26 @@ const SmartCart = ({
                     </div>
                 )}
 
-                {/* Loyalty Discount Row - Don't show in edit mode if original already had discount */}
-                {loyaltyDiscount > 0 && !(isEditMode && originalIsPaid && editingOrderData?.originalRedeemedCount > 0) && (
+                {/* Loyalty Discount Row - Only show if real customer AND has discount */}
+                {loyaltyDiscount > 0 && hasRealCustomer && !(isEditMode && originalIsPaid && editingOrderData?.originalRedeemedCount > 0) && (
                     <div className="flex justify-between items-center mb-3 px-1 bg-green-50 p-2 rounded-lg border border-green-100">
                         <span className="text-green-700 font-bold flex items-center gap-2 text-sm">
                             <span>🎁</span> הנחת נאמנות (קפה חינם)
                         </span>
                         <span className="text-green-700 font-bold dir-ltr">
                             -{formatPrice(loyaltyDiscount)}
+                        </span>
+                    </div>
+                )}
+
+                {/* Soldier Discount Display - only show amount if enabled */}
+                {soldierDiscountEnabled && soldierDiscountAmount > 0 && (
+                    <div className="flex justify-between items-center mb-3 px-1 bg-blue-50 p-2 rounded-lg border border-blue-100">
+                        <span className="text-blue-700 font-bold flex items-center gap-2 text-sm">
+                            <span>🎖️</span> הנחת חייל (10%)
+                        </span>
+                        <span className="text-blue-700 font-bold dir-ltr">
+                            -{formatPrice(soldierDiscountAmount)}
                         </span>
                     </div>
                 )}

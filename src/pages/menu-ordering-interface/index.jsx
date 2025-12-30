@@ -636,16 +636,40 @@ const MenuOrderingInterface = () => {
   };
 
   const handleCloseConfirmation = () => {
+    // Save confirmation data BEFORE clearing it
+    const confirmationData = showConfirmationModal;
+    const navigationFromConfirmation = confirmationData?.navigationTarget;
+
     setShowConfirmationModal(null);
     const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
     const editDataRaw = sessionStorage.getItem('editOrderData');
     const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
 
-    console.log('🔙 handleCloseConfirmation - origin:', origin, 'viewMode:', editData?.viewMode);
+    console.log('🔙 handleCloseConfirmation - origin:', origin, 'viewMode:', editData?.viewMode, 'navigationTarget:', navigationFromConfirmation);
 
     if (origin === 'kds') {
       console.log('✅ Navigating back to KDS');
-      const targetView = cartHistory.some(h => h.type === 'ADD_ITEM') ? 'active' : (editData?.viewMode || 'active');
+
+      // Determine if changes were made (any ADD_ITEM or REMOVE_ITEM in cart history)
+      const hadChanges = cartHistory.some(h =>
+        h.type === 'ADD_ITEM' ||
+        h.type === 'REMOVE_ITEM' ||
+        h.type === 'UPDATE_ITEM'
+      );
+
+      // Priority: use navigationTarget from confirmation if available
+      // Otherwise, use returnToActiveOnChange logic
+      let targetView = 'active';
+      if (navigationFromConfirmation) {
+        targetView = navigationFromConfirmation;
+        console.log(`📋 Using navigationTarget from confirmation: ${targetView}`);
+      } else if (editData?.returnToActiveOnChange) {
+        targetView = hadChanges ? 'active' : 'history';
+        console.log(`📋 From history: hadChanges=${hadChanges}, returning to ${targetView}`);
+      } else {
+        targetView = editData?.viewMode || 'active';
+      }
+
       clearOrderSessionState();
       navigate('/kds', { state: { viewMode: targetView } });
       return;
@@ -1358,13 +1382,14 @@ const MenuOrderingInterface = () => {
   // Calculate soldier discount amount
   const soldierDiscountAmount = useMemo(() => {
     if (!soldierDiscountEnabled) return 0;
-    // 10% of cart total (before loyalty discount) - keep 2 decimal places
-    return Math.round(cartTotal * 0.10 * 100) / 100;
+    // 10% of cart total - keep decimals (agorot) for accurate display
+    return cartTotal * 0.10;
   }, [cartTotal, soldierDiscountEnabled]);
 
   // Calculate finalTotal with useMemo to react to loyaltyDiscount and soldier discount changes
   const finalTotal = useMemo(() => {
     const total = Math.max(0, cartTotal - loyaltyDiscount - soldierDiscountAmount);
+    // Keep decimals (agorot) for accurate display
     console.log('💵 Final Total:', { cartTotal, loyaltyDiscount, soldierDiscountAmount, finalTotal: total });
     return total;
   }, [cartTotal, loyaltyDiscount, soldierDiscountAmount]);
@@ -2024,14 +2049,15 @@ const MenuOrderingInterface = () => {
       // Show confirmation modal immediately
       const isAdditionalCharge = isEditMode && editingOrderData?.isPaid && priceDifference > 0;
 
-      // Calculate what to show in the modal
-      let displayTotal = cartTotal; // Default for new orders
+      // Calculate what to show in the modal - use finalTotal which includes discounts
+      let displayTotal = finalTotal; // Default for new orders (includes soldier discount)
 
       if (isEditMode && editingOrderData?.isPaid) {
         if (isRefund) {
           displayTotal = refundAmount; // Show amount returned
         } else if (isAdditionalCharge) {
-          displayTotal = priceDifference; // Show EXTRA amount paid
+          // For additional charge, calculate difference with discounts
+          displayTotal = finalTotal - originalTotal; // Show EXTRA amount paid
         } else {
           // If paid and no difference (just notes change?), show 0 or full?
           // Usually implies no charge.
@@ -2048,9 +2074,13 @@ const MenuOrderingInterface = () => {
         paymentStatus: isAdditionalCharge ? 'תוספת לתשלום' : (isRefund ? 'זיכוי' : paymentStatus),
         paymentMethod: orderData?.payment_method,
         total: displayTotal,
+        subtotal: cartTotal,
+        soldierDiscountAmount: soldierDiscountAmount,
+        loyaltyDiscount: loyaltyDiscount,
         isRefund,
         refundAmount,
         isPaid: orderData?.is_paid ?? true,
+        isEdit: isEditMode,
         // Pass info for navigation after close
         navigationTarget: hasChanges ? 'active' : 'history'
       });
@@ -2349,6 +2379,7 @@ const MenuOrderingInterface = () => {
             cartTotal={amountToPay}
             subtotal={cartTotal}
             loyaltyDiscount={loyaltyDiscount}
+            soldierDiscountAmount={soldierDiscountAmount}
             cartItems={cartItems}
             isRefund={isEditMode && editingOrderData?.isPaid && priceDifference < 0}
             refundAmount={Math.abs(priceDifference)}
