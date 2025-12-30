@@ -122,6 +122,27 @@ export const AuthProvider = ({ children }) => {
         checkAuth();
     }, []);
 
+    // Auto-sync queue when coming back online
+    useEffect(() => {
+        const handleOnline = async () => {
+            if (currentUser?.business_id) {
+                console.log('🌐 [AuthContext] Back online - syncing pending changes...');
+                try {
+                    const { syncQueue } = await import('../services/offlineQueue');
+                    const result = await syncQueue();
+                    if (result.synced > 0) {
+                        console.log(`✅ [AuthContext] Synced ${result.synced} pending actions`);
+                    }
+                } catch (err) {
+                    console.error('Failed to sync queue:', err);
+                }
+            }
+        };
+
+        window.addEventListener('online', handleOnline);
+        return () => window.removeEventListener('online', handleOnline);
+    }, [currentUser?.business_id]);
+
     // Background sync every 5 minutes (when user is logged in)
     useEffect(() => {
         if (!currentUser?.business_id) return;
@@ -130,12 +151,17 @@ export const AuthProvider = ({ children }) => {
             try {
                 console.log('🔄 [Background] Starting periodic sync...');
                 const { syncOrders, isOnline } = await import('../services/syncService');
+                const { syncQueue } = await import('../services/offlineQueue');
 
                 if (!isOnline()) {
                     console.log('📴 [Background] Offline, skipping sync');
                     return;
                 }
 
+                // First, sync local changes TO cloud
+                await syncQueue();
+
+                // Then, sync cloud changes TO local
                 const result = await syncOrders(currentUser.business_id);
                 if (result.success) {
                     console.log(`✅ [Background] Synced ${result.ordersCount} orders`);

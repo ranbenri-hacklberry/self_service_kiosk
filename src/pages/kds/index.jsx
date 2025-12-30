@@ -349,15 +349,6 @@ const KdsScreen = () => {
           // Pass signal to hook
           const data = await fetchHistoryOrders(selectedDate, controller.signal);
           if (!controller.signal.aborted) {
-            // If data is empty, try to find the nearest date with orders
-            if ((!data || data.length === 0)) {
-              const nearestDate = await findNearestActiveDate(selectedDate);
-              if (nearestDate && !controller.signal.aborted) {
-                console.log('📅 jumping back to nearest date with orders:', nearestDate);
-                setSelectedDate(nearestDate);
-                return; // Effect will re-run with new selectedDate
-              }
-            }
             setHistoryOrders(data || []);
           }
         } catch (err) {
@@ -490,20 +481,14 @@ const KdsScreen = () => {
           </div>
         ) : (
           <div className="flex-1 relative bg-purple-50/30 flex flex-col min-h-0 pb-safe">
-            {/* History Toolbar / Badge */}
-            <div className="absolute top-3 right-4 bg-purple-100 border border-purple-200 px-3 py-1 rounded-full text-xs font-bold text-purple-700 z-10 shadow-sm flex items-center gap-2">
-              <History size={12} />
-              היסטוריית הזמנות ({historyOrders.length})
-            </div>
-
             {/* History List - Horizontal Scroll similar to active */}
-            <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-20 custom-scrollbar">
+            <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-2 pt-2 pb-2 custom-scrollbar">
               {isHistoryLoading ? (
                 <div className="h-full w-full flex items-center justify-center text-purple-400 gap-2">
                   <RefreshCw className="animate-spin" /> טוען היסטוריה...
                 </div>
               ) : (
-                <div className="flex h-full flex-row justify-start gap-4 items-stretch">
+                <div className="flex h-full flex-row justify-start gap-1 items-stretch">
                   {historyOrders.length === 0 ? (
                     <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 opacity-60 ml-20">
                       <History size={48} className="mb-2" />
@@ -612,10 +597,10 @@ const KdsScreen = () => {
             try {
               await handleConfirmPayment(orderId, paymentMethod);
               setSelectedOrderForPayment(null);
-              // Refresh history if in history mode
-              if (viewMode === 'history') {
-                setHistoryRefreshTrigger(prev => prev + 1);
-              }
+              // Switch back to active view as requested by user
+              setViewMode('active');
+              // Refresh orders to see the change if needed
+              fetchOrders();
             } catch (err) {
               // error is handled inside handleConfirmPayment (modal)
             }

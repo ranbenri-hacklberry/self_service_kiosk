@@ -166,6 +166,31 @@ db.version(6).stores({
     sync_status: 'id, table, recordId, status, updated_at'
 });
 
+// Version 7: Add _processing index to orders to fix query errors
+db.version(7).stores({
+    active_order_items: 'id, order_id, menu_item_id, item_status, created_at',
+    businesses: 'id, name',
+    catalog_items: 'id, name, category, created_at',
+    customers: 'id, phone_number, phone, name, business_id',
+    device_sessions: 'id, business_id, device_id, employee_id, last_seen_at',
+    discounts: 'id, name, business_id, is_active, discount_code',
+    employees: 'id, name, nfc_id, pin_code, business_id, auth_user_id',
+    ingredients: 'id, name, supplier_id',
+    // ADDED _processing here
+    orders: 'id, order_number, order_status, is_paid, customer_id, business_id, created_at, updated_at, _processing',
+    order_items: 'id, order_id, menu_item_id, item_status, course_stage, created_at',
+    menu_items: 'id, name, category, business_id, is_active, kds_routing_logic',
+    sync_meta: 'table_name, last_synced_at, record_count',
+    optiongroups: 'id, name, menu_item_id, business_id',
+    optionvalues: 'id, group_id, value_name, price_adjustment',
+    menuitemoptions: 'id, item_id, group_id',
+    loyalty_purchases: 'id, customer_id, business_id, created_at, is_redemption',
+    cached_images: 'url, cached_at',
+    offline_queue: null,
+    offline_queue_v2: '++id, type, status, createdAt, table, recordId',
+    sync_status: 'id, table, recordId, status, updated_at'
+});
+
 // Export table references for easy access
 export const {
     active_order_items,

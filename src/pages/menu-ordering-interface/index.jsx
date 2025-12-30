@@ -1772,7 +1772,7 @@ const MenuOrderingInterface = () => {
         console.log('☕ Original Coffee Count calculated:', originalCoffeeCount);
       }
 
-      // Build payload matching submit_order_v2 function signature exactly
+      // Build payload matching submit_order_v3 function signature exactly
       const client = supabase;
       const orderPayload = {
         p_customer_phone: guestPhone,
@@ -1782,16 +1782,18 @@ const MenuOrderingInterface = () => {
         p_customer_id: customerId || null,
         p_payment_method: orderData?.payment_method || null,
         p_refund: isRefund,
-        edit_mode: isEditMode || false,
-        order_id: isEditMode ? editingOrderData.orderId : null,
-        original_total: isEditMode ? editingOrderData.originalTotal : null,
+        p_refund_amount: isRefund ? Number(originalTotalForRefund - finalTotal) : 0,
+        p_refund_method: isRefund ? (orderData?.payment_method || editingOrderData?.paymentMethod) : null,
+        p_edit_mode: isEditMode || false,
+        p_order_id: isEditMode ? editingOrderData.orderId : null,
+        p_original_total: isEditMode ? Number(editingOrderData.originalTotal) : 0,
         p_cancelled_items: isEditMode && cancelledItems.length > 0 ? cancelledItems.map(i => ({ id: i.id })) : [],
-        p_final_total: (orderData?.total_amount !== undefined) ? orderData.total_amount : finalTotal,
-        p_original_coffee_count: originalCoffeeCount,
+        p_final_total: Number((orderData?.total_amount !== undefined) ? orderData.total_amount : finalTotal),
+        p_original_coffee_count: Number(originalCoffeeCount),
         p_is_quick_order: !!currentCustomer?.isQuickOrder && !realPhone,
         // Soldier discount takes priority, then orderData discount
         p_discount_id: soldierDiscountEnabled ? soldierDiscountId : (orderData?.discount_id || null),
-        p_discount_amount: soldierDiscountEnabled ? soldierDiscountAmount : (orderData?.discount_amount || 0),
+        p_discount_amount: Number(soldierDiscountEnabled ? soldierDiscountAmount : (orderData?.discount_amount || 0)),
         p_business_id: currentUser?.business_id || null
       };
 
@@ -1803,7 +1805,7 @@ const MenuOrderingInterface = () => {
       console.log('  - Order ID:', orderPayload.order_id || 'N/A');
 
 
-      console.log('📤 Calling submit_order_v2 with payload');
+      console.log('📤 Calling submit_order_v3 with payload');
       console.log('🔍 User Context for RPC:', {
         phone: currentUser?.whatsapp_phone,
         isDemo: currentUser?.whatsapp_phone === '0500000000' || currentUser?.whatsapp_phone === '0501111111'
@@ -1816,7 +1818,7 @@ const MenuOrderingInterface = () => {
 
       if (isOnline) {
         // Online: Submit to Supabase normally
-        const response = await supabase.rpc('submit_order_v2', orderPayload);
+        const response = await supabase.rpc('submit_order_v3', orderPayload);
         orderResult = response.data;
         orderError = response.error;
 
@@ -1904,7 +1906,7 @@ const MenuOrderingInterface = () => {
       // This prevents completed orders from appearing in active KDS when just editing details
       if (isEditMode && orderId && editingOrderData?.originalOrderStatus === 'completed') {
         // Check if any NEW items were added (items without an existing order_item_id)
-        const hasNewItems = cart.some(item => !item.id || item.id.toString().includes('temp'));
+        const hasNewItems = cartItems.some(item => !item.id || item.id.toString().includes('temp'));
 
         if (hasNewItems) {
           console.log('🔄 New items added to completed order. Resetting status to in_progress...');
@@ -1927,8 +1929,8 @@ const MenuOrderingInterface = () => {
       console.log('  - Order ID:', orderId);
       console.log('  - Order Number:', orderNumber);
 
-      // Don't clear cart yet - wait for confirmation modal to close
-      setCartItems([]);
+      // Clear cart
+      cartClearCart();
 
       let updatedCustomer = {
         ...currentCustomer,
@@ -2223,7 +2225,7 @@ const MenuOrderingInterface = () => {
           setShowCustomerInfoModal(false);
           refreshLoyalty(); // Refresh loyalty after customer update
         }}
-        orderId={null}
+        orderId={isEditMode && editingOrderData?.id ? String(editingOrderData.id).replace(/-ready$/, '').replace(/-stage-\d+$/, '') : null}
       />
 
       {/* Main Content - Menu (Right) and Cart (Left) */}
@@ -2350,6 +2352,7 @@ const MenuOrderingInterface = () => {
             cartItems={cartItems}
             isRefund={isEditMode && editingOrderData?.isPaid && priceDifference < 0}
             refundAmount={Math.abs(priceDifference)}
+            originalPaymentMethod={editingOrderData?.paymentMethod}
             businessId={currentUser?.business_id}
           />
         );

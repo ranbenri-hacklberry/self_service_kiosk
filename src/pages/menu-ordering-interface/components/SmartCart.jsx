@@ -3,6 +3,15 @@ import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, U
 import { v4 as uuidv4 } from 'uuid';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
+const PAYMENT_LABELS = {
+    cash: 'מזומן',
+    credit_card: 'אשראי',
+    bit: 'ביט',
+    paybox: 'פייבוקס',
+    gift_card: 'שובר',
+    oth: 'ע״ח הבית',
+};
+
 const formatPrice = (price = 0) => {
     // מחזיר רק את המספר ללא סימן שקל - בטוח מ-NaN
     const num = Number(price);
@@ -255,6 +264,7 @@ const SmartCart = ({
 
         if (isNoPriceChange && isEditMode) return {
             text: originalIsPaid ? 'שולם' : 'עדכון הזמנה',
+            paymentLabel: originalIsPaid ? (PAYMENT_LABELS[editingOrderData?.paymentMethod] || editingOrderData?.paymentMethod) : null,
             subtext: hasChanges ? 'לחץ לשמירת שינויים' : 'ללא שינוי במחיר',
             color: 'bg-white',
             buttonColor: hasChanges
@@ -304,78 +314,86 @@ const SmartCart = ({
             <div className="p-4 border-b border-gray-100 bg-white z-10 shadow-sm">
                 {/* Single row header */}
                 <div className="flex items-center gap-2">
-                    {/* Icon */}
-                    <div className="bg-orange-100 p-2 rounded-xl flex-shrink-0">
-                        <ShoppingBag className="w-5 h-5 text-orange-600" />
-                    </div>
 
-                    {/* Customer name if exists */}
-                    {hasRealCustomer && (
-                        <h2 className="text-xl font-black text-gray-800 tracking-tight flex-shrink-0">
-                            {customerName}
-                        </h2>
-                    )}
+                    {/* Logic: If name is 'Anonymous Guest', treat as no customer */}
+                    {(() => {
+                        const isAnonymous = !customerName || customerName.includes('אורח אנונימי') || customerName === 'אורח';
+                        const isValidPhone = customerPhone && /^[0-9+\-\s]+$/.test(customerPhone) && customerPhone.length < 15;
+                        const showAddButtons = isAnonymous || !isValidPhone;
 
-                    {/* Order number if no customer but has order number */}
-                    {!hasRealCustomer && orderNumber && (
-                        <h2 className="text-xl font-black text-gray-800 tracking-tight flex-shrink-0">
-                            #{orderNumber}
-                        </h2>
-                    )}
+                        return (
+                            <>
+                                {/* Icon */}
+                                {/* <div className="bg-orange-100 p-2 rounded-xl flex-shrink-0">
+                                    <ShoppingBag className="w-5 h-5 text-orange-600" />
+                                </div> */}
+                                {/* User wanted exactly like screenshot - no icon shown there? Actually let's keep it minimal or hide if needed. 
+                                   Screenshot shows buttons on the right. Let's follow the screenshot layout.
+                                   Screenshot has: [Orange +Phone] [Gray +Name] ...
+                                */}
 
-                    {/* Case 1: No customer - Show two buttons */}
-                    {!hasRealCustomer && onAddCustomerDetails && (
-                        <>
-                            <button
-                                onClick={() => onAddCustomerDetails('phone-then-name')}
-                                className="px-3 py-1.5 rounded-lg bg-orange-500 text-white border border-orange-600 shadow-sm hover:shadow-md hover:bg-orange-600 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
-                            >
-                                <Phone size={12} />
-                                הוסף טלפון + שם
-                            </button>
-                            <button
-                                onClick={() => onAddCustomerDetails('name')}
-                                className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 border border-gray-200 shadow-sm hover:shadow-md hover:bg-gray-200 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
-                            >
-                                <User size={12} />
-                                הוסף שם בלבד
-                            </button>
-                        </>
-                    )}
+                                {/* Case: No valid customer (or anonymous) - Show buttons */}
+                                {showAddButtons ? (
+                                    <>
+                                        {/* Phone Button */}
+                                        {!isValidPhone && onAddCustomerDetails && (
+                                            <button
+                                                onClick={() => onAddCustomerDetails('phone')}
+                                                className="px-4 py-2 rounded-xl bg-orange-500 text-white shadow-md hover:bg-orange-600 transition-all font-bold text-sm flex items-center gap-2 flex-shrink-0"
+                                            >
+                                                <Phone size={16} />
+                                                <span>+טלפון</span>
+                                            </button>
+                                        )}
 
-                    {/* Case 2: Has name but no phone */}
-                    {hasRealCustomer && !customerPhone && onAddCustomerDetails && (
-                        <button
-                            onClick={() => onAddCustomerDetails('phone')}
-                            className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 border border-blue-200 shadow-sm hover:shadow-md hover:bg-blue-200 transition-all duration-200 active:scale-95 font-bold text-xs flex items-center gap-1 flex-shrink-0"
-                        >
-                            <Phone size={12} />
-                            הוסף טלפון
-                        </button>
-                    )}
+                                        {/* Name Button - only if name is missing/anonymous */}
+                                        {isAnonymous && onAddCustomerDetails && (
+                                            <button
+                                                onClick={() => onAddCustomerDetails('name')}
+                                                className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 transition-all font-bold text-sm flex items-center gap-2 flex-shrink-0"
+                                            >
+                                                <User size={16} />
+                                                <span>+שם</span>
+                                            </button>
+                                        )}
 
-                    {/* Case 3: Has phone + name - Show phone and edit */}
-                    {hasRealCustomer && customerPhone && onAddCustomerDetails && (
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                            <span className="text-xs text-gray-600 flex items-center gap-1">
-                                <Phone size={10} />
-                                {customerPhone}
-                            </span>
-                            <button
-                                onClick={() => onAddCustomerDetails('phone-then-name')}
-                                className="text-xs text-blue-600 hover:underline font-medium"
-                            >
-                                ערוך
-                            </button>
-                        </div>
-                    )}
+                                        {/* If we have a valid name but no phone, show name */}
+                                        {!isAnonymous && (
+                                            <h2 className="text-xl font-black text-gray-800 tracking-tight flex-shrink-0 mr-2">
+                                                {customerName}
+                                            </h2>
+                                        )}
+                                    </>
+                                ) : (
+                                    /* Case: Valid Customer with Phone */
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex flex-col">
+                                            <h2 className="text-xl font-black text-gray-800 tracking-tight leading-none">
+                                                {customerName}
+                                            </h2>
+                                            <div className="flex items-center gap-2 text-gray-500 text-sm font-mono mt-0.5">
+                                                <Phone size={12} />
+                                                <span>{customerPhone}</span>
+                                            </div>
+                                        </div>
 
-                    {/* Order number badge if has customer */}
-                    {orderNumber && hasRealCustomer && (
-                        <div className="bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 flex-shrink-0 mr-auto">
-                            <span className="text-sm font-black text-blue-700">#{orderNumber}</span>
-                        </div>
-                    )}
+                                        {onAddCustomerDetails && (
+                                            <button
+                                                onClick={() => onAddCustomerDetails('phone-then-name')}
+                                                className="p-2 bg-gray-50 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                                            >
+                                                <Edit2 size={16} />
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Soldier Discount Badge (from Screenshot) - Assuming logic exists or simplistic placement */}
+                                <div className="mr-auto"></div>
+
+                            </>
+                        );
+                    })()}
                 </div>
 
                 {/* Loyalty Badge - Below main row */}
@@ -562,7 +580,14 @@ const SmartCart = ({
                     disabled={isDisabled}
                     className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all active:scale-[0.98] flex items-center justify-between px-6 ${statusConfig.buttonColor}`}
                 >
-                    <span>{statusConfig.text}</span>
+                    <div className="flex items-center gap-2">
+                        <span>{statusConfig.text}</span>
+                        {statusConfig.paymentLabel && (
+                            <span className="text-xs bg-white text-orange-600 px-2 py-0.5 rounded-lg border border-orange-100 shadow-sm">
+                                {statusConfig.paymentLabel}
+                            </span>
+                        )}
+                    </div>
                     {statusConfig.amount !== null && (
                         <span className="bg-white/20 px-2 py-0.5 rounded text-base">
                             {formatPrice(statusConfig.amount)}

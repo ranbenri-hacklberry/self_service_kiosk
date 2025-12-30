@@ -38,6 +38,8 @@ const DexieTestPage = () => {
     const [activeTab, setActiveTab] = useState('all'); // 'all', 'in_progress', 'ready', 'completed', 'pending'
     const [expandedOrderId, setExpandedOrderId] = useState(null); // Which order is expanded
     const [validationResult, setValidationResult] = useState(null); // Dexie vs Supabase comparison
+    const [customerSearch, setCustomerSearch] = useState(''); // Customer search query
+    const [customerResults, setCustomerResults] = useState([]); // Customer search results
 
     // Live queries - these auto-update!
     const orders = useOrders();
@@ -326,6 +328,29 @@ const DexieTestPage = () => {
         setLoading(false);
     };
 
+    // Delete a specific order from Dexie
+    const deleteOrderFromDexie = async (orderId) => {
+        if (!window.confirm(`האם אתה בטוח שברצונך למחוק את הזמנה ${orderId} מ-Dexie בלבד?`)) return;
+
+        setLoading(true);
+        try {
+            const { db: dynamicDb } = await import('../db/database');
+            await dynamicDb.orders.delete(orderId);
+            await dynamicDb.order_items.where('order_id').equals(orderId).delete();
+            setMessage(`🗑️ הזמנה ${orderId} נמחקה מ-Dexie`);
+
+            // Re-validate if we were in validation view
+            if (validationResult) {
+                await validateData();
+            } else {
+                await manualRefreshStats();
+            }
+        } catch (e) {
+            setMessage(`❌ שגיאה במחיקה: ${e.message}`);
+        }
+        setLoading(false);
+    };
+
     // Validate: Compare Dexie data with Supabase
     const validateData = async () => {
         setLoading(true);
@@ -335,12 +360,13 @@ const DexieTestPage = () => {
         try {
             const { supabase } = await import('../lib/supabase');
 
-            // Get orders from Supabase using RPC (same 30 days as sync)
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            // DATE LIMIT: Yesterday 00:00 onwards (matching KDS filter)
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            yesterday.setHours(0, 0, 0, 0);
 
             const { data: supabaseData, error } = await supabase.rpc('get_orders_history', {
-                p_from_date: thirtyDaysAgo.toISOString(),
+                p_from_date: yesterday.toISOString(),
                 p_to_date: new Date().toISOString(),
                 p_business_id: businessId
             });
@@ -352,7 +378,7 @@ const DexieTestPage = () => {
 
             // Get Dexie orders (filter to same date range for fair comparison)
             const dexieOrders = (await db.orders.toArray()).filter(o =>
-                new Date(o.created_at) >= thirtyDaysAgo
+                o.created_at && new Date(o.created_at) >= yesterday
             );
 
             // Compare
@@ -389,6 +415,7 @@ const DexieTestPage = () => {
                 inDexieOnly: inDexieOnly.length,
                 statusMismatches: statusMismatches.length,
                 mismatches: statusMismatches.slice(0, 10), // Show first 10
+                dexieOnlyOrders: inDexieOnly,
                 isValid
             };
 
@@ -483,6 +510,31 @@ const DexieTestPage = () => {
         }
 
         setLoading(false);
+    };
+
+    // Search customers in Dexie by name or phone
+    const searchCustomers = async (query) => {
+        if (!query || query.length < 2) {
+            setCustomerResults([]);
+            return;
+        }
+
+        try {
+            const allCustomers = await db.customers.toArray();
+            const lowerQuery = query.toLowerCase();
+
+            const results = allCustomers.filter(c => {
+                const name = (c.name || '').toLowerCase();
+                const phone = c.phone_number || c.phone || '';
+                return name.includes(lowerQuery) || phone.includes(query);
+            }).slice(0, 50); // Limit to 50 results
+
+            setCustomerResults(results);
+            console.log(`🔍 Found ${results.length} customers matching "${query}"`);
+        } catch (err) {
+            console.error('Customer search error:', err);
+            setCustomerResults([]);
+        }
     };
 
 
@@ -655,6 +707,73 @@ const DexieTestPage = () => {
                     </button>
                 </div>
 
+                {/* Customer Search Section */}
+                <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                    <h2 className="text-lg font-bold text-gray-800 mb-4">🔍 חיפוש לקוחות ב-Dexie</h2>
+
+                    <div className="flex gap-3 mb-4">
+                        <input
+                            type="text"
+                            value={customerSearch}
+                            onChange={(e) => {
+                                setCustomerSearch(e.target.value);
+                                searchCustomers(e.target.value);
+                            }}
+                            placeholder="חפש לפי שם או טלפון..."
+                            className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none text-lg"
+                            dir="rtl"
+                        />
+                        <button
+                            onClick={() => {
+                                setCustomerSearch('');
+                                setCustomerResults([]);
+                            }}
+                            className="px-4 py-2 bg-gray-200 rounded-xl hover:bg-gray-300 transition"
+                        >
+                            נקה
+                        </button>
+                    </div>
+
+                    {customerResults.length > 0 && (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-100">
+                                    <tr>
+                                        <th className="px-3 py-2 text-right">Business ID</th>
+                                        <th className="px-3 py-2 text-right">ID</th>
+                                        <th className="px-3 py-2 text-right">שם</th>
+                                        <th className="px-3 py-2 text-right">טלפון</th>
+                                        <th className="px-3 py-2 text-right">נאמנות</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {customerResults.map((c, idx) => (
+                                        <tr key={c.id || idx} className={`border-b ${c.business_id === businessId ? 'bg-green-50' : 'bg-yellow-50'}`}>
+                                            <td className="px-3 py-2 font-mono text-xs">
+                                                {c.business_id || 'NULL'}
+                                                {c.business_id === businessId && <span className="ml-1 text-green-600">✓</span>}
+                                            </td>
+                                            <td className="px-3 py-2 font-mono text-xs">{c.id}</td>
+                                            <td className="px-3 py-2 font-bold">{c.name || '-'}</td>
+                                            <td className="px-3 py-2 font-mono" dir="ltr">{c.phone_number || c.phone || '-'}</td>
+                                            <td className="px-3 py-2 text-center">{c.loyalty_coffee_count || 0} ☕</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            <div className="mt-2 text-sm text-gray-500 text-center">
+                                נמצאו {customerResults.length} לקוחות | Business ID הנוכחי: {businessId}
+                            </div>
+                        </div>
+                    )}
+
+                    {customerSearch.length >= 2 && customerResults.length === 0 && (
+                        <div className="text-center py-4 text-gray-500">
+                            לא נמצאו לקוחות מתאימים ל-"{customerSearch}"
+                        </div>
+                    )}
+                </div>
+
                 {/* Validation Results */}
                 {validationResult && (
                     <div className={`bg-white rounded-2xl shadow-lg p-6 mb-6 border-2 ${validationResult.isValid ? 'border-green-300' : 'border-orange-300'
@@ -678,13 +797,68 @@ const DexieTestPage = () => {
                                 </div>
                                 <div className="text-xs text-gray-500">חסר ב-Dexie</div>
                             </div>
-                            <div className={`p-3 rounded-lg text-center ${validationResult.statusMismatches > 0 ? 'bg-orange-50' : 'bg-green-50'}`}>
-                                <div className={`text-2xl font-bold ${validationResult.statusMismatches > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                            <div className={`p-3 rounded-lg text-center ${validationResult.inDexieOnly > 0 ? 'bg-orange-50' : 'bg-green-50'}`}>
+                                <div className={`text-2xl font-bold ${validationResult.inDexieOnly > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                                    {validationResult.inDexieOnly}
+                                </div>
+                                <div className="text-xs text-gray-500">עודף ב-Dexie (לא בסופבייס)</div>
+                            </div>
+                        </div>
+
+                        {validationResult.dexieOnlyOrders && validationResult.dexieOnlyOrders.length > 0 && (
+                            <div className="mt-4 bg-orange-50 rounded-xl p-4 border border-orange-100">
+                                <div className="text-sm font-bold text-orange-800 mb-3 flex items-center justify-between">
+                                    <span>📦 הזמנות שקיימות רק ב-Dexie ({validationResult.dexieOnlyOrders.length}):</span>
+                                    <button
+                                        onClick={async () => {
+                                            if (window.confirm(`למחוק את כל ${validationResult.dexieOnlyOrders.length} ההזמנות העודפות?`)) {
+                                                for (const o of validationResult.dexieOnlyOrders) {
+                                                    await db.orders.delete(o.id);
+                                                    await db.order_items.where('order_id').equals(o.id).delete();
+                                                }
+                                                validateData();
+                                            }
+                                        }}
+                                        className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 transition"
+                                    >
+                                        מחק את כולם
+                                    </button>
+                                </div>
+                                <div className="space-y-2 max-h-60 overflow-y-auto">
+                                    {validationResult.dexieOnlyOrders.map(o => (
+                                        <div key={o.id} className="bg-white p-3 rounded-lg shadow-sm border border-orange-50 flex items-center justify-between text-xs">
+                                            <div className="space-y-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-blue-600">#{o.order_number || 'L-Order'}</span>
+                                                    <span className="font-medium text-gray-800">{o.customer_name || 'אורח'}</span>
+                                                </div>
+                                                <div className="text-gray-500 flex gap-3">
+                                                    <span>🕒 {new Date(o.created_at).toLocaleString('he-IL')}</span>
+                                                    <span>📍 סטטוס: {o.order_status}</span>
+                                                    <span className="font-mono text-[10px]">{o.id}</span>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => deleteOrderFromDexie(o.id)}
+                                                className="p-2 text-red-500 hover:bg-red-50 rounded-full transition"
+                                                title="מחק מ-Dexie"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {validationResult.statusMismatches > 0 && (
+                            <div className={`p-3 rounded-lg text-center mt-4 bg-orange-50 border border-orange-200`}>
+                                <div className={`text-2xl font-bold text-orange-600`}>
                                     {validationResult.statusMismatches}
                                 </div>
                                 <div className="text-xs text-gray-500">סטטוס שונה</div>
                             </div>
-                        </div>
+                        )}
 
                         {validationResult.mismatches.length > 0 && (
                             <div className="mt-4 bg-gray-50 rounded-lg p-3">

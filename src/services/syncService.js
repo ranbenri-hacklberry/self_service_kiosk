@@ -59,6 +59,35 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
     try {
         console.log(`🔄 Syncing ${localTable}...`);
 
+        // Special handling for customers - use RPC to bypass RLS
+        if (remoteTable === 'customers' && businessId) {
+            console.log(`🔄 Using RPC for customers sync (bypasses RLS)...`);
+            const { data, error } = await supabase.rpc('get_customers_for_sync', {
+                p_business_id: businessId
+            });
+
+            if (error) {
+                console.error(`❌ RPC error for customers:`, error.message);
+                // Fallback to regular query if RPC doesn't exist
+                console.log(`🔄 Falling back to regular query for customers...`);
+            } else if (data && data.length > 0) {
+                console.log(`✅ Got ${data.length} customers via RPC`);
+                await db[localTable].bulkPut(data);
+
+                // Update sync status
+                await db.sync_status.put({
+                    table_name: localTable,
+                    last_synced: new Date().toISOString(),
+                    record_count: data.length
+                });
+
+                return { success: true, recordCount: data.length };
+            } else {
+                console.log(`📭 No customers from RPC`);
+                return { success: true, recordCount: 0 };
+            }
+        }
+
         // Build query
         let query = supabase.from(remoteTable).select('*');
 

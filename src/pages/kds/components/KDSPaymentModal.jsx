@@ -43,8 +43,10 @@ const KDSPaymentModal = ({
     const PAYMENT_METHODS = [
         { id: 'cash', label: 'מזומן', icon: Banknote, color: 'bg-green-100 text-green-700 hover:bg-green-200' },
         { id: 'credit_card', label: 'אשראי', icon: CreditCard, color: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
+        { id: 'bit', label: 'ביט', icon: CreditCard, color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200' },
+        { id: 'paybox', label: 'פייבוקס', icon: CreditCard, color: 'bg-pink-100 text-pink-700 hover:bg-pink-200' },
         { id: 'gift_card', label: 'שובר', icon: Gift, color: 'bg-purple-100 text-purple-700 hover:bg-purple-200' },
-        { id: 'oth', label: 'ע״ח הבית', icon: Star, color: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
+        { id: 'oth', label: 'OTH', icon: Star, color: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
     ];
 
     // Payment Instructions Config
@@ -106,6 +108,37 @@ const KDSPaymentModal = ({
                 'ההזמנה תירשם כ"על חשבון הבית"'
             ],
             confirmText: 'אישור'
+        },
+        bit: {
+            title: 'Bit - להעברה ל 055-6822072',
+            subtitle: 'העברה באפליקציה',
+            icon: CreditCard,
+            iconBg: 'bg-cyan-50',
+            iconColor: 'text-cyan-600',
+            amountBg: 'bg-cyan-50 border-cyan-200',
+            amountColor: 'text-cyan-600',
+            instructions: [
+                '⚠️ חשוב! בקש מהלקוח להשאיר את שדה הסיבה ריק',
+                'ודא שהלקוח שולח למספר: 055-6822072',
+                'המתן לקבלת אישור העברה על המסך',
+                'אשר רק לאחר שראית את האישור'
+            ],
+            confirmText: 'קיבלתי אישור'
+        },
+        paybox: {
+            title: 'Paybox - להעברה ל 055-6822072',
+            subtitle: 'העברה באפליקציה',
+            icon: CreditCard,
+            iconBg: 'bg-pink-50',
+            iconColor: 'text-pink-600',
+            amountBg: 'bg-pink-50 border-pink-200',
+            amountColor: 'text-pink-600',
+            instructions: [
+                'ודא שהלקוח שולח למספר: 055-6822072',
+                'המתן לקבלת אישור העברה',
+                'אשר רק לאחר שראית את האישור'
+            ],
+            confirmText: 'קיבלתי אישור'
         }
     };
 
@@ -185,7 +218,7 @@ const KDSPaymentModal = ({
                         <div className={`w-full ${config?.amountBg} border-2 rounded-2xl p-6 text-center`}>
                             <p className="text-sm font-bold mb-2 text-slate-600">סכום לתשלום:</p>
                             <p className={`text-5xl font-black ${config?.amountColor}`}>
-                                {formatPrice(orderAmount)}
+                                {selectedMethod === 'oth' ? formatPrice(0) : formatPrice(orderAmount)}
                             </p>
                         </div>
 
@@ -264,7 +297,7 @@ const KDSPaymentModal = ({
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 p-4 space-y-4 overflow-hidden">
+                <div className="flex-1 p-4 space-y-4 overflow-y-auto">
                     {/* Amount Display */}
                     <div className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 text-center">
                         <div className="flex justify-between items-center">
@@ -276,17 +309,18 @@ const KDSPaymentModal = ({
                     </div>
 
                     {/* Payment Methods */}
-                    <div>
-                        <h3 className="text-base font-bold text-slate-800 mb-2">אמצעי תשלום</h3>
-                        <div className="grid grid-cols-2 gap-2">
+                    <div className="flex-1 overflow-hidden flex flex-col">
+                        <h3 className="text-base font-bold text-slate-800 mb-2 shrink-0">אמצעי תשלום</h3>
+                        <div className="grid grid-cols-4 gap-2">
                             {PAYMENT_METHODS.map(method => (
                                 <button
                                     key={method.id}
                                     onClick={() => handleMethodSelect(method.id)}
-                                    className={`flex flex-col items-center justify-center gap-1.5 p-4 rounded-xl transition-all border-2 border-transparent ${method.color} hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md`}
+                                    className={`flex flex-col items-center justify-center gap-1.5 rounded-xl transition-all border-2 border-transparent ${method.color} hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md 
+                                    ${['cash', 'credit_card'].includes(method.id) ? 'col-span-2 h-32 p-4' : 'col-span-1 h-20 p-2'}`}
                                 >
-                                    <method.icon size={24} />
-                                    <span className="font-bold text-base">{method.label}</span>
+                                    <method.icon size={['cash', 'credit_card'].includes(method.id) ? 24 : 20} />
+                                    <span className={`font-bold ${['cash', 'credit_card'].includes(method.id) ? 'text-base' : 'text-sm'}`}>{method.label}</span>
                                 </button>
                             ))}
                         </div>
@@ -337,4 +371,3 @@ const KDSPaymentModal = ({
 };
 
 export default KDSPaymentModal;
-

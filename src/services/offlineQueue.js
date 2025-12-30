@@ -162,7 +162,8 @@ const handleSyncError = async (action, error) => {
             try {
                 await db[action.table].update(action.recordId, {
                     _syncError: error.message,
-                    _pendingSync: false // Stop trying
+                    _pendingSync: false, // Stop trying
+                    _processing: false   // Clear processing flag so it shows up in KDS
                 });
             } catch (e) {
                 console.warn('Failed to update local record with error:', e);
@@ -341,9 +342,12 @@ const processAction = async (action) => {
                 }
             }
 
-            console.log('📤 Syncing order to Supabase...', { localOrderId, customerName: finalPayload.p_customer_name });
-            const { data, error } = await supabase.rpc('submit_order_v2', finalPayload);
-            if (error) throw error;
+            console.log('📤 [OfflineQueue] Syncing order to Supabase (V3)...', { localOrderId, customerName: finalPayload.p_customer_name });
+            const { data, error } = await supabase.rpc('submit_order_v3', finalPayload);
+            if (error) {
+                console.error('❌ [OfflineQueue] Order sync failed (V3):', error.message, error);
+                throw error;
+            }
 
             // Mark local order with serverOrderId (don't delete - for tracking)
             // 🔄 SUCCESS: Replace local order with server order in Dexie
@@ -626,6 +630,20 @@ export const syncQueue = async () => {
         if (!navigator.onLine) {
             console.log('📴 Still offline, skipping sync');
             return { synced: 0, failed: 0 };
+        }
+
+        // 🧼 CLEANUP: Clear stale _processing flags from orders that might be stuck
+        // if app crashed/closed during previous sync attempt.
+        try {
+            const stuckOrders = await db.orders.filter(o => o._processing === true).toArray();
+            if (stuckOrders.length > 0) {
+                console.log(`🧼 Cleaning up ${stuckOrders.length} stuck processing flags...`);
+                for (const order of stuckOrders) {
+                    await db.orders.update(order.id, { _processing: false });
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to cleanup stuck orders:', e);
         }
 
         const pending = await getPendingActions();
