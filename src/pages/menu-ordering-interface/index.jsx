@@ -2454,6 +2454,10 @@ const MenuOrderingInterface = () => {
           </div>
         </div>
       )}
+      {/* Version Number */}
+      <div className="fixed bottom-1 left-2 text-[10px] text-gray-400 font-mono z-50 pointer-events-none opacity-50">
+        v2.5
+      </div>
 
     </div>
   );
