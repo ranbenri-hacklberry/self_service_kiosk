@@ -61,13 +61,28 @@ const DexieAdminPanel = () => {
                 .toArray();
             setRecentOrders(orders);
 
-            // Get sync status
-            const tables = db.tables.map(t => t.name);
-            const status = {};
+            // Get sync status - compare Dexie vs Supabase
+            const tables = ['customers', 'menu_items', 'orders', 'order_items', 'loyalty_purchases'];
+            const status = { syncing: false };
+
             for (const table of tables) {
-                const count = await db[table].count();
-                status[table] = { count };
+                const localCount = await db[table]?.count() || 0;
+
+                // Fetch cloud count from Supabase
+                let cloudCount = null;
+                try {
+                    const { count, error } = await supabase
+                        .from(table)
+                        .select('*', { count: 'exact', head: true });
+
+                    if (!error) cloudCount = count;
+                } catch (e) {
+                    console.warn(`Failed to fetch cloud count for ${table}:`, e);
+                }
+
+                status[table] = { count: localCount, cloudCount };
             }
+
             setSyncStatus(status);
 
         } catch (err) {
@@ -217,15 +232,49 @@ const DexieAdminPanel = () => {
                     </Tabs.Item>
 
                     <Tabs.Item label={<><Activity size={16} /> סנכרון</>} value="sync">
+                        <div className="mb-4 flex justify-between items-center">
+                            <Text h4>מצב סנכרון</Text>
+                            <Button
+                                type="secondary"
+                                auto
+                                loading={syncStatus.syncing}
+                                onClick={async () => {
+                                    setSyncStatus(prev => ({ ...prev, syncing: true }));
+                                    try {
+                                        // Trigger manual sync via AuthContext
+                                        await loadData();
+                                    } finally {
+                                        setSyncStatus(prev => ({ ...prev, syncing: false }));
+                                    }
+                                }}
+                            >
+                                {syncStatus.syncing ? 'מסנכרן...' : 'סנכרן עכשיו'}
+                            </Button>
+                        </div>
+
                         <Grid.Container gap={2}>
-                            {Object.entries(syncStatus).map(([table, data]) => (
-                                <Grid xs={24} sm={12} md={8} key={table}>
-                                    <Card width="100%">
-                                        <Text h5>{table}</Text>
-                                        <Text type="secondary">{data.count} רשומות</Text>
-                                    </Card>
-                                </Grid>
-                            ))}
+                            {Object.entries(syncStatus).filter(([key]) => key !== 'syncing').map(([table, data]) => {
+                                const hasDiff = data.cloudCount !== undefined && data.count !== data.cloudCount;
+                                return (
+                                    <Grid xs={24} sm={12} md={8} key={table}>
+                                        <Card width="100%">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <Text h5>{table}</Text>
+                                                    <Text small type="secondary">
+                                                        מקומי: {data.count} | ענן: {data.cloudCount || '...'}
+                                                    </Text>
+                                                </div>
+                                                {hasDiff && (
+                                                    <Badge type="warning">
+                                                        הבדל: {Math.abs(data.count - data.cloudCount)}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                        </Card>
+                                    </Grid>
+                                );
+                            })}
                         </Grid.Container>
                     </Tabs.Item>
 
