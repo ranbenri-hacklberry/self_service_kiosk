@@ -27,6 +27,18 @@ export const ConnectionProvider = ({ children }) => {
         let localOk = false;
         let cloudOk = false;
 
+        // FAST PATH: If browser says offline, don't even try network calls
+        if (!navigator.onLine) {
+            console.log('📴 [ConnectionContext] Browser reports offline - skipping network checks');
+            setState(prev => ({
+                ...prev,
+                status: 'offline',
+                cloudAvailable: false,
+                localAvailable: false
+            }));
+            return;
+        }
+
         // Check Cloud (Remote) - use the main supabase client
         try {
             const { error } = await supabase.from('menu_items').select('id').limit(1).maybeSingle();
