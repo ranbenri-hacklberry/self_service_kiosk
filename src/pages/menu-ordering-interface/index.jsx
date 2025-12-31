@@ -469,14 +469,25 @@ const MenuOrderingInterface = () => {
           };
         });
 
+      // CRITICAL FIX: Distinguish between soldier discount and loyalty discount.
+      // Fetch discount_amount directly if not in RPC
+      let initialDiscountAmount = order.discount_amount || 0;
+      if (initialDiscountAmount === 0 && order.id) {
+        // We'll calculate it properly later, but for the immediate loyalty check 
+        // we should try to get the baseline from the RPC or a quick sum
+      }
+
       // Calculate the original cart total from items (before any loyalty discount)
       const originalCartTotal = loadedCartItems.reduce((sum, item) => {
         return sum + (item.price * item.quantity);
       }, 0);
 
-      // Calculate originalRedeemedCount from the discount that was applied
-      // If originalCartTotal > order.total_amount, it means there was a loyalty discount
-      const loyaltyDiscountApplied = Math.max(0, originalCartTotal - order.total_amount);
+      // Determine how much of the difference is actually loyalty discount
+      // Logic: (Items Total) - (Soldier Discount) - (Loyalty Discount) = (Final Total Paid)
+      // So: (Loyalty Discount) = (Items Total) - (Soldier Discount) - (Final Total Paid)
+
+      const soldierD = Number(order.discount_amount) || 0;
+      const loyaltyDiscountApplied = Math.max(0, originalCartTotal - soldierD - order.total_amount);
 
       // Count how many hot drinks were in the order
       const hotDrinks = loadedCartItems.filter(item => item.is_hot_drink);
@@ -1245,8 +1256,15 @@ const MenuOrderingInterface = () => {
       cartItemsCount: cartItems.length
     });
 
-    if (!currentCustomer) {
+    const isAnonymous = !currentCustomer ||
+      String(currentCustomer.name).includes('אורח אנונימי') ||
+      currentCustomer.name === 'אורח' ||
+      currentCustomer.name === 'אורח/ת' ||
+      currentCustomer.name === 'הזמנה מהירה';
+
+    if (!currentCustomer || isAnonymous) {
       setLoyaltyDiscount(0);
+      setLoyaltyFreeItemsCount(0);
       return;
     }
 
@@ -1376,6 +1394,10 @@ const MenuOrderingInterface = () => {
       });
       setLoyaltyDiscount(discount);
       setLoyaltyFreeItemsCount(freeItemsCount);
+    } else {
+      // RESET: If no free items, ensure discount is 0
+      setLoyaltyDiscount(0);
+      setLoyaltyFreeItemsCount(0);
     }
   }, [cartItems, currentCustomer, loyaltyPoints, loyaltyFreeCoffees, isEditMode, editingOrderData, adjustedLoyaltyPoints]);
 

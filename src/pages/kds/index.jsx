@@ -298,6 +298,23 @@ const KdsScreen = () => {
     localStorage.setItem('kds_selectedDate', selectedDate.toISOString());
   }, [selectedDate]);
 
+  // Keep editingOrder in sync with main orders list to reflect updates (like is_early_delivered)
+  useEffect(() => {
+    if (isEditModalOpen && editingOrder) {
+      const allPossibleOrders = [...(currentOrders || []), ...(completedOrders || [])];
+      // Note: editingOrder might be a specific stage, so we match by basic ID
+      const baseId = (editingOrder.originalOrderId || editingOrder.id || '').toString().replace(/-stage-\d+/, '').replace('-ready', '');
+      const updated = allPossibleOrders.find(o => {
+        const oBaseId = (o.originalOrderId || o.id || '').toString().replace(/-stage-\d+/, '').replace('-ready', '');
+        return oBaseId === baseId;
+      });
+
+      if (updated && JSON.stringify(updated) !== JSON.stringify(editingOrder)) {
+        setEditingOrder(updated);
+      }
+    }
+  }, [currentOrders, completedOrders, isEditModalOpen]);
+
   // Debounced Refresh to prevent race conditions
   const refreshTimeoutRef = React.useRef(null);
   const refreshControllerRef = React.useRef(null);

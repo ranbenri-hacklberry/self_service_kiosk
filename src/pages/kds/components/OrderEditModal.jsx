@@ -99,10 +99,9 @@ const OrderEditModal = ({
 
     useEffect(() => {
         if (isOpen && order) {
-            setIsLoading(true);
             loadItemsFromOrder();
         }
-    }, [isOpen, order?.id]);
+    }, [isOpen, order]);
 
     if (!isOpen || !order) return null;
 
@@ -228,11 +227,22 @@ const OrderEditModal = ({
                             const isMarked = item.is_early_delivered;
                             return (
                                 <div
-                                    key={`${item.id}-${isMarked}`}
+                                    key={item.id}
                                     onClick={() => handleToggleEarlyDelivered(item)}
                                     className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl cursor-pointer hover:bg-gray-100 transition-all active:scale-[0.99]"
+                                    dir="rtl"
                                 >
-                                    {/* Right side: Name + Price */}
+                                    {/* Right side: Checkbox */}
+                                    <div className={`
+                                        w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 me-3
+                                        ${isMarked
+                                            ? 'bg-green-500 text-white'
+                                            : 'bg-gray-200 text-gray-400'}
+                                    `}>
+                                        <Check size={20} strokeWidth={3} />
+                                    </div>
+
+                                    {/* Left side: Name + Price */}
                                     <div className="flex-1 flex items-center justify-between gap-3">
                                         <span className={`text-lg font-bold ${isMarked ? 'text-gray-400 line-through' : 'text-slate-800'}`}>
                                             {item.name}
@@ -240,16 +250,6 @@ const OrderEditModal = ({
                                         <div className={`text-base font-bold ${isMarked ? 'text-gray-400' : 'text-gray-600'}`}>
                                             {formatPrice(item.price * (item.quantity || 1))}
                                         </div>
-                                    </div>
-
-                                    {/* Left side: Checkbox */}
-                                    <div className={`
-                                        w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 ms-3
-                                        ${isMarked
-                                            ? 'bg-green-500 text-white'
-                                            : 'bg-gray-200 text-gray-400'}
-                                    `}>
-                                        <Check size={20} strokeWidth={3} />
                                     </div>
                                 </div>
                             );

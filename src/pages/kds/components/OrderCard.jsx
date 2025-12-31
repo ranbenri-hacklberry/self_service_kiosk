@@ -209,10 +209,10 @@ const OrderCard = ({
     return (
       <div key={`${item.menuItemId}-${item.modsKey || ''}-${idx}`} className={`flex flex-col ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered ? 'opacity-40' : ''}`}>
         <div className="flex items-start gap-[5px] relative">
-          {/* Strikethrough overlay for early delivered items */}
+          {/* Strikethrough overlay for early delivered items - applied only to Name area for clarity */}
           {isEarlyDelivered && (
-            <div className="absolute inset-0 flex items-center pointer-events-none z-10">
-              <div className="w-full h-0.5 bg-gray-600 rounded-full" />
+            <div className="absolute top-[10px] right-8 left-0 flex items-center pointer-events-none z-10">
+              <div className="w-full h-0.5 bg-slate-400 rounded-full" />
             </div>
           )}
 
