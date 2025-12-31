@@ -1132,6 +1132,11 @@ export const useKDSData = () => {
         } catch (err) {
             if (err.name !== 'AbortError') {
                 console.error('שגיאה בטעינת הזמנות:', err);
+                // CRITICAL: If offline, do NOT clear the state - keep existing orders visible
+                if (!navigator.onLine) {
+                    console.log('📴 Offline error - keeping existing orders in state');
+                    return; // Early return to preserve state
+                }
             }
         } finally {
             setIsLoading(false);
@@ -1269,7 +1274,44 @@ export const useKDSData = () => {
 
                 console.log(`✅ Local update complete for ${smartOrderId} -> ${nextStatus}`);
 
-                await fetchOrders();
+                // CRITICAL: Don't call fetchOrders() when offline - it might clear the state!
+                // Instead, do an optimistic UI update
+                if (navigator.onLine) {
+                    await fetchOrders();
+                } else {
+                    // Optimistic local state update
+                    console.log('📴 Updating local state optimistically (no fetchOrders)');
+
+                    // Update state directly based on status change
+                    if (nextStatus === 'completed') {
+                        // Remove from both lists
+                        setCurrentOrders(prev => prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId));
+                        setCompletedOrders(prev => prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId));
+                    } else if (nextStatus === 'ready') {
+                        // Move from current to completed
+                        const orderToMove = currentOrders.find(o => o.id === orderId || o.originalOrderId === orderId);
+                        if (orderToMove) {
+                            setCurrentOrders(prev => prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId));
+                            setCompletedOrders(prev => [{
+                                ...orderToMove,
+                                orderStatus: 'ready',
+                                type: 'ready'
+                            }, ...prev]);
+                        }
+                    } else if (nextStatus === 'in_progress') {
+                        // Move from completed back to current (undo)
+                        const orderToMove = completedOrders.find(o => o.id === orderId || o.originalOrderId === orderId);
+                        if (orderToMove) {
+                            setCompletedOrders(prev => prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId));
+                            setCurrentOrders(prev => [...prev, {
+                                ...orderToMove,
+                                orderStatus: 'in_progress',
+                                type: 'active'
+                            }]);
+                        }
+                    }
+                    setLastUpdated(new Date());
+                }
                 return;
             } catch (offlineErr) {
                 console.error('❌ Local order update failed:', offlineErr);
@@ -1987,8 +2029,18 @@ export const useKDSData = () => {
         const filter = businessId ? `business_id=eq.${businessId}` : undefined;
 
         const debouncedFetch = () => {
+            // CRITICAL: Don't fetch on realtime events if offline
+            if (!navigator.onLine) {
+                log('📴 [REALTIME] Ignoring event - device is offline');
+                return;
+            }
             if (realtimeDebounceTimer.current) clearTimeout(realtimeDebounceTimer.current);
             realtimeDebounceTimer.current = setTimeout(() => {
+                // Double-check online status before actually fetching
+                if (!navigator.onLine) {
+                    log('📴 [REALTIME] Skipping fetch - device went offline');
+                    return;
+                }
                 log('🔄 [REALTIME] Executing debounced fetchOrders');
                 fetchOrders();
                 realtimeDebounceTimer.current = null;
