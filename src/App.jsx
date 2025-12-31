@@ -1,11 +1,19 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Routes from "./Routes";
 import { ConnectionProvider } from "@/context/ConnectionContext";
 import OfflineProvider from "@/context/OfflineContext";
-import ConnectionStatusBar from "@/components/ConnectionStatusBar";
-import SyncStatusModal from "@/components/SyncStatusModal";
+import SplashScreen from "@/components/SplashScreen";
 
 function App() {
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Fix for Cloudflare Error 1013: Clear large/overlapping cookies to reduce header size
   useEffect(() => {
     try {
@@ -23,7 +31,7 @@ function App() {
           const domainParts = window.location.hostname.split('.');
           if (domainParts.length >= 2) {
             const rootDomain = '.' + domainParts.slice(-2).join('.');
-            document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=" + rootDomain;
+            document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:01 GMT;path=/;domain=" + rootDomain;
           }
         }
       }
@@ -32,6 +40,10 @@ function App() {
       console.warn('Cookie cleanup failed:', e);
     }
   }, []);
+
+  if (isLoading) {
+    return <SplashScreen />;
+  }
 
   return (
     <ConnectionProvider>
