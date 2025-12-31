@@ -29,6 +29,7 @@ const TasksManager = () => {
   const [showPrepEditModal, setShowPrepEditModal] = useState(false);
   const [prepEditTask, setPrepEditTask] = useState(null);
   const [prepSchedule, setPrepSchedule] = useState({});
+  const [prepDescription, setPrepDescription] = useState('');
 
   // Menu Item Task Modal (can't edit here)
   const [showMenuItemModal, setShowMenuItemModal] = useState(false);
@@ -128,6 +129,7 @@ const TasksManager = () => {
     if (activeTab === 'pre_closing') {
       setPrepEditTask(task);
       setPrepSchedule(task.weekly_schedule || {});
+      setPrepDescription(task.description || '');
       setShowPrepEditModal(true);
     } else if (task.menu_item_id) {
       // Menu item task - show info modal
@@ -256,7 +258,10 @@ const TasksManager = () => {
     try {
       const { error } = await supabase
         .from('recurring_tasks')
-        .update({ weekly_schedule: prepSchedule })
+        .update({
+          weekly_schedule: prepSchedule,
+          description: prepDescription
+        })
         .eq('id', prepEditTask.id);
 
       if (error) throw error;
@@ -721,6 +726,17 @@ const TasksManager = () => {
                       </div>
                     );
                   })}
+                </div>
+
+                {/* Description / Notes Edit */}
+                <div className="mt-6 px-4 max-w-md mx-auto">
+                  <label className="text-xs font-bold text-gray-400 mb-1 block mr-1">הערות / הוראות הכנה</label>
+                  <textarea
+                    value={prepDescription}
+                    onChange={(e) => setPrepDescription(e.target.value)}
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm min-h-[80px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none resize-none transition-all"
+                    placeholder="הוסף הערות לצוות (לדוגמה: להפשיר בבוקר...)"
+                  />
                 </div>
 
                 {/* Quick Set */}

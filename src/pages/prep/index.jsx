@@ -120,8 +120,23 @@ const PrepPage = () => {
             )
             .subscribe();
 
+        const tasksDefinitionChannel = supabase
+            .channel('prep-tasks-definitions')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'recurring_tasks' },
+                (payload) => {
+                    console.log('PrepPage: Task definition update received!', payload);
+                    fetchOpeningTasks();
+                    fetchPrepBatches();
+                    fetchClosingTasks();
+                }
+            )
+            .subscribe();
+
         return () => {
             supabase.removeChannel(channel);
+            supabase.removeChannel(tasksDefinitionChannel);
         };
     }, []); // Run once on mount
 

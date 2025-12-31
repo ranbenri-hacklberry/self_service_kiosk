@@ -30,6 +30,9 @@ export const useKDSData = () => {
     const [errorModal, setErrorModal] = useState(null);
     const [isSendingSms, setIsSendingSms] = useState(false);
 
+    // OPTIMIZATION: Cache option map to avoid fetching on every poll
+    const optionMapRef = useRef(new Map());
+
     // 🟢 PRODUCTION LOGGING HELPERS
     const DEBUG = true; // Set to true for development, false for production
     const log = (...args) => DEBUG && console.log(...args);
@@ -54,13 +57,22 @@ export const useKDSData = () => {
         const healDexieData = async () => {
             try {
                 const { db } = await import('../../../db/database');
-                const allOrders = await db.orders.toArray();
-                const allItems = await db.order_items.toArray();
+                // Removed duplicate db declaration
+
+                // OPTIMIZATION: Only scan ACTIVE orders, not the whole history!
+                // Scanning thousands of completed orders freezes weak Android tablets.
+                const activeOrders = await db.orders
+                    .where('order_status')
+                    .anyOf('new', 'in_progress', 'pending')
+                    .toArray();
+
+                const allItems = await db.order_items.toArray(); // Optimized later if needed, but usually manageable
 
                 let healedCount = 0;
 
-                for (const order of allOrders) {
+                for (const order of activeOrders) {
                     const orderItems = allItems.filter(i => String(i.order_id) === String(order.id));
+                    // ... remainder of logic ...
 
                     if (orderItems.length === 0) continue;
 
@@ -121,33 +133,33 @@ export const useKDSData = () => {
             });
 
             // Build option map (from Dexie first, for speed and offline support)
-            const optionMap = new Map();
-            try {
-                const { db } = await import('../../../db/database');
-                const localOptionValues = await db.optionvalues.toArray();
-                localOptionValues?.forEach(ov => {
-                    optionMap.set(String(ov.id), ov.value_name);
-                    optionMap.set(ov.id, ov.value_name);
-                });
-            } catch (e) {
-                console.warn('Failed to load option map from Dexie:', e);
-            }
-
-            // If online, try to update option map from Supabase
-            if (isOnline) {
+            // CACHING: Only load options if cache is empty
+            if (optionMapRef.current.size === 0) {
                 try {
-                    const { data: allOptionValues } = await supabase
-                        .from('optionvalues')
-                        .select('id, value_name')
-                        .abortSignal(signal);
-                    allOptionValues?.forEach(ov => {
-                        optionMap.set(String(ov.id), ov.value_name);
-                        optionMap.set(ov.id, ov.value_name);
+                    const { db } = await import('../../../db/database');
+                    const localOptionValues = await db.optionvalues.toArray();
+                    localOptionValues?.forEach(ov => {
+                        optionMapRef.current.set(String(ov.id), ov.value_name);
+                        optionMapRef.current.set(ov.id, ov.value_name);
                     });
+                    // If online, try to update from Supabase (background update)
+                    if (isOnline) {
+                        supabase.from('optionvalues').select('id, value_name').then(({ data }) => {
+                            data?.forEach(ov => {
+                                optionMapRef.current.set(String(ov.id), ov.value_name);
+                                optionMapRef.current.set(ov.id, ov.value_name);
+                            });
+                        });
+                    }
                 } catch (e) {
-                    console.warn('Supabase optionvalues fetch failed, using cache:', e);
+                    console.warn('Failed to load option map:', e);
                 }
             }
+            // Use cached map
+            const optionMap = optionMapRef.current;
+
+            // If online, try to update option map from Supabase
+            // Supabase update moved to background promise above to not block UI render
 
             // Fetch orders from last 48 hours to be safe
             const today = new Date();
