@@ -384,16 +384,19 @@ export const useKDSData = () => {
                 try {
                     const { db } = await import('../../../db/database');
 
+                    // FIXED: Make business_id filter optional since it might not match exactly for offline orders
                     const localOrders = await db.orders
-                        .where('business_id')
-                        .equals(businessId)
                         .filter(o => {
                             const isToday = new Date(o.created_at) >= today;
                             const isActive = ['in_progress', 'ready', 'new', 'pending'].includes(o.order_status);
-                            const isPending = o.pending_sync === true;
-                            return (isActive && isToday) || isPending;
+                            const isPending = o.pending_sync === true || o.is_offline === true;
+                            // Loose business_id check: skip if we don't have a businessId, or match loosely
+                            const businessMatch = !businessId || String(o.business_id) === String(businessId);
+                            return businessMatch && ((isActive && isToday) || isPending);
                         })
                         .toArray();
+
+                    console.log(`📴 [OFFLINE] Query returned ${localOrders.length} orders from Dexie`);
 
                     if (localOrders && localOrders.length > 0) {
                         const localOrderIds = localOrders.map(o => o.id);
