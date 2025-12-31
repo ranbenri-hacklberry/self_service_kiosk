@@ -312,8 +312,14 @@ const SmartCart = ({
     const showCredits = credits > 0;
     const progressToNext = points % 10;
 
-    // Helper to determine if we have a REAL customer (ignoring "Quick Order" placeholder)
-    const hasRealCustomer = customerName && customerName !== 'הזמנה מהירה';
+    // Helper to determine if we have a REAL customer (ignoring "Quick Order" or anonymous placeholders)
+    const hasRealCustomer = useMemo(() => {
+        if (!customerName) return false;
+        const name = String(customerName).trim();
+        if (name === 'הזמנה מהירה') return false;
+        if (name === 'אורח' || name.includes('אורח אנונימי') || name === 'אורח/ת') return false;
+        return true;
+    }, [customerName]);
 
     // DEBUG: Check why button isn't showing
     console.log('🛒 SmartCart Debug:', {
