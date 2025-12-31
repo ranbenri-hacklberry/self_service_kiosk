@@ -26,11 +26,10 @@ const ManagerDashboard = () => {
     if (!currentUser) {
       navigate('/login');
     } else {
-      // Optional: Check role again if needed, or rely on ProtectedRoute wrapper
-      if (currentUser.access_level !== 'Admin' && currentUser.access_level !== 'Manager' && !currentUser.is_admin) {
+      // Check role again - case-insensitive
+      const accessLevel = (currentUser.access_level || '').toLowerCase();
+      if (accessLevel !== 'admin' && accessLevel !== 'manager' && !currentUser.is_admin) {
         // If user somehow got here without being manager
-        // But ModeSelection hides the button, and ProtectedRoute works...
-        // Maybe just alert? Or route back.
         // navigate('/mode-selection');
       }
     }
@@ -155,7 +154,7 @@ const ManagerDashboard = () => {
               <MiniMusicPlayer />
               <ConnectionStatusBar isIntegrated={true} />
             </div>
-            
+
             <button
               onClick={() => setShowLogoutConfirm(true)}
               className={`flex flex-col items-center justify-center w-14 h-14 rounded-xl transition-all text-xs font-bold gap-1 border shadow-sm ${isImpersonating

@@ -7,8 +7,13 @@ const ModeSelectionScreen = () => {
     const navigate = useNavigate();
     const { currentUser, setMode, logout } = useAuth();
 
-    // Check if user is a manager/admin
-    const isManager = currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.access_level === 'admin' || currentUser?.access_level === 'manager' || currentUser?.is_admin === true;
+    // Check if user is a manager/admin (case-insensitive)
+    const accessLevel = (currentUser?.access_level || '').toLowerCase();
+    const isManager = currentUser?.role === 'admin' ||
+        currentUser?.role === 'manager' ||
+        accessLevel === 'admin' ||
+        accessLevel === 'manager' ||
+        currentUser?.is_admin === true;
 
     const handleModeSelect = (mode) => {
         setMode(mode);
