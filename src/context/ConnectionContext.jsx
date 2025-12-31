@@ -73,13 +73,13 @@ export const ConnectionProvider = ({ children }) => {
         const handleOnline = () => {
             console.log('🌐 Device is now ONLINE');
             setShowOnlinePopup(true);
-            setTimeout(() => setShowOnlinePopup(false), 3000);
+            // NOTE: No auto-dismiss - user must click button
             checkConnectivity();
         };
         const handleOffline = () => {
             console.log('📴 Device is now OFFLINE');
             setShowOfflinePopup(true);
-            setTimeout(() => setShowOfflinePopup(false), 4000);
+            // NOTE: No auto-dismiss - user must click button
             setState(prev => ({ ...prev, status: 'offline', cloudAvailable: false }));
         };
 
