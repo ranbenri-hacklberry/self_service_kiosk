@@ -52,6 +52,18 @@ const DexieAdminPanel = () => {
                     const matchByPhone = p.phone_number && (p.phone_number === c.phone_number || p.phone_number === c.phone);
                     const isNotRedemption = !p.is_redemption;
 
+                    if (matchById || matchByPhone) {
+                        console.log('Match found!', {
+                            customer: c.name,
+                            customerId: c.id,
+                            customerPhone: c.phone_number || c.phone,
+                            purchaseId: p.id,
+                            purchaseCustomerId: p.customer_id,
+                            purchasePhone: p.phone_number,
+                            isRedemption: p.is_redemption
+                        });
+                    }
+
                     return (matchById || matchByPhone) && isNotRedemption;
                 });
 
@@ -62,6 +74,7 @@ const DexieAdminPanel = () => {
             });
 
             console.log('Debug - Customers with points:', customersWithPoints.filter(c => c.points > 0).length);
+            console.log('Debug - First customer with points:', customersWithPoints.find(c => c.points > 0));
 
             setCustomers(customersWithPoints);
 
@@ -140,7 +153,8 @@ const DexieAdminPanel = () => {
     const filteredCustomers = customers.filter(c =>
         !searchQuery ||
         c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.phone?.includes(searchQuery)
+        c.phone?.includes(searchQuery) ||
+        c.phone_number?.includes(searchQuery)
     );
 
     const filteredMenu = menuItems.filter(m =>
