@@ -2106,6 +2106,9 @@ export const useKDSData = () => {
 
         // Get public IP - fetch once at start, then use cached
         const fetchIp = async () => {
+            // OFFLINE GUARD: Don't try to fetch IP if offline
+            if (!navigator.onLine) return null;
+
             const cached = sessionStorage.getItem('device_public_ip');
             if (cached) return cached;
             try {
@@ -2133,6 +2136,11 @@ export const useKDSData = () => {
         };
 
         const sendHeartbeat = async () => {
+            // OFFLINE GUARD: Don't send heartbeat if offline
+            if (!navigator.onLine) {
+                console.log('📴 Skipping heartbeat - device is offline');
+                return;
+            }
             try {
                 const ip = await fetchIp();
                 const screenRes = `${window.screen.width}x${window.screen.height}`;
@@ -2155,13 +2163,15 @@ export const useKDSData = () => {
                 console.log('✅ Heartbeat success');
             } catch (err) {
                 console.warn('⚠️ Device heartbeat failed:', err.message);
-                // Fallback to old heartbeat
-                try {
-                    await supabase.rpc('send_kds_heartbeat', {
-                        p_business_id: currentUser.business_id
-                    });
-                } catch (e) {
-                    console.error('❌ All heartbeats failed');
+                // Fallback to old heartbeat only if still online
+                if (navigator.onLine) {
+                    try {
+                        await supabase.rpc('send_kds_heartbeat', {
+                            p_business_id: currentUser.business_id
+                        });
+                    } catch (e) {
+                        console.error('❌ All heartbeats failed');
+                    }
                 }
             }
         };
