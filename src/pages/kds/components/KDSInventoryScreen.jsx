@@ -452,8 +452,8 @@ const KDSInventoryScreen = ({ onExit }) => {
             {/* Header & Tabs - Single Line Layout */}
             <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-3 flex items-center justify-between border-b border-gray-200 gap-6">
 
-                {/* Right Side Group: Home | Title | Connection | Search */}
-                <div className="flex items-center gap-4 flex-1">
+                {/* Right Side: Home | Search */}
+                <div className="flex items-center gap-3">
                     {/* Home button - rightmost in RTL */}
                     {onExit && (
                         <button
@@ -465,25 +465,23 @@ const KDSInventoryScreen = ({ onExit }) => {
                         </button>
                     )}
 
-                    <h2 className="text-xl font-black text-slate-800 shrink-0">ניהול מלאי</h2>
-
-                    {/* Connection status - centered */}
-                    <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
-                        <MiniMusicPlayer />
-                        <ConnectionStatusBar isIntegrated={true} />
-                    </div>
-
-                    {/* Search Bar - Global */}
-                    <div className="relative w-full max-w-sm">
+                    {/* Search Bar - Compact */}
+                    <div className="relative w-64">
                         <Search className="absolute top-1/2 -translate-y-1/2 right-3 text-gray-400 w-4 h-4" />
                         <input
                             type="text"
                             value={search}
                             onChange={e => setSearch(e.target.value)}
-                            placeholder="חיפוש מהיר..."
-                            className="w-full pl-4 pr-10 py-2.5 rounded-xl bg-gray-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm transition-all shadow-sm"
+                            placeholder="חיפוש..."
+                            className="w-full pl-4 pr-10 py-2 rounded-xl bg-gray-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm transition-all shadow-sm"
                         />
                     </div>
+                </div>
+
+                {/* Center: Connection Status */}
+                <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
+                    <MiniMusicPlayer />
+                    <ConnectionStatusBar isIntegrated={true} />
                 </div>
 
                 {/* Left Side: Tabs / Actions */}

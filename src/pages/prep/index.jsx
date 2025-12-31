@@ -172,16 +172,12 @@ const PrepPage = () => {
                     <button onClick={handleExit} className="p-2 -mr-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition">
                         <House size={24} />
                     </button>
+                </div>
 
-                    <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                        <List className="text-blue-600" size={20} /> משימות והכנות
-                    </h1>
-
-                    {/* Connection status - centered */}
-                    <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
-                        <MiniMusicPlayer />
-                        <ConnectionStatusBar isIntegrated={true} />
-                    </div>
+                {/* Center: Connection status */}
+                <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
+                    <MiniMusicPlayer />
+                    <ConnectionStatusBar isIntegrated={true} />
                 </div>
 
                 {/* Sub-tabs */}
