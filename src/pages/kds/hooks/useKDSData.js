@@ -461,7 +461,8 @@ export const useKDSData = () => {
 
 
             // Skip rest of Supabase-only code if we got data from Dexie
-            if (!supabaseFailed) {
+            // IMPORTANT: Only run if online - these are Supabase-only operations
+            if (!supabaseFailed && isOnline) {
 
                 // console.log(`📦 [useKDSData] Total orders fetched: ${ordersData?.length || 0}`);
 
@@ -775,9 +776,14 @@ export const useKDSData = () => {
             log('🚀 [START-PROCESSING] About to process ' + (ordersData?.length || 0) + ' orders');
 
             (ordersData || []).forEach((order, idx) => {
-                // CRITICAL: Map items_detail to order_items FIRST (RPC returns items_detail)
+                // CRITICAL: Map various source names to order_items
+                // - RPC returns items_detail
+                // - Offline mode uses 'items'
                 if (!order.order_items && order.items_detail) {
                     order.order_items = order.items_detail;
+                }
+                if (!order.order_items && order.items) {
+                    order.order_items = order.items;
                 }
 
                 // Check if order has ANY active items (in_progress, new, pending)
