@@ -7,12 +7,8 @@ import SplashScreen from "@/components/SplashScreen";
 function App() {
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, []);
+  // Removed internal timer, let SplashScreen handle it
+  // useEffect(() => { ... }, []);
 
   // Fix for Cloudflare Error 1013: Clear large/overlapping cookies to reduce header size
   useEffect(() => {
@@ -42,7 +38,7 @@ function App() {
   }, []);
 
   if (isLoading) {
-    return <SplashScreen />;
+    return <SplashScreen onFinish={() => setIsLoading(false)} />;
   }
 
   return (

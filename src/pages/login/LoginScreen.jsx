@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { loginEmployee, clockEvent } from '../../lib/employees/employeeService';
-import { Loader2, User, KeyRound, ArrowRight, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Loader2, User, KeyRound, ArrowRight, CheckCircle, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 
-import BrandLogo from '../../components/BrandLogo';
+// Remove BrandLogo import since we're not using it anymore
 
 const LoginScreen = () => {
     const navigate = useNavigate();
@@ -29,44 +29,27 @@ const LoginScreen = () => {
         });
 
         try {
-            // Find employee by Email with timeout
-            const queryPromise = supabase
-                .from('employees')
-                .select('*')
-                .eq('email', email.trim().toLowerCase())
-                .limit(1);
-
-            const { data: employees, error: fetchError } = await Promise.race([
-                queryPromise,
+            // Use secure RPC function for authentication (server-side password hashing)
+            const { data: employees, error: authError } = await Promise.race([
+                supabase.rpc('authenticate_employee', {
+                    p_email: email.trim().toLowerCase(),
+                    p_password: password
+                }),
                 timeoutPromise
             ]);
 
-            if (fetchError) {
-                console.error('Supabase error:', fetchError);
-                throw fetchError;
+            if (authError) {
+                console.error('Authentication error:', authError);
+                throw authError;
             }
 
             if (!employees || employees.length === 0) {
-                setError('אימייל לא נמצא במערכת');
+                setError('אימייל או סיסמה שגויים');
                 setIsLoading(false);
                 return;
             }
 
             const employee = employees[0];
-            let isValid = false;
-
-            // Check Password (or PIN as fallback)
-            if (employee.password_hash) {
-                isValid = (employee.password_hash === password) || (employee.pin_code === password);
-            } else {
-                isValid = employee.pin_code === password;
-            }
-
-            if (!isValid) {
-                setError('סיסמה שגויה');
-                setIsLoading(false);
-                return;
-            }
 
             // Success - login and navigate
             console.log('✅ Login successful for:', employee.name);
@@ -97,8 +80,9 @@ const LoginScreen = () => {
         <div className="min-h-screen bg-slate-900 font-heebo overflow-auto pt-6 pb-4 px-4" dir="rtl">
             <div className="max-w-md mx-auto">
                 <div className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden">
-                    <div className="bg-slate-800 py-6 px-4 text-center text-white border-b border-slate-700">
-                        <BrandLogo size="medium" variant="light" />
+                    <div className="bg-slate-800 py-3 px-4 text-center text-white">
+                        <h1 className="text-xl font-black leading-tight">כניסה למערכת</h1>
+                        <p className="text-slate-300 text-xs">הזן פרטי התחברות</p>
                     </div>
 
                     <div className="p-4">
@@ -135,17 +119,17 @@ const LoginScreen = () => {
                                         type={showPassword ? "text" : "password"}
                                         value={password}
                                         onChange={e => setPassword(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pr-10 pl-3 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400 font-sans text-sm"
-                                        placeholder="••••••••"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pr-10 pl-10 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all font-sans text-sm"
+                                        placeholder=""
                                         required
                                         dir="ltr"
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute top-1/2 -translate-y-1/2 left-3 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                                        className="absolute top-1/2 -translate-y-1/2 left-3 text-slate-400 hover:text-blue-600 transition-colors"
                                     >
-                                        {showPassword ? 'הסתר' : 'הצג'}
+                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                     </button>
                                 </div>
                             </div>
