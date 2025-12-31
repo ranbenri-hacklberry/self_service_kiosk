@@ -201,38 +201,99 @@ const DexieTestPage = () => {
         updateStats();
         updateQueueStats();
 
-        // AUTO-SYNC: Fetch from Supabase on load if online
+        // AUTO-SYNC: Push queue, pull from Supabase, cleanup synced orders
         (async () => {
-            try {
-                setLoading(true);
-                setMessage('🔄 Auto-syncing orders from Supabase...');
+            // Only auto-sync if online
+            if (!isOnline()) {
+                console.log('📴 [DexieTestPage] Offline - skipping auto-sync');
+                setMessage('📴 Offline - showing cached data');
 
-                // Only sync if we have a business ID and are online
-                if (businessId && isOnline()) {
-                    console.log('🚀 [DexieTestPage] Auto-sync starting for business:', businessId);
-
-                    // Sync orders from Supabase to Dexie
-                    const result = await syncOrders(businessId);
-                    console.log('📦 [DexieTestPage] Sync result:', result);
-
-                    if (result.success) {
-                        setMessage(`✅ Synced ${result.ordersCount || 0} orders from today`);
-                    } else {
-                        setMessage(`⚠️ Sync issue: ${result.reason || 'Unknown'}`);
-                    }
-                } else {
-                    console.log('📴 [DexieTestPage] Skipping auto-sync (offline or no businessId)');
-                    setMessage(businessId ? '📴 Offline - showing cached data' : '⚠️ No business ID');
-                }
-
-                // Now read from Dexie (whether synced or cached)
+                // Still load from Dexie for display
                 const { db: dynamicDb } = await import('../db/database');
                 await dynamicDb.open();
                 const allOrders = await dynamicDb.orders.toArray();
-                console.log(`🔍 [DexieTestPage] Dexie now has ${allOrders.length} orders`);
                 setDirectOrders(allOrders);
+                await updateStats();
+                return;
+            }
+
+            try {
+                setLoading(true);
+
+                // STEP 1: Push pending offline queue to Supabase first
+                setMessage('🔄 Step 1/3: Pushing offline queue...');
+                const pending = await getPendingActions();
+                if (pending.length > 0) {
+                    console.log(`📤 [DexieTestPage] Pushing ${pending.length} pending actions...`);
+                    const pushResult = await syncQueue();
+                    console.log('📤 Push result:', pushResult);
+                    await updateQueueStats();
+                }
+
+                // STEP 2: Pull orders from Supabase
+                if (businessId) {
+                    setMessage('🔄 Step 2/3: Pulling orders from Supabase...');
+                    console.log('🚀 [DexieTestPage] Auto-sync starting for business:', businessId);
+                    const result = await syncOrders(businessId);
+                    console.log('📦 [DexieTestPage] Sync result:', result);
+                }
+
+                // STEP 3: Clean up local orders that have been synced
+                setMessage('🔄 Step 3/3: Cleaning synced local orders...');
+                const { db: dynamicDb } = await import('../db/database');
+                await dynamicDb.open();
+
+                const allOrders = await dynamicDb.orders.toArray();
+
+                // Find orders that are marked as synced (have serverOrderId) or have is_offline/pending_sync but already exist in Supabase
+                const ordersToClean = allOrders.filter(o => {
+                    // Order has serverOrderId - the sync created a new record, this old one should be deleted
+                    if (o.serverOrderId && o.id !== o.serverOrderId) return true;
+
+                    // Order is marked offline but has a real UUID-style ID that might be synced
+                    // We can check if pending_sync is still true but we already pushed the queue
+                    if ((o.is_offline || o.pending_sync) && o.serverOrderId) return true;
+
+                    return false;
+                });
+
+                if (ordersToClean.length > 0) {
+                    console.log(`🧹 [DexieTestPage] Cleaning ${ordersToClean.length} already-synced local orders...`);
+                    for (const order of ordersToClean) {
+                        await dynamicDb.orders.delete(order.id);
+                        await dynamicDb.order_items.where('order_id').equals(order.id).delete();
+                    }
+                }
+
+                // Also clear pending_sync and is_offline flags for orders that exist in both places
+                // (The offlineQueue CREATE_ORDER handler should do this, but just in case)
+                const remainingOrders = await dynamicDb.orders.toArray();
+                for (const order of remainingOrders) {
+                    if (order.pending_sync || order.is_offline) {
+                        // Check if this order exists in Supabase by matching order_number or id
+                        // For simplicity, if it has a serverOrderId that matches its id, clear the flags
+                        if (order.id === order.serverOrderId || !order.serverOrderId) {
+                            // This order's id IS the server id, clear flags
+                            if (!String(order.order_number).startsWith('L')) {
+                                await dynamicDb.orders.update(order.id, {
+                                    pending_sync: false,
+                                    is_offline: false
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // Refresh display
+                const finalOrders = await dynamicDb.orders.toArray();
+                console.log(`🔍 [DexieTestPage] Dexie now has ${finalOrders.length} orders`);
+                setDirectOrders(finalOrders);
 
                 await updateStats();
+                await updateQueueStats();
+
+                const cleanCount = ordersToClean.length;
+                setMessage(`✅ Sync complete! ${cleanCount > 0 ? `Cleaned ${cleanCount} synced orders.` : 'All data current.'}`);
                 setLoading(false);
 
             } catch (err) {
