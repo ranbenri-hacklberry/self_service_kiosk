@@ -452,13 +452,9 @@ const KDSInventoryScreen = ({ onExit }) => {
             {/* Header & Tabs - Single Line Layout */}
             <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-3 flex items-center justify-between border-b border-gray-200 gap-6">
 
-                {/* Right Side Group: Connection | Home | Title | Search */}
+                {/* Right Side Group: Home | Title | Connection | Search */}
                 <div className="flex items-center gap-4 flex-1">
-                    <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
-                        <MiniMusicPlayer />
-                        <ConnectionStatusBar isIntegrated={true} />
-                    </div>
-
+                    {/* Home button - rightmost in RTL */}
                     {onExit && (
                         <button
                             onClick={onExit}
@@ -469,7 +465,13 @@ const KDSInventoryScreen = ({ onExit }) => {
                         </button>
                     )}
 
-                    <h2 className="text-2xl font-black text-slate-800 shrink-0 ml-4">ניהול מלאי</h2>
+                    <h2 className="text-xl font-black text-slate-800 shrink-0">ניהול מלאי</h2>
+
+                    {/* Connection status - centered */}
+                    <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
+                        <MiniMusicPlayer />
+                        <ConnectionStatusBar isIntegrated={true} />
+                    </div>
 
                     {/* Search Bar - Global */}
                     <div className="relative w-full max-w-sm">
