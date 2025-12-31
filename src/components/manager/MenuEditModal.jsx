@@ -661,13 +661,17 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
 
 
     const saveKitchenLogicToDB = async () => {
-        if (!item?.id) return;
+        if (!item?.id || !currentUser?.business_id) return;
         const savedId = item.id;
+        const bizId = currentUser.business_id;
         try {
             const hasSchedule = Object.values(taskSchedule).some(v => v.qty > 0 || v.mode === 'par_level');
+
+            // Find existing task for THIS business only
             const { data: existingTask } = await supabase.from('recurring_tasks')
                 .select('id')
                 .eq('menu_item_id', savedId)
+                .eq('business_id', bizId)  // CRITICAL: Filter by business!
                 .maybeSingle();
 
             if (hasSchedule) {
@@ -677,26 +681,30 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                     category: 'prep',
                     frequency: 'Weekly',
                     weekly_schedule: taskSchedule,
-                    is_active: true
+                    is_active: true,
+                    business_id: bizId
                 };
 
                 if (existingTask) {
-                    await supabase.from('recurring_tasks').update(payload).eq('id', existingTask.id);
+                    await supabase.from('recurring_tasks')
+                        .update(payload)
+                        .eq('id', existingTask.id)
+                        .eq('business_id', bizId);  // Double-check business
                 } else {
                     await supabase.from('recurring_tasks').insert(payload);
                 }
             } else if (existingTask) {
-                await supabase.from('recurring_tasks').update({ is_active: false }).eq('id', existingTask.id);
+                await supabase.from('recurring_tasks')
+                    .update({ is_active: false })
+                    .eq('id', existingTask.id)
+                    .eq('business_id', bizId);  // Double-check business
             }
         } catch (e) { console.error('Auto-save kitchen logic failed', e); }
     };
 
     // --- ACCORDION & SCROLL LOGIC ---
     const toggleSection = (section) => {
-        // Auto-save logic when closing Kitchen Logic
-        if (showKitchenLogic && section !== 'kitchenLogic') {
-            saveKitchenLogicToDB();
-        }
+        // Manual save only - removed auto-save trigger
 
         // Close others and scroll to top with offset
         if (section === 'price') {
@@ -751,7 +759,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             const willOpen = !showKitchenLogic;
             setShowKitchenLogic(willOpen);
             if (!willOpen) {
-                saveKitchenLogicToDB();
+                // Manual save only - removed auto-save trigger
             } else {
                 setShowPriceSection(false);
                 setShowModifiersSection(false);
@@ -1211,9 +1219,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 if (navigator.onLine) {
                     await saveRecipeData(savedId);
                     await saveOptionsData(savedId);
-
-                    // Recurring tasks
-                    // ... (keep existing logic or migrate similarly)
+                    await saveKitchenLogicToDB(); // Prep tasks - manual save only
                 } else {
                     console.warn('⚠️ Offline - skipping relations save (Recipes/Options/Tasks) for now. TODO: Full Offline Support for relations.');
                 }

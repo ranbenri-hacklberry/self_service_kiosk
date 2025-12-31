@@ -32,6 +32,7 @@ const PrepPage = () => {
             const { data: rawTasks, error } = await supabase
                 .from('recurring_tasks')
                 .select('*')
+                .eq('business_id', currentUser?.business_id) // Add business_id filter
                 .eq('is_active', true);
 
             if (error) throw error;
@@ -58,7 +59,7 @@ const PrepPage = () => {
             const completedSet = new Set(logs?.map(l => l.recurring_task_id));
 
             const final = scheduled
-                .filter(t => !completedSet.has(t.id))
+                .filter(t => !completedSet.has(t.id)) // Filter out completed tasks
                 .map(t => {
                     const config = (t.weekly_schedule || {})[todayIdx] || {};
                     return {
@@ -71,6 +72,7 @@ const PrepPage = () => {
                         category: t.category,
                         due_time: t.due_time || '08:00',
                         is_recurring: true,
+                        is_completed: completedSet.has(t.id), // Add is_completed flag
                         // Logic for pre-closing sort
                         is_pre_closing: t.category === 'closing' && t.due_time && t.due_time < '22:00' // Simple heuristic
                     };
@@ -88,7 +90,9 @@ const PrepPage = () => {
     const fetchClosingTasks = () => fetchTasksByCategory(['סגירה', 'closing'], setClosingTasks);
 
     // Initial Fetch & Auto-Switch
+    // Initial Fetch & Auto-Switch
     useEffect(() => {
+        console.log('PrepPage: Initial load, fetching tasks...');
         fetchOpeningTasks();
         fetchPrepBatches();
         fetchClosingTasks();
@@ -100,6 +104,25 @@ const PrepPage = () => {
         else if (!isPrepPhase) setTasksSubTab('opening');
         else setTasksSubTab('prep');
 
+        // Realtime Subscription
+        const channel = supabase
+            .channel('prep-tasks-updates')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'task_completions' },
+                (payload) => {
+                    console.log('PrepPage: Task completion update received!', payload);
+                    // Refresh all lists
+                    fetchOpeningTasks();
+                    fetchPrepBatches();
+                    fetchClosingTasks();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, []); // Run once on mount
 
     const handleCompleteTask = async (task) => {
@@ -133,7 +156,7 @@ const PrepPage = () => {
                         <MiniMusicPlayer />
                         <ConnectionStatusBar isIntegrated={true} />
                     </div>
-                    
+
                     <button onClick={handleExit} className="p-2 -mr-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition">
                         <House size={24} />
                     </button>

@@ -107,24 +107,14 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
         }
 
         // Special handling for optionvalues and menuitemoptions
-        // They don't have business_id - filter via group_id from optiongroups
-        if (businessId && (remoteTable === 'optionvalues' || remoteTable === 'menuitemoptions')) {
-            console.log(`🔍 Filtering ${remoteTable} by optiongroups...`);
-            const { data: groups, error: groupError } = await supabase
-                .from('optiongroups')
-                .select('id')
-                .eq('business_id', businessId);
-
-            console.log(`📊 Found ${groups?.length || 0} optiongroups for business ${businessId}`);
-
-            if (groups && groups.length > 0) {
-                const groupIds = groups.map(g => g.id);
-                console.log(`🎯 Filtering by group_ids:`, groupIds);
-                query = query.in('group_id', groupIds);
-            } else {
-                console.log(`⚠️ No optiongroups found, returning 0 records`);
-                return { success: true, recordCount: 0 };
-            }
+        // These tables are small (< 500 rows), so we fetch ALL of them to ensure no linking issues.
+        // Complex filtering by group_id was causing sync failures when groups weren't found correctly.
+        if (remoteTable === 'optionvalues' || remoteTable === 'menuitemoptions') {
+            console.log(`🌍 Fetching ALL ${remoteTable} (small table optimization)...`);
+            // Do NOT filter by business_id or group_id
+        }
+        else if (businessId && multiTenantTables.includes(remoteTable)) {
+            query = query.eq('business_id', businessId);
         }
 
         // Apply date filter for orders (only today's orders)

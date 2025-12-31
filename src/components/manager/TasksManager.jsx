@@ -25,6 +25,11 @@ const TasksManager = () => {
     is_pre_closing: false
   });
 
+  // Prep Task Edit Modal
+  const [showPrepEditModal, setShowPrepEditModal] = useState(false);
+  const [prepEditTask, setPrepEditTask] = useState(null);
+  const [prepSchedule, setPrepSchedule] = useState({});
+
   // Menu Item Task Modal (can't edit here)
   const [showMenuItemModal, setShowMenuItemModal] = useState(false);
   const [selectedMenuTask, setSelectedMenuTask] = useState(null);
@@ -40,13 +45,19 @@ const TasksManager = () => {
 
   const categoryMap = {
     'opening': ['פתיחה', 'opening'],
-    'pre_closing': ['סגירה'], // Pre-closing tasks are in סגירה category with is_pre_closing=true
+    'pre_closing': ['הכנה', 'prep'],  // Preparation tasks
     'closing': ['סגירה', 'closing']
   };
+
+  // Track completed tasks for today (Map: task_id -> timestamp)
+  const [completedToday, setCompletedToday] = useState(new Map());
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
     try {
+      const dateStr = new Date().toISOString().split('T')[0];
+
+      // Fetch tasks
       const { data, error } = await supabase
         .from('recurring_tasks')
         .select('*')
@@ -56,15 +67,46 @@ const TasksManager = () => {
 
       if (error) throw error;
       setTasks(data || []);
+
+      const { data: completions } = await supabase
+        .from('task_completions')
+        .select('recurring_task_id,created_at') // Removed space
+        .eq('completion_date', dateStr);
+
+      const completionMap = new Map();
+      completions?.forEach(c => {
+        if (c.created_at) {
+          completionMap.set(c.recurring_task_id, c.created_at);
+        }
+      });
+      // Force new map instance
+      setCompletedToday(new Map(completionMap));
     } catch (err) {
       console.error('Error fetching tasks:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentUser?.business_id]);
 
   useEffect(() => {
     fetchTasks();
+
+    // Realtime subscription for completions (Sync with PrepPage)
+    const channel = supabase
+      .channel('tasks-manager-completions')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'task_completions' },
+        (payload) => {
+          console.log('TasksManager: Completion update received', payload);
+          fetchTasks(); // Simple and robust: refresh everything
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [fetchTasks]);
 
   // Filter tasks by current tab
@@ -73,17 +115,22 @@ const TasksManager = () => {
       return categoryMap.opening.includes(task.category);
     }
     if (activeTab === 'pre_closing') {
-      return categoryMap.closing.includes(task.category) && task.is_pre_closing === true;
+      return categoryMap.pre_closing.includes(task.category);
     }
     if (activeTab === 'closing') {
-      return categoryMap.closing.includes(task.category) && !task.is_pre_closing;
+      return categoryMap.closing.includes(task.category);
     }
     return false;
   });
 
   const handleTaskClick = (task) => {
-    // If task is from menu item (has menu_item_id), show special modal
-    if (task.menu_item_id) {
+    // If it's a prep task (in pre_closing tab), open prep edit modal
+    if (activeTab === 'pre_closing') {
+      setPrepEditTask(task);
+      setPrepSchedule(task.weekly_schedule || {});
+      setShowPrepEditModal(true);
+    } else if (task.menu_item_id) {
+      // Menu item task - show info modal
       setSelectedMenuTask(task);
       setShowMenuItemModal(true);
     } else {
@@ -112,7 +159,13 @@ const TasksManager = () => {
     if (!taskForm.name.trim()) return;
 
     try {
-      const category = activeTab === 'opening' ? 'פתיחה' : 'סגירה';
+      // Map tab to correct category
+      const categoryByTab = {
+        'opening': 'פתיחה',
+        'pre_closing': 'הכנה',
+        'closing': 'סגירה'
+      };
+      const category = categoryByTab[activeTab] || 'פתיחה';
 
       if (editingTask) {
         // Update existing
@@ -190,9 +243,86 @@ const TasksManager = () => {
     setShowMenuItemModal(false);
   };
 
+  // Prep schedule helpers
+  const updateDayQty = (dayIdx, qty) => {
+    setPrepSchedule(prev => ({
+      ...prev,
+      [dayIdx]: { ...prev[dayIdx], qty: Math.max(0, qty), mode: 'par_level' }
+    }));
+  };
+
+  const savePrepSchedule = async () => {
+    if (!prepEditTask?.id) return;
+    try {
+      const { error } = await supabase
+        .from('recurring_tasks')
+        .update({ weekly_schedule: prepSchedule })
+        .eq('id', prepEditTask.id);
+
+      if (error) throw error;
+
+      setShowPrepEditModal(false);
+      fetchTasks();
+    } catch (err) {
+      console.error('Error saving prep schedule:', err);
+      alert('שגיאה בשמירת הכמויות');
+    }
+  };
+
+  // Toggle task completion (mark/unmark)
+  const toggleTaskCompletion = async (task) => {
+    if (!task?.id) return;
+    const dateStr = new Date().toISOString().split('T')[0];
+    const isCompleted = completedToday.has(task.id);
+
+    try {
+      if (isCompleted) {
+        // Unmark: Delete completion record
+        const { error } = await supabase
+          .from('task_completions')
+          .delete()
+          .eq('recurring_task_id', task.id)
+          .eq('completion_date', dateStr);
+
+        if (error) throw error;
+
+        // Update local state - Remove ID
+        setCompletedToday(prev => {
+          const next = new Map(prev);
+          next.delete(task.id);
+          return next;
+        });
+      } else {
+        // Mark: Insert completion record
+        const todayIdx = new Date().getDay();
+        const todayQty = task.weekly_schedule?.[todayIdx]?.qty || task.quantity || 1;
+
+        const { data, error } = await supabase.from('task_completions').insert({
+          recurring_task_id: task.id,
+          business_id: currentUser?.business_id,
+          quantity_produced: todayQty,
+          completion_date: dateStr,
+          completed_by: currentUser?.id
+        }).select().single();
+
+        if (error) throw error;
+
+        // Update local state - Add ID with timestamp
+        setCompletedToday(prev => new Map(prev).set(task.id, data?.created_at || new Date().toISOString()));
+        setShowPrepEditModal(false); // Close modal if marking complete from there
+      }
+    } catch (err) {
+      console.error('Error toggling task completion:', err);
+      alert('שגיאה בעדכון סטוס המשימה');
+    }
+  };
+
+  const DAYS_HEB = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+  const DAYS_FULL = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+
   const tabLabels = {
     'opening': 'פתיחה',
-    'pre_closing': 'קדם-סגירה',
+    'pre_closing': 'הכנות',
     'closing': 'סגירה'
   };
 
@@ -204,15 +334,15 @@ const TasksManager = () => {
         <div className="px-4 py-3 flex justify-between items-center relative">
           <div className="w-1/4"></div>
 
-          {/* Centered Tabs */}
-          <div className="absolute left-1/2 -translate-x-1/2 flex bg-gray-100 p-1.5 rounded-xl border border-gray-200">
+          {/* Centered Tabs - Match SalesDashboard Style */}
+          <div className="absolute left-1/2 -translate-x-1/2 flex bg-gray-100 p-1 rounded-xl w-full max-w-sm">
             {['opening', 'pre_closing', 'closing'].map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-5 py-2 rounded-lg text-sm font-black transition-all ${activeTab === tab
-                    ? 'bg-black text-white shadow-sm'
-                    : 'bg-white text-gray-700 hover:text-black'
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === tab
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
                   }`}
               >
                 {tabLabels[tab]}
@@ -223,15 +353,8 @@ const TasksManager = () => {
           <div className="w-1/4 flex justify-end"></div>
         </div>
 
-        {/* Sub-header with title and add button */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="px-4 py-4 flex justify-between items-center max-w-4xl mx-auto w-full mb-1 mt-3"
-        >
-          <h2 className="text-2xl font-black text-slate-800">
-            משימות {tabLabels[activeTab]}
-          </h2>
+        {/* Add button only */}
+        <div className="px-4 py-2 flex justify-end max-w-4xl mx-auto w-full">
           <button
             onClick={handleAddNew}
             className="bg-blue-600 text-white rounded-xl px-4 py-2 font-bold shadow-md shadow-blue-200 hover:bg-blue-700 transition-colors flex items-center gap-2"
@@ -239,7 +362,7 @@ const TasksManager = () => {
             <PlusCircle size={20} />
             <span>משימה חדשה</span>
           </button>
-        </motion.div>
+        </div>
       </div>
 
       {/* Content */}
@@ -265,56 +388,113 @@ const TasksManager = () => {
                 </button>
               </div>
             ) : (
-              filteredTasks.map(task => (
-                <div
-                  key={task.id}
-                  onClick={() => handleTaskClick(task)}
-                  className="bg-white rounded-xl shadow-sm border border-gray-100 p-2 pr-2 flex items-center gap-3 relative transition-all cursor-pointer group h-[88px] hover:shadow-md hover:border-blue-200 hover:bg-blue-50/50"
-                >
-                  {/* Icon */}
-                  <div className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center ${task.menu_item_id ? 'bg-amber-100/50 text-amber-600' : 'bg-blue-100/50 text-blue-600'
-                    }`}>
-                    {task.menu_item_id ? <Coffee size={24} /> : <ClipboardList size={24} />}
-                  </div>
+              filteredTasks.map(task => {
+                // Get today's quantity from weekly_schedule
+                const todayIdx = new Date().getDay();
+                const schedule = task.weekly_schedule || {};
+                const todayConfig = schedule[todayIdx];
+                const todayQty = todayConfig?.qty || task.quantity || 0;
+                const isPrepTask = activeTab === 'pre_closing';
+                const hasTodayTask = todayQty > 0;
+                const isCompleted = completedToday.has(task.id);
 
-                  {/* Content */}
-                  <div className="flex-1 flex flex-col justify-center min-w-0 h-full py-1">
-                    <h3 className="font-bold text-gray-800 text-base leading-tight truncate mb-1 group-hover:text-blue-700 transition-colors">
-                      {task.name}
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      {task.menu_item_id && (
-                        <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100">
-                          משימת הכנה
-                        </span>
-                      )}
-                      {task.description && (
-                        <span className="text-xs text-gray-400 truncate max-w-[150px]">
-                          {task.description}
-                        </span>
+                // Get days with tasks
+                const daysWithTasks = Object.entries(schedule)
+                  .filter(([_, config]) => config?.qty > 0)
+                  .map(([day]) => ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'][parseInt(day)]);
+
+                return (
+                  <div
+                    key={task.id}
+                    onClick={() => handleTaskClick(task)}
+                    className={`bg-white rounded-xl shadow-sm border p-2 pr-2 flex items-center gap-3 relative transition-all cursor-pointer group h-[88px] hover:shadow-md ${isCompleted
+                      ? 'border-green-300 bg-green-50/50'
+                      : isPrepTask && !hasTodayTask
+                        ? 'border-gray-200 opacity-50'
+                        : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50'
+                      }`}
+                  >
+                    {/* Icon / Complete Action Area (Right visually, Start of DOM) */}
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleTaskCompletion(task);
+                      }}
+                      className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center transition-all ${isCompleted
+                        ? 'bg-green-600 text-white shadow-md shadow-green-200'
+                        : 'bg-gray-100 text-gray-400 hover:bg-green-50 hover:text-green-600 active:scale-90 cursor-pointer'
+                        }`}
+                    >
+                      {isCompleted ? (
+                        <div className="flex flex-col items-center justify-center p-1">
+                          <Check size={28} strokeWidth={3} className="mb-0.5" />
+                          <span className="text-[10px] font-bold opacity-90 leading-none">
+                            {(() => {
+                              const ts = completedToday.get(task.id);
+                              if (!ts) return '';
+                              try {
+                                return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                              } catch (e) {
+                                return '';
+                              }
+                            })()}
+                          </span>
+                        </div>
+                      ) : isPrepTask && todayQty > 0 ? (
+                        <div className="flex flex-col items-center">
+                          <Check size={18} className="mb-px opacity-30" />
+                          <span className="text-xl font-black leading-none">{todayQty}</span>
+                          <span className="text-[10px] font-bold opacity-70">יח׳</span>
+                        </div>
+                      ) : task.menu_item_id ? (
+                        <Coffee size={24} />
+                      ) : (
+                        <ClipboardList size={24} />
                       )}
                     </div>
-                  </div>
 
-                  {/* Actions */}
-                  <div className="pl-2 flex-shrink-0 flex items-center gap-2">
-                    {!task.menu_item_id && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteTask(task);
-                        }}
-                        className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-50 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-50 text-gray-400 group-hover:bg-white group-hover:text-blue-500 transition-colors shadow-sm">
-                      <ChevronLeft size={18} />
+                    {/* Content (Middle) */}
+                    <div className="flex-1 flex flex-col justify-center min-w-0 h-full py-1">
+                      <h3 className="font-bold text-gray-800 text-base leading-tight truncate mb-1 group-hover:text-blue-700 transition-colors">
+                        {task.name}
+                      </h3>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {task.menu_item_id && (
+                          <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100">
+                            מתפריט
+                          </span>
+                        )}
+                        {isPrepTask && daysWithTasks.length > 0 && (
+                          <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                            {daysWithTasks.join(' ')}
+                          </span>
+                        )}
+                        {!isPrepTask && task.description && (
+                          <span className="text-xs text-gray-400 truncate max-w-[150px]">
+                            {task.description}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions (Left visually, End of DOM) */}
+                    <div className="pl-2 flex-shrink-0 flex items-center gap-2">
+                      {!task.menu_item_id && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteTask(task);
+                          }}
+                          className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-50 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                      <ChevronLeft size={18} className="text-gray-300" />
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </motion.div>
         </AnimatePresence>
@@ -462,6 +642,157 @@ const TasksManager = () => {
                     עבור לפריט
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Prep Task Edit Modal */}
+      <AnimatePresence>
+        {showPrepEditModal && prepEditTask && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPrepEditModal(false)}
+              className="fixed inset-0 bg-black z-40"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 bg-white z-50 rounded-t-3xl shadow-2xl min-h-[60vh] flex flex-col"
+            >
+              {/* Header */}
+              <div className="p-6 pb-4 bg-white rounded-t-3xl border-b border-gray-50 shrink-0 relative">
+                <button
+                  onClick={() => setShowPrepEditModal(false)}
+                  className="absolute top-6 right-6 w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+                <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+                <h3 className="text-2xl font-black text-slate-800 text-center">
+                  {prepEditTask.name}
+                </h3>
+                {prepEditTask.menu_item_id && (
+                  <p className="text-sm text-amber-600 text-center mt-1 font-bold">מקושר לפריט בתפריט</p>
+                )}
+              </div>
+
+              {/* Schedule Grid */}
+              <div className="flex-1 overflow-y-auto p-6">
+                <p className="text-sm text-gray-500 text-center mb-4">הגדר כמה יחידות להכין בכל יום</p>
+                <div className="grid grid-cols-7 gap-1 max-w-md mx-auto">
+                  {DAYS_HEB.map((dayLabel, idx) => {
+                    const dayQty = prepSchedule[idx]?.qty || 0;
+                    const isActive = dayQty > 0;
+                    return (
+                      <div key={idx} className="flex flex-col items-center">
+                        <span className={`text-xs font-bold mb-1 ${isActive ? 'text-blue-600' : 'text-gray-400'}`}>
+                          {dayLabel}
+                        </span>
+                        {/* Up Arrow */}
+                        <button
+                          onClick={() => updateDayQty(idx, dayQty + 1)}
+                          className="w-10 h-10 rounded-t-xl bg-gray-100 text-gray-600 flex items-center justify-center hover:bg-green-100 hover:text-green-600 transition-colors border border-gray-200 border-b-0"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18 15l-6-6-6 6" />
+                          </svg>
+                        </button>
+                        {/* Quantity Display */}
+                        <div className={`w-10 h-10 flex items-center justify-center text-lg font-black transition-all border-x ${isActive ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-white text-gray-400 border-gray-200'
+                          }`}>
+                          {dayQty}
+                        </div>
+                        {/* Down Arrow */}
+                        <button
+                          onClick={() => updateDayQty(idx, dayQty - 1)}
+                          className="w-10 h-10 rounded-b-xl bg-gray-100 text-gray-600 flex items-center justify-center hover:bg-red-100 hover:text-red-600 transition-colors border border-gray-200 border-t-0"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M6 9l6 6 6-6" />
+                          </svg>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Quick Set */}
+                <div className="mt-6 flex flex-wrap justify-center gap-2">
+                  <button
+                    onClick={() => {
+                      const newSchedule = {};
+                      [0, 1, 2, 3, 4].forEach(d => { newSchedule[d] = { qty: 5, mode: 'par_level' }; });
+                      setPrepSchedule(newSchedule);
+                    }}
+                    className="px-3 py-1.5 text-xs font-bold bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
+                  >
+                    א-ה: 5
+                  </button>
+                  <button
+                    onClick={() => {
+                      const newSchedule = {};
+                      [0, 1, 2, 3, 4, 5, 6].forEach(d => { newSchedule[d] = { qty: 10, mode: 'par_level' }; });
+                      setPrepSchedule(newSchedule);
+                    }}
+                    className="px-3 py-1.5 text-xs font-bold bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
+                  >
+                    כל יום: 10
+                  </button>
+                  <button
+                    onClick={() => setPrepSchedule({})}
+                    className="px-3 py-1.5 text-xs font-bold bg-red-50 text-red-600 rounded-lg hover:bg-red-100"
+                  >
+                    איפוס
+                  </button>
+                </div>
+
+                {/* Link to menu item */}
+                {prepEditTask.menu_item_id && (
+                  <div className="mt-6 text-center">
+                    <button
+                      onClick={() => {
+                        setShowPrepEditModal(false);
+                        navigate('/data-manager-interface', {
+                          state: { activeTab: 'menu', editItemId: prepEditTask.menu_item_id }
+                        });
+                      }}
+                      className="text-blue-600 font-bold text-sm hover:underline flex items-center justify-center gap-1"
+                    >
+                      <ExternalLink size={14} />
+                      עבור לפריט בתפריט
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="p-4 border-t border-gray-100 bg-white shrink-0 space-y-2">
+                {/* Toggle Complete Button */}
+                <button
+                  onClick={() => toggleTaskCompletion(prepEditTask)}
+                  className={`w-full py-4 rounded-2xl font-black text-xl shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${completedToday.has(prepEditTask.id)
+                    ? 'bg-green-100 text-green-800 shadow-none'
+                    : 'bg-green-600 text-white shadow-green-200'
+                    }`}
+                >
+                  <Check size={24} />
+                  {completedToday.has(prepEditTask.id) ? 'הושלם היום (לחץ לביטול)' : 'סמן כהושלם'}
+                </button>
+
+                {/* Save Schedule Button */}
+                <button
+                  onClick={savePrepSchedule}
+                  className="w-full py-3 bg-slate-200 text-slate-700 rounded-2xl font-bold text-base active:scale-[0.98] transition-all"
+                >
+                  שמור שינויי לו״ז
+                </button>
               </div>
             </motion.div>
           </>

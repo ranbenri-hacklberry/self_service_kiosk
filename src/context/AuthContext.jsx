@@ -161,12 +161,30 @@ export const AuthProvider = ({ children }) => {
                 // First, sync local changes TO cloud
                 await syncQueue();
 
-                // Then, sync cloud changes TO local
-                const result = await syncOrders(currentUser.business_id);
-                if (result.success) {
-                    console.log(`✅ [Background] Synced ${result.ordersCount} orders`);
-                    localStorage.setItem('last_sync_time', Date.now().toString());
+                // Check if we need a FULL sync (Initial Load)
+                // We do this once per session or if explicit refresh needed
+                // But for now, let's do a lightweight check or just rely on syncOrders for frequent updates
+                // However, user specifically asked for auto-sync on entry.
+                // syncing ALL tables is safer for modifiers/menu consistency.
+
+                const { initialLoad } = await import('../services/syncService');
+                const lastFullSync = localStorage.getItem('last_full_sync');
+                const timeSinceFullSync = lastFullSync ? (Date.now() - parseInt(lastFullSync)) : Infinity;
+
+                // Run full sync if it's been more than 1 hour or never ran
+                if (timeSinceFullSync > 60 * 60 * 1000) {
+                    console.log('🔄 [Background] Running FULL initial load (periodic/login)...');
+                    await initialLoad(currentUser.business_id);
+                    localStorage.setItem('last_full_sync', Date.now().toString());
+                } else {
+                    // Just sync orders frequently
+                    const result = await syncOrders(currentUser.business_id);
+                    if (result.success) {
+                        console.log(`✅ [Background] Synced ${result.ordersCount} orders`);
+                    }
                 }
+
+                localStorage.setItem('last_sync_time', Date.now().toString());
             } catch (err) {
                 console.warn('⚠️ [Background] Sync failed:', err.message);
             }
@@ -186,8 +204,8 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('kiosk_user', JSON.stringify(employee));
         localStorage.setItem('kiosk_auth_time', Date.now().toString());
 
-        // Trigger sync immediately after login
-        // triggerSync(employee?.business_id); // DISABLED for Cloud-Only Mode
+        // Color force full sync on next background run
+        localStorage.removeItem('last_full_sync');
         localStorage.setItem('last_sync_time', Date.now().toString());
     };
 

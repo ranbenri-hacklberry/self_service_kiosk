@@ -146,54 +146,97 @@ const ManagerDashboard = () => {
     <div className="h-screen flex flex-col bg-gray-100" dir="rtl">
       {/* Header */}
       <header className={`text-white p-2 shadow-md shrink-0 z-20 relative ${isImpersonating ? 'bg-slate-800' : 'bg-blue-600'}`}>
-        <div className="flex items-center justify-between max-w-7xl mx-auto w-full">
-          {/* Right Side Group: Connection Status & Logo/Title (if any) & Logout */}
-          <div className="flex items-center gap-3">
-            {/* Mini Player & Connection Group */}
-            <div className="flex items-center gap-3 bg-white/10 p-1 px-2 rounded-2xl border border-white/10">
-              <MiniMusicPlayer />
-              <ConnectionStatusBar isIntegrated={true} />
-            </div>
-
+        <div className="flex items-center gap-2 w-full">
+          {/* Right Side Buttons (appears first in RTL) */}
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Logout Button */}
             <button
               onClick={() => setShowLogoutConfirm(true)}
-              className={`flex flex-col items-center justify-center w-14 h-14 rounded-xl transition-all text-xs font-bold gap-1 border shadow-sm ${isImpersonating
+              className={`flex items-center justify-center w-10 h-10 rounded-xl transition-all border shadow-sm ${isImpersonating
                 ? 'bg-slate-700/50 hover:bg-slate-600 border-slate-600'
                 : 'bg-blue-700/50 hover:bg-red-500/80 border-blue-500/30'
                 }`}
             >
               {isImpersonating ? (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" /></svg>
-                  <span>חזור</span>
-                </>
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" /></svg>
               ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-log-out"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></svg>
-                  <span>יציאה</span>
-                </>
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></svg>
               )}
+            </button>
+
+            {/* Surprise Fireworks Button */}
+            <button
+              onClick={() => {
+                // Create fireworks container
+                const container = document.createElement('div');
+                container.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden;';
+                document.body.appendChild(container);
+
+                // Create multiple fireworks
+                const colors = ['#ff0', '#f0f', '#0ff', '#f00', '#0f0', '#00f', '#ff6b6b', '#4ecdc4', '#ffe66d'];
+                for (let i = 0; i < 50; i++) {
+                  setTimeout(() => {
+                    const firework = document.createElement('div');
+                    const x = Math.random() * window.innerWidth;
+                    const y = Math.random() * window.innerHeight;
+                    const color = colors[Math.floor(Math.random() * colors.length)];
+                    const size = 4 + Math.random() * 8;
+                    firework.style.cssText = `
+                      position:absolute;
+                      left:${x}px;
+                      top:${y}px;
+                      width:${size}px;
+                      height:${size}px;
+                      background:${color};
+                      border-radius:50%;
+                      box-shadow: 0 0 ${size * 2}px ${color}, 0 0 ${size * 4}px ${color};
+                      animation: firework-pop 1s ease-out forwards;
+                    `;
+                    container.appendChild(firework);
+                  }, i * 30);
+                }
+
+                // Add animation style
+                if (!document.getElementById('firework-style')) {
+                  const style = document.createElement('style');
+                  style.id = 'firework-style';
+                  style.textContent = `
+                    @keyframes firework-pop {
+                      0% { transform: scale(0); opacity: 1; }
+                      50% { transform: scale(1.5); opacity: 1; }
+                      100% { transform: scale(0.5) translateY(-100px); opacity: 0; }
+                    }
+                  `;
+                  document.head.appendChild(style);
+                }
+
+                // Cleanup after animation
+                setTimeout(() => container.remove(), 2500);
+              }}
+              className="flex items-center justify-center w-10 h-10 rounded-xl transition-all border shadow-sm bg-gradient-to-br from-pink-500 to-yellow-500 hover:from-pink-400 hover:to-yellow-400 border-pink-400/50 hover:scale-110"
+            >
+              <span className="text-lg">🎉</span>
             </button>
           </div>
 
-          {/* Left Side: Navigation Tabs (Visual Left in RTL) */}
-          <div className="flex items-center gap-1 overflow-x-auto hide-scrollbar mr-10">
+          {/* Navigation Tabs - Full width center */}
+          <div className="flex items-center gap-1 flex-1 justify-center">
             {[
-              { id: 'sales', label: 'מכירות', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /><path d="m9 16 2 2 4-4" /></svg> },
-              { id: 'menu', label: 'תפריט', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" /><path d="M7 2v20" /><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" /></svg> },
-              { id: 'inventory', label: 'מלאי', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></svg> },
-              { id: 'tasks', label: 'משימות', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg> },
+              { id: 'sales', label: 'מכירות', icon: <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /><path d="m9 16 2 2 4-4" /></svg> },
+              { id: 'menu', label: 'תפריט', icon: <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" /><path d="M7 2v20" /><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" /></svg> },
+              { id: 'inventory', label: 'מלאי', icon: <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></svg> },
+              { id: 'tasks', label: 'משימות', icon: <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg> },
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex flex-col items-center justify-center w-20 h-16 rounded-xl transition-all gap-1 ${activeTab === tab.id
-                  ? 'bg-white text-blue-600 shadow-lg scale-105 font-black ring-2 ring-white/50'
+                className={`flex flex-col items-center justify-center flex-1 max-w-24 h-12 rounded-xl transition-all gap-0.5 ${activeTab === tab.id
+                  ? 'bg-white text-blue-600 shadow-lg font-black ring-2 ring-white/50'
                   : 'text-blue-100 hover:bg-blue-700/50 hover:text-white font-medium'
                   }`}
               >
                 {tab.icon}
-                <span className="text-[11px] leading-none">{tab.label}</span>
+                <span className="text-[10px] leading-none">{tab.label}</span>
               </button>
             ))}
           </div>
