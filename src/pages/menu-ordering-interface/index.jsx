@@ -688,8 +688,16 @@ const MenuOrderingInterface = () => {
 
     console.log('📞 Starting new order');
     clearOrderSessionState();
-    // Stay on menu ordering interface for new order
-    window.location.reload();
+    // OFFLINE FIX: Manual state reset instead of window.location.reload()
+    // This prevents the browser from showing "No Internet" screen when offline.
+    setIsEditMode(false);
+    setEditingOrderData(null);
+    setSoldierDiscountEnabled(false);
+    setSoldierDiscountId(null);
+    setIsProcessingOrder(false);
+    setShowConfirmationModal(null);
+    handleCategoryChange('hot-drinks');
+    window.scrollTo(0, 0);
   };
 
   // Handle back button from header
@@ -1951,7 +1959,7 @@ const MenuOrderingInterface = () => {
 
       // Only reset order_status to 'in_progress' if we ACTUALLY added new items
       // This prevents completed orders from appearing in active KDS when just editing details
-      if (isEditMode && orderId && editingOrderData?.originalOrderStatus === 'completed') {
+      if (isEditMode && orderId && editingOrderData?.originalOrderStatus === 'completed' && isOnline) {
         // Check if any NEW items were added (items without an existing order_item_id)
         const hasNewItems = cartItems.some(item => !item.id || item.id.toString().includes('temp'));
 
@@ -1990,7 +1998,8 @@ const MenuOrderingInterface = () => {
       let loyaltyPointsForConfirmation = realPhone ? (loyaltyPoints ?? 0) : null;
 
       // Safety check: If count is 0 but we have a customer, try to fetch fresh count
-      if (loyaltyPointsForConfirmation === 0 && customerId && realPhone) {
+      // OFFLINE FIX: Only fetch if online
+      if (loyaltyPointsForConfirmation === 0 && customerId && realPhone && isOnline) {
         try {
           console.log('🔄 Loyalty count is 0, fetching fresh count for confirmation modal...');
           const freshCount = await getLoyaltyCount(realPhone, currentUser);
@@ -1998,8 +2007,8 @@ const MenuOrderingInterface = () => {
             loyaltyPointsForConfirmation = freshCount;
             console.log('✅ Fetched fresh loyalty count:', freshCount);
           }
-        } catch (e) {
-          console.error('⚠️ Failed to fetch fresh loyalty count:', e);
+        } catch (lError) {
+          console.warn('Loyalty fetch failed in confirmation background:', lError);
         }
       }
       let loyaltyRewardEarned = false;
@@ -2035,7 +2044,14 @@ const MenuOrderingInterface = () => {
 
           navigate('/kds', { state: { viewMode: targetView } });
         } else {
-          window.location.reload();
+          // OFFLINE FIX: Manual reset instead of reload
+          clearOrderSessionState();
+          setIsEditMode(false);
+          setEditingOrderData(null);
+          setSoldierDiscountEnabled(false);
+          setIsProcessingOrder(false);
+          handleCategoryChange('hot-drinks');
+          window.scrollTo(0, 0);
         }
         return;
       }
@@ -2108,7 +2124,8 @@ const MenuOrderingInterface = () => {
       });
 
       // Background fetch order number
-      if (!orderNumber && orderId) {
+      // OFFLINE FIX: Only fetch if online
+      if (!orderNumber && orderId && isOnline) {
         supabase
           .from('orders')
           .select('order_number')
@@ -2118,11 +2135,13 @@ const MenuOrderingInterface = () => {
             if (fullOrder?.order_number) {
               setShowConfirmationModal(prev => prev ? { ...prev, orderNumber: fullOrder.order_number } : null);
             }
-          });
+          })
+          .catch(e => console.warn('Order number background fetch failed:', e));
       }
 
       // Process loyalty in background
-      if (realPhone) {
+      // OFFLINE FIX: Only process if online
+      if (realPhone && isOnline) {
         const processLoyalty = async () => {
           const { points: freshPoints } = await getLoyaltyCount(realPhone, currentUser);
           const currentCoffeeCount = cartItems.reduce((sum, item) => item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
