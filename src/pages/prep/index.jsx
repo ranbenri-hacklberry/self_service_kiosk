@@ -48,7 +48,8 @@ const PrepPage = () => {
                 if (t.day_of_week !== null && t.day_of_week !== undefined) {
                     return t.day_of_week === todayIdx;
                 }
-                return true;
+                // FIXED: Don't show tasks without any schedule
+                return false;
             });
 
             const { data: logs } = await supabase

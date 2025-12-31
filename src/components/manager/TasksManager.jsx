@@ -124,6 +124,39 @@ const TasksManager = () => {
     return false;
   });
 
+  // Sort tasks: Scheduled for today + not completed FIRST
+  const sortedTasks = [...filteredTasks].sort((a, b) => {
+    const todayIdx = new Date().getDay();
+
+    // Check if task is scheduled for today
+    const isScheduledToday = (task) => {
+      const schedule = task.weekly_schedule || {};
+      if (Object.keys(schedule).length > 0) {
+        const config = schedule[todayIdx];
+        return config && config.qty > 0;
+      }
+      if (task.day_of_week !== null && task.day_of_week !== undefined) {
+        return task.day_of_week === todayIdx;
+      }
+      return false;
+    };
+
+    const aScheduled = isScheduledToday(a);
+    const bScheduled = isScheduledToday(b);
+    const aCompleted = completedToday.has(a.id);
+    const bCompleted = completedToday.has(b.id);
+
+    // Priority: Scheduled today + NOT completed
+    const aPriority = aScheduled && !aCompleted;
+    const bPriority = bScheduled && !bCompleted;
+
+    if (aPriority && !bPriority) return -1;
+    if (!aPriority && bPriority) return 1;
+
+    // Secondary sort: alphabetical
+    return a.name.localeCompare(b.name, 'he');
+  });
+
   const handleTaskClick = (task) => {
     // If it's a prep task (in pre_closing tab), open prep edit modal
     if (activeTab === 'pre_closing') {
@@ -393,7 +426,7 @@ const TasksManager = () => {
                 </button>
               </div>
             ) : (
-              filteredTasks.map(task => {
+              sortedTasks.map(task => {
                 // Get today's quantity from weekly_schedule
                 const todayIdx = new Date().getDay();
                 const schedule = task.weekly_schedule || {};
@@ -402,6 +435,7 @@ const TasksManager = () => {
                 const isPrepTask = activeTab === 'pre_closing';
                 const hasTodayTask = todayQty > 0;
                 const isCompleted = completedToday.has(task.id);
+                const isUrgent = hasTodayTask && !isCompleted; // Scheduled today + not done
 
                 // Get days with tasks
                 const daysWithTasks = Object.entries(schedule)
@@ -413,10 +447,12 @@ const TasksManager = () => {
                     key={task.id}
                     onClick={() => handleTaskClick(task)}
                     className={`bg-white rounded-xl shadow-sm border p-2 pr-2 flex items-center gap-3 relative transition-all cursor-pointer group h-[88px] hover:shadow-md ${isCompleted
-                      ? 'border-green-300 bg-green-50/50'
-                      : isPrepTask && !hasTodayTask
-                        ? 'border-gray-200 opacity-50'
-                        : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50'
+                        ? 'border-green-300 bg-green-50/50'
+                        : isUrgent
+                          ? 'border-orange-300 bg-orange-50/30 ring-2 ring-orange-200'
+                          : isPrepTask && !hasTodayTask
+                            ? 'border-gray-200 opacity-50'
+                            : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50'
                       }`}
                   >
                     {/* Icon / Complete Action Area (Right visually, Start of DOM) */}
