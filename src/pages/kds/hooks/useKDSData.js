@@ -454,10 +454,9 @@ export const useKDSData = () => {
                 } catch (dexieErr) {
                     console.error('❌ Dexie load failed:', dexieErr);
                 }
-            }
 
-            // Skip the old "fallback" block because we merged it into the main flow
-            supabaseFailed = false;
+                // NOTE: supabaseFailed is NOT reset here - we need it to skip Supabase-only operations below
+            } // End of offline loading block
 
 
             // Skip rest of Supabase-only code if we got data from Dexie
@@ -1284,6 +1283,18 @@ export const useKDSData = () => {
 
                     // Update state directly based on status change
                     if (nextStatus === 'completed') {
+                        // Save for undo before removing
+                        const orderToRemove = currentOrders.find(o => o.id === orderId || o.originalOrderId === orderId) ||
+                            completedOrders.find(o => o.id === orderId || o.originalOrderId === orderId);
+                        if (orderToRemove) {
+                            setLastAction({
+                                type: 'status_change',
+                                orderId: orderId,
+                                previousStatus: orderToRemove.orderStatus || 'ready',
+                                newStatus: 'completed',
+                                timestamp: new Date()
+                            });
+                        }
                         // Remove from both lists
                         setCurrentOrders(prev => prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId));
                         setCompletedOrders(prev => prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId));
@@ -1291,20 +1302,37 @@ export const useKDSData = () => {
                         // Move from current to completed
                         const orderToMove = currentOrders.find(o => o.id === orderId || o.originalOrderId === orderId);
                         if (orderToMove) {
+                            // Save for undo
+                            setLastAction({
+                                type: 'status_change',
+                                orderId: orderId,
+                                previousStatus: orderToMove.orderStatus || 'in_progress',
+                                newStatus: 'ready',
+                                timestamp: new Date()
+                            });
                             setCurrentOrders(prev => prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId));
                             setCompletedOrders(prev => [{
-                                ...orderToMove,
+                                ...orderToMove, // CRITICAL: Keep ALL original properties
                                 orderStatus: 'ready',
-                                type: 'ready'
+                                type: 'ready',
+                                ready_at: new Date().toISOString()
                             }, ...prev]);
                         }
                     } else if (nextStatus === 'in_progress') {
                         // Move from completed back to current (undo)
                         const orderToMove = completedOrders.find(o => o.id === orderId || o.originalOrderId === orderId);
                         if (orderToMove) {
+                            // Save for potential re-undo
+                            setLastAction({
+                                type: 'status_change',
+                                orderId: orderId,
+                                previousStatus: orderToMove.orderStatus || 'ready',
+                                newStatus: 'in_progress',
+                                timestamp: new Date()
+                            });
                             setCompletedOrders(prev => prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId));
                             setCurrentOrders(prev => [...prev, {
-                                ...orderToMove,
+                                ...orderToMove, // CRITICAL: Keep ALL original properties
                                 orderStatus: 'in_progress',
                                 type: 'active'
                             }]);

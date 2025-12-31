@@ -1189,17 +1189,35 @@ const DexieTestPage = () => {
                                                                     {orderItemsMap[order.id]?.length > 0 ? (
                                                                         <div className="space-y-1">
                                                                             {orderItemsMap[order.id].map(item => (
-                                                                                <div key={item.id} className="flex justify-between text-sm py-1 border-b border-gray-100 last:border-0">
-                                                                                    <span>
-                                                                                        <span className="font-bold text-blue-600">{item.quantity}×</span> {item.menu_item_name}
-                                                                                    </span>
-                                                                                    <span className={`px-2 py-0.5 rounded text-xs ${item.item_status === 'completed' ? 'bg-green-100 text-green-700' :
-                                                                                        item.item_status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
-                                                                                            item.item_status === 'ready' ? 'bg-blue-100 text-blue-700' :
-                                                                                                'bg-gray-200 text-gray-600'
-                                                                                        }`}>
-                                                                                        {item.item_status || 'pending'}
-                                                                                    </span>
+                                                                                <div key={item.id} className="flex flex-col py-1 border-b border-gray-100 last:border-0">
+                                                                                    <div className="flex justify-between text-sm">
+                                                                                        <span>
+                                                                                            <span className="font-bold text-blue-600">{item.quantity}×</span> {item.menu_item_name}
+                                                                                        </span>
+                                                                                        <span className={`px-2 py-0.5 rounded text-xs ${item.item_status === 'completed' ? 'bg-green-100 text-green-700' :
+                                                                                            item.item_status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
+                                                                                                item.item_status === 'ready' ? 'bg-blue-100 text-blue-700' :
+                                                                                                    'bg-gray-200 text-gray-600'
+                                                                                            }`}>
+                                                                                            {item.item_status || 'pending'}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    {/* Mods Display */}
+                                                                                    {item.mods && Array.isArray(item.mods) && item.mods.length > 0 && (
+                                                                                        <div className="ml-6 mt-0.5 text-xs text-gray-500">
+                                                                                            {item.mods.map((mod, idx) => (
+                                                                                                <span key={idx} className="inline-block bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded mr-1 mb-0.5">
+                                                                                                    {typeof mod === 'object' ? (mod.name || mod.value_name || JSON.stringify(mod)) : mod}
+                                                                                                </span>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {/* Notes Display */}
+                                                                                    {item.notes && (
+                                                                                        <div className="ml-6 mt-0.5 text-xs text-purple-600 italic">
+                                                                                            📝 {item.notes}
+                                                                                        </div>
+                                                                                    )}
                                                                                 </div>
                                                                             ))}
                                                                         </div>
