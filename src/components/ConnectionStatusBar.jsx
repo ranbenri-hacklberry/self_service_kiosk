@@ -26,8 +26,8 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
     ) : null;
 
     const content = (() => {
-        // Fully online - green "מחובר"
-        if (status === 'online') {
+        // Online or Local-only = Connected (green)
+        if (status === 'online' || status === 'local-only') {
             return (
                 <div className={`${baseStyles} bg-green-500/15 text-green-700 border-green-200/50 relative`}>
                     <Wifi size={10} strokeWidth={2.5} />
@@ -37,8 +37,7 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
             );
         }
 
-        // Any offline state - red "מנותק"
-        // (local-only, cloud-only, or offline)
+        // Cloud-only or Offline = Disconnected (red)
         return (
             <div className={`${baseStyles} bg-red-500/15 text-red-700 border-red-200/50 relative`}>
                 <WifiOff size={10} strokeWidth={2.5} />
