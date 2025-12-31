@@ -39,10 +39,29 @@ const DexieAdminPanel = () => {
             const customersData = await db.customers.toArray();
             const purchases = await db.loyalty_purchases.toArray();
 
-            const customersWithPoints = customersData.map(c => ({
-                ...c,
-                points: purchases.filter(p => p.customer_id === c.id && !p.is_redemption).length
-            }));
+            console.log('Debug - Customers:', customersData.length);
+            console.log('Debug - Purchases:', purchases.length);
+            console.log('Debug - Sample customer:', customersData[0]);
+            console.log('Debug - Sample purchase:', purchases[0]);
+
+            const customersWithPoints = customersData.map(c => {
+                // Count purchases for this customer
+                const customerPurchases = purchases.filter(p => {
+                    // Match by customer_id OR phone number
+                    const matchById = p.customer_id === c.id;
+                    const matchByPhone = p.phone_number && (p.phone_number === c.phone_number || p.phone_number === c.phone);
+                    const isNotRedemption = !p.is_redemption;
+
+                    return (matchById || matchByPhone) && isNotRedemption;
+                });
+
+                return {
+                    ...c,
+                    points: customerPurchases.length
+                };
+            });
+
+            console.log('Debug - Customers with points:', customersWithPoints.filter(c => c.points > 0).length);
 
             setCustomers(customersWithPoints);
 
@@ -169,18 +188,22 @@ const DexieAdminPanel = () => {
                             <Loading>טוען נתונים...</Loading>
                         ) : (
                             <Grid.Container gap={2}>
-                                {filteredCustomers.map(customer => (
-                                    <Grid xs={24} sm={12} md={8} key={customer.id}>
-                                        <Card width="100%">
-                                            <Text h4>{customer.name || 'לקוח אנונימי'}</Text>
-                                            <Text small type="secondary">{customer.phone}</Text>
-                                            <Spacer h={0.5} />
-                                            <Badge type="success">
-                                                <Coffee size={12} /> {customer.points} נקודות
-                                            </Badge>
-                                        </Card>
-                                    </Grid>
-                                ))}
+                                {filteredCustomers
+                                    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'))
+                                    .map(customer => (
+                                        <Grid xs={24} sm={12} md={8} key={customer.id}>
+                                            <Card width="100%">
+                                                <Text h4>{customer.name || 'לקוח אנונימי'}</Text>
+                                                <Text small type="secondary">
+                                                    {customer.phone_number || customer.phone || 'אין טלפון'}
+                                                </Text>
+                                                <Spacer h={0.5} />
+                                                <Badge type={customer.points > 0 ? "success" : "default"}>
+                                                    <Coffee size={12} /> {customer.points} נקודות
+                                                </Badge>
+                                            </Card>
+                                        </Grid>
+                                    ))}
                             </Grid.Container>
                         )}
                     </Tabs.Item>
