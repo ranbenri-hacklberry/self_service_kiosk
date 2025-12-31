@@ -3,6 +3,7 @@ import Routes from "./Routes";
 import { ConnectionProvider } from "@/context/ConnectionContext";
 import OfflineProvider from "@/context/OfflineContext";
 import SplashScreen from "@/components/SplashScreen";
+import { GeistProvider, CssBaseline } from '@geist-ui/core';
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -42,9 +43,12 @@ function App() {
   }
 
   return (
-    <ConnectionProvider>
-      <Routes />
-    </ConnectionProvider>
+    <GeistProvider>
+      <CssBaseline />
+      <ConnectionProvider>
+        <Routes />
+      </ConnectionProvider>
+    </GeistProvider>
   );
 }
 

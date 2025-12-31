@@ -23,6 +23,7 @@ import ManagerKDS from './components/manager/ManagerKDS';
 import InventoryPage from './pages/inventory';
 import PrepPage from './pages/prep';
 import MusicPage from './pages/music';
+import DexieAdminPanel from './pages/dexie-admin';
 
 import SpotifyCallback from './pages/callback/spotify';
 import DexieTestPage from './pages/DexieTestPage';
@@ -168,6 +169,12 @@ const AppRoutes = () => {
       <Route path="/dexie-test" element={
         <ProtectedRoute>
           <DexieTestPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dexie-admin" element={
+        <ProtectedRoute>
+          <DexieAdminPanel />
         </ProtectedRoute>
       } />
 
