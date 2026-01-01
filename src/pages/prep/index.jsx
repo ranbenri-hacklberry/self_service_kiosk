@@ -32,6 +32,7 @@ const PrepPage = () => {
             const { data: rawTasks, error } = await supabase
                 .from('recurring_tasks')
                 .select('*')
+                .eq('business_id', currentUser?.business_id) // Add business_id filter
                 .eq('is_active', true);
 
             if (error) throw error;
@@ -47,7 +48,8 @@ const PrepPage = () => {
                 if (t.day_of_week !== null && t.day_of_week !== undefined) {
                     return t.day_of_week === todayIdx;
                 }
-                return true;
+                // FIXED: Don't show tasks without any schedule
+                return false;
             });
 
             const { data: logs } = await supabase
@@ -58,7 +60,7 @@ const PrepPage = () => {
             const completedSet = new Set(logs?.map(l => l.recurring_task_id));
 
             const final = scheduled
-                .filter(t => !completedSet.has(t.id))
+                .filter(t => !completedSet.has(t.id)) // Filter out completed tasks
                 .map(t => {
                     const config = (t.weekly_schedule || {})[todayIdx] || {};
                     return {
@@ -71,6 +73,7 @@ const PrepPage = () => {
                         category: t.category,
                         due_time: t.due_time || '08:00',
                         is_recurring: true,
+                        is_completed: completedSet.has(t.id), // Add is_completed flag
                         // Logic for pre-closing sort
                         is_pre_closing: t.category === 'closing' && t.due_time && t.due_time < '22:00' // Simple heuristic
                     };
@@ -88,7 +91,9 @@ const PrepPage = () => {
     const fetchClosingTasks = () => fetchTasksByCategory(['סגירה', 'closing'], setClosingTasks);
 
     // Initial Fetch & Auto-Switch
+    // Initial Fetch & Auto-Switch
     useEffect(() => {
+        console.log('PrepPage: Initial load, fetching tasks...');
         fetchOpeningTasks();
         fetchPrepBatches();
         fetchClosingTasks();
@@ -100,6 +105,40 @@ const PrepPage = () => {
         else if (!isPrepPhase) setTasksSubTab('opening');
         else setTasksSubTab('prep');
 
+        // Realtime Subscription
+        const channel = supabase
+            .channel('prep-tasks-updates')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'task_completions' },
+                (payload) => {
+                    console.log('PrepPage: Task completion update received!', payload);
+                    // Refresh all lists
+                    fetchOpeningTasks();
+                    fetchPrepBatches();
+                    fetchClosingTasks();
+                }
+            )
+            .subscribe();
+
+        const tasksDefinitionChannel = supabase
+            .channel('prep-tasks-definitions')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'recurring_tasks' },
+                (payload) => {
+                    console.log('PrepPage: Task definition update received!', payload);
+                    fetchOpeningTasks();
+                    fetchPrepBatches();
+                    fetchClosingTasks();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+            supabase.removeChannel(tasksDefinitionChannel);
+        };
     }, []); // Run once on mount
 
     const handleCompleteTask = async (task) => {
@@ -129,17 +168,16 @@ const PrepPage = () => {
             {/* Header */}
             <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-4 flex justify-between items-center border-b border-gray-200 font-heebo">
                 <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
-                        <MiniMusicPlayer />
-                        <ConnectionStatusBar isIntegrated={true} />
-                    </div>
-                    
+                    {/* Home button - rightmost in RTL */}
                     <button onClick={handleExit} className="p-2 -mr-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition">
                         <House size={24} />
                     </button>
-                    <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-                        <List className="text-blue-600" /> משימות והכנות
-                    </h1>
+                </div>
+
+                {/* Center: Connection status */}
+                <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
+                    <MiniMusicPlayer />
+                    <ConnectionStatusBar isIntegrated={true} />
                 </div>
 
                 {/* Sub-tabs */}

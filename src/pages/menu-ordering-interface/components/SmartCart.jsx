@@ -446,74 +446,37 @@ const SmartCart = ({
                         cartCoffeeCount = Math.max(0, cartCoffeeCount - originalCoffeeCount);
                     }
 
-                    // Current state
+                    // Current state - ONLY USE POINTS
                     const currentPoints = loyaltyPoints ?? 0;
-                    const currentCredits = loyaltyFreeCoffees ?? 0;
+                    const totalPoints = currentPoints + cartCoffeeCount;
 
                     let displayContent;
                     let badgeStyle;
 
-                    // Special Case: User has exactly 1 credit and no points (Standard "Free Coffee Waiting" state)
-                    if (currentCredits === 1 && currentPoints === 0) {
-                        if (cartCoffeeCount === 0) {
-                            // Has credit, cart empty -> "9/10 Next is Free"
-                            displayContent = (
-                                <>
-                                    <span>☕</span>
-                                    <span>9/10 הקפה הבא חינם!</span>
-                                </>
-                            );
-                            badgeStyle = 'bg-orange-50 text-orange-700 border-orange-100';
-                        } else {
-                            // Has credit, item in cart -> "10/10 You get it free!"
-                            displayContent = (
-                                <>
-                                    <span>🎉</span>
-                                    <span>10/10 מגיע לך קפה חינם!</span>
-                                </>
-                            );
-                            badgeStyle = 'bg-green-50 text-green-700 border-green-100 animate-pulse';
-                        }
-                    }
-                    // Case: Multiple credits
-                    else if (currentCredits > 0) {
+                    if (totalPoints >= 10) {
                         displayContent = (
                             <>
-                                <span>🎁</span>
-                                <span>יש לך {currentCredits} קפה חינם!</span>
+                                <span>🎉</span>
+                                <span>10/10 מגיע לך קפה חינם!</span>
                             </>
                         );
-                        badgeStyle = 'bg-purple-50 text-purple-700 border-purple-100';
-                    }
-                    // Case: No credits, accumulating points
-                    else {
-                        const totalPoints = currentPoints + cartCoffeeCount;
-
-                        if (totalPoints >= 10) {
-                            displayContent = (
-                                <>
-                                    <span>🎉</span>
-                                    <span>10/10 מגיע לך קפה חינם!</span>
-                                </>
-                            );
-                            badgeStyle = 'bg-green-50 text-green-700 border-green-100 animate-pulse';
-                        } else if (totalPoints === 9) {
-                            displayContent = (
-                                <>
-                                    <span>☕</span>
-                                    <span>9/10 הקפה הבא חינם!</span>
-                                </>
-                            );
-                            badgeStyle = 'bg-orange-50 text-orange-700 border-orange-100';
-                        } else {
-                            displayContent = (
-                                <>
-                                    <span>☕</span>
-                                    <span>{totalPoints}/10 לקפה חינם</span>
-                                </>
-                            );
-                            badgeStyle = 'bg-orange-50 text-orange-700 border-orange-100';
-                        }
+                        badgeStyle = 'bg-green-50 text-green-700 border-green-100 animate-pulse';
+                    } else if (totalPoints === 9) {
+                        displayContent = (
+                            <>
+                                <span>☕</span>
+                                <span>9/10 הקפה הבא חינם!</span>
+                            </>
+                        );
+                        badgeStyle = 'bg-orange-50 text-orange-700 border-orange-100';
+                    } else {
+                        displayContent = (
+                            <>
+                                <span>☕</span>
+                                <span>{totalPoints}/10 לקפה חינם</span>
+                            </>
+                        );
+                        badgeStyle = 'bg-orange-50 text-orange-700 border-orange-100';
                     }
 
                     return (

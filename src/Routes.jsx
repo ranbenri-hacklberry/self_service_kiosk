@@ -9,6 +9,7 @@ import SyncStatusModal from "@/components/SyncStatusModal";
 
 // Pages
 import LoginScreen from "@/pages/login/LoginScreen";
+import EmployeeLoginScreen from "@/pages/employee-login-screen";
 import ModeSelectionScreen from "@/pages/login/ModeSelectionScreen";
 import MenuOrderingInterface from './pages/menu-ordering-interface';
 import KdsScreen from './pages/kds';
@@ -23,6 +24,7 @@ import ManagerKDS from './components/manager/ManagerKDS';
 import InventoryPage from './pages/inventory';
 import PrepPage from './pages/prep';
 import MusicPage from './pages/music';
+import DexieAdminPanel from './pages/dexie-admin';
 
 import SpotifyCallback from './pages/callback/spotify';
 import DexieTestPage from './pages/DexieTestPage';
@@ -88,7 +90,7 @@ const AppRoutes = () => {
   return (
     <RouterRoutes>
       {/* Public Routes */}
-      <Route path="/login" element={<LoginScreen />} />
+      <Route path="/login" element={<EmployeeLoginScreen />} />
       <Route path="/admin" element={<LoginScreen />} />
       <Route path="/manager" element={<LoginScreen />} />
       <Route path="/super-admin" element={<SuperAdminDashboard />} />
@@ -168,6 +170,12 @@ const AppRoutes = () => {
       <Route path="/dexie-test" element={
         <ProtectedRoute>
           <DexieTestPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dexie-admin" element={
+        <ProtectedRoute>
+          <DexieAdminPanel />
         </ProtectedRoute>
       } />
 

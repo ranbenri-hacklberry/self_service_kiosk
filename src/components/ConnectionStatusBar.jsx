@@ -1,65 +1,20 @@
 import React from 'react';
 import { useConnection } from '@/context/ConnectionContext';
 import { useAuth } from '@/context/AuthContext';
-import { Wifi, WifiOff, Cloud, CloudOff, Server, ServerOff, RefreshCw, CloudDownload, Database } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Wifi, WifiOff, RefreshCw, CloudDownload } from 'lucide-react';
 
 /**
  * Connection status indicator - can be floating or integrated into headers
  * Now includes sync status from AuthContext
  */
 const ConnectionStatusBar = ({ isIntegrated = false }) => {
-    const { status, lastSync, lastLocalAvailable, lastCloudAvailable, refresh } = useConnection();
-    const { currentUser, syncStatus, triggerSync } = useAuth();
-    const navigate = useNavigate();
-
-    // Debug Dashboard Access
-    const handleDebugClick = () => {
-        const pin = window.prompt("הכנס קוד מנהל לכניסה לדשבורד דיאגנוסטיקה:");
-        if (!pin) return;
-
-        // Check if PIN matches current user's PIN or a master code (e.g. 9999)
-        const userPin = currentUser?.pin_code || currentUser?.pin;
-
-        if (pin === '9999' || pin === '2102' || (userPin && pin === String(userPin))) {
-            navigate('/dexie-test');
-        } else {
-            alert("קוד שגוי");
-        }
-    };
-
-    // Format relative time
-    const formatTime = (date) => {
-        if (!date) return 'לא ידוע';
-        const dateObj = typeof date === 'string' ? new Date(date) : date;
-        const now = new Date();
-        const diff = Math.floor((now - dateObj) / 1000);
-
-        if (diff < 60) return 'עכשיו';
-        if (diff < 3600) return `לפני ${Math.floor(diff / 60)} דק׳`;
-        if (diff < 86400) return `לפני ${Math.floor(diff / 3600)} שע׳`;
-        return dateObj.toLocaleDateString('he-IL');
-    };
-
-    // Don't show anything while checking
-    if (status === 'checking') {
-        return null;
-    }
+    const { status, refresh } = useConnection();
+    const { currentUser, syncStatus } = useAuth();
 
     // Base styles for the pill
     const baseStyles = isIntegrated
         ? "text-[10px] px-2.5 py-1 rounded-full flex items-center gap-1.5 border transition-all duration-300 h-7"
         : "fixed top-3 left-3 z-[100] text-[10px] px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-lg backdrop-blur-md border transition-all duration-300";
-
-    const debugButton = (
-        <button
-            onClick={handleDebugClick}
-            className="p-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded-full transition-all mx-1.5"
-            title="דיאגנוסטיקה (מנהל בלבד)"
-        >
-            <Database size={14} strokeWidth={2.5} />
-        </button>
-    );
 
     const syncIndicator = syncStatus?.inProgress ? (
         <div className="absolute -bottom-5 left-0 right-0 flex justify-center">
@@ -71,81 +26,32 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
     ) : null;
 
     const content = (() => {
-        // Fully online - minimal green indicator
-        if (status === 'online') {
+        // Online or Local-only = Connected (green)
+        if (status === 'online' || status === 'local-only') {
             return (
                 <div className={`${baseStyles} bg-green-500/15 text-green-700 border-green-200/50 relative`}>
-                    <Wifi size={11} strokeWidth={2.5} />
-                    <span className="font-medium">מחובר</span>
-                    {syncStatus?.lastSync && (
-                        <span className="text-green-600 text-[9px]">• סונכרן {formatTime(syncStatus.lastSync)}</span>
-                    )}
-                    {debugButton}
+                    <Wifi size={10} strokeWidth={2.5} />
+                    <span className="font-bold text-[10px]">מחובר</span>
                     {syncIndicator}
                 </div>
             );
         }
 
-        // Local only (Offline mode)
-        if (status === 'local-only') {
-            return (
-                <div className={`${baseStyles} bg-amber-500/15 text-amber-800 border-amber-200/50 relative`}>
-                    <WifiOff size={11} strokeWidth={2.5} />
-                    <span className="font-medium">אופליין</span>
-                    <span className="text-amber-600 text-[9px]">• {formatTime(lastSync)}</span>
-                    <button
-                        onClick={refresh}
-                        className="p-0.5 hover:bg-amber-200/50 rounded-full transition-colors"
-                        title="בדוק חיבור"
-                    >
-                        <RefreshCw size={9} />
-                    </button>
-                    {debugButton}
-                    {syncIndicator}
-                </div>
-            );
-        }
-
-        // Cloud only (Local server down)
-        if (status === 'cloud-only') {
-            return (
-                <div className={`${baseStyles} bg-blue-500/15 text-blue-800 border-blue-200/50 relative`}>
-                    <ServerOff size={11} strokeWidth={2.5} />
-                    <span className="font-medium">ענן בלבד</span>
-                    <span className="text-blue-600 text-[9px]">• {formatTime(lastLocalAvailable)}</span>
-                    <button
-                        onClick={() => triggerSync?.(currentUser?.business_id)}
-                        className="p-0.5 hover:bg-blue-200/50 rounded-full transition-colors"
-                        title="סנכרן למקומי"
-                        disabled={syncStatus?.inProgress}
-                    >
-                        <CloudDownload size={9} className={syncStatus?.inProgress ? 'animate-spin' : ''} />
-                    </button>
-                    {debugButton}
-                    {syncIndicator}
-                </div>
-            );
-        }
-
-        // Completely offline
-        if (status === 'offline') {
-            return (
-                <div className={`${baseStyles} bg-red-500/15 text-red-800 border-red-200/50 relative`}>
-                    <WifiOff size={11} strokeWidth={2.5} />
-                    <span className="font-medium">אין חיבור</span>
-                    <span className="text-red-600 text-[9px]">• {formatTime(lastSync)}</span>
-                    <button
-                        onClick={refresh}
-                        className="p-0.5 hover:bg-red-200/50 rounded-full transition-colors"
-                        title="נסה שוב"
-                    >
-                        <RefreshCw size={9} />
-                    </button>
-                    {debugButton}
-                </div>
-            );
-        }
-        return null;
+        // Cloud-only or Offline = Disconnected (red)
+        return (
+            <div className={`${baseStyles} bg-red-500/15 text-red-700 border-red-200/50 relative`}>
+                <WifiOff size={10} strokeWidth={2.5} />
+                <span className="font-bold text-[10px]">מנותק</span>
+                <button
+                    onClick={refresh}
+                    className="p-0.5 hover:bg-red-200/50 rounded-full transition-colors"
+                    title="נסה שוב"
+                >
+                    <RefreshCw size={9} />
+                </button>
+                {syncIndicator}
+            </div>
+        );
     })();
 
     if (!content) return null;

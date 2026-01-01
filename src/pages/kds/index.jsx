@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -100,7 +100,268 @@ transform: scale(1.02);
   }
   .animate-strong-pulse { animation: strongOrangePulse 1.2s ease-in-out infinite; }
 
+  /* New Scroll Controls - Compact & Prominent */
+  .scroll-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 30;
+    width: 40px;
+    height: 50px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(8px);
+    border: 2px solid rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    border-radius: 10px;
+  }
+  
+  .scroll-btn:hover {
+    background: white;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.15);
+    border-color: #3b82f6;
+  }
+  
+  .scroll-btn:active {
+    transform: translateY(-50%) scale(0.95);
+  }
+  
+  .scroll-btn-right { right: 6px; }
+  .scroll-btn-left { left: 6px; }
+  .scroll-btn:disabled { opacity: 0; pointer-events: none; }
+  
+  .scroll-count {
+    font-size: 13px;
+    font-weight: 900;
+    color: white;
+    background: #3b82f6;
+    min-width: 20px;
+    height: 20px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+    margin-bottom: 2px;
+  }
+  
+  .scroll-arrows {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .scroll-btn-pulse {
+    animation: btn-pulse 1.2s ease-in-out infinite;
+    border-color: #3b82f6;
+  }
+  
+  .scroll-btn-flash {
+    animation: btn-flash 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  @keyframes btn-pulse {
+    0%, 100% { 
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      transform: translateY(-50%) scale(1);
+    }
+    50% { 
+      box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.25), 0 4px 10px rgba(0, 0, 0, 0.1);
+      transform: translateY(-50%) scale(1.05);
+    }
+  }
+
+  @keyframes btn-flash {
+    0%, 50%, 100% { background: white; border-color: rgba(0, 0, 0, 0.15); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); }
+    25%, 75% { background: #dbeafe; border-color: #3b82f6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); }
+  }
+
+  .new-order-glow {
+    border-radius: 12px;
+    animation: glow-fade 3s forwards;
+  }
+  
+  /* Orange glow for cards moving to "בטיפול" (active/in_progress) */
+  .glow-active {
+    border-radius: 12px;
+    animation: glow-fade-orange 3s forwards;
+  }
+  
+  /* Green glow for cards moving to "מוכן" (ready) */
+  .glow-ready {
+    border-radius: 12px;
+    animation: glow-fade-green 3s forwards;
+  }
+  
+  @keyframes glow-fade-orange {
+    0% { box-shadow: 0 0 20px 8px rgba(251, 146, 60, 0.7); }
+    100% { box-shadow: none; }
+  }
+  
+  @keyframes glow-fade-green {
+    0% { box-shadow: 0 0 20px 8px rgba(34, 197, 94, 0.7); }
+    100% { box-shadow: none; }
+  }
+  
+  @keyframes glow-fade {
+    0% { box-shadow: 0 0 20px 8px rgba(59, 130, 246, 0.6); }
+    100% { box-shadow: none; }
+  }
 `;
+
+const KDSScrollContainer = ({
+  children,
+  title,
+  orders = [],
+  colorClass,
+  badgeClass
+}) => {
+  const scrollRef = useRef(null);
+  const [counts, setCounts] = useState({ left: 0, right: 0 });
+  const [shouldPulseRight, setShouldPulseRight] = useState(false);
+  const [shouldFlashLeft, setShouldFlashLeft] = useState(false);
+  const pulseTimerRef = useRef(null);
+  const prevLeftCountRef = useRef(0);
+
+  const calculateCounts = useCallback(() => {
+    if (!scrollRef.current) return;
+    const container = scrollRef.current;
+    const containerRect = container.getBoundingClientRect();
+    const items = container.querySelectorAll('.kds-card-item');
+
+    let leftCount = 0;
+    let rightCount = 0;
+
+    items.forEach(item => {
+      const rect = item.getBoundingClientRect();
+      // Safety margin of 10px
+      if (rect.right < containerRect.left + 5) {
+        leftCount++;
+      } else if (rect.left > containerRect.right - 5) {
+        rightCount++;
+      }
+    });
+
+    // Trigger flash if left count increased
+    if (leftCount > prevLeftCountRef.current) {
+      setShouldFlashLeft(true);
+      setTimeout(() => setShouldFlashLeft(false), 800);
+    }
+    prevLeftCountRef.current = leftCount;
+
+    setCounts({ left: leftCount, right: rightCount });
+
+    // Start pulse timer if there are items to the right (need to go back to start in RTL)
+    // Only start if not already pulsing and no existing timer
+    if (rightCount > 0 && !pulseTimerRef.current) {
+      pulseTimerRef.current = setTimeout(() => {
+        setShouldPulseRight(true);
+        pulseTimerRef.current = null; // Clear ref but keep pulsing
+      }, 3000);
+    } else if (rightCount === 0) {
+      // Back to start - stop pulsing and clear timer
+      setShouldPulseRight(false);
+      if (pulseTimerRef.current) {
+        clearTimeout(pulseTimerRef.current);
+        pulseTimerRef.current = null;
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      calculateCounts();
+      // Tech Fix: Clear pulse timer if user is manually scrolling
+      if (pulseTimerRef.current) {
+        clearTimeout(pulseTimerRef.current);
+        pulseTimerRef.current = null;
+      }
+    };
+    container.addEventListener('scroll', handleScroll);
+
+    const resizeObserver = new ResizeObserver(calculateCounts);
+    resizeObserver.observe(container);
+
+    setTimeout(calculateCounts, 200);
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      resizeObserver.disconnect();
+      if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+    };
+  }, [calculateCounts, orders.length]);
+
+  const scrollToEdge = (edge) => {
+    if (!scrollRef.current) return;
+    const container = scrollRef.current;
+
+    // TECH NOTE (RTL Behavior): 
+    // In LTR: 0 is left, scrollWidth-clientWidth is right.
+    // In RTL: 0 is right (start), -(scrollWidth-clientWidth) is left (end).
+    // container.scrollTo handles these directions automatically when dir="rtl" is set.
+    const target = edge === 'right' ? 0 : -(container.scrollWidth - container.clientWidth);
+
+    container.scrollTo({
+      left: target,
+      behavior: 'smooth'
+    });
+  };
+
+  return (
+    <div className={`flex-1 relative flex flex-col min-h-0 ${colorClass}`}>
+      <div className={`absolute top-3 right-4 z-20 ${badgeClass} px-3 py-1 rounded-full text-xs font-bold shadow-sm`}>
+        {title} ({orders.length})
+      </div>
+
+      {/* Back to start button (right in RTL) - pulses after 3 seconds */}
+      <button
+        onClick={() => scrollToEdge('right')}
+        disabled={counts.right === 0}
+        className={`scroll-btn scroll-btn-right group ${shouldPulseRight ? 'scroll-btn-pulse' : ''}`}
+      >
+        {counts.right > 0 && <span className="scroll-count">{counts.right}</span>}
+        <div className="scroll-arrows flex items-center justify-center -space-x-1.5 rtl:space-x-reverse">
+          <ChevronRight size={11} strokeWidth={2.5} className="text-blue-500/70" />
+          <ChevronRight size={11} strokeWidth={2.5} className="text-blue-500/70" />
+        </div>
+      </button>
+
+      {/* Scroll to end button (left in RTL) */}
+      <button
+        onClick={() => scrollToEdge('left')}
+        disabled={counts.left === 0}
+        className={`scroll-btn scroll-btn-left group ${shouldFlashLeft ? 'scroll-btn-flash' : ''}`}
+      >
+        {counts.left > 0 && <span className="scroll-count">{counts.left}</span>}
+        <div className="scroll-arrows flex items-center justify-center -space-x-1.5 rtl:space-x-reverse">
+          <ChevronLeft size={11} strokeWidth={2.5} className="text-blue-500/70" />
+          <ChevronLeft size={11} strokeWidth={2.5} className="text-blue-500/70" />
+        </div>
+      </button>
+
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-4 custom-scrollbar scroll-smooth"
+      >
+        <div className="flex h-full flex-row justify-start gap-4 items-stretch">
+          <AnimatePresence initial={false}>
+            {children}
+          </AnimatePresence>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // --- רכיבים ---
 
@@ -227,6 +488,7 @@ const KdsScreen = () => {
     setErrorModal,
     isSendingSms,
     fetchOrders,
+    forceRefresh,
     fetchHistoryOrders,
     findNearestActiveDate,
     updateOrderStatus: updateOrderStatusBase,
@@ -237,6 +499,8 @@ const KdsScreen = () => {
     handleCancelOrder
   } = useKDSData();
 
+  const [newOrderIds, setNewOrderIds] = useState(new Set());
+
   // Multi-step status update with potential popup
   const handleStatusUpdate = async (orderId, currentStatus) => {
     try {
@@ -244,6 +508,20 @@ const KdsScreen = () => {
       const allActive = Array.isArray(currentOrders) ? currentOrders : [];
       const allReady = Array.isArray(completedOrders) ? completedOrders : [];
       const targetOrder = [...allActive, ...allReady].find(o => o.id === orderId);
+
+      // Set last action ID for glow effect (new multi-ID support)
+      setNewOrderIds(prev => {
+        const next = new Set(prev);
+        next.add(orderId);
+        return next;
+      });
+      setTimeout(() => {
+        setNewOrderIds(prev => {
+          const next = new Set(prev);
+          next.delete(orderId);
+          return next;
+        });
+      }, 3000);
 
       // Execute the update
       await updateOrderStatusBase(orderId, currentStatus);
@@ -355,6 +633,32 @@ const KdsScreen = () => {
   // Manual refresh trigger for history
   const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
 
+  // Track new orders for glow effect
+  const prevCurrentOrdersRef = useRef(currentOrders);
+  useEffect(() => {
+    if (currentOrders.length > prevCurrentOrdersRef.current.length) {
+      const newOrders = currentOrders.filter(o => !prevCurrentOrdersRef.current.find(p => p.id === o.id));
+      if (newOrders.length > 0) {
+        // Support multiple new orders glowing at once
+        const idsToAdd = newOrders.map(o => o.id);
+        setNewOrderIds(prev => {
+          const next = new Set(prev);
+          idsToAdd.forEach(id => next.add(id));
+          return next;
+        });
+
+        setTimeout(() => {
+          setNewOrderIds(prev => {
+            const next = new Set(prev);
+            idsToAdd.forEach(id => next.delete(id));
+            return next;
+          });
+        }, 3000);
+      }
+    }
+    prevCurrentOrdersRef.current = currentOrders;
+  }, [currentOrders]);
+
 
   // Load History Effect with AbortController
   useEffect(() => {
@@ -456,96 +760,123 @@ const KdsScreen = () => {
         />
 
         {/* View Content */}
-        {viewMode === 'active' ? (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* חצי עליון: בטיפול (50%) */}
-            <div className="flex-1 border-b-4 border-gray-200 relative bg-slate-100/50 flex flex-col min-h-0">
-              <div className="absolute top-3 right-4 bg-white/90 border border-gray-200 px-3 py-1 rounded-full text-xs font-bold text-slate-600 z-10 shadow-sm">
-                בטיפול ({currentOrders.length})
-              </div>
-              <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-4 custom-scrollbar">
-                <div className="flex h-full flex-row justify-start gap-4 items-stretch">
-                  {currentOrders.map(order => (
+        <KDSErrorBoundary>
+          {viewMode === 'active' ? (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <KDSScrollContainer
+                title="בטיפול"
+                orders={currentOrders}
+                colorClass="border-b-4 border-gray-200 bg-slate-100/50"
+                badgeClass="bg-white/90 border border-gray-200 text-slate-600"
+              >
+                {currentOrders.map(order => (
+                  <motion.div
+                    key={order.id}
+                    layout="position"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{
+                      layout: { type: "spring", stiffness: 300, damping: 30 },
+                      opacity: { duration: 0.2 },
+                      scale: { duration: 0.2 }
+                    }}
+                    className="flex-shrink-0 kds-card-item"
+                  >
                     <OrderCard
-                      key={order.id} order={order}
+                      key={order.id} // RELIABLE STABLE KEY
+                      order={order}
+                      glowClass={newOrderIds.has(order.id) ? 'glow-active' : ''}
                       onOrderStatusUpdate={handleStatusUpdate}
                       onPaymentCollected={handlePaymentCollected}
                       onFireItems={handleFireItems}
                       onReadyItems={handleReadyItems}
                       onEditOrder={handleEditOrder}
                       onCancelOrder={handleCancelOrder}
-                      onRefresh={fetchOrders}
+                      onRefresh={forceRefresh}
                     />
-                  ))}
-                </div>
-              </div>
-            </div>
+                  </motion.div>
+                ))}
+              </KDSScrollContainer>
 
-            {/* חצי תחתון: מוכן (50%) */}
-            <div className="flex-1 relative bg-green-50/30 flex flex-col min-h-0">
-              <div className="absolute top-3 right-4 bg-green-100 border border-green-200 px-3 py-1 rounded-full text-xs font-bold text-green-700 z-10 shadow-sm">
-                מוכן למסירה ({completedOrders.length})
-              </div>
-              <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-6 pb-4 custom-scrollbar">
-                <div className="flex h-full flex-row justify-start gap-4 items-stretch">
-                  {completedOrders.map(order => (
+              <KDSScrollContainer
+                title="מוכן למסירה"
+                orders={completedOrders}
+                colorClass="bg-green-50/30"
+                badgeClass="bg-green-100 border border-green-200 text-green-700"
+              >
+                {completedOrders.map(order => (
+                  <motion.div
+                    key={order.id}
+                    layout="position"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{
+                      layout: { type: "spring", stiffness: 300, damping: 30 },
+                      opacity: { duration: 0.2 },
+                      scale: { duration: 0.2 }
+                    }}
+                    className="flex-shrink-0 kds-card-item"
+                  >
                     <OrderCard
-                      key={order.id} order={order} isReady={true}
+                      key={order.id} // RELIABLE STABLE KEY
+                      order={order} isReady={true}
+                      glowClass={newOrderIds.has(order.id) ? 'glow-ready' : ''}
                       onOrderStatusUpdate={handleStatusUpdate}
                       onPaymentCollected={handlePaymentCollected}
                       onEditOrder={handleEditOrder}
                       onCancelOrder={handleCancelOrder}
-                      onRefresh={fetchOrders}
+                      onRefresh={forceRefresh}
                     />
-                  ))}
-                </div>
+                  </motion.div>
+                ))}
+              </KDSScrollContainer>
+            </div>
+          ) : (
+            <div className="flex-1 relative bg-purple-50/30 flex flex-col min-h-0 pb-safe">
+              {/* History List - Horizontal Scroll similar to active */}
+              <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-2 pt-2 pb-2 custom-scrollbar">
+                {isHistoryLoading ? (
+                  <div className="h-full w-full flex items-center justify-center text-purple-400 gap-2">
+                    <RefreshCw className="animate-spin" /> טוען היסטוריה...
+                  </div>
+                ) : (
+                  <div className="flex h-full flex-row justify-start gap-1 items-stretch">
+                    {historyOrders.length === 0 ? (
+                      <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 opacity-60 ml-20">
+                        <History size={48} className="mb-2" />
+                        <p>אין הזמנות לתאריך זה</p>
+                      </div>
+                    ) : (
+                      historyOrders.map(order => (
+                        <OrderCard
+                          key={`${order.id}-${order.created_at || order.timestamp}-${selectedDate.toISOString().split('T')[0]}`} // Robust Unique Mapping Key
+                          order={order}
+                          isHistory={true} // New Prop
+                          isReady={order.order_status === 'completed'} // Reuse styling
+                          onOrderStatusUpdate={() => { }} // No Action
+                          onPaymentCollected={(o) => handlePaymentCollected(o, true)} // From history
+                          onFireItems={() => { }} // No Action
+                          onReadyItems={() => { }} // No Action
+                          onEditOrder={handleEditOrder} // Allow Edit (Restricted)
+                          onCancelOrder={() => { }} // No Action
+                          onRefresh={() => { }}
+                        />
+                      ))
+                    )}
+
+                  </div>
+                )}
+              </div>
+
+              {/* New Animated Date Scroller */}
+              <div className={isHistoryLoading ? 'pointer-events-none opacity-50' : ''}>
+                <DateScroller selectedDate={selectedDate} onSelectDate={setSelectedDate} />
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="flex-1 relative bg-purple-50/30 flex flex-col min-h-0 pb-safe">
-            {/* History List - Horizontal Scroll similar to active */}
-            <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-2 pt-2 pb-2 custom-scrollbar">
-              {isHistoryLoading ? (
-                <div className="h-full w-full flex items-center justify-center text-purple-400 gap-2">
-                  <RefreshCw className="animate-spin" /> טוען היסטוריה...
-                </div>
-              ) : (
-                <div className="flex h-full flex-row justify-start gap-1 items-stretch">
-                  {historyOrders.length === 0 ? (
-                    <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 opacity-60 ml-20">
-                      <History size={48} className="mb-2" />
-                      <p>אין הזמנות לתאריך זה</p>
-                    </div>
-                  ) : (
-                    historyOrders.map(order => (
-                      <OrderCard
-                        key={`${order.id}-${order.created_at || order.timestamp}-${selectedDate.toISOString().split('T')[0]}`} // Robust Unique Mapping Key
-                        order={order}
-                        isHistory={true} // New Prop
-                        isReady={order.order_status === 'completed'} // Reuse styling
-                        onOrderStatusUpdate={() => { }} // No Action
-                        onPaymentCollected={(o) => handlePaymentCollected(o, true)} // From history
-                        onFireItems={() => { }} // No Action
-                        onReadyItems={() => { }} // No Action
-                        onEditOrder={handleEditOrder} // Allow Edit (Restricted)
-                        onCancelOrder={() => { }} // No Action
-                        onRefresh={() => { }}
-                      />
-                    ))
-                  )}
-
-                </div>
-              )}
-            </div>
-
-            {/* New Animated Date Scroller */}
-            <div className={isHistoryLoading ? 'pointer-events-none opacity-50' : ''}>
-              <DateScroller selectedDate={selectedDate} onSelectDate={setSelectedDate} />
-            </div>
-          </div>
-        )}
-
+          )}
+        </KDSErrorBoundary>
 
 
         {/* SMS Toast Notification */}
@@ -651,7 +982,7 @@ const KdsScreen = () => {
           isOpen={isEditModalOpen}
           order={editingOrder}
           onClose={handleCloseEditModal}
-          onRefresh={() => fetchOrders()}
+          onRefresh={forceRefresh}
         />
       </div>
     </div>

@@ -449,16 +449,16 @@ const InventoryScreen = () => {
           {/* Right Spacer (No Add Buttons here anymore) */}
           <div className="w-1/4"></div>
 
-          {/* Centered Tabs (Gray Frame, Black/White) */}
-          <div className="absolute left-1/2 -translate-x-1/2 flex bg-gray-100 p-1.5 rounded-xl border border-gray-200">
-            <button onClick={() => setActiveTab('counts')} className={`px-6 py-2 rounded-lg text-sm font-black transition-all ${activeTab === 'counts' ? 'bg-black text-white shadow-sm' : 'bg-white text-gray-700 hover:text-black'}`}>
+          {/* Centered Tabs - Match SalesDashboard Style */}
+          <div className="absolute left-1/2 -translate-x-1/2 flex bg-gray-100 p-1 rounded-xl w-full max-w-sm">
+            <button onClick={() => setActiveTab('counts')} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'counts' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
               ספירה
             </button>
-            <button onClick={() => setActiveTab('cart')} className={`px-6 py-2 rounded-lg text-sm font-black transition-all flex items-center gap-2 ${activeTab === 'cart' ? 'bg-black text-white shadow-sm' : 'bg-white text-gray-700 hover:text-black'}`}>
+            <button onClick={() => setActiveTab('cart')} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'cart' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
               עגלה
-              {Object.keys(draftOrders).length > 0 && <span className={`text-[10px] px-1.5 rounded-full ${activeTab === 'cart' ? 'bg-white text-black' : 'bg-black text-white'}`}>{Object.keys(draftOrders).length}</span>}
+              {Object.keys(draftOrders).length > 0 && <span className={`text-[10px] px-1.5 rounded-full ${activeTab === 'cart' ? 'bg-blue-100 text-blue-600' : 'bg-gray-300 text-gray-600'}`}>{Object.keys(draftOrders).length}</span>}
             </button>
-            <button onClick={() => setActiveTab('sent_orders')} className={`px-6 py-2 rounded-lg text-sm font-black transition-all ${activeTab === 'sent_orders' ? 'bg-black text-white shadow-sm' : 'bg-white text-gray-700 hover:text-black'}`}>
+            <button onClick={() => setActiveTab('sent_orders')} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'sent_orders' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
               נשלחו
             </button>
           </div>
@@ -471,35 +471,21 @@ const InventoryScreen = () => {
 
         {/* --- SUB-HEADER: Title & Add Action (New Row) --- */}
         {activeTab === 'counts' && currentView === 'suppliers' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="px-4 py-4 flex justify-between items-center max-w-4xl mx-auto w-full mb-1 mt-3">
-            <h2 className="text-2xl font-black text-slate-800">ספקים</h2>
+          <div className="px-4 py-2 flex justify-end max-w-4xl mx-auto w-full">
             <button onClick={() => setShowSupplierModal(true)} className="bg-blue-600 text-white rounded-xl px-4 py-2 font-bold shadow-md shadow-blue-200 hover:bg-blue-700 transition-colors flex items-center gap-2">
               <PlusCircle size={20} />
-              <span>הוסף חדש</span>
+              <span>ספק חדש</span>
             </button>
-          </motion.div>
+          </div>
         )}
 
-        {/* --- SUB-HEADER: Items View (Title & Back) --- */}
+        {/* --- SUB-HEADER: Items View (Back & Add) --- */}
         {activeTab === 'counts' && currentView === 'items' && (
-          <div className="bg-white px-4 py-4 flex items-center justify-between border-t border-gray-50 border-b border-gray-100 mb-1 mt-3 rounded-t-xl">
-            <div className="flex items-center gap-3">
-              <button onClick={goBackToSuppliers} className="flex items-center gap-1 text-slate-400 hover:text-slate-800 transition-colors">
-                <ChevronRight size={24} />
-                {/* Removed 'Back' text, just Icon + Supplier Name as title */}
-              </button>
-              <div className="w-px h-6 bg-gray-200 mx-1"></div>
-              <motion.h2
-                key={activeSupplierName}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="text-2xl font-black text-slate-800"
-              >
-                {activeSupplierName}
-              </motion.h2>
-            </div>
-
-            {/* Add Item Button (New) */}
+          <div className="px-4 py-2 flex items-center justify-between max-w-4xl mx-auto w-full">
+            <button onClick={goBackToSuppliers} className="flex items-center gap-2 text-blue-600 font-bold hover:text-blue-800 transition-colors">
+              <ChevronRight size={20} />
+              <span>{activeSupplierName}</span>
+            </button>
             <button onClick={() => setShowItemModal(true)} className="bg-blue-600 text-white rounded-xl px-4 py-2 font-bold shadow-md shadow-blue-200 hover:bg-blue-700 transition-colors flex items-center gap-2">
               <PlusCircle size={20} />
               <span>פריט חדש</span>
