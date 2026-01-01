@@ -33,7 +33,7 @@ const Header = ({
       if (sessionData) {
         const employee = safeJsonParse(sessionData);
         setEmployeeSession(employee);
-        
+
         // Check clock status if employee is logged in
         if (employee?.id) {
           checkClockStatus(employee?.id);
@@ -64,14 +64,14 @@ const Header = ({
 
     try {
       const result = await recordTimeClockEvent(employeeSession?.id, 'clock_out');
-      
+
       if (result?.success) {
         setIsClockedIn(false);
-        
+
         // Clear employee session
         sessionStorage.removeItem('employee_session');
         setEmployeeSession(null);
-        
+
         // Navigate back to login screen
         navigate('/employee-login-screen');
       } else {
@@ -135,7 +135,7 @@ const Header = ({
                 </div>
               </div>
             </div>
-            
+
             {/* Clock Status Indicator */}
             <div className={`w-2 h-2 rounded-full ${isClockedIn ? 'bg-green-400' : 'bg-red-400'}`} />
           </div>
@@ -147,9 +147,9 @@ const Header = ({
           <div className="hidden sm:flex items-center space-x-2 text-sm">
             <Icon name="Clock" size={16} color="currentColor" />
             <span className="font-mono">
-              {currentTime?.toLocaleTimeString('he-IL', { 
-                hour: '2-digit', 
-                minute: '2-digit' 
+              {currentTime?.toLocaleTimeString('he-IL', {
+                hour: '2-digit',
+                minute: '2-digit'
               })}
             </span>
           </div>
@@ -159,7 +159,7 @@ const Header = ({
             <div className="flex items-center space-x-2">
               {/* Clock Out Button (only show if clocked in) */}
               {isClockedIn && (
-                <button 
+                <button
                   onClick={handleClockOut}
                   disabled={isClockingOut}
                   className="flex items-center space-x-2 px-3 py-2 rounded-kiosk-sm bg-red-500/80 hover:bg-red-500 transition-colors duration-150 touch-target disabled:opacity-50 disabled:cursor-not-allowed"
@@ -170,10 +170,10 @@ const Header = ({
                   </span>
                 </button>
               )}
-              
+
               {/* End Session Button (for manager override or customer mode) */}
               {(!isClockedIn || employeeSession?.isOverride) && (
-                <button 
+                <button
                   onClick={handleEndSession}
                   className="flex items-center space-x-2 px-3 py-2 rounded-kiosk-sm bg-orange-500/80 hover:bg-orange-500 transition-colors duration-150 touch-target"
                 >
@@ -207,9 +207,23 @@ const Header = ({
           )}
 
 
+          {/* Maya AI Assistant (Only for logged-in employees) */}
+          {employeeSession && (
+            <button
+              className="flex items-center space-x-2 px-3 py-2 rounded-kiosk-sm bg-gradient-to-r from-purple-500/80 to-pink-500/80 hover:from-purple-500 hover:to-pink-500 transition-all duration-150 touch-target shadow-lg"
+              onClick={() => {
+                navigate('/maya');
+              }}
+              title="מאיה - העוזרת האישית"
+            >
+              <span className="text-lg">🌸</span>
+              <span className="hidden sm:inline text-sm font-medium">מאיה</span>
+            </button>
+          )}
+
           {/* Language Toggle */}
           {!hideLanguage && (
-            <button 
+            <button
               className="flex items-center space-x-2 px-3 py-2 rounded-kiosk-sm bg-white/10 hover:bg-white/20 transition-colors duration-150 touch-target"
               onClick={() => {
                 // Language toggle functionality
