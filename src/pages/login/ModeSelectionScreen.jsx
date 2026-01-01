@@ -202,8 +202,8 @@ const ModeSelectionScreen = () => {
                         onClick={() => navigate('/dexie-admin')}
                         className="hidden md:block group relative bg-white rounded-2xl p-5 hover:bg-cyan-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-cyan-100"
                     >
-                        <div className="absolute top-3 left-3 bg-cyan-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
-                            חדש
+                        <div className="absolute top-3 left-3 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                            בטא / BETA
                         </div>
                         <div className="absolute top-0 left-0 w-20 h-20 bg-cyan-100 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
                         <div className="relative z-10">
@@ -212,7 +212,7 @@ const ModeSelectionScreen = () => {
                             </div>
                             <h2 className="text-xl font-black text-slate-900 mb-1">מידע מתקדם</h2>
                             <p className="text-slate-500 text-sm leading-relaxed font-medium">
-                                לקוחות, תפריט, סנכרון ומהירות
+                                לקוחות, תפריט וסנכרון. המסך עדיין בעבודה ולא להבהל מהבלאגן או שזה מתרסק לפעמים.
                             </p>
                         </div>
                     </button>
