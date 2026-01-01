@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Check, Info, AlertCircle, Image, PlayCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
+
+// Variants for smooth animation
+const taskVariants = {
+    initial: { opacity: 0, height: 0 },
+    animate: { opacity: 1, height: 'auto', transition: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } },
+    exit: { opacity: 0, height: 0, transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] } }
+};
 
 const TaskManagementView = ({ tasks, onComplete, title }) => {
     const [selectedTask, setSelectedTask] = useState(null);
@@ -18,15 +25,7 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
 
     const TaskRow = ({ task }) => (
         <motion.div
-            layout
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={{
-                layout: { duration: 0.3, ease: "easeInOut" },
-                opacity: { duration: 0.2 },
-                scale: { duration: 0.2 }
-            }}
+            variants={taskVariants}
             onClick={() => setSelectedTask(task)}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all
                 ${selectedTask?.id === task.id
@@ -67,9 +66,11 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
                             אפשר להתחיל עכשיו ({preClosingTasks.length})
                         </h3>
                         <div className="grid grid-cols-2 gap-3">
-                            <AnimatePresence mode="popLayout">
-                                {preClosingTasks.map(task => <TaskRow key={task.id} task={task} />)}
-                            </AnimatePresence>
+                            <LayoutGroup>
+                                <AnimatePresence mode="wait">
+                                    {preClosingTasks.map(task => <TaskRow key={task.id} task={task} />)}
+                                </AnimatePresence>
+                            </LayoutGroup>
                         </div>
                     </div>
                 )}
@@ -84,9 +85,11 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
                             </h3>
                         )}
                         <div className="grid grid-cols-2 gap-3">
-                            <AnimatePresence mode="popLayout">
-                                {regularTasks.map(task => <TaskRow key={task.id} task={task} />)}
-                            </AnimatePresence>
+                            <LayoutGroup>
+                                <AnimatePresence mode="wait">
+                                    {regularTasks.map(task => <TaskRow key={task.id} task={task} />)}
+                                </AnimatePresence>
+                            </LayoutGroup>
                         </div>
                     </div>
                 )}
