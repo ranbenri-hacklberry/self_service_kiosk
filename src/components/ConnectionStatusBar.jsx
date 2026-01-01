@@ -26,8 +26,8 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
     ) : null;
 
     const content = (() => {
-        // Online or Local-only = Connected (green)
-        if (status === 'online' || status === 'local-only') {
+        // Online, Cloud-only, or Local-only = Connected (green)
+        if (status === 'online' || status === 'local-only' || status === 'cloud-only') {
             return (
                 <div className={`${baseStyles} bg-green-500/15 text-green-700 border-green-200/50 relative`}>
                     <Wifi size={10} strokeWidth={2.5} />
@@ -37,7 +37,17 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
             );
         }
 
-        // Cloud-only or Offline = Disconnected (red)
+        // Checking connection
+        if (status === 'checking') {
+            return (
+                <div className={`${baseStyles} bg-blue-500/15 text-blue-700 border-blue-200/50 relative`}>
+                    <RefreshCw size={10} strokeWidth={2.5} className="animate-spin" />
+                    <span className="font-bold text-[10px]">בודק...</span>
+                </div>
+            );
+        }
+
+        // Offline = Disconnected (red)
         return (
             <div className={`${baseStyles} bg-red-500/15 text-red-700 border-red-200/50 relative`}>
                 <WifiOff size={10} strokeWidth={2.5} />
@@ -58,10 +68,7 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
 
     if (isIntegrated) {
         return (
-            <div className="flex flex-col items-center justify-center">
-                <span className="text-[10px] font-black text-slate-400 mb-0.5 uppercase tracking-wider">
-                    {currentUser?.business_name || 'מערכת iCaffe'}
-                </span>
+            <div className="flex items-center justify-center w-full">
                 {content}
             </div>
         );

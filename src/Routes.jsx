@@ -90,7 +90,7 @@ const AppRoutes = () => {
   return (
     <RouterRoutes>
       {/* Public Routes */}
-      <Route path="/login" element={<EmployeeLoginScreen />} />
+      <Route path="/login" element={<LoginScreen />} />
       <Route path="/admin" element={<LoginScreen />} />
       <Route path="/manager" element={<LoginScreen />} />
       <Route path="/super-admin" element={<SuperAdminDashboard />} />
