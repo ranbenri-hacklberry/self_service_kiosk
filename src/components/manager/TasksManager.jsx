@@ -71,13 +71,13 @@ const TasksManager = () => {
 
       const { data: completions } = await supabase
         .from('task_completions')
-        .select('recurring_task_id,created_at') // Removed space
+        .select('recurring_task_id,completed_at')
         .eq('completion_date', dateStr);
 
       const completionMap = new Map();
       completions?.forEach(c => {
-        if (c.created_at) {
-          completionMap.set(c.recurring_task_id, c.created_at);
+        if (c.completed_at) {
+          completionMap.set(c.recurring_task_id, c.completed_at);
         }
       });
       // Force new map instance
@@ -368,7 +368,7 @@ const TasksManager = () => {
         if (error) throw error;
 
         // Update local state - Add ID with timestamp
-        setCompletedToday(prev => new Map(prev).set(task.id, data?.created_at || new Date().toISOString()));
+        setCompletedToday(prev => new Map(prev).set(task.id, data?.completed_at || new Date().toISOString()));
         setShowPrepEditModal(false); // Close modal if marking complete from there
       }
     } catch (err) {
