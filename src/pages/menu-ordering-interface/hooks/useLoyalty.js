@@ -22,6 +22,12 @@ export const useLoyalty = ({
         const fetchLoyalty = async () => {
             const phoneNumber = currentCustomer?.phone_number || currentCustomer?.phone;
             if (phoneNumber) {
+                // OPTIMISTIC: Set points from currentCustomer if available before fetching
+                if (currentCustomer.loyalty_coffee_count !== undefined) {
+                    setLoyaltyPoints(currentCustomer.loyalty_coffee_count);
+                    console.log('✨ Optimistic loyalty set:', currentCustomer.loyalty_coffee_count);
+                }
+
                 try {
                     const { points, freeCoffees } = await getLoyaltyCount(phoneNumber, currentUser);
                     setLoyaltyPoints(points);
@@ -29,7 +35,10 @@ export const useLoyalty = ({
                     console.log('🎁 Fetched loyalty:', { points, freeCoffees }, 'for phone:', phoneNumber);
                 } catch (error) {
                     console.error('Failed to fetch loyalty:', error);
-                    setLoyaltyPoints(0);
+                    // Don't reset to 0 if we have optimistic points
+                    if (currentCustomer.loyalty_coffee_count === undefined) {
+                        setLoyaltyPoints(0);
+                    }
                     setLoyaltyFreeCoffees(0);
                 }
             } else {

@@ -11,7 +11,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../context/AuthContext';
 import { sendSms } from '../../../services/smsService';
-import { groupOrderItems } from '../../../utils/kdsUtils';
+import { groupOrderItems, sortItems } from '../../../utils/kdsUtils';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../../../db/database';
 
@@ -404,11 +404,14 @@ export const useKDSData = () => {
                     const localOrders = await db.orders
                         .filter(o => {
                             const isToday = new Date(o.created_at) >= today;
-                            const isActive = ['in_progress', 'ready', 'new', 'pending'].includes(o.order_status);
+                            const isActiveState = ['in_progress', 'ready', 'new', 'pending'].includes(o.order_status);
+                            // MATCH RPC: Also include completed but unpaid orders in active view
+                            const isUnpaidCompleted = o.order_status === 'completed' && o.is_paid === false;
+
                             const isPending = o.pending_sync === true || o.is_offline === true;
                             // Loose business_id check: skip if we don't have a businessId, or match loosely
                             const businessMatch = !businessId || String(o.business_id) === String(businessId);
-                            return businessMatch && ((isActive && isToday) || isPending);
+                            return businessMatch && (((isActiveState || isUnpaidCompleted) && isToday) || isPending);
                         })
                         .toArray();
 
@@ -1058,12 +1061,8 @@ export const useKDSData = () => {
 
                     const groupedItems = groupOrderItems(stageItems);
 
-                    // LOGIC CHANGE: Only show pending items in active/delayed cards.
-                    // If all items are ready, it's a ready card - show everything.
-                    // If some items are ready and some are not, it's an active/delayed card - show ONLY non-ready items.
-                    const displayItems = allReady
-                        ? groupedItems
-                        : groupOrderItems(stageItems.filter(i => i.status !== 'completed' && i.status !== 'cancelled'));
+                    // STABILITY: Show all items, but use sortItems to keep active ones at top
+                    const displayItems = sortItems(groupedItems);
 
                     // Check if there are other stages/cards for this order (e.g., delayed Course 2)
                     const otherStagesExist = Object.keys(itemsByStage).length > 1;
@@ -1967,8 +1966,11 @@ export const useKDSData = () => {
                     const localOrders = await db.orders
                         .filter(o => {
                             const created = new Date(o.created_at);
+                            // Only show truly finished orders in history: either paid completed OR cancelled
+                            const isTrulyFinished = (o.order_status === 'completed' && o.is_paid === true) || o.order_status === 'cancelled';
+
                             return created >= startOfDay && created <= endOfDay &&
-                                (o.order_status === 'completed') &&
+                                isTrulyFinished &&
                                 o.business_id === businessId;
                         })
                         .toArray();
