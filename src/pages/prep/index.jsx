@@ -98,8 +98,8 @@ const PrepPage = () => {
         fetchPrepBatches();
         fetchClosingTasks();
 
-        const isClosingPhase = currentHour >= 15; // 3 PM
-        const isPrepPhase = currentHour >= 11 && currentHour < 15;
+        const isClosingPhase = currentHour >= 12; // 12 PM (noon) - closing tasks appear
+        const isPrepPhase = currentHour >= 5 && currentHour < 12; // 5 AM - 12 PM
 
         if (isClosingPhase) setTasksSubTab('closing');
         else if (!isPrepPhase) setTasksSubTab('opening');

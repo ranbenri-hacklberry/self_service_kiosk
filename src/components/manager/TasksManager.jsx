@@ -170,11 +170,18 @@ const TasksManager = () => {
       setShowMenuItemModal(true);
     } else {
       // Regular task - open edit modal
+      // Extract selected days from weekly_schedule
+      const schedule = task.weekly_schedule || {};
+      const selectedDays = Object.keys(schedule)
+        .filter(dayIdx => schedule[dayIdx]?.qty > 0)
+        .map(d => parseInt(d));
+
       setEditingTask(task);
       setTaskForm({
         name: task.name || '',
         description: task.description || '',
-        is_pre_closing: task.is_pre_closing || false
+        is_pre_closing: task.is_pre_closing || false,
+        selectedDays: selectedDays.length > 0 ? selectedDays : [0, 1, 2, 3, 4, 5, 6]
       });
       setShowEditModal(true);
     }
@@ -185,7 +192,8 @@ const TasksManager = () => {
     setTaskForm({
       name: '',
       description: '',
-      is_pre_closing: activeTab === 'pre_closing'
+      is_pre_closing: activeTab === 'pre_closing',
+      selectedDays: [0, 1, 2, 3, 4, 5, 6] // Default: all days
     });
     setShowEditModal(true);
   };
@@ -202,6 +210,13 @@ const TasksManager = () => {
       };
       const category = categoryByTab[activeTab] || 'פתיחה';
 
+      // Convert selectedDays to weekly_schedule
+      const selectedDays = taskForm.selectedDays || [0, 1, 2, 3, 4, 5, 6];
+      const weeklySchedule = {};
+      selectedDays.forEach(dayIdx => {
+        weeklySchedule[dayIdx] = { qty: 1, mode: 'fixed' };
+      });
+
       if (editingTask) {
         // Update existing
         const { error } = await supabase
@@ -209,14 +224,20 @@ const TasksManager = () => {
           .update({
             name: taskForm.name,
             description: taskForm.description,
-            is_pre_closing: taskForm.is_pre_closing
+            is_pre_closing: taskForm.is_pre_closing,
+            weekly_schedule: weeklySchedule
           })
           .eq('id', editingTask.id)
           .eq('business_id', currentUser?.business_id);
 
         if (error) throw error;
       } else {
-        // Create new
+        // Create new - Set as daily by default (all 7 days)
+        const defaultSchedule = {};
+        for (let i = 0; i < 7; i++) {
+          defaultSchedule[i] = { qty: 1, mode: 'fixed' };
+        }
+
         const { error } = await supabase
           .from('recurring_tasks')
           .insert([{
@@ -226,6 +247,7 @@ const TasksManager = () => {
             is_pre_closing: taskForm.is_pre_closing,
             is_active: true,
             frequency: 'Daily',
+            weekly_schedule: defaultSchedule, // Daily schedule for all days
             business_id: currentUser?.business_id
           }]);
 
@@ -447,12 +469,12 @@ const TasksManager = () => {
                     key={task.id}
                     onClick={() => handleTaskClick(task)}
                     className={`bg-white rounded-xl shadow-sm border p-2 pr-2 flex items-center gap-3 relative transition-all cursor-pointer group h-[88px] hover:shadow-md ${isCompleted
-                        ? 'border-green-300 bg-green-50/50'
-                        : isUrgent
-                          ? 'border-orange-300 bg-orange-50/30 ring-2 ring-orange-200'
-                          : isPrepTask && !hasTodayTask
-                            ? 'border-gray-200 opacity-50'
-                            : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50'
+                      ? 'border-green-300 bg-green-50/50'
+                      : isUrgent
+                        ? 'border-orange-300 bg-orange-50/30 ring-2 ring-orange-200'
+                        : isPrepTask && !hasTodayTask
+                          ? 'border-gray-200 opacity-50'
+                          : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50'
                       }`}
                   >
                     {/* Icon / Complete Action Area (Right visually, Start of DOM) */}
@@ -613,6 +635,42 @@ const TasksManager = () => {
                     </label>
                   </div>
                 )}
+
+                {/* Days Selection */}
+                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                  <label className="text-sm font-bold text-slate-500 mb-3 block">ימי ביצוע</label>
+                  <div className="flex gap-2 justify-center flex-wrap">
+                    {DAYS_FULL.map((dayName, idx) => {
+                      const isSelected = taskForm.selectedDays?.includes(idx) ?? true; // Default: all selected
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            const current = taskForm.selectedDays || [0, 1, 2, 3, 4, 5, 6];
+                            const updated = isSelected
+                              ? current.filter(d => d !== idx)
+                              : [...current, idx].sort();
+                            setTaskForm({ ...taskForm, selectedDays: updated });
+                          }}
+                          className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${isSelected
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'bg-white text-gray-400 border border-gray-200'
+                            }`}
+                        >
+                          {dayName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTaskForm({ ...taskForm, selectedDays: [0, 1, 2, 3, 4, 5, 6] })}
+                    className="mt-3 w-full py-2 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                  >
+                    בחר הכל
+                  </button>
+                </div>
               </div>
 
               {/* Save Button */}
