@@ -25,7 +25,7 @@ const OrderConfirmationModal = ({ isOpen, orderDetails, onStartNewOrder }) => {
     loyaltyDiscount = 0,
     loyaltyCoffeeCount,
     loyaltyRewardEarned,
-    paymentStatus,
+    isPaid,
     isRefund,
     refundAmount,
     isEdit
@@ -115,18 +115,31 @@ const OrderConfirmationModal = ({ isOpen, orderDetails, onStartNewOrder }) => {
 
             <div className="flex justify-between items-center pt-1">
               <span className="text-slate-500 font-bold">
-                {isRefund ? 'סכום לזיכוי' : 'סה"כ שולם'}
+                {isRefund ? 'סכום לזיכוי' : (isPaid ? 'סה"כ שולם' : 'סה"כ לתשלום')}
               </span>
-              <span className={`text-3xl font-black ${isRefund ? 'text-red-600' : 'text-green-600'}`}>
+              <span className={`text-3xl font-black ${isRefund ? 'text-red-600' : (isPaid ? 'text-green-600' : 'text-blue-600')}`}>
                 {isRefund ? `${formatPrice(refundAmount)}-` : formattedTotal}
               </span>
             </div>
           </div>
 
+          {/* Unpaid Warning Note */}
+          {!isPaid && !isRefund && (
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-4 flex items-start gap-3 animate-pulse">
+              <span className="text-2xl">📢</span>
+              <div className="flex-1">
+                <p className="text-blue-800 font-black text-sm mb-1">הזמנה לא שולמה!</p>
+                <p className="text-blue-700 text-xs font-bold leading-relaxed">
+                  ניתן לחזור להזמנה בכל זמן כדי לסיים את התשלום דרך <span className="underline decoration-2 underline-offset-2">מסך השירות</span>.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Loyalty Status Card */}
           {typeof loyaltyCoffeeCount === 'number' && (
             <div className={`rounded-2xl p-5 border-2 text-center ${loyaltyRewardEarned
-              ? 'bg-green-50 border-green-200'
+              ? 'bg-green-50 border-green-200 shadow-[0_0_15px_-3px_rgba(34,197,94,0.2)]'
               : 'bg-amber-50 border-amber-200'
               }`}>
               <p className={`text-base font-bold mb-2 ${loyaltyRewardEarned ? 'text-green-700' : 'text-amber-700'

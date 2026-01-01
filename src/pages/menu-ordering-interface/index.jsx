@@ -521,6 +521,7 @@ const MenuOrderingInterface = () => {
         originalTotal: order.total_amount, // Use actual paid amount (after discount) as baseline
         originalItems: loadedCartItems,
         isPaid: order.is_paid,
+        paymentMethod: order.payment_method, // Original payment method
         originalOrderStatus: order.order_status, // Store original status
         originalRedeemedCount: originalRedeemedCount,
         originalLoyaltyDiscount: loyaltyDiscountApplied // Store the discount that was applied
@@ -579,20 +580,29 @@ const MenuOrderingInterface = () => {
       // We check both the RPC result AND do a direct fallback if needed
       let dbIsPaid = order.is_paid || order.isPaid;
       let dbStatus = order.order_status || order.orderStatus;
+      let dbPaymentMethod = order.payment_method;
 
       // If RPC results are missing critical fields, fetch them directly
-      if (dbIsPaid === undefined || dbStatus === undefined) {
+      if (dbIsPaid === undefined || dbStatus === undefined || dbPaymentMethod === undefined) {
         console.log('🔍 Critical fields missing from RPC, fetching directly from orders table...');
         const { data: directOrder } = await supabase
           .from('orders')
-          .select('is_paid, order_status')
+          .select('is_paid, order_status, payment_method')
           .eq('id', cleanOrderId)
           .single();
 
         if (directOrder) {
           dbIsPaid = directOrder.is_paid;
           dbStatus = directOrder.order_status;
-          console.log('✅ Direct fetch result:', { dbIsPaid, dbStatus });
+          dbPaymentMethod = directOrder.payment_method;
+          console.log('✅ Direct fetch result:', { dbIsPaid, dbStatus, dbPaymentMethod });
+
+          // Update editing data with payment method and isPaid
+          setEditingOrderData(prev => ({
+            ...prev,
+            paymentMethod: dbPaymentMethod || prev.paymentMethod,
+            isPaid: dbIsPaid !== undefined ? dbIsPaid : prev.isPaid
+          }));
         }
       }
 
@@ -1735,7 +1745,8 @@ const MenuOrderingInterface = () => {
             ],
             notes: item.notes || null,
             item_status: finalStatus,
-            course_stage: item.isDelayed ? 2 : 1
+            course_stage: item.isDelayed ? 2 : 1,
+            is_hot_drink: item.is_hot_drink || false // Pass to backend for loyalty calculation
           };
         });
 
