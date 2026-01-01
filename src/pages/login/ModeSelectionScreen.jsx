@@ -32,6 +32,8 @@ const ModeSelectionScreen = () => {
             navigate('/mobile-kds');
         } else if (mode === 'manager') {
             navigate('/data-manager-interface');
+        } else if (mode === 'dexie-admin') {
+            navigate('/dexie-admin');
         }
     };
 
@@ -199,7 +201,7 @@ const ModeSelectionScreen = () => {
 
                     {/* 5. Advanced Data - Hidden on Mobile */}
                     <button
-                        onClick={() => navigate('/dexie-admin')}
+                        onClick={() => handleModeSelect('dexie-admin')}
                         className="hidden md:block group relative bg-white rounded-2xl p-5 hover:bg-cyan-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-cyan-100"
                     >
                         <div className="absolute top-3 left-3 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">

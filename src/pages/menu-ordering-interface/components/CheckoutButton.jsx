@@ -105,11 +105,45 @@ const CheckoutButton = ({
   return (
     <div className={`fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-40 lg:static lg:z-auto ${className}`} dir="rtl">
 
+      {/* Payment Information for Paid Orders */}
+      {isEditMode && originalIsPaid && (
+        <div className="flex flex-col gap-2 mb-3 bg-blue-50 border border-blue-100 rounded-xl p-3 shadow-sm">
+          <div className="flex justify-between items-center">
+            <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">סטטוס תשלום</span>
+            <span className="flex items-center gap-1.5 px-2 py-0.5 bg-green-500 text-white text-[10px] font-black rounded-full">
+              <Icon name="CheckCircle" size={10} /> שולם
+            </span>
+          </div>
+          <div className="flex justify-between items-end">
+            <div>
+              <p className="text-xs text-blue-700 font-medium opacity-70">אמצעי תשלום</p>
+              <p className="text-sm font-black text-blue-900">
+                {editingOrderData?.paymentMethod === 'cash' ? '💵 מזומן' :
+                  editingOrderData?.paymentMethod === 'credit_card' ? '💳 כרטיס אשראי' :
+                    '📱 תשלום דיגיטלי'}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-blue-700 font-medium opacity-70">סכום ששולם</p>
+              <p className="text-xl font-mono font-black text-blue-900">{formatPrice(originalTotalAmount)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Refund Note */}
       {isRefund && (
-        <div className="flex justify-between items-center mb-3 px-3 py-2 text-sm font-bold text-red-700 bg-red-50 rounded-xl border border-red-100 shadow-sm">
+        <div className="flex justify-between items-center mb-3 px-3 py-2 text-sm font-bold text-red-700 bg-red-50 rounded-xl border border-red-100 shadow-sm animate-pulse">
           <span className="flex items-center gap-2">↩️ החזר ללקוח</span>
           <span className="bg-white px-2 py-0.5 rounded text-red-800 dir-ltr">{formatPrice(Math.abs(priceDifference))}</span>
+        </div>
+      )}
+
+      {/* Additional Charge Note */}
+      {isAdditionalCharge && (
+        <div className="flex justify-between items-center mb-3 px-3 py-2 text-sm font-bold text-orange-700 bg-orange-50 rounded-xl border border-orange-100 shadow-sm">
+          <span className="flex items-center gap-2">💳 הפרש לתשלום נוסף</span>
+          <span className="bg-white px-2 py-0.5 rounded text-orange-800 dir-ltr">+{formatPrice(priceDifference)}</span>
         </div>
       )}
 
@@ -131,15 +165,16 @@ const CheckoutButton = ({
           ${buttonVariantClass}
           touch-target transition-all duration-200 font-extrabold text-xl min-h-[64px] rounded-xl
         `}
-        iconName={isDisabled && !isRefund ? "ShoppingCart" : "CreditCard"}
+        iconName={isNoChangeUpdate ? "ArrowLeft" : (isDisabled && !isRefund ? "ShoppingCart" : "CreditCard")}
         iconPosition="right"
         iconSize={24}
         onClick={handlePaymentClick}
       >
         <div className="flex items-center justify-between w-full">
           <span>{buttonText}</span>
-          {/* The amount only shows if we are in edit mode OR if it's a regular, non-empty checkout */}
-          <span className={`font-mono text-2xl ${isDisabled && !isEditMode ? 'hidden' : ''}`}>
+          {/* The amount only shows if we are in edit mode (excluding no-change) OR if it's a regular checkout */}
+          <span className={`font-mono text-2xl ${(isDisabled && !isEditMode) || isNoChangeUpdate ? 'hidden' : ''
+            }`}>
             {buttonAmount}
           </span>
         </div>

@@ -32,6 +32,7 @@ const SYNC_CONFIG = {
         { local: 'menuitemoptions', remote: 'menuitemoptions' },
         // Loyalty tracking
         { local: 'loyalty_cards', remote: 'loyalty_cards' },
+        { local: 'loyalty_transactions', remote: 'loyalty_transactions' },
     ],
     // How many records to fetch per batch
     batchSize: 1000,
@@ -77,6 +78,19 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
         if (remoteTable === 'loyalty_cards' && businessId) {
             console.log(`🔄 Using RPC for loyalty_cards sync...`);
             const { data, error } = await supabase.rpc('get_loyalty_cards_for_sync', {
+                p_business_id: businessId
+            });
+
+            if (!error && data) {
+                await db[localTable].bulkPut(data);
+                return { success: true, count: data.length };
+            }
+        }
+
+        // Special handling for loyalty_transactions - use RPC
+        if (remoteTable === 'loyalty_transactions' && businessId) {
+            console.log(`🔄 Using RPC for loyalty_transactions sync...`);
+            const { data, error } = await supabase.rpc('get_loyalty_transactions_for_sync', {
                 p_business_id: businessId
             });
 
