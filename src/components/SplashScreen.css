@@ -27,7 +27,6 @@
     height: auto;
     margin-bottom: 20px;
     filter: drop-shadow(0 0 15px rgba(56, 189, 248, 0.4));
-    animation: pulse 2.5s infinite ease-in-out;
 }
 
 .brand-name {

@@ -9,19 +9,54 @@ import { getSupabase } from './supabase';
 export async function getLoyaltyCount(customerPhone, user) {
   if (!customerPhone) return { points: 0, freeCoffees: 0 };
 
+  const cleanPhone = customerPhone.replace(/\D/g, '');
+  const businessId = user?.business_id;
+
+  if (!businessId) {
+    console.warn('⚠️ [Loyalty] Missing businessId in context');
+    return { points: 0, freeCoffees: 0 };
+  }
+
   try {
     const client = getSupabase(user);
-    const { data, error } = await client.rpc('get_loyalty_balance', {
-      p_phone: customerPhone
+
+    console.log(`🔍 [Loyalty] Fetching EXACT for: ${cleanPhone} in biz: ${businessId}`);
+
+    // Call our NEW, non-conflicting RPC
+    const { data, error } = await client.rpc('get_exact_loyalty_balance', {
+      p_phone: cleanPhone,
+      p_business_id: businessId
     });
 
-    if (error) throw error;
+    if (error) {
+      console.warn(`⚠️ [Loyalty] RPC failed, falling back:`, error.message);
+
+      const { data: directData, error: directError } = await client
+        .from('loyalty_cards')
+        .select('points_balance, free_coffees')
+        .eq('customer_phone', cleanPhone)
+        .eq('business_id', businessId)
+        .maybeSingle();
+
+      if (directError) throw directError;
+
+      return {
+        points: directData?.points_balance ?? 0,
+        freeCoffees: directData?.free_coffees ?? 0
+      };
+    }
+
+    // RPC returns TABLE, so data is an array
+    const result = (Array.isArray(data) && data.length > 0) ? data[0] : (data || {});
+
+    console.log(`✅ [Loyalty] Result for ${cleanPhone}:`, result);
+
     return {
-      points: data?.balance ?? 0,
-      freeCoffees: data?.freeCoffees ?? 0
+      points: result.res_points ?? 0,
+      freeCoffees: result.res_free_coffees ?? 0
     };
   } catch (error) {
-    console.error('Failed to fetch loyalty count:', error);
+    console.error('❌ [Loyalty] Failed to fetch count:', error);
     return { points: 0, freeCoffees: 0 };
   }
 }

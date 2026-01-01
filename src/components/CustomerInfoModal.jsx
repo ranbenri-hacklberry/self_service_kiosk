@@ -282,7 +282,12 @@ const CustomerInfoModal = ({
                 // Queue for sync
                 try {
                     const { queueAction } = await import('../services/offlineQueue');
-                    await queueAction(customerId ? 'UPDATE_CUSTOMER' : 'CREATE_CUSTOMER', updatedCustomer);
+                    await queueAction('UPDATE_CUSTOMER', {
+                        orderId: cleanOrderId,
+                        customerId: finalId,
+                        customerName: updatedCustomer.name,
+                        customerPhone: updatedCustomer.phone
+                    });
                 } catch (queueError) {
                     console.warn('Could not queue customer for sync:', queueError);
                 }
@@ -377,7 +382,8 @@ const CustomerInfoModal = ({
                     .startsWith(cleanOrderId)
                     .modify({
                         ...updateData,
-                        updated_at: new Date().toISOString()
+                        updated_at: new Date().toISOString(),
+                        pending_sync: true // CRITICAL: Mark as pending so KDS prefers this version
                     });
 
                 console.log(`✅ Local Dexie updated: ${count} records modified`);
@@ -390,8 +396,8 @@ const CustomerInfoModal = ({
                 console.log('📴 Offline: Queuing order update for sync...');
                 try {
                     const { queueAction } = await import('../services/offlineQueue');
-                    await queueAction('PATCH_ORDER', {
-                        id: cleanOrderId,
+                    await queueAction('UPDATE_CUSTOMER', {
+                        orderId: cleanOrderId,
                         ...updateData
                     });
                 } catch (queueErr) {
