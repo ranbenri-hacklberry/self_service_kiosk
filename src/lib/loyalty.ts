@@ -52,8 +52,8 @@ export async function getLoyaltyCount(customerPhone, user) {
     console.log(`✅ [Loyalty] Result for ${cleanPhone}:`, result);
 
     return {
-      points: result.res_points ?? 0,
-      freeCoffees: result.res_free_coffees ?? 0
+      points: result.points ?? 0,
+      freeCoffees: result.free_coffees ?? 0
     };
   } catch (error) {
     console.error('❌ [Loyalty] Failed to fetch count:', error);

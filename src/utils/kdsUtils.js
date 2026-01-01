@@ -10,6 +10,13 @@ export const isHotDrink = (item) => {
 
 export const sortItems = (items) => {
     return [...items].sort((a, b) => {
+        // 0. Status Sorting (Active first, then Ready/Completed/Cancelled)
+        const getStatusWeight = (s) => ['ready', 'completed', 'cancelled'].includes(s) ? 1 : 0;
+        const aWeight = getStatusWeight(a.status);
+        const bWeight = getStatusWeight(b.status);
+
+        if (aWeight !== bWeight) return aWeight - bWeight;
+
         const aHot = isHotDrink(a);
         const bHot = isHotDrink(b);
         const aDrink = isDrink(a);

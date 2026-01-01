@@ -30,7 +30,8 @@ const SYNC_CONFIG = {
         { local: 'optiongroups', remote: 'optiongroups' },
         { local: 'optionvalues', remote: 'optionvalues' },
         { local: 'menuitemoptions', remote: 'menuitemoptions' },
-        // Note: loyalty_purchases table doesn't exist in Supabase yet
+        // Loyalty tracking
+        { local: 'loyalty_cards', remote: 'loyalty_cards' },
     ],
     // How many records to fetch per batch
     batchSize: 1000,
@@ -61,30 +62,27 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
 
         // Special handling for customers - use RPC to bypass RLS
         if (remoteTable === 'customers' && businessId) {
-            console.log(`🔄 Using RPC for customers sync (bypasses RLS)...`);
+            console.log(`🔄 Using RPC for customers sync...`);
             const { data, error } = await supabase.rpc('get_customers_for_sync', {
                 p_business_id: businessId
             });
 
-            if (error) {
-                console.error(`❌ RPC error for customers:`, error.message);
-                // Fallback to regular query if RPC doesn't exist
-                console.log(`🔄 Falling back to regular query for customers...`);
-            } else if (data && data.length > 0) {
-                console.log(`✅ Got ${data.length} customers via RPC`);
+            if (!error && data) {
                 await db[localTable].bulkPut(data);
+                return { success: true, count: data.length };
+            }
+        }
 
-                // Update sync status
-                await db.sync_status.put({
-                    table_name: localTable,
-                    last_synced: new Date().toISOString(),
-                    record_count: data.length
-                });
+        // Special handling for loyalty_cards - use RPC
+        if (remoteTable === 'loyalty_cards' && businessId) {
+            console.log(`🔄 Using RPC for loyalty_cards sync...`);
+            const { data, error } = await supabase.rpc('get_loyalty_cards_for_sync', {
+                p_business_id: businessId
+            });
 
-                return { success: true, recordCount: data.length };
-            } else {
-                console.log(`📭 No customers from RPC`);
-                return { success: true, recordCount: 0 };
+            if (!error && data) {
+                await db[localTable].bulkPut(data);
+                return { success: true, count: data.length };
             }
         }
 
@@ -100,7 +98,8 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
             'employees',
             'discounts',
             'orders',
-            'optiongroups'
+            'optiongroups',
+            'loyalty_cards'
         ];
         if (businessId && multiTenantTables.includes(remoteTable)) {
             query = query.eq('business_id', businessId);

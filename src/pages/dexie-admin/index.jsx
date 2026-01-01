@@ -5,6 +5,7 @@ import { db } from '@/db/database';
 import { supabase } from '@/lib/supabase';
 import { Card, Grid, Tabs, Badge, Loading, Text, Spacer, Button, Input, GeistProvider, CssBaseline } from '@geist-ui/core';
 import { Database, Users, Coffee, ShoppingCart, Activity, Wifi, Home, Search } from '@geist-ui/icons';
+import syncService from '@/services/syncService';
 
 /**
  * Advanced Data Dashboard
@@ -35,51 +36,115 @@ const DexieAdminPanel = () => {
     const loadData = async () => {
         setLoading(true);
         try {
-            // Load customers with loyalty points
-            const customersData = await db.customers.toArray();
+            const businessId = currentUser?.business_id;
 
-            console.log('Debug - Customers:', customersData.length);
-            console.log('Debug - Sample customer:', customersData[0]);
+            // Load customers with loyalty points - filtered by business
+            let customersData = [];
+            if (businessId) {
+                customersData = await db.customers
+                    .where('business_id')
+                    .equals(businessId)
+                    .toArray();
+            } else {
+                customersData = await db.customers.toArray();
+            }
 
             const customersWithPoints = customersData.map(c => ({
                 ...c,
                 points: c.loyalty_coffee_count || 0
             }));
 
-            console.log('Debug - Customers with points:', customersWithPoints.filter(c => c.points > 0).length);
-            console.log('Debug - First customer with points:', customersWithPoints.find(c => c.points > 0));
+            // Load loyalty cards to match precise points from the new system
+            let loyaltyCards = [];
+            if (businessId) {
+                loyaltyCards = await db.loyalty_cards.where('business_id').equals(businessId).toArray();
+            } else {
+                loyaltyCards = await db.loyalty_cards.toArray();
+            }
 
-            setCustomers(customersWithPoints);
+            // Create a lookup map (Clean Phone -> Points)
+            const loyaltyMap = new Map();
+            loyaltyCards.forEach(card => {
+                const phone = card.customer_phone || card.phone_number;
+                if (phone) loyaltyMap.set(phone.replace(/\D/g, ''), card.points_balance || 0);
+            });
 
-            // Load menu items
-            const menu = await db.menu_items.toArray();
+            // Merge: Loyalty cards take priority over the legacy column
+            const finalCustomers = customersWithPoints.map(c => {
+                const cleanPhone = (c.phone_number || c.phone || '').toString().replace(/\D/g, '');
+                const cardPoints = loyaltyMap.get(cleanPhone);
+
+                return {
+                    ...c,
+                    points: cardPoints !== undefined ? cardPoints : (c.loyalty_coffee_count || 0)
+                };
+            });
+
+            setCustomers(finalCustomers);
+
+            // Load menu items - filtered by business
+            let menu = [];
+            if (businessId) {
+                menu = await db.menu_items
+                    .where('business_id')
+                    .equals(businessId)
+                    .toArray();
+            } else {
+                menu = await db.menu_items.toArray();
+            }
             setMenuItems(menu);
 
-            // Load recent orders (last 7 days)
+            // Load recent orders (last 7 days) - filtered by business
             const cutoff = new Date();
             cutoff.setDate(cutoff.getDate() - 7);
-            const orders = await db.orders
-                .where('created_at')
-                .above(cutoff.toISOString())
-                .reverse()
-                .limit(50)
-                .toArray();
+
+            let orders = [];
+            if (businessId) {
+                orders = await db.orders
+                    .where('[business_id+created_at]')
+                    .between([businessId, cutoff.toISOString()], [businessId, '\uffff'])
+                    .reverse()
+                    .limit(50)
+                    .toArray();
+            } else {
+                orders = await db.orders
+                    .where('created_at')
+                    .above(cutoff.toISOString())
+                    .reverse()
+                    .limit(50)
+                    .toArray();
+            }
             setRecentOrders(orders);
 
             // Get sync status - compare Dexie vs Supabase
-            const tables = ['customers', 'menu_items', 'orders', 'order_items'];
+            const tables = ['customers', 'menu_items', 'orders', 'order_items', 'loyalty_cards'];
             const status = { syncing: false };
 
             for (const table of tables) {
-                const localCount = await db[table]?.count() || 0;
+                // Get local count - filtered by business
+                let localCount = 0;
+                if (businessId) {
+                    if (table === 'customers' || table === 'menu_items') {
+                        localCount = await db[table].where('business_id').equals(businessId).count();
+                    } else if (table === 'orders') {
+                        localCount = await db.orders.where('business_id').equals(businessId).count();
+                    } else if (table === 'order_items') {
+                        // Order items are harder to filter without joining, showing total for now or skip
+                        localCount = await db.order_items.count();
+                    }
+                } else {
+                    localCount = await db[table]?.count() || 0;
+                }
 
-                // Fetch cloud count from Supabase
+                // Fetch cloud count from Supabase - filtered by business
                 let cloudCount = null;
                 try {
-                    const { count, error } = await supabase
-                        .from(table)
-                        .select('*', { count: 'exact', head: true });
+                    let query = supabase.from(table).select('*', { count: 'exact', head: true });
+                    if (businessId) {
+                        query = query.eq('business_id', businessId);
+                    }
 
+                    const { count, error } = await query;
                     if (!error) cloudCount = count;
                 } catch (e) {
                     console.warn(`Failed to fetch cloud count for ${table}:`, e);
@@ -254,7 +319,14 @@ const DexieAdminPanel = () => {
                                     onClick={async () => {
                                         setSyncStatus(prev => ({ ...prev, syncing: true }));
                                         try {
+                                            if (currentUser?.business_id) {
+                                                console.log('🔄 Triggering full cloud sync...');
+                                                await syncService.initialLoad(currentUser.business_id);
+                                                console.log('✅ Cloud sync complete!');
+                                            }
                                             await loadData();
+                                        } catch (err) {
+                                            console.error('❌ Sync failed:', err);
                                         } finally {
                                             setSyncStatus(prev => ({ ...prev, syncing: false }));
                                         }

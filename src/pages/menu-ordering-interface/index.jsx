@@ -2294,7 +2294,8 @@ const MenuOrderingInterface = () => {
           setCurrentCustomer(updatedCustomer);
           localStorage.setItem('currentCustomer', JSON.stringify(updatedCustomer));
           setShowCustomerInfoModal(false);
-          refreshLoyalty(); // Refresh loyalty after customer update
+          // CRITICAL: Pass phone to refreshLoyalty so it doesn't return early
+          refreshLoyalty(updatedCustomer.phone || updatedCustomer.phone_number);
         }}
         orderId={isEditMode && editingOrderData?.id ? String(editingOrderData.id).replace(/-ready$/, '').replace(/-stage-\d+$/, '') : null}
       />

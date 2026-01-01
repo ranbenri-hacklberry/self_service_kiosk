@@ -191,8 +191,8 @@ db.version(7).stores({
     sync_status: 'id, table, recordId, status, updated_at'
 });
 
-// Version 8: Add loyalty_cards table (replaces loyalty_purchases)
-db.version(8).stores({
+// Version 9: Add composite indexes for better filtering
+db.version(9).stores({
     active_order_items: 'id, order_id, menu_item_id, item_status, created_at',
     businesses: 'id, name',
     catalog_items: 'id, name, category, created_at',
@@ -201,16 +201,16 @@ db.version(8).stores({
     discounts: 'id, name, business_id, is_active, discount_code',
     employees: 'id, name, nfc_id, pin_code, business_id, auth_user_id',
     ingredients: 'id, name, supplier_id',
-    orders: 'id, order_number, order_status, is_paid, customer_id, business_id, created_at, updated_at, _processing',
+    // ADDED composite index [business_id+created_at]
+    orders: 'id, order_number, order_status, is_paid, customer_id, business_id, created_at, updated_at, _processing, [business_id+created_at]',
     order_items: 'id, order_id, menu_item_id, item_status, course_stage, created_at',
     menu_items: 'id, name, category, business_id, is_active, kds_routing_logic',
     sync_meta: 'table_name, last_synced_at, record_count',
     optiongroups: 'id, name, menu_item_id, business_id',
     optionvalues: 'id, group_id, value_name, price_adjustment',
     menuitemoptions: 'id, item_id, group_id',
-    loyalty_purchases: 'id, customer_id, business_id, created_at, is_redemption',
-    // NEW: Loyalty cards (coffee stamps tracking)
-    loyalty_cards: 'id, customer_id, phone_number, business_id, stamps_count, created_at',
+    // UPDATED loyalty_cards to match Supabase schema
+    loyalty_cards: 'id, customer_id, customer_phone, business_id, points_balance, created_at',
     cached_images: 'url, cached_at',
     offline_queue: null,
     offline_queue_v2: '++id, type, status, createdAt, table, recordId',
