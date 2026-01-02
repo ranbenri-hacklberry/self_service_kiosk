@@ -3,8 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import InventoryItemCard from './InventoryItemCard';
-import { Search, Truck, Plus, X, ArrowRight, Package, ShoppingCart, Check, ChevronLeft, ChevronRight, Settings, PlusCircle, Save } from 'lucide-react';
+import { Search, Truck, Plus, X, ArrowRight, Package, ShoppingCart, Check, ChevronLeft, ChevronRight, Settings, PlusCircle, Save, ScanLine, Camera, Upload } from 'lucide-react';
 import ConfirmationModal from '../ui/ConfirmationModal';
+import { useInvoiceOCR } from '@/hooks/useInvoiceOCR';
 
 /**
  * Inventory Manager Screen
@@ -66,6 +67,14 @@ const InventoryScreen = () => {
   });
 
   const [isCopied, setIsCopied] = useState(false);
+
+  // 🆕 Scanner Modal State
+  const [showScannerModal, setShowScannerModal] = useState(false);
+  const [scannerStep, setScannerStep] = useState('choose'); // 'choose' | 'uploading' | 'results'
+  const fileInputRef = useState(null);
+
+  // 🆕 Invoice OCR Hook
+  const { scanInvoice, isProcessing: isScanning, error: scanError, ocrResult, resetOCR } = useInvoiceOCR();
 
   const fetchData = useCallback(async () => {
     if (!currentUser?.business_id) return;
@@ -463,16 +472,29 @@ const InventoryScreen = () => {
             </button>
           </div>
 
-          {/* Right Spacer / Actions */}
+          {/* Right Spacer */}
           <div className="w-1/4 flex justify-end">
-            {/* Empty for balance or could put user profile/settings */}
+            {/* Reserved for future actions */}
           </div>
         </div>
 
         {/* --- SUB-HEADER: Title & Add Action (New Row) --- */}
         {activeTab === 'counts' && currentView === 'suppliers' && (
-          <div className="px-4 py-2 flex justify-end max-w-4xl mx-auto w-full">
-            <button onClick={() => setShowSupplierModal(true)} className="bg-blue-600 text-white rounded-xl px-4 py-2 font-bold shadow-md shadow-blue-200 hover:bg-blue-700 transition-colors flex items-center gap-2">
+          <div className="px-4 py-2 flex justify-between items-center max-w-4xl mx-auto w-full gap-3">
+            {/* Scan Invoice Button - Left */}
+            <button
+              onClick={() => setShowScannerModal(true)}
+              className="bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl px-4 py-2 font-bold shadow-lg shadow-purple-200 hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2"
+            >
+              <ScanLine size={20} />
+              <span>סרוק חשבונית</span>
+            </button>
+
+            {/* Add Supplier Button - Right */}
+            <button
+              onClick={() => setShowSupplierModal(true)}
+              className="bg-blue-600 text-white rounded-xl px-4 py-2 font-bold shadow-md shadow-blue-200 hover:bg-blue-700 transition-colors flex items-center gap-2"
+            >
               <PlusCircle size={20} />
               <span>ספק חדש</span>
             </button>
@@ -873,6 +895,237 @@ const InventoryScreen = () => {
                   </button>
                 </div>
               </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* 🆕 --- SCANNER MODAL --- */}
+      <AnimatePresence>
+        {showScannerModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setShowScannerModal(false);
+                setScannerStep('choose');
+                resetOCR();
+              }}
+              className="fixed inset-0 bg-black z-40"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 bg-white z-50 rounded-t-3xl shadow-2xl p-6 min-h-[60vh] max-h-[85vh] overflow-y-auto"
+            >
+              <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-6" />
+
+              {/* Choose Step */}
+              {scannerStep === 'choose' && (
+                <div className="space-y-6">
+                  <div className="text-center">
+                    <div className="w-20 h-20 mx-auto bg-gradient-to-r from-purple-100 to-blue-100 rounded-2xl flex items-center justify-center mb-4">
+                      <ScanLine size={40} className="text-purple-600" />
+                    </div>
+                    <h3 className="text-2xl font-black text-slate-800">סריקת חשבונית</h3>
+                    <p className="text-sm text-gray-400 mt-2">בחר איך להעלות את החשבונית</p>
+                  </div>
+
+                  <div className="space-y-3 max-w-md mx-auto">
+                    {/* Camera Option */}
+                    <button
+                      onClick={async () => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = 'image/*';
+                        input.capture = 'environment';
+                        input.onchange = async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setScannerStep('scanning');
+                            try {
+                              await scanInvoice(file);
+                              setScannerStep('results');
+                            } catch (err) {
+                              setScannerStep('choose');
+                            }
+                          }
+                        };
+                        input.click();
+                      }}
+                      className="w-full p-6 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-xl shadow-purple-200"
+                    >
+                      <Camera size={24} />
+                      <span>פתח מצלמה</span>
+                    </button>
+
+                    {/* Upload Option */}
+                    <button
+                      onClick={() => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = 'image/*,.pdf,application/pdf';
+                        input.onchange = async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setScannerStep('scanning');
+                            try {
+                              await scanInvoice(file);
+                              setScannerStep('results');
+                            } catch (err) {
+                              setScannerStep('choose');
+                            }
+                          }
+                        };
+                        input.click();
+                      }}
+                      className="w-full p-6 bg-white border-2 border-gray-200 text-gray-700 rounded-2xl font-black text-lg flex items-center justify-center gap-3 hover:border-blue-400 hover:bg-blue-50 transition-all"
+                    >
+                      <Upload size={24} />
+                      <span>העלה תמונה או PDF</span>
+                    </button>
+
+                    {/* Cancel */}
+                    <button
+                      onClick={() => {
+                        setShowScannerModal(false);
+                        setScannerStep('choose');
+                      }}
+                      className="w-full py-3 text-gray-400 font-bold hover:text-gray-600 transition-colors"
+                    >
+                      ביטול
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Scanning Step */}
+              {scannerStep === 'scanning' && (
+                <div className="flex flex-col items-center justify-center min-h-[40vh] space-y-6">
+                  <div className="relative">
+                    <div className="w-24 h-24 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <ScanLine size={32} className="text-purple-600" />
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-xl font-black text-slate-800">סורק חשבונית...</h3>
+                    <p className="text-sm text-gray-400 mt-2">AI מזהה פריטים ומחירים</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Results Step */}
+              {scannerStep === 'results' && (
+                <div className="space-y-6">
+                  <div className="text-center">
+                    <div className="w-16 h-16 mx-auto bg-green-100 rounded-2xl flex items-center justify-center mb-4">
+                      <Check size={32} className="text-green-600" />
+                    </div>
+                    <h3 className="text-2xl font-black text-slate-800">סריקה הושלמה!</h3>
+
+                    {/* Supplier Info */}
+                    {ocrResult?.supplier_detected && (
+                      <div className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 bg-purple-50 text-purple-700 rounded-full text-sm font-black border border-purple-100">
+                        <span className="opacity-60 text-[10px] uppercase">ספק זהה:</span>
+                        <span>{ocrResult.supplier_detected}</span>
+                      </div>
+                    )}
+
+                    {/* Status Bar with Tokens & Cost */}
+                    {ocrResult?.usageMetadata && (
+                      <div className="mt-4 flex items-center justify-center gap-4 text-[10px] font-bold uppercase tracking-wider text-gray-400 bg-gray-50 py-2 px-4 rounded-full border border-gray-100 mx-auto w-fit">
+                        <div className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
+                          <span>{ocrResult.usageMetadata.totalTokenCount} TOKENS</span>
+                        </div>
+                        <div className="flex items-center gap-1 border-r border-gray-200 pr-4 ml-4">
+                          <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+                          <span>EST. COST: ${(ocrResult.usageMetadata.totalTokenCount * 0.00001).toFixed(4)}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Error Display */}
+                  {scanError && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                      <p className="text-sm text-red-600 font-bold">{scanError}</p>
+                    </div>
+                  )}
+
+                  {/* Items List */}
+                  {ocrResult?.items && ocrResult.items.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="max-h-[40vh] overflow-y-auto pr-2 space-y-2">
+                        {ocrResult.items.map((item, idx) => {
+                          const qty = item.quantity || item.amount || item.current_stock_added || 0;
+                          const price = item.price || item.cost_per_unit || item.cost || 0;
+                          const subtotal = (qty * price).toFixed(2);
+                          const name = item.name || item.description || 'פריט ללא שם';
+
+                          return (
+                            <div key={idx} className="bg-white border border-gray-100 shadow-sm rounded-xl p-4 flex justify-between items-center hover:border-blue-200 transition-colors">
+                              <div className="flex-1">
+                                <h4 className="font-bold text-gray-800 text-sm leading-tight mb-1">{name}</h4>
+                                <div className="flex items-center gap-2 text-xs text-gray-400">
+                                  <span className="bg-gray-100 px-1.5 py-0.5 rounded">{qty} {item.unit || 'יח\''}</span>
+                                  <span>×</span>
+                                  <span>₪{price}</span>
+                                </div>
+                              </div>
+                              <div className="text-left font-black text-gray-900 pr-4 border-r border-gray-50">
+                                ₪{subtotal}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Total Summary Section */}
+                      <div className="bg-slate-900 text-white rounded-2xl p-3.5 mt-[-8px] mb-4 shadow-lg relative overflow-hidden mx-auto max-w-[75%] border border-slate-700">
+                        <div className="absolute top-0 right-0 w-20 h-20 bg-purple-500/10 blur-2xl rounded-full translate-x-10 -translate-y-10"></div>
+                        <div className="flex justify-between items-center relative z-10 gap-3">
+                          <div className="space-y-0">
+                            <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest leading-none mb-1">סה"כ לתשלום</p>
+                            <h4 className="text-xl font-black text-white leading-none">₪{ocrResult.total_amount || ocrResult.items.reduce((acc, item) => acc + ((item.quantity || 0) * (item.price || 0)), 0).toFixed(2)}</h4>
+                          </div>
+                          <div className="bg-white/10 px-2.5 py-1.5 rounded-lg border border-white/5 flex flex-col items-center justify-center min-w-[50px]">
+                            <div className="text-[8px] font-bold text-blue-300 uppercase leading-none mb-0.5">פריטים</div>
+                            <div className="text-base font-black text-center leading-none">{ocrResult.items.length}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        setScannerStep('choose');
+                        resetOCR();
+                      }}
+                      className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
+                    >
+                      סרוק שוב
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowScannerModal(false);
+                        setScannerStep('choose');
+                        resetOCR();
+                      }}
+                      className="flex-1 py-4 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-colors"
+                    >
+                      סגור
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </>
         )}

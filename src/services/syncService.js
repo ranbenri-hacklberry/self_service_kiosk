@@ -269,57 +269,65 @@ export const syncOrders = async (businessId) => {
         }
 
         if (orders && orders.length > 0) {
-            console.log(`💾 [syncOrders] Saving ${orders.length} orders to Dexie (bulk)...`);
+            console.log(`💾 [syncOrders] Processing ${orders.length} orders for Dexie...`);
 
-            // Prepare bulk arrays
-            const ordersToSave = [];
-            const itemsToSave = [];
+            await db.transaction('rw', [db.orders, db.order_items], async () => {
+                for (const order of orders) {
+                    const existing = await db.orders.get(order.id);
 
-            for (const order of orders) {
-                // RPC uses 'items_detail', local expects 'order_items'
-                const orderItems = order.order_items || order.items_detail || [];
+                    // PROTECTION: Skip if local is pending sync and server isn't newer
+                    if (existing && existing.pending_sync) {
+                        const serverTime = new Date(order.updated_at || 0).getTime();
+                        const localTime = new Date(existing.updated_at || 0).getTime();
+                        if (serverTime <= localTime) {
+                            // console.log(`🛡️ [syncOrders] Skipping ${order.order_number} - local is pending and newer/equal`);
+                            continue;
+                        }
+                    }
 
-                ordersToSave.push({
-                    id: order.id,
-                    order_number: order.order_number,
-                    order_status: order.order_status,
-                    is_paid: order.is_paid,
-                    customer_id: order.customer_id,
-                    customer_name: order.customer_name,
-                    customer_phone: order.customer_phone,
-                    total_amount: order.total_amount,
-                    business_id: order.business_id || businessId,
-                    created_at: order.created_at,
-                    updated_at: order.updated_at || new Date().toISOString()
-                });
+                    // Map server format to local format
+                    const orderItems = order.order_items || order.items_detail || [];
 
-                // Collect items
-                for (const item of orderItems) {
-                    itemsToSave.push({
-                        id: item.id,
-                        order_id: order.id,
-                        menu_item_id: item.menu_item_id || item.menu_items?.id,
-                        quantity: item.quantity,
-                        price: item.price,
-                        mods: item.mods,
-                        notes: item.notes,
-                        item_status: item.item_status,
-                        course_stage: item.course_stage || 1,
-                        created_at: item.created_at || order.created_at
+                    await db.orders.put({
+                        id: order.id,
+                        order_number: order.order_number,
+                        order_status: order.order_status,
+                        is_paid: order.is_paid,
+                        customer_id: order.customer_id,
+                        customer_name: order.customer_name,
+                        customer_phone: order.customer_phone,
+                        total_amount: order.total_amount,
+                        business_id: order.business_id || businessId,
+                        order_type: order.order_type || 'dine_in',
+                        delivery_address: order.delivery_address,
+                        delivery_fee: order.delivery_fee,
+                        delivery_notes: order.delivery_notes,
+                        created_at: order.created_at,
+                        updated_at: order.updated_at || new Date().toISOString(),
+                        pending_sync: false // Coming from server, so synced
                     });
+
+                    // Update items
+                    if (orderItems && orderItems.length > 0) {
+                        for (const item of orderItems) {
+                            await db.order_items.put({
+                                id: item.id,
+                                order_id: order.id,
+                                menu_item_id: item.menu_item_id || item.menu_items?.id,
+                                quantity: item.quantity,
+                                price: item.price || item.menu_items?.price,
+                                mods: item.mods,
+                                notes: item.notes,
+                                item_status: item.item_status,
+                                course_stage: item.course_stage || 1,
+                                created_at: item.created_at || order.created_at
+                            });
+                        }
+                    }
                 }
-            }
+            });
 
-            // Bulk save (much faster!)
-            await db.orders.bulkPut(ordersToSave);
-            console.log(`✅ Saved ${ordersToSave.length} orders`);
-
-            if (itemsToSave.length > 0) {
-                await db.order_items.bulkPut(itemsToSave);
-                console.log(`✅ Saved ${itemsToSave.length} items`);
-            }
-
-            console.log(`✅ Synced ${orders.length} orders to Dexie`);
+            console.log(`✅ [syncOrders] Finished processing ${orders.length} orders`);
         } else {
             console.log('📭 [syncOrders] No orders found matching criteria');
         }
@@ -446,7 +454,7 @@ export const subscribeToAllChanges = (businessId, tables = ['orders', 'order_ite
                             // Conflict Check: Do we have a pending local change?
                             const localRecord = await db[table].get(record.id);
 
-                            if (localRecord && localRecord._pendingSync) {
+                            if (localRecord && localRecord.pending_sync) {
                                 console.log(`⏳ [${table}] Local change pending for ${record.id}, skipping Realtime update`);
                                 return;
                             }
@@ -454,7 +462,7 @@ export const subscribeToAllChanges = (businessId, tables = ['orders', 'order_ite
                             // Safe to update
                             await db[table].put({
                                 ...record,
-                                _pendingSync: false,
+                                pending_sync: false,
                                 _syncError: null,
                                 _localUpdatedAt: new Date().toISOString() // Treat server update as fresh local baseline
                             });
@@ -484,6 +492,106 @@ export const subscribeToAllChanges = (businessId, tables = ['orders', 'order_ite
     return subscriptions;
 };
 
+/**
+ * Sync Doctor - Finds discrepancies between Dexie and Supabase for critical orders
+ * @param {string} businessId
+ */
+export const getSyncDiffs = async (businessId) => {
+    if (!isOnline()) return { success: false, reason: 'offline' };
+
+    try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayISO = today.toISOString();
+
+        // 1. Get local orders
+        const localOrders = await db.orders
+            .where('business_id').equals(businessId)
+            .filter(o => o.created_at >= todayISO)
+            .toArray();
+
+        // 2. Get remote orders
+        const { data: remoteOrders, error } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('business_id', businessId)
+            .gte('created_at', todayISO);
+
+        if (error) throw error;
+
+        // 3. Find mismatches
+        const diffs = localOrders.map(local => {
+            const remote = remoteOrders.find(r => r.id === local.id);
+            if (!remote) return null; // Let standard sync handle missing remotes for now
+
+            const hasStatusDiff = remote.order_status !== local.order_status;
+            const hasSeenDiff = remote.seen_at !== local.seen_at;
+
+            if (hasStatusDiff || hasSeenDiff) {
+                // NEW: Cooldown - skip if updated in last 60 seconds to allow real-time settling
+                const recentlyUpdated = new Date(local.updated_at) > new Date(Date.now() - 60000);
+                if (recentlyUpdated) return null;
+
+                // Determine direction: 
+                // IF local has pending_sync -> PUSH (local is newer/truth)
+                // ELSE -> PULL (remote is truth, local is stale)
+                const direction = local.pending_sync ? 'PUSH' : 'PULL';
+
+                return {
+                    id: local.id,
+                    orderNumber: local.order_number,
+                    type: 'mismatch',
+                    direction,
+                    local: { status: local.order_status, seen_at: local.seen_at },
+                    remote: { status: remote.order_status, seen_at: remote.seen_at }
+                };
+            }
+            return null;
+        }).filter(Boolean);
+
+        return { success: true, diffs };
+    } catch (err) {
+        console.error('❌ Sync Doctor failed:', err);
+        return { success: false, error: err.message };
+    }
+};
+
+/**
+ * Reconcile a specific order based on Sync Doctor's findings
+ */
+export const healOrder = async (diff, businessId) => {
+    try {
+        if (diff.direction === 'PUSH') {
+            console.log(`📤 [SyncDoctor] Pushing local truth for ${diff.orderNumber}`);
+            const local = await db.orders.get(diff.id);
+            if (!local) return false;
+
+            // Use Safe RPC for pushing
+            const { error: rpcError } = await supabase.rpc('update_order_status_v3', {
+                p_order_id: diff.id,
+                p_new_status: local.order_status,
+                p_business_id: businessId
+            });
+
+            if (rpcError) throw rpcError;
+            await db.orders.update(diff.id, { pending_sync: false });
+            return true;
+        } else {
+            console.log(`📥 [SyncDoctor] Pulling remote truth for ${diff.orderNumber}`);
+            // Direction is PULL - update Dexie with remote data
+            await db.orders.update(diff.id, {
+                order_status: diff.remote.status,
+                seen_at: diff.remote.seen_at,
+                updated_at: new Date().toISOString()
+            });
+            return true;
+        }
+    } catch (err) {
+        console.error('❌ healOrder failed:', err);
+        return false;
+    }
+};
+
 export default {
     isOnline,
     syncTable,
@@ -492,5 +600,7 @@ export default {
     pushPendingChanges,
     subscribeToOrders,
     subscribeToOrderItems,
-    subscribeToAllChanges
+    subscribeToAllChanges,
+    getSyncDiffs,
+    healOrder
 };

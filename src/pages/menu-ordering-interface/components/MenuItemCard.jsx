@@ -100,9 +100,22 @@ const MenuItemCard = ({ item, onAddToCart }) => {
           {item?.name}
         </h3>
 
-        <span className="font-mono font-bold text-base text-slate-900 bg-gray-50 px-1.5 py-0.5 rounded-lg">
-          {formatPrice(item?.price)}
-        </span>
+        <div className="flex flex-col items-end leading-none">
+          {item?.originalPrice ? (
+            <>
+              <span className="text-[10px] text-gray-400 line-through mb-0.5">
+                {formatPrice(item.originalPrice)}
+              </span>
+              <span className="font-mono font-bold text-base text-red-600 bg-red-50 px-1.5 py-0.5 rounded-lg">
+                {formatPrice(item?.price)}
+              </span>
+            </>
+          ) : (
+            <span className="font-mono font-bold text-base text-slate-900 bg-gray-50 px-1.5 py-0.5 rounded-lg">
+              {formatPrice(item?.price)}
+            </span>
+          )}
+        </div>
       </div>
 
     </div>

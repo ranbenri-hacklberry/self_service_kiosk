@@ -211,7 +211,14 @@ const processGenericAction = async (action) => {
                     .eq('id', recordId)
                     .single();
 
-                if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+                if (fetchError) {
+                    if (fetchError.code === '42703' || fetchError.code === 'PGRST100' || fetchError.code === 'PGRST204') {
+                        // Column does not exist OR other schema error - Skip LWW check
+                        console.warn(`⚠️ Table ${table} sync check failed (${fetchError.message}), skipping LWW.`);
+                    } else if (fetchError.code !== 'PGRST116') {
+                        throw fetchError;
+                    }
+                }
 
                 let shouldPush = true;
 
@@ -238,7 +245,16 @@ const processGenericAction = async (action) => {
                         .update(updatePayload)
                         .eq('id', recordId);
 
-                    if (error) throw error;
+                    if (error) {
+                        if (error.code === '42703' || error.code === 'PGRST100' || error.code === 'PGRST204') {
+                            console.warn(`⚠️ Removing updated_at from payload for ${table} and retrying...`);
+                            delete updatePayload.updated_at;
+                            const { error: retryError } = await supabase.from(table).update(updatePayload).eq('id', recordId);
+                            if (retryError) throw retryError;
+                        } else {
+                            throw error;
+                        }
+                    }
                     console.log(`✅ Updated server record ${recordId}`);
                 }
 

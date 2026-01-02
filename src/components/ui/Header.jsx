@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import Icon from '../AppIcon';
 import { recordTimeClockEvent, getEmployeeClockStatus } from '../../services/timeClockService';
 import { safeJsonParse } from '../../utils';
 
-const Header = ({
+const Header = memo(({
   primaryAction = null,
   hideLanguage = false,
   customActions = null,
@@ -45,7 +46,7 @@ const Header = ({
   }, []);
 
   // Check if employee is currently clocked in
-  const checkClockStatus = async (employeeId) => {
+  const checkClockStatus = useCallback(async (employeeId) => {
     try {
       const result = await getEmployeeClockStatus(employeeId);
       if (result?.success) {
@@ -54,10 +55,10 @@ const Header = ({
     } catch (error) {
       console.error('Error checking clock status:', error);
     }
-  };
+  }, []);
 
   // Handle employee clock out
-  const handleClockOut = async () => {
+  const handleClockOut = useCallback(async () => {
     if (!employeeSession?.id || isClockingOut) return;
 
     setIsClockingOut(true);
@@ -84,48 +85,71 @@ const Header = ({
     } finally {
       setIsClockingOut(false);
     }
-  };
+  }, [employeeSession?.id, isClockingOut, navigate]);
 
   // Handle end session without clock out (for customer mode or manager override)
-  const handleEndSession = () => {
+  const handleEndSession = useCallback(() => {
     sessionStorage.removeItem('employee_session');
     setEmployeeSession(null);
     setIsClockedIn(false);
     navigate('/employee-login-screen');
-  };
+  }, [navigate]);
 
   return (
-    <header className="bg-primary text-primary-foreground shadow-kiosk relative z-20">
+    <motion.header
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+      className="bg-primary text-primary-foreground shadow-kiosk relative z-20"
+    >
       <div className="flex items-center justify-between h-16 px-6">
         {/* Logo Section */}
         <div className="flex items-center">
           <div className="flex items-center space-x-3">
-            <div className="bg-white/10 p-2 rounded-kiosk-sm">
+            <motion.div
+              whileHover={{ rotate: 10, scale: 1.1 }}
+              className="bg-white/10 p-2 rounded-kiosk-sm"
+            >
               <Icon name="Utensils" size={24} color="currentColor" />
-            </div>
-            <div>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+            >
               <h1 className="text-xl font-semibold tracking-tight">
                 Self Service Kiosk
               </h1>
               <p className="text-xs text-primary-foreground/80">
                 Quick & Easy Ordering
               </p>
-            </div>
+            </motion.div>
           </div>
         </div>
 
         {/* Customer Greeting (when customer name is available) */}
-        {customerName && (
-          <div className="flex-1 text-center">
-            <div className="text-lg font-semibold text-primary-foreground/90">
-              {isEditMode ? `עדכון הזמנה - ${customerName}` : `הזמנה חדשה - ${customerName}`}
-            </div>
-          </div>
-        )}
+        <AnimatePresence>
+          {customerName && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="flex-1 text-center"
+            >
+              <div className="text-lg font-semibold text-primary-foreground/90">
+                {isEditMode ? `עדכון הזמנה - ${customerName}` : `הזמנה חדשה - ${customerName}`}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Employee Session Info (when logged in) */}
         {employeeSession && (
-          <div className="flex items-center space-x-4 bg-white/10 rounded-kiosk-md px-4 py-2">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex items-center space-x-4 bg-white/10 rounded-kiosk-md px-4 py-2"
+          >
             <div className="flex items-center space-x-2">
               <Icon name="User" size={16} color="currentColor" />
               <div className="text-sm">
@@ -137,8 +161,12 @@ const Header = ({
             </div>
 
             {/* Clock Status Indicator */}
-            <div className={`w-2 h-2 rounded-full ${isClockedIn ? 'bg-green-400' : 'bg-red-400'}`} />
-          </div>
+            <motion.div
+              animate={isClockedIn ? { scale: [1, 1.2, 1], opacity: [1, 0.8, 1] } : {}}
+              transition={isClockedIn ? { repeat: Infinity, duration: 2 } : {}}
+              className={`w-2 h-2 rounded-full ${isClockedIn ? 'bg-green-400' : 'bg-red-400'}`}
+            />
+          </motion.div>
         )}
 
         {/* Status Indicators */}
@@ -158,35 +186,46 @@ const Header = ({
           {employeeSession && (
             <div className="flex items-center space-x-2">
               {/* Clock Out Button (only show if clocked in) */}
-              {isClockedIn && (
-                <button
-                  onClick={handleClockOut}
-                  disabled={isClockingOut}
-                  className="flex items-center space-x-2 px-3 py-2 rounded-kiosk-sm bg-red-500/80 hover:bg-red-500 transition-colors duration-150 touch-target disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Icon name="LogOut" size={18} color="currentColor" />
-                  <span className="hidden sm:inline text-sm font-medium">
-                    {isClockingOut ? 'יוצא...' : 'יציאה'}
-                  </span>
-                </button>
-              )}
+              <AnimatePresence>
+                {isClockedIn && (
+                  <motion.button
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleClockOut}
+                    disabled={isClockingOut}
+                    className="flex items-center space-x-2 px-3 py-2 rounded-kiosk-sm bg-red-500/80 hover:bg-red-500 transition-colors duration-150 touch-target disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Icon name="LogOut" size={18} color="currentColor" />
+                    <span className="hidden sm:inline text-sm font-medium">
+                      {isClockingOut ? 'יוצא...' : 'יציאה'}
+                    </span>
+                  </motion.button>
+                )}
+              </AnimatePresence>
 
               {/* End Session Button (for manager override or customer mode) */}
               {(!isClockedIn || employeeSession?.isOverride) && (
-                <button
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                   onClick={handleEndSession}
                   className="flex items-center space-x-2 px-3 py-2 rounded-kiosk-sm bg-orange-500/80 hover:bg-orange-500 transition-colors duration-150 touch-target"
                 >
                   <Icon name="X" size={18} color="currentColor" />
                   <span className="hidden sm:inline text-sm font-medium">סיום</span>
-                </button>
+                </motion.button>
               )}
             </div>
           )}
 
           {/* Primary Action */}
           {primaryAction && (
-            <button
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={primaryAction?.onClick}
               className="flex items-center space-x-2 px-3 py-2 rounded-kiosk-sm bg-white/20 hover:bg-white/30 transition-colors duration-150 touch-target"
             >
@@ -196,7 +235,7 @@ const Header = ({
               <span className="hidden sm:inline text-sm font-medium">
                 {primaryAction?.label}
               </span>
-            </button>
+            </motion.button>
           )}
 
           {/* Custom Actions (e.g., view toggles) */}
@@ -209,35 +248,37 @@ const Header = ({
 
           {/* Maya AI Assistant (Only for logged-in employees) */}
           {employeeSession && (
-            <button
-              className="flex items-center space-x-2 px-3 py-2 rounded-kiosk-sm bg-gradient-to-r from-purple-500/80 to-pink-500/80 hover:from-purple-500 hover:to-pink-500 transition-all duration-150 touch-target shadow-lg"
+            <motion.button
+              whileHover={{ scale: 1.1, rotate: [0, -5, 5, 0] }}
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center space-x-2 px-3 py-2 rounded-kiosk-sm bg-gradient-to-r from-purple-500/80 to-pink-500/80 hover:from-purple-500 hover:to-pink-500 transition-all duration-150 touch-target shadow-lg relative overflow-hidden"
               onClick={() => {
                 navigate('/maya');
               }}
               title="מאיה - העוזרת האישית"
             >
-              <span className="text-lg">🌸</span>
-              <span className="hidden sm:inline text-sm font-medium">מאיה</span>
-            </button>
+              <motion.span
+                className="text-lg relative z-10"
+                animate={{ rotate: [0, 10, -10, 0] }}
+                transition={{ repeat: Infinity, duration: 2, repeatDelay: 3 }}
+              >
+                🌸
+              </motion.span>
+              <span className="hidden sm:inline text-sm font-medium relative z-10">מאיה</span>
+
+              {/* Shine effect */}
+              <motion.div
+                className="absolute top-0 left-[-100%] w-full h-full bg-white/20 skew-x-[-20deg]"
+                animate={{ left: "200%" }}
+                transition={{ repeat: Infinity, duration: 3, ease: "easeInOut", repeatDelay: 1 }}
+              />
+            </motion.button>
           )}
 
-          {/* Language Toggle */}
-          {!hideLanguage && (
-            <button
-              className="flex items-center space-x-2 px-3 py-2 rounded-kiosk-sm bg-white/10 hover:bg-white/20 transition-colors duration-150 touch-target"
-              onClick={() => {
-                // Language toggle functionality
-                console.log('Language toggle');
-              }}
-            >
-              <Icon name="Globe" size={18} color="currentColor" />
-              <span className="text-sm font-medium">EN</span>
-            </button>
-          )}
         </div>
       </div>
-    </header>
+    </motion.header>
   );
-};
+});
 
 export default Header;

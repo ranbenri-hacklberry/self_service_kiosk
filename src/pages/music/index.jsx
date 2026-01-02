@@ -922,3 +922,4 @@ const MusicPage = () => {
 };
 
 export default MusicPage;
+"I'm getting Cloudflare Error 1013 on initial load. It's caused by high cookie volume from Spotify and Supabase overlapping on the same domain. Please refactor the authentication logic to store the Access Tokens in localStorage instead of Cookies. This will keep the request headers small and prevent Cloudflare from blocking the connection."

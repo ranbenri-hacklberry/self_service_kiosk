@@ -1,5 +1,18 @@
+/**
+ * ⚠️ CRITICAL FILE - DO NOT MODIFY DESIGN! ⚠️
+ * 
+ * This OrderCard component is used in KDS (Kitchen Display System).
+ * The design has been carefully tuned and approved.
+ * 
+ * DO NOT change styling, colors, layout, or card dimensions
+ * without explicit approval!
+ * 
+ * Source: main branch @ GitHub
+ * Last synced: 2026-01-02
+ */
+
 import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
-import { Clock, Edit, RotateCcw, Flame } from 'lucide-react';
+import { Clock, Edit, RotateCcw, Flame, Truck, Phone, MapPin } from 'lucide-react';
 import { sortItems } from '../../../utils/kdsUtils';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
@@ -74,6 +87,7 @@ const OrderCard = memo(({
   order,
   isReady = false,
   isHistory = false,
+  isKanban = false, // 🆕 Kanban specific prop
   glowClass = '',
   onOrderStatusUpdate,
   onPaymentCollected,
@@ -105,8 +119,9 @@ const OrderCard = memo(({
     if (isUnpaidDelivered) return 'border-t-[6px] border-blue-500 shadow-md animate-strong-pulse bg-blue-50/30';
 
     // 3. Status Based Colors
-    if (statusLower === 'new' || statusLower === 'pending') return 'border-t-[6px] border-green-500 shadow-md';
-    if (statusLower === 'in_progress') return 'border-t-[6px] border-yellow-500 shadow-lg ring-1 ring-yellow-100';
+    if (statusLower === 'pending') return 'border-t-[6px] border-amber-500 shadow-md animate-pulse bg-amber-50/30';
+    if (statusLower === 'new') return 'border-t-[6px] border-green-500 shadow-md';
+    if (statusLower === 'in_progress' || statusLower === 'in_prep') return 'border-t-[6px] border-yellow-500 shadow-lg ring-1 ring-yellow-100';
 
     return 'border-gray-200 shadow-sm';
   }, [order.type, order.orderStatus, isHistory, order.isPaid]);
@@ -122,7 +137,8 @@ const OrderCard = memo(({
     };
 
     const totalRows = items.reduce((acc, item) => acc + getItemRows(item), 0);
-    const splitNeeded = !isHistory && totalRows > 5;
+    // 🆕 In Kanban, we prefer single column unless it's REALLY huge
+    const splitNeeded = !isKanban && !isHistory && totalRows > 5;
 
     const rCol = [];
     const lCol = [];
@@ -146,30 +162,38 @@ const OrderCard = memo(({
       rightColItems: rCol,
       leftColItems: lCol
     };
-  }, [order.items, isHistory]);
+  }, [order.items, isHistory, isKanban]);
 
   const orderStatusLower = (order.orderStatus || '').toLowerCase();
-  const nextStatusLabel = orderStatusLower === 'new' || orderStatusLower === 'pending'
-    ? 'התחל הכנה'
-    : (orderStatusLower === 'in_progress' ? 'מוכן להגשה' : (isReady ? 'נמסר' : 'מוכן להגשה'));
+
+  // Pending orders get special "ראיתי" button, others get normal flow
+  const isPending = orderStatusLower === 'pending';
+  const nextStatusLabel = isPending
+    ? 'ראיתי'
+    : (orderStatusLower === 'new'
+      ? 'התחל הכנה'
+      : (orderStatusLower === 'in_progress' ? 'מוכן להגשה' : (isReady ? 'נמסר' : 'מוכן להגשה')));
 
   const actionBtnColor = isReady
     ? 'bg-slate-900 text-white hover:bg-slate-800'
-    : 'bg-green-500 text-white hover:bg-green-600 shadow-green-200';
+    : (isPending
+      ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-amber-200'
+      : 'bg-green-500 text-white hover:bg-green-600 shadow-green-200');
 
   const cardWidthClass = isHistory
     ? (isLargeOrder ? 'w-[294px]' : 'w-[200px]')
-    : (isLargeOrder ? 'w-[420px]' : 'w-[280px]');
+    : (isKanban ? 'w-full' : (isLargeOrder ? 'w-[420px]' : 'w-[280px]'));
 
   const renderItemRow = useCallback((item, idx, isLarge) => {
-    const isEarlyDelivered = item.is_early_delivered || false;
+    const isEarlyDelivered = item.is_early_delivered || item.item_status === 'ready' || item.item_status === 'shipped';
     const nameSizeClass = isHistory ? 'text-sm' : 'text-base';
     const badgeSizeClass = isHistory ? 'w-5 h-5 text-xs' : 'w-6 h-6 text-base';
     const modSizeClass = isHistory ? 'text-[10px]' : 'text-xs';
 
     return (
-      <div key={`${item.menuItemId}-${item.modsKey || ''}-${idx}`} className={`flex flex-col ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered ? 'opacity-40' : ''}`}>
+      <div key={`${item.menuItemId}-${item.modsKey || item.id || idx}`} className={`flex flex-col ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered ? 'opacity-40' : ''}`}>
         <div className="flex items-start gap-[5px] relative">
+          {/* Packing Strike-through (same as KDS early delivery) */}
           {isEarlyDelivered && (
             <div className="absolute top-[13px] right-7 left-1 flex items-center pointer-events-none z-10">
               <div className="w-full h-[3px] bg-slate-500/60 rounded-full" />
@@ -178,11 +202,12 @@ const OrderCard = memo(({
 
           <div
             onClick={async (e) => {
-              if (isHistory || isReady || !onReadyItems) return;
+              if (isHistory || !onReadyItems) return;
               e.stopPropagation();
               const ids = item.ids || [item.id];
               const itemsPayload = ids.map(id => ({ id }));
-              await onReadyItems(order.originalOrderId, itemsPayload);
+              console.log('📦 [Kanban/KDS] Toggling item packed/ready status', { itemId: item.id });
+              await onReadyItems(order.id || order.originalOrderId, itemsPayload);
             }}
             className={`cursor-pointer active:scale-95 transition-transform flex items-start gap-[5px] flex-1 min-w-0`}
           >
@@ -204,7 +229,7 @@ const OrderCard = memo(({
                 }
 
                 const visibleMods = item.modifiers
-                  .map(mod => ({ ...mod, shortName: getShortName(mod.text) }))
+                  .map(mod => ({ ...mod, shortName: getShortName(mod.text || mod.valueName || mod) }))
                   .filter(mod => mod.shortName !== null);
 
                 if (visibleMods.length === 0) {
@@ -218,7 +243,7 @@ const OrderCard = memo(({
                 }
 
                 const renderModLabel = (mod, i) => (
-                  <span key={i} className={`mod-label ${getModColorClass(mod.text, mod.shortName)} ${modSizeClass}`}>
+                  <span key={i} className={`mod-label ${getModColorClass(mod.text || mod.valueName || mod, mod.shortName)} ${modSizeClass}`}>
                     {mod.shortName}
                   </span>
                 );
@@ -247,7 +272,7 @@ const OrderCard = memo(({
         </div>
       </div>
     );
-  }, [isHistory, order.type]);
+  }, [isHistory, order.type, onReadyItems, order.id, order.originalOrderId]);
 
   return (
     <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl px-[5px] py-3 ${isHistory ? 'mx-[2px]' : 'mx-2'} flex flex-col h-full font-heebo ${order.type === 'delayed' ? 'bg-gray-50' : 'bg-white'} ${statusStyles} border-x border-b border-gray-100 ${glowClass}`}>
@@ -272,6 +297,12 @@ const OrderCard = memo(({
                   מנה שניה
                 </span>
               )}
+              {order.orderType === 'delivery' && (
+                <span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-blue-200 flex items-center gap-1">
+                  <Truck size={10} />
+                  משלוח
+                </span>
+              )}
               {order.hasPendingItems && order.type !== 'delayed' && (
                 <span className="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1 border border-amber-200">
                   <Clock size={10} />
@@ -285,12 +316,30 @@ const OrderCard = memo(({
                 </span>
               )}
             </div>
+
+            {/* Customer Details: Phone and Address */}
+            {(order.customerPhone || order.deliveryAddress) && (
+              <div className="mt-1 flex flex-col gap-0.5">
+                {order.customerPhone && (
+                  <div className="text-[11px] text-slate-500 font-bold flex items-center gap-1">
+                    <Phone size={10} />
+                    <span className="font-mono">{order.customerPhone}</span>
+                  </div>
+                )}
+                {order.deliveryAddress && (
+                  <div className="text-[11px] text-slate-600 font-black flex items-start gap-1 leading-tight">
+                    <MapPin size={10} className="mt-0.5 shrink-0" />
+                    <span className="line-clamp-2">{order.deliveryAddress}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
         <div className="text-left flex flex-col items-end shrink-0 ml-2 gap-1.5">
           <div className="flex items-center gap-2">
-            {!isHistory && (
+            {!isHistory && !isKanban && ( // 🆕 Hide edit button in Kanban
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -342,7 +391,7 @@ const OrderCard = memo(({
               try {
                 const flatIds = order.items.flatMap(i => i.ids || [i.id]);
                 const itemsPayload = flatIds.map(id => ({ id }));
-                if (onFireItems) await onFireItems(order.originalOrderId, itemsPayload);
+                if (onFireItems) await onFireItems(order.id || order.originalOrderId, itemsPayload);
               } finally {
                 setIsUpdating(false);
               }
@@ -395,22 +444,9 @@ const OrderCard = memo(({
               </div>
             )}
 
-            {isHistory ? (
-              <div className="flex items-center justify-center mt-auto gap-2 w-full">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (onEditOrder) onEditOrder(order);
-                  }}
-                  className="flex-1 py-1.5 bg-white text-slate-500 rounded-lg text-[11px] font-bold border border-slate-200 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 shadow-sm outline-none"
-                >
-                  <Edit size={14} />
-                  {order.isPaid ? 'צפייה / זיכוי' : 'צפייה / עריכה'}
-                </button>
-              </div>
-            ) : (
+            {!isHistory && (
               <div className="flex items-stretch gap-2 mt-auto h-11 w-full text-sm">
-                {isReady && (
+                {isReady && !isKanban && ( // 🆕 Hide undo in Kanban (can just drag back)
                   <button
                     disabled={isUpdating}
                     onClick={async (e) => {
@@ -424,20 +460,25 @@ const OrderCard = memo(({
                   </button>
                 )}
 
-                <button
-                  disabled={isUpdating}
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    setIsUpdating(true);
-                    try { await onOrderStatusUpdate(order.id, order.orderStatus); }
-                    finally { setIsUpdating(false); }
-                  }}
-                  className={`flex-1 rounded-xl font-black text-lg shadow-sm active:scale-[0.98] transition-all flex items-center justify-center ${actionBtnColor} ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''} outline-none`}
-                >
-                  {isUpdating ? 'מעדכן...' : nextStatusLabel}
-                </button>
+                {/* 🆕 ONLY SHOW ACTION BUTTON IF IT IS PENDING OR NOT KANBAN */}
+                {(isPending || !isKanban) && (
+                  <button
+                    disabled={isUpdating}
+                    onClick={async (e) => {
+                      console.log('🔘 [OrderCard] Action button clicked!', { id: order.id, status: order.orderStatus, label: nextStatusLabel });
+                      e.stopPropagation();
+                      setIsUpdating(true);
+                      try { await onOrderStatusUpdate(order.id, order.orderStatus); }
+                      catch (err) { console.error('❌ [OrderCard] Update error:', err); }
+                      finally { setIsUpdating(false); }
+                    }}
+                    className={`flex-1 rounded-xl font-black text-lg shadow-sm active:scale-[0.98] transition-all flex items-center justify-center ${actionBtnColor} ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''} outline-none`}
+                  >
+                    {isUpdating ? 'מעדכן...' : nextStatusLabel}
+                  </button>
+                )}
 
-                {!order.isPaid && (
+                {!order.isPaid && !isKanban && ( // 🆕 Hide payment button in Kanban
                   <button
                     disabled={isUpdating}
                     onClick={async (e) => {

@@ -38,9 +38,9 @@ export const useKDSData = () => {
     const skipFetchUntilRef = useRef(0);
 
     // 🟢 PRODUCTION LOGGING HELPERS
-    const DEBUG = false; // Set to false to save memory and CPU on weak tablets
-    const log = (...args) => DEBUG && console.log(...args);
-    const warn = (...args) => DEBUG && console.warn(...args);
+    const DEBUG = true; // Enabled for diagnostic purposes
+    const log = (...args) => console.log(...args);
+    const warn = (...args) => console.warn(...args);
 
     // 🛠️ SMART ID HELPER: Ensures ID is the correct type for Dexie (Numeric for Supabase, String for Local)
     const getSmartId = (id) => {
@@ -65,6 +65,7 @@ export const useKDSData = () => {
 
                 // OPTIMIZATION: Only scan ACTIVE orders, not the whole history!
                 // Scanning thousands of completed orders freezes weak Android tablets.
+                // Note: 'pending' included for toggle support - filtering happens in UI
                 const activeOrders = await db.orders
                     .where('order_status')
                     .anyOf('new', 'in_progress', 'pending')
@@ -82,9 +83,9 @@ export const useKDSData = () => {
 
                     let correctStatus = order.order_status;
 
-                    // Logic 1: If ANY item is active, order MUST be in_progress
+                    // Logic 1: If ANY item is active, order MUST be in an active status
                     const hasActive = orderItems.some(i => ['in_progress', 'new', 'pending'].includes(i.item_status));
-                    if (hasActive && order.order_status !== 'in_progress') {
+                    if (hasActive && !['in_progress', 'pending', 'new'].includes(order.order_status)) {
                         correctStatus = 'in_progress';
                     }
 
@@ -239,15 +240,21 @@ export const useKDSData = () => {
                                 // Logic: If we have a local version pending sync, check if server caught up
                                 // (Unless server says completed, which overrides stuck local state)
                                 if (existingLocal && existingLocal.pending_sync && order.order_status !== 'completed') {
+                                    const serverUpdatedAt = new Date(order.updated_at || 0);
+                                    const localUpdatedAt = new Date(existingLocal.updated_at || 0);
 
                                     // Check if server state matches our local optimistic state
                                     const serverMatchesLocal = order.order_status === existingLocal.order_status;
 
-                                    if (serverMatchesLocal) {
+                                    // NEW: Maya's Fix - If server is strictly newer, it wins regardless of pending_sync
+                                    if (serverUpdatedAt > localUpdatedAt) {
+                                        console.log(`🔄 [MERGE] Server is newer for ${order.order_number} (${serverUpdatedAt.toISOString()} > ${localUpdatedAt.toISOString()}). Accepting server truth.`);
+                                        // Proceed to 'put' logic below (which sets pending_sync: false and updates Dexie)
+                                    } else if (serverMatchesLocal) {
                                         // ✅ Server caught up! We can safely use server data and clear the flag.
                                         // Proceed to 'put' logic below (which sets pending_sync: false)
                                     } else {
-                                        // ⏳ Server still stale
+                                        // ⏳ Local is newer or Server is stale
 
                                         // ROBUST ITEM FETCHING
                                         let localItems = await db.order_items.where('order_id').equals(smartId).toArray();
@@ -404,6 +411,7 @@ export const useKDSData = () => {
                     const localOrders = await db.orders
                         .filter(o => {
                             const isToday = new Date(o.created_at) >= today;
+                            // Note: 'pending' included - filtering happens in UI based on toggle
                             const isActiveState = ['in_progress', 'ready', 'new', 'pending'].includes(o.order_status);
                             // MATCH RPC: Also include completed but unpaid orders in active view
                             const isUnpaidCompleted = o.order_status === 'completed' && o.is_paid === false;
@@ -847,12 +855,13 @@ export const useKDSData = () => {
                         // 1. Drop cancelled
                         if (item.item_status === 'cancelled') return false;
 
-                        // 2. Drop Invalid Items (No Name)
-                        // FALLBACK: Check menuMapForProcessing if menu_items.name is missing
-                        const cachedMenuItem = menuMapForProcessing.get(item.menu_item_id);
-                        if (!item.menu_items?.name && !item.name && !cachedMenuItem?.name) {
-                            if (isTargetOrder) console.log(`🔍 [ITEM-FILTER] Dropping invalid item ${item.id} (No name)`);
-                            return false;
+                        const menuItemFromCache = menuMapForProcessing.get(item.menu_item_id);
+                        const hasName = item.menu_items?.name || item.name || menuItemFromCache?.name;
+
+                        // FIX: Don't drop items with no name, just give them a fallback.
+                        // This supports custom items or virtual items (like delivery fees) that might not be in menu_items table.
+                        if (!hasName) {
+                            if (isTargetOrder) console.log(`🔍 [ITEM-FILTER] Keeping item ${item.id} with fallback name`);
                         }
 
                         // 3. (REMOVED) Drop Completed if order not in_progress
@@ -988,6 +997,10 @@ export const useKDSData = () => {
                     ready_at: order.ready_at,
                     updated_at: order.updated_at,
                     payment_method: order.payment_method,
+                    order_type: order.order_type || 'dine_in',
+                    delivery_address: order.delivery_address,
+                    delivery_fee: order.delivery_fee,
+                    delivery_notes: order.delivery_notes,
                     is_refund: order.is_refund || (Number(order.refund_amount) > 0),
                     refund_amount: Number(order.refund_amount) || 0,
                     refund_method: order.refund_method || order.payment_method,
@@ -1012,8 +1025,8 @@ export const useKDSData = () => {
                     const stage = Number(stageStr);
                     const cardId = stage === 1 ? order.id : `${order.id}-stage-${stage}`;
 
-                    const hasHeldItems = stageItems.some(i => i.status === 'held' || i.status === 'pending');
-                    const hasActiveItems = stageItems.some(i => i.status === 'in_progress' || i.status === 'new');
+                    const hasHeldItems = stageItems.some(i => i.status === 'held');
+                    const hasActiveItems = stageItems.some(i => i.status === 'in_progress' || i.status === 'new' || i.status === 'pending');
                     // Treat 'completed' items as ready for KDS display purposes (so they appear in the bottom section)
                     const allReady = stageItems.every(i => i.status === 'ready' || i.status === 'completed' || i.status === 'cancelled');
                     // Note: If all are cancelled, it might also be 'ready' (done), or filtered out earlier. Assuming mixed cancelled/ready is ready.
@@ -1027,7 +1040,18 @@ export const useKDSData = () => {
                     // FIX: Also check if explicitly in_progress to prevent "jump to ready" if items are ready but order isn't
                     const isExplicitlyInProgress = order.order_status === 'in_progress';
 
-                    if (hasActiveItems) {
+                    // NEW: Handle 'pending' order status first (e.g., delivery awaiting acknowledgment)
+                    const isOrderPending = order.order_status === 'pending';
+
+                    if (isOrderPending) {
+                        // Pending orders stay as pending - they need acknowledgment first
+                        cardType = 'active';
+                        cardStatus = 'pending';
+                    } else if (order.order_status === 'new') {
+                        // 'New' acknowledged orders - distinct from 'In Progress'
+                        cardType = 'active';
+                        cardStatus = 'new';
+                    } else if (hasActiveItems) {
                         cardType = 'active';
                         cardStatus = 'in_progress';
                     } else if (isOrderReadyOrCompleted) {
@@ -1052,7 +1076,7 @@ export const useKDSData = () => {
                             _useLocalStatus: order._useLocalStatus,
                             pending_sync: order.pending_sync,
                             isExplicitlyInProgress: order.order_status === 'in_progress',
-                            hasInProgress: order.order_items?.some(i => i.item_status === 'in_progress' || i.item_status === 'new'),
+                            hasInProgress: order.order_items?.some(i => i.item_status === 'in_progress' || i.item_status === 'new' || i.item_status === 'pending'),
                             allReady: order.order_items?.every(i => ['ready', 'completed', 'cancelled'].includes(i.item_status)),
                             finalCardType: cardType,
                             finalCardStatus: cardStatus
@@ -1190,6 +1214,7 @@ export const useKDSData = () => {
     };
 
     const updateOrderStatus = async (orderId, currentStatus) => {
+        const businessId = currentUser?.business_id;
         log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         log('🔄 [STATUS-UPDATE] START', new Date().toISOString());
         log('📋 Input:', { orderId, currentStatus, online: navigator.onLine });
@@ -1212,10 +1237,22 @@ export const useKDSData = () => {
 
         if (currentStatus === 'undo_ready') {
             nextStatus = 'in_progress';
-        } else if (statusLower === 'in_progress' || statusLower === 'new' || hasInProgress) {
+        } else if (statusLower === 'pending') {
+            // Pending orders (e.g. deliveries) go to 'new' first (acknowledgment)
+            nextStatus = 'new';
+        } else if (statusLower === 'new') {
+            // 'new' orders go to in_progress (start preparation)
+            nextStatus = 'in_progress';
+        } else if (statusLower === 'in_progress' || hasInProgress) {
             nextStatus = 'ready';
         } else if (statusLower === 'ready' || currentStatus === 'ready') {
-            nextStatus = 'completed';
+            // Logic for Delivery: Ready -> Shipped
+            // Logic for Dine-in/Takeway: Ready -> Completed
+            if (order?.type === 'delivery' || order?.order_type === 'delivery') {
+                nextStatus = 'shipped';
+            } else {
+                nextStatus = 'completed';
+            }
         }
 
         log('🎯 Calculated nextStatus:', nextStatus);
@@ -1370,6 +1407,24 @@ export const useKDSData = () => {
                                 return [...filtered.slice(0, insertIndex), newOrder, ...filtered.slice(insertIndex)];
                             });
                         }
+                    } else if (nextStatus === 'new') {
+                        // Pending → New (acknowledgment) - just update status in place
+                        const orderToUpdate = currentOrders.find(o => o.id === orderId || o.originalOrderId === orderId);
+                        if (orderToUpdate) {
+                            setLastAction({
+                                type: 'status_change',
+                                orderId: orderId,
+                                previousStatus: orderToUpdate.orderStatus || 'pending',
+                                newStatus: 'new',
+                                timestamp: new Date()
+                            });
+                            // Update in place (stays in currentOrders)
+                            setCurrentOrders(prev => prev.map(o =>
+                                (o.id === orderId || o.originalOrderId === orderId)
+                                    ? { ...o, orderStatus: 'new' }
+                                    : o
+                            ));
+                        }
                     }
                     setLastUpdated(new Date());
                 }
@@ -1452,6 +1507,14 @@ export const useKDSData = () => {
                         log('📊 [OPTIMISTIC] New currentOrders:', newList.map(o => o.id));
                         return newList;
                     });
+                } else if (nextStatus === 'new') {
+                    // Pending → New (acknowledgment) - update in place
+                    log('📝 [OPTIMISTIC] Acknowledging pending → new');
+                    setCurrentOrders(prev => prev.map(o =>
+                        (o.id === orderId || o.originalOrderId === orderId)
+                            ? { ...o, orderStatus: 'new' }
+                            : o
+                    ));
                 }
                 log('✅ [OPTIMISTIC] State updated, triggering setLastUpdated');
                 setLastUpdated(new Date());
@@ -1474,7 +1537,8 @@ export const useKDSData = () => {
                     await db.orders.update(smartId, updateFields);
 
                     const itemStatus = nextStatus === 'completed' ? 'completed' :
-                        nextStatus === 'ready' ? 'ready' : 'in_progress';
+                        nextStatus === 'ready' ? 'ready' :
+                            nextStatus === 'new' ? 'new' : 'in_progress';
                     await db.order_items.where('order_id').equals(smartId).modify({ item_status: itemStatus });
                 } catch (e) {
                     console.warn('Dexie background update failed:', e);
@@ -1485,19 +1549,38 @@ export const useKDSData = () => {
             // 🌐 STEP 4: SUPABASE UPDATE
             try {
                 if (currentStatus === 'undo_ready' || nextStatus === 'in_progress') {
-                    const itemIds = orderToMove?.items?.flatMap(i => i.ids || [i.id]) || [];
-                    await supabase.from('order_items').update({ item_status: 'in_progress', updated_at: now }).in('id', itemIds).neq('item_status', 'cancelled');
-                    await supabase.from('orders').update({ order_status: 'in_progress', updated_at: now }).eq('id', realOrderId);
+                    await supabase.rpc('update_order_status_v3', {
+                        p_order_id: realOrderId,
+                        p_new_status: 'in_progress',
+                        p_item_status: 'in_progress',
+                        p_business_id: businessId
+                    });
                 } else if (nextStatus === 'ready') {
                     const itemIds = orderToMove?.items?.flatMap(i => i.ids || [i.id]) || [];
                     if (itemIds.length > 0) {
                         await supabase.rpc('mark_items_ready_v2', { p_order_id: String(realOrderId).trim(), p_item_ids: itemIds });
                     } else {
-                        await supabase.from('orders').update({ order_status: 'ready', ready_at: now, updated_at: now }).eq('id', realOrderId);
+                        await supabase.rpc('update_order_status_v3', {
+                            p_order_id: realOrderId,
+                            p_new_status: 'ready',
+                            p_business_id: businessId
+                        });
                     }
                     if (orderToMove?.customerPhone) {
                         handleSendSms(orderId, orderToMove.customerName, orderToMove.customerPhone);
                     }
+                    // Pending → New (acknowledgment)
+                    console.log('🌐 [SUPABASE] Acknowledging pending order via RPC:', realOrderId);
+
+                    const { data: rpcData, error: rpcError } = await supabase.rpc('update_order_status_v3', {
+                        p_order_id: realOrderId,
+                        p_new_status: 'new',
+                        p_item_status: 'new', // Also acknowledge all items
+                        p_business_id: businessId
+                    });
+
+                    if (rpcError) console.error('❌ [SUPABASE] Order acknowledgment error:', rpcError);
+                    else console.log('✅ [SUPABASE] Order acknowledged successfully:', rpcData);
                 } else if (nextStatus === 'completed') {
                     const itemIds = orderToMove?.items?.flatMap(i => i.ids || [i.id]) || [];
                     await supabase.rpc('complete_order_part_v2', { p_order_id: String(realOrderId).trim(), p_item_ids: itemIds, p_keep_order_open: false });
@@ -1807,45 +1890,88 @@ export const useKDSData = () => {
         // Helper to create filter string
         const filter = businessId ? `business_id=eq.${businessId}` : undefined;
 
-        const debouncedFetch = () => {
+        const debouncedFetch = (payload) => {
             // CRITICAL: Don't fetch on realtime events if offline
             if (!navigator.onLine) {
                 log('📴 [REALTIME] Ignoring event - device is offline');
                 return;
             }
-            // ANTI-JUMP: Skip fetch if we're in the cooldown window
+
+            // 🎯 NEW: Maya's Fast-Sync - Update state directly if it's an UPDATE event
+            if (payload?.eventType === 'UPDATE' && payload.new) {
+                const updatedOrder = payload.new;
+                const newStatus = updatedOrder.order_status;
+                const orderId = updatedOrder.id;
+
+                log(`⚡ [REALTIME-FAST] Direct state update for ${orderId.slice(0, 8)} to ${newStatus}`);
+
+                // 1. If moving to READY: Remove from current, add to completed
+                if (newStatus === 'ready') {
+                    setCurrentOrders(prev => {
+                        const order = prev.find(o => o.id === orderId || o.originalOrderId === orderId);
+                        if (order) {
+                            // Optimistically move to completed
+                            setCompletedOrders(comp => [...comp, { ...order, orderStatus: 'ready', ready_at: updatedOrder.ready_at }]);
+                            return prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId);
+                        }
+                        return prev;
+                    });
+                }
+                // 2. If moving to IN_PROGRESS/NEW: Remove from completed, add to current
+                else if (['new', 'in_progress', 'pending'].includes(newStatus)) {
+                    setCompletedOrders(prev => {
+                        const order = prev.find(o => o.id === orderId || o.originalOrderId === orderId);
+                        if (order) {
+                            // Optimistically move to active
+                            setCurrentOrders(curr => [...curr, { ...order, orderStatus: newStatus }]);
+                            return prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId);
+                        }
+                        return prev;
+                    });
+
+                    // Also update in place if already in current
+                    setCurrentOrders(prev => prev.map(o =>
+                        (o.id === orderId || o.originalOrderId === orderId) ? { ...o, orderStatus: newStatus } : o
+                    ));
+                }
+            }
+
+            // Still trigger a debounced full fetch to ensure Dexie and items are synced
             if (Date.now() < skipFetchUntilRef.current) {
-                log('⏳ [REALTIME] Skipping - in anti-jump cooldown');
+                log('⏳ [REALTIME] Skipping full fetch - in anti-jump cooldown');
                 return;
             }
             if (realtimeDebounceTimer.current) clearTimeout(realtimeDebounceTimer.current);
             realtimeDebounceTimer.current = setTimeout(() => {
-                // Double-check online status and anti-jump before actually fetching
-                if (!navigator.onLine) {
-                    log('📴 [REALTIME] Skipping fetch - device went offline');
-                    return;
-                }
-                if (Date.now() < skipFetchUntilRef.current) {
-                    log('⏳ [REALTIME] Skipping debounced fetch - in anti-jump cooldown');
-                    return;
-                }
-                log('🔄 [REALTIME] Executing debounced fetchOrders');
+                if (!navigator.onLine || Date.now() < skipFetchUntilRef.current) return;
+                log('🔄 [REALTIME] Executing debounced full fetchOrders');
                 fetchOrders();
                 realtimeDebounceTimer.current = null;
-            }, 300);
+            }, 500);
         };
 
         const channel = supabase
-            .channel('kds-changes')
-            .on('postgres_changes', { event: '*', schema: schema, table: 'orders', filter: filter }, () => {
-                log('🔔 Realtime update received (orders)');
-                debouncedFetch();
+            .channel(`kds-status-${businessId}`) // Unique channel name
+            .on('postgres_changes', {
+                event: '*',
+                schema: schema,
+                table: 'orders',
+                filter: filter
+            }, (payload) => {
+                log('🔔 Realtime update received (orders):', payload.eventType);
+                debouncedFetch(payload);
             })
-            .on('postgres_changes', { event: '*', schema: schema, table: 'order_items' }, () => {
-                log('🔔 Realtime update received (order_items)');
-                debouncedFetch();
+            .on('postgres_changes', {
+                event: '*',
+                schema: schema,
+                table: 'order_items'
+            }, (payload) => {
+                log('🔔 Realtime update received (order_items):', payload.eventType);
+                debouncedFetch(payload);
             })
-            .subscribe();
+            .subscribe((status) => {
+                log('🔌 Realtime subscription status:', status);
+            });
 
         return () => {
             if (realtimeDebounceTimer.current) clearTimeout(realtimeDebounceTimer.current);

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Monitor, ChefHat, LogOut, BarChart3, Coffee, Users, Music, ShieldAlert, Package, List } from 'lucide-react';
+import { Monitor, ChefHat, LogOut, BarChart3, Coffee, Users, Music, ShieldAlert, Package, List, LayoutGrid, Truck } from 'lucide-react';
 
 const ModeSelectionScreen = () => {
     const navigate = useNavigate();
@@ -14,6 +14,9 @@ const ModeSelectionScreen = () => {
         accessLevel === 'admin' ||
         accessLevel === 'manager' ||
         currentUser?.is_admin === true;
+
+    // Check if user is a driver
+    const isDriver = currentUser?.is_driver === true;
 
     const handleModeSelect = (mode) => {
         setMode(mode);
@@ -34,6 +37,10 @@ const ModeSelectionScreen = () => {
             navigate('/data-manager-interface');
         } else if (mode === 'dexie-admin') {
             navigate('/dexie-admin');
+        } else if (mode === 'kanban') {
+            navigate('/kanban');
+        } else if (mode === 'driver') {
+            navigate('/driver');
         }
     };
 
@@ -180,24 +187,44 @@ const ModeSelectionScreen = () => {
                         </div>
                     </button>
 
-                    {/* 4. Customer Station - Coming Soon */}
+                    {/* 4. Kanban - Order Management Board */}
                     <button
-                        disabled
-                        className="group relative bg-gray-50 rounded-2xl p-5 cursor-not-allowed opacity-80 text-right overflow-hidden border-2 border-dashed border-gray-200"
+                        onClick={() => handleModeSelect('kanban')}
+                        className="hidden md:block group relative bg-white rounded-2xl p-5 hover:bg-teal-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-teal-100"
                     >
-                        <div className="absolute top-3 left-3 bg-slate-900 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                            בקרוב
+                        <div className="absolute top-3 left-3 bg-teal-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                            חדש
                         </div>
-                        <div className="relative z-10 opacity-60 grayscale">
-                            <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center text-white mb-3 shadow-sm">
-                                <Users size={20} strokeWidth={2.5} />
+                        <div className="absolute top-0 left-0 w-20 h-20 bg-teal-100 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
+                        <div className="relative z-10">
+                            <div className="w-10 h-10 bg-teal-600 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
+                                <LayoutGrid size={20} strokeWidth={2.5} />
                             </div>
-                            <h2 className="text-xl font-black text-slate-700 mb-1">עמדת לקוחות</h2>
+                            <h2 className="text-xl font-black text-slate-900 mb-1">קנבן הזמנות</h2>
                             <p className="text-slate-500 text-sm leading-relaxed font-medium">
-                                הזמנה עצמית ללקוחות
+                                ניהול הזמנות ומשלוחים
                             </p>
                         </div>
                     </button>
+
+                    {/* 4b. Driver Screen - Mobile only, for drivers */}
+                    {isDriver && (
+                        <button
+                            onClick={() => handleModeSelect('driver')}
+                            className="md:hidden group relative bg-gray-800 rounded-2xl p-5 hover:bg-gray-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-500"
+                        >
+                            <div className="absolute top-0 left-0 w-20 h-20 bg-purple-900/50 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
+                            <div className="relative z-10">
+                                <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
+                                    <Truck size={20} strokeWidth={2.5} />
+                                </div>
+                                <h2 className="text-xl font-black text-white mb-1">מסך נהג</h2>
+                                <p className="text-slate-400 text-sm leading-relaxed font-medium">
+                                    משלוחים מוכנים לאיסוף
+                                </p>
+                            </div>
+                        </button>
+                    )}
 
                     {/* 5. Advanced Data - Hidden on Mobile */}
                     <button

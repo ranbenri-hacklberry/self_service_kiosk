@@ -25,7 +25,11 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
 
     const TaskRow = ({ task }) => (
         <motion.div
+            layout
             variants={taskVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
             onClick={() => setSelectedTask(task)}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all
                 ${selectedTask?.id === task.id
@@ -66,11 +70,9 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
                             אפשר להתחיל עכשיו ({preClosingTasks.length})
                         </h3>
                         <div className="grid grid-cols-2 gap-3">
-                            <LayoutGroup>
-                                <AnimatePresence mode="wait">
-                                    {preClosingTasks.map(task => <TaskRow key={task.id} task={task} />)}
-                                </AnimatePresence>
-                            </LayoutGroup>
+                            <AnimatePresence>
+                                {preClosingTasks.map(task => <TaskRow key={task.id} task={task} />)}
+                            </AnimatePresence>
                         </div>
                     </div>
                 )}
@@ -85,11 +87,9 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
                             </h3>
                         )}
                         <div className="grid grid-cols-2 gap-3">
-                            <LayoutGroup>
-                                <AnimatePresence mode="wait">
-                                    {regularTasks.map(task => <TaskRow key={task.id} task={task} />)}
-                                </AnimatePresence>
-                            </LayoutGroup>
+                            <AnimatePresence>
+                                {regularTasks.map(task => <TaskRow key={task.id} task={task} />)}
+                            </AnimatePresence>
                         </div>
                     </div>
                 )}

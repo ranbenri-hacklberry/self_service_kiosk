@@ -9,6 +9,7 @@ import PaymentSelectionModal from './components/PaymentSelectionModal';
 import ModifierModal from './components/ModifierModal';
 import SaladPrepDecision from './components/SaladPrepDecision';
 import MTOQuickNotesModal from './components/MTOQuickNotesModal';
+import DeliveryAddressModal from './components/DeliveryAddressModal';
 import OrderConfirmationModal from '@/components/ui/OrderConfirmationModal';
 import CustomerInfoModal from '@/components/CustomerInfoModal';
 import { addCoffeePurchase, getLoyaltyCount, handleLoyaltyAdjustment, getLoyaltyRedemptionForOrder } from "@/lib/loyalty";
@@ -80,6 +81,11 @@ const MenuOrderingInterface = () => {
   const [showCustomerInfoModal, setShowCustomerInfoModal] = useState(false);
   const [customerInfoModalMode, setCustomerInfoModalMode] = useState('phone');
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState(null); // Current order's delivery address
+  const [deliveryFee, setDeliveryFee] = useState(0);
+  const [deliveryNotes, setDeliveryNotes] = useState(null);
+  const [orderType, setOrderType] = useState('dine_in'); // 'dine_in', 'takeaway', 'delivery'
 
   // ===== Loyalty Hook (replaces loyalty state + fetch logic) =====
   const {
@@ -343,25 +349,14 @@ const MenuOrderingInterface = () => {
         } else {
           // ONLINE: Fetch from Supabase
           console.log('🌐 Online: Fetching customer from Supabase for phone:', order.customer_phone);
-          const result = await supabase
-            .from('customers')
-            .select('*')
-            .eq('phone_number', order.customer_phone) // Try phone_number first
-            .maybeSingle();
+          // 🛡️ SECURITY FIX: Use safe RPC to bypass RLS
+          const { data: rpcData, error: rpcError } = await supabase.rpc('lookup_delivery_customer', {
+            p_phone: order.customer_phone,
+            p_business_id: currentUser?.business_id
+          });
 
-          customer = result.data;
-          customerError = result.error;
-
-          if (!customer && !customerError) {
-            // Try 'phone' column fallback
-            const secondTry = await supabase
-              .from('customers')
-              .select('*')
-              .eq('phone', order.customer_phone)
-              .maybeSingle();
-            customer = secondTry.data;
-            customerError = secondTry.error;
-          }
+          customer = (rpcData && rpcData.length > 0) ? rpcData[0] : null;
+          customerError = rpcError;
 
           // Cache to Dexie for offline
           if (customer) {
@@ -1571,6 +1566,98 @@ const MenuOrderingInterface = () => {
     setShowCustomerInfoModal(true);
   };
 
+  // Handler for setting delivery address
+  const handleSetDelivery = () => {
+    console.log('🚚 Opening delivery address modal');
+    setShowDeliveryModal(true);
+  };
+
+  // Handler for delivery confirmation - saves to both order and customer
+  const handleDeliveryConfirm = async (deliveryData) => {
+    console.log('🚚 Delivery data confirmed:', deliveryData);
+
+    // Update local state
+    setDeliveryAddress(deliveryData.deliveryAddress);
+    setDeliveryFee(deliveryData.deliveryFee || 20);
+    setDeliveryNotes(deliveryData.deliveryNotes);
+    setOrderType('delivery');
+
+    // Add delivery fee to cart as a special item
+    const deliveryFeeItem = {
+      id: 'delivery-fee',
+      tempId: `delivery-fee-${Date.now()}`,
+      name: '🚚 דמי משלוח',
+      price: deliveryData.deliveryFee || 20,
+      quantity: 1,
+      isDeliveryFee: true, // Special flag
+      deliveryAddress: deliveryData.deliveryAddress,
+      deliveryNotes: deliveryData.deliveryNotes,
+      selectedNotes: deliveryData.selectedNotes,
+      // Display notes as mods
+      selectedOptions: (deliveryData.selectedNotes || []).map(noteId => ({
+        groupId: 'delivery-notes',
+        groupName: 'הערות משלוח',
+        valueId: noteId,
+        valueName: ['door', 'dog', 'neighbor', 'elevator'].includes(noteId)
+          ? { door: 'להניח ליד הדלת', dog: 'כלב נובח', neighbor: 'אצל שכן', elevator: 'יש מעלית' }[noteId]
+          : noteId,
+        priceAdjustment: 0
+      }))
+    };
+
+    // Remove existing delivery fee if any, then add new one
+    const existingFeeIndex = cartItems.findIndex(item => item.isDeliveryFee);
+    if (existingFeeIndex >= 0) {
+      cartRemoveItem(existingFeeIndex);
+    }
+    cartAddItem(deliveryFeeItem);
+
+    // Update customer info if changed
+    if (deliveryData.customerName || deliveryData.customerPhone) {
+      const updatedCustomer = {
+        ...currentCustomer,
+        id: deliveryData.customerId || currentCustomer?.id,
+        name: deliveryData.customerName || currentCustomer?.name,
+        phone: deliveryData.customerPhone || currentCustomer?.phone,
+        phone_number: deliveryData.customerPhone || currentCustomer?.phone_number,
+        delivery_address: deliveryData.deliveryAddress
+      };
+      setCurrentCustomer(updatedCustomer);
+      localStorage.setItem('currentCustomer', JSON.stringify(updatedCustomer));
+
+      // Also update customer in Supabase if they have an ID
+      const customerId = deliveryData.customerId || currentCustomer?.id;
+      if (customerId && !String(customerId).startsWith('local-')) {
+        try {
+          await supabase
+            .from('customers')
+            .update({
+              delivery_address: deliveryData.deliveryAddress,
+              name: deliveryData.customerName || currentCustomer?.name
+            })
+            .eq('id', customerId);
+          console.log('✅ Customer address saved to database');
+        } catch (err) {
+          console.error('Failed to save customer address:', err);
+        }
+      }
+    }
+
+    setShowDeliveryModal(false);
+  };
+
+  // Watch for delivery fee removal - reset to regular order
+  useEffect(() => {
+    const hasDeliveryFee = cartItems.some(item => item.isDeliveryFee);
+    if (!hasDeliveryFee && orderType === 'delivery') {
+      console.log('🚚 Delivery fee removed - switching to regular order');
+      setOrderType('dine_in');
+      setDeliveryAddress(null);
+      setDeliveryFee(0);
+      setDeliveryNotes(null);
+    }
+  }, [cartItems, orderType]);
+
   // Handle payment selection and order creation
   const handlePaymentSelect = async (orderData) => {
     console.log('🚀 ========== START handlePaymentSelect ==========');
@@ -1663,7 +1750,8 @@ const MenuOrderingInterface = () => {
         console.log("Cancelled items to send:", cancelledItems.length);
 
         // פריטים פעילים - שליחת UUIDs כ-strings
-        preparedItems = cartItems.map(item => {
+        // IMPORTANT: Filter out delivery fee items - they're handled separately via p_delivery_fee
+        preparedItems = cartItems.filter(item => !item.isDeliveryFee).map(item => {
           const options = Array.isArray(item.selectedOptions)
             ? item.selectedOptions
               .filter(opt => {
@@ -1756,65 +1844,68 @@ const MenuOrderingInterface = () => {
 
       } else {
         // מצב רגיל - שליחת UUIDs כ-strings
-        preparedItems = cartItems.map(item => {
-          const options = Array.isArray(item.selectedOptions)
-            ? item.selectedOptions
-              .filter(opt => {
-                // Filter out invalid/empty options
-                if (!opt) return false;
-                if (typeof opt === 'string') return opt.trim().length > 0;
-                // Filter out 'regular' options that shouldn't be saved
-                return opt.valueId && !opt.valueName?.includes('רגיל');
-              })
-              .map(opt => {
-                // Ensure we ONLY return a string
-                if (typeof opt === 'string') return opt;
-                // Extract name safely
-                return String(opt.valueName || opt.name || '');
-              })
-              .filter(s => s.length > 0) // Final check for empty strings
-            : [];
+        // IMPORTANT: Filter out delivery fee items - they're handled separately via p_delivery_fee
+        preparedItems = cartItems
+          .filter(item => !item.isDeliveryFee)
+          .map(item => {
+            const options = Array.isArray(item.selectedOptions)
+              ? item.selectedOptions
+                .filter(opt => {
+                  // Filter out invalid/empty options
+                  if (!opt) return false;
+                  if (typeof opt === 'string') return opt.trim().length > 0;
+                  // Filter out 'regular' options that shouldn't be saved
+                  return opt.valueId && !opt.valueName?.includes('רגיל');
+                })
+                .map(opt => {
+                  // Ensure we ONLY return a string
+                  if (typeof opt === 'string') return opt;
+                  // Extract name safely
+                  return String(opt.valueName || opt.name || '');
+                })
+                .filter(s => s.length > 0) // Final check for empty strings
+              : [];
 
 
-          // Extract valid menu_item_id (must be integer, not UUID)
-          let itemId = item.menu_item_id;
+            // Extract valid menu_item_id (must be integer, not UUID)
+            let itemId = item.menu_item_id;
 
-          // Validate that we have a proper menu_item_id
-          if (!itemId || typeof itemId === 'string') {
-            console.error('⚠️ Invalid menu_item_id for item:', item);
-            throw new Error(`Invalid item: ${item.name} has no valid menu_item_id (got: ${itemId})`);
-          }
+            // Validate that we have a proper menu_item_id
+            if (!itemId || typeof itemId === 'string') {
+              console.error('⚠️ Invalid menu_item_id for item:', item);
+              throw new Error(`Invalid item: ${item.name} has no valid menu_item_id (got: ${itemId})`);
+            }
 
-          console.log('🔍 Item ID extraction:', {
-            name: item.name,
-            menu_item_id: item.menu_item_id,
-            id: item.id,
-            final_item_id: itemId
+            console.log('🔍 Item ID extraction:', {
+              name: item.name,
+              menu_item_id: item.menu_item_id,
+              id: item.id,
+              final_item_id: itemId
+            });
+
+            // Calculate discount per item if soldier discount is enabled
+            const itemPrice = item.price || item.unit_price;
+            const discountPercent = soldierDiscountEnabled ? 0.10 : 0;
+            const discountForItem = Math.floor(itemPrice * discountPercent * 100) / 100;
+            const finalPricePerItem = itemPrice - discountForItem;
+
+            return {
+              item_id: itemId,
+              quantity: item.quantity,
+              price: itemPrice,
+              final_price: finalPricePerItem,
+              discount_applied: discountForItem,
+              selected_options: options,
+              mods: [
+                ...options,
+                ...((item.kds_override || item.mods?.kds_override) ? ['__KDS_OVERRIDE__'] : []),
+                ...((item.custom_note || item.mods?.custom_note) ? [`__NOTE__:${item.custom_note || item.mods.custom_note}`] : [])
+              ],
+              notes: item.notes || null,
+              item_status: item.isDelayed ? 'pending' : 'in_progress',
+              course_stage: item.isDelayed ? 2 : 1
+            };
           });
-
-          // Calculate discount per item if soldier discount is enabled
-          const itemPrice = item.price || item.unit_price;
-          const discountPercent = soldierDiscountEnabled ? 0.10 : 0;
-          const discountForItem = Math.floor(itemPrice * discountPercent * 100) / 100;
-          const finalPricePerItem = itemPrice - discountForItem;
-
-          return {
-            item_id: itemId,
-            quantity: item.quantity,
-            price: itemPrice,
-            final_price: finalPricePerItem,
-            discount_applied: discountForItem,
-            selected_options: options,
-            mods: [
-              ...options,
-              ...((item.kds_override || item.mods?.kds_override) ? ['__KDS_OVERRIDE__'] : []),
-              ...((item.custom_note || item.mods?.custom_note) ? [`__NOTE__:${item.custom_note || item.mods.custom_note}`] : [])
-            ],
-            notes: item.notes || null,
-            item_status: item.isDelayed ? 'pending' : 'in_progress',
-            course_stage: item.isDelayed ? 2 : 1
-          };
-        });
         cancelledItems = [];   // לא רלוונטי
       }
       console.log('📝 Prepared Items for Backend:', preparedItems);
@@ -1860,7 +1951,12 @@ const MenuOrderingInterface = () => {
         // Soldier discount takes priority, then orderData discount
         p_discount_id: soldierDiscountEnabled ? soldierDiscountId : (orderData?.discount_id || null),
         p_discount_amount: Number(soldierDiscountEnabled ? soldierDiscountAmount : (orderData?.discount_amount || 0)),
-        p_business_id: currentUser?.business_id || null
+        p_business_id: currentUser?.business_id || null,
+        // Delivery fields
+        p_order_type: orderType || 'dine_in',
+        p_delivery_address: orderType === 'delivery' ? deliveryAddress : null,
+        p_delivery_fee: orderType === 'delivery' ? Number(deliveryFee) : 0,
+        p_delivery_notes: orderType === 'delivery' ? deliveryNotes : null
       };
 
       console.log('📤 Sending Order Payload:', JSON.stringify(orderPayload, null, 2));
@@ -2311,6 +2407,19 @@ const MenuOrderingInterface = () => {
         orderId={isEditMode && editingOrderData?.id ? String(editingOrderData.id).replace(/-ready$/, '').replace(/-stage-\d+$/, '') : null}
       />
 
+      {/* Delivery Address Modal */}
+      <DeliveryAddressModal
+        isOpen={showDeliveryModal}
+        onClose={() => setShowDeliveryModal(false)}
+        onConfirm={handleDeliveryConfirm}
+        initialData={{
+          name: currentCustomer?.name,
+          phone: currentCustomer?.phone || currentCustomer?.phone_number,
+          address: currentCustomer?.delivery_address || '',
+          businessId: currentUser?.business_id
+        }}
+      />
+
       {/* Main Content - Menu (Right) and Cart (Left) */}
       <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] overflow-hidden">
 
@@ -2346,6 +2455,7 @@ const MenuOrderingInterface = () => {
               onInitiatePayment={handleInitiatePayment}
               onToggleDelay={handleToggleDelay}
               onAddCustomerDetails={handleAddCustomerDetails}
+              onSetDelivery={handleSetDelivery}
               orderNumber={isEditMode && editingOrderData?.orderNumber ? editingOrderData.orderNumber : null}
               isEditMode={isEditMode}
               editingOrderData={editingOrderData}

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, UserPlus, Check, Phone, User } from 'lucide-react';
+import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, UserPlus, Check, Phone, User, Truck } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
@@ -151,6 +151,7 @@ const SmartCart = ({
     onInitiatePayment,
     onToggleDelay,
     onAddCustomerDetails,
+    onSetDelivery, // NEW: Handler for delivery address
     className = '',
     isEditMode = false,
     editingOrderData,
@@ -334,7 +335,7 @@ const SmartCart = ({
             {/* Header */}
             <div className="p-4 border-b border-gray-100 bg-white z-10 shadow-sm">
                 {/* Single row header */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
 
                     {/* Logic: If name is 'Anonymous Guest', treat as no customer */}
                     {(() => {
@@ -357,13 +358,13 @@ const SmartCart = ({
                                 {showAddButtons ? (
                                     <>
                                         {/* Phone Button */}
-                                        {!isValidPhone && onAddCustomerDetails && (
+                                        {onAddCustomerDetails && (
                                             <button
                                                 onClick={() => onAddCustomerDetails('phone')}
-                                                className="px-4 py-2 rounded-xl bg-orange-500 text-white shadow-md hover:bg-orange-600 transition-all font-bold text-sm flex items-center gap-2 flex-shrink-0"
+                                                className="px-4 py-2.5 rounded-lg bg-orange-500 text-white shadow-sm hover:bg-orange-600 transition-all font-bold text-sm flex items-center gap-1.5"
                                             >
                                                 <Phone size={16} />
-                                                <span>+טלפון</span>
+                                                <span>טלפון</span>
                                             </button>
                                         )}
 
@@ -371,10 +372,21 @@ const SmartCart = ({
                                         {isAnonymous && onAddCustomerDetails && (
                                             <button
                                                 onClick={() => onAddCustomerDetails('name')}
-                                                className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 transition-all font-bold text-sm flex items-center gap-2 flex-shrink-0"
+                                                className="px-4 py-2.5 rounded-lg bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 transition-all font-bold text-sm flex items-center gap-1.5"
                                             >
                                                 <User size={16} />
-                                                <span>+שם</span>
+                                                <span>שם</span>
+                                            </button>
+                                        )}
+
+                                        {/* Delivery Button - NEW */}
+                                        {onSetDelivery && (
+                                            <button
+                                                onClick={() => onSetDelivery()}
+                                                className="px-4 py-2.5 rounded-lg bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200 transition-all font-bold text-sm flex items-center gap-1.5"
+                                            >
+                                                <Truck size={16} />
+                                                <span>משלוח</span>
                                             </button>
                                         )}
 
@@ -400,7 +412,7 @@ const SmartCart = ({
 
                                         {onAddCustomerDetails && (
                                             <button
-                                                onClick={() => onAddCustomerDetails('phone-then-name')}
+                                                onClick={() => onAddCustomerDetails('phone')}
                                                 className="p-2 bg-gray-50 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
                                             >
                                                 <Edit2 size={16} />
@@ -414,13 +426,13 @@ const SmartCart = ({
                                     {onToggleSoldierDiscount && !isRestrictedMode && (
                                         <button
                                             onClick={onToggleSoldierDiscount}
-                                            className={`px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition-all ${soldierDiscountEnabled
-                                                ? 'bg-blue-600 text-white shadow-md'
+                                            className={`px-4 py-2.5 rounded-lg font-bold text-sm flex items-center gap-1.5 transition-all ${soldierDiscountEnabled
+                                                ? 'bg-blue-600 text-white shadow-sm'
                                                 : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100'
                                                 }`}
                                         >
                                             <span>🎖️</span>
-                                            <span>{soldierDiscountEnabled ? 'חייל ✓' : '+חייל'}</span>
+                                            <span>{soldierDiscountEnabled ? 'חייל✓' : 'חייל'}</span>
                                         </button>
                                     )}
                                 </div>

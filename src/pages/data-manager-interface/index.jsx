@@ -30,7 +30,7 @@ const ManagerDashboard = () => {
       const accessLevel = (currentUser.access_level || '').toLowerCase();
       if (accessLevel !== 'admin' && accessLevel !== 'manager' && !currentUser.is_admin) {
         // If user somehow got here without being manager
-        // navigate('/mode-selection');
+        navigate('/mode-selection');
       }
     }
   }, [currentUser, navigate]);
@@ -164,58 +164,13 @@ const ManagerDashboard = () => {
               )}
             </button>
 
-            {/* Surprise Fireworks Button */}
+            {/* Maya AI Assistant Button */}
             <button
-              onClick={() => {
-                // Create fireworks container
-                const container = document.createElement('div');
-                container.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden;';
-                document.body.appendChild(container);
-
-                // Create multiple fireworks
-                const colors = ['#ff0', '#f0f', '#0ff', '#f00', '#0f0', '#00f', '#ff6b6b', '#4ecdc4', '#ffe66d'];
-                for (let i = 0; i < 50; i++) {
-                  setTimeout(() => {
-                    const firework = document.createElement('div');
-                    const x = Math.random() * window.innerWidth;
-                    const y = Math.random() * window.innerHeight;
-                    const color = colors[Math.floor(Math.random() * colors.length)];
-                    const size = 4 + Math.random() * 8;
-                    firework.style.cssText = `
-                      position:absolute;
-                      left:${x}px;
-                      top:${y}px;
-                      width:${size}px;
-                      height:${size}px;
-                      background:${color};
-                      border-radius:50%;
-                      box-shadow: 0 0 ${size * 2}px ${color}, 0 0 ${size * 4}px ${color};
-                      animation: firework-pop 1s ease-out forwards;
-                    `;
-                    container.appendChild(firework);
-                  }, i * 30);
-                }
-
-                // Add animation style
-                if (!document.getElementById('firework-style')) {
-                  const style = document.createElement('style');
-                  style.id = 'firework-style';
-                  style.textContent = `
-                    @keyframes firework-pop {
-                      0% { transform: scale(0); opacity: 1; }
-                      50% { transform: scale(1.5); opacity: 1; }
-                      100% { transform: scale(0.5) translateY(-100px); opacity: 0; }
-                    }
-                  `;
-                  document.head.appendChild(style);
-                }
-
-                // Cleanup after animation
-                setTimeout(() => container.remove(), 2500);
-              }}
-              className="flex items-center justify-center w-10 h-10 rounded-xl transition-all border shadow-sm bg-gradient-to-br from-pink-500 to-yellow-500 hover:from-pink-400 hover:to-yellow-400 border-pink-400/50 hover:scale-110"
+              onClick={() => navigate('/maya')}
+              className="flex items-center justify-center w-10 h-10 rounded-xl transition-all border shadow-sm bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 border-purple-400/50 hover:scale-110"
+              title="מאיה - העוזרת הדיגיטלית"
             >
-              <span className="text-lg">🎉</span>
+              <span className="text-lg">🌸</span>
             </button>
           </div>
 

@@ -375,7 +375,8 @@ const KDSScrollContainer = ({
 
 const Header = ({
   onRefresh, isLoading, lastUpdated, onUndoLastAction, canUndo,
-  viewMode, setViewMode, selectedDate, setSelectedDate
+  viewMode, setViewMode, selectedDate, setSelectedDate,
+  showPending, setShowPending
 }) => {
   const navigate = useNavigate();
 
@@ -429,6 +430,16 @@ const Header = ({
             <History size={16} /> היסטוריה
           </button>
         </div>
+
+        {/* Pending Orders Toggle */}
+        <button
+          onClick={() => setShowPending(!showPending)}
+          className={`px-3 py-1.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all border ${showPending ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-400 border-slate-200 hover:text-slate-600'}`}
+          title={showPending ? 'הסתר הזמנות ממתינות' : 'הצג הזמנות ממתינות (משלוחים)'}
+        >
+          <Package size={16} />
+          {showPending ? 'ממתינות ✓' : 'ממתינות'}
+        </button>
 
         {/* Refresh Button */}
         <button
@@ -500,6 +511,9 @@ const KdsScreen = () => {
   } = useKDSData();
 
   const [newOrderIds, setNewOrderIds] = useState(new Set());
+  // Toggle to show/hide pending orders (e.g., delivery orders awaiting acknowledgment)
+  // Default: ON - show pending orders so staff can acknowledge them
+  const [showPending, setShowPending] = useState(true);
 
   // Multi-step status update with potential popup
   const handleStatusUpdate = async (orderId, currentStatus) => {
@@ -757,83 +771,92 @@ const KdsScreen = () => {
           setViewMode={setViewMode}
           selectedDate={selectedDate}
           setSelectedDate={setSelectedDate}
+          showPending={showPending}
+          setShowPending={setShowPending}
         />
 
         {/* View Content */}
         <KDSErrorBoundary>
-          {viewMode === 'active' ? (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <KDSScrollContainer
-                title="בטיפול"
-                orders={currentOrders}
-                colorClass="border-b-4 border-gray-200 bg-slate-100/50"
-                badgeClass="bg-white/90 border border-gray-200 text-slate-600"
-              >
-                {currentOrders.map(order => (
-                  <motion.div
-                    key={order.id}
-                    layout="position"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{
-                      layout: { type: "spring", stiffness: 300, damping: 30 },
-                      opacity: { duration: 0.2 },
-                      scale: { duration: 0.2 }
-                    }}
-                    className="flex-shrink-0 kds-card-item"
-                  >
-                    <OrderCard
-                      key={order.id} // RELIABLE STABLE KEY
-                      order={order}
-                      glowClass={newOrderIds.has(order.id) ? 'glow-active' : ''}
-                      onOrderStatusUpdate={handleStatusUpdate}
-                      onPaymentCollected={handlePaymentCollected}
-                      onFireItems={handleFireItems}
-                      onReadyItems={handleReadyItems}
-                      onEditOrder={handleEditOrder}
-                      onCancelOrder={handleCancelOrder}
-                      onRefresh={forceRefresh}
-                    />
-                  </motion.div>
-                ))}
-              </KDSScrollContainer>
+          {viewMode === 'active' ? (() => {
+            // Filter pending orders based on toggle
+            const filteredCurrentOrders = showPending
+              ? currentOrders
+              : currentOrders.filter(o => o.orderStatus !== 'pending');
 
-              <KDSScrollContainer
-                title="מוכן למסירה"
-                orders={completedOrders}
-                colorClass="bg-green-50/30"
-                badgeClass="bg-green-100 border border-green-200 text-green-700"
-              >
-                {completedOrders.map(order => (
-                  <motion.div
-                    key={order.id}
-                    layout="position"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{
-                      layout: { type: "spring", stiffness: 300, damping: 30 },
-                      opacity: { duration: 0.2 },
-                      scale: { duration: 0.2 }
-                    }}
-                    className="flex-shrink-0 kds-card-item"
-                  >
-                    <OrderCard
-                      key={order.id} // RELIABLE STABLE KEY
-                      order={order} isReady={true}
-                      glowClass={newOrderIds.has(order.id) ? 'glow-ready' : ''}
-                      onOrderStatusUpdate={handleStatusUpdate}
-                      onPaymentCollected={handlePaymentCollected}
-                      onEditOrder={handleEditOrder}
-                      onCancelOrder={handleCancelOrder}
-                      onRefresh={forceRefresh}
-                    />
-                  </motion.div>
-                ))}
-              </KDSScrollContainer>
-            </div>
-          ) : (
+            return (
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <KDSScrollContainer
+                  title="בטיפול"
+                  orders={filteredCurrentOrders}
+                  colorClass="border-b-4 border-gray-200 bg-slate-100/50"
+                  badgeClass="bg-white/90 border border-gray-200 text-slate-600"
+                >
+                  {filteredCurrentOrders.map(order => (
+                    <motion.div
+                      key={order.id}
+                      layout="position"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{
+                        layout: { type: "spring", stiffness: 300, damping: 30 },
+                        opacity: { duration: 0.2 },
+                        scale: { duration: 0.2 }
+                      }}
+                      className="flex-shrink-0 kds-card-item"
+                    >
+                      <OrderCard
+                        key={order.id} // RELIABLE STABLE KEY
+                        order={order}
+                        glowClass={newOrderIds.has(order.id) ? 'glow-active' : ''}
+                        onOrderStatusUpdate={handleStatusUpdate}
+                        onPaymentCollected={handlePaymentCollected}
+                        onFireItems={handleFireItems}
+                        onReadyItems={handleReadyItems}
+                        onEditOrder={handleEditOrder}
+                        onCancelOrder={handleCancelOrder}
+                        onRefresh={forceRefresh}
+                      />
+                    </motion.div>
+                  ))}
+                </KDSScrollContainer>
+
+                <KDSScrollContainer
+                  title="מוכן למסירה"
+                  orders={completedOrders}
+                  colorClass="bg-green-50/30"
+                  badgeClass="bg-green-100 border border-green-200 text-green-700"
+                >
+                  {completedOrders.map(order => (
+                    <motion.div
+                      key={order.id}
+                      layout="position"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{
+                        layout: { type: "spring", stiffness: 300, damping: 30 },
+                        opacity: { duration: 0.2 },
+                        scale: { duration: 0.2 }
+                      }}
+                      className="flex-shrink-0 kds-card-item"
+                    >
+                      <OrderCard
+                        key={order.id} // RELIABLE STABLE KEY
+                        order={order} isReady={true}
+                        glowClass={newOrderIds.has(order.id) ? 'glow-ready' : ''}
+                        onOrderStatusUpdate={handleStatusUpdate}
+                        onPaymentCollected={handlePaymentCollected}
+                        onEditOrder={handleEditOrder}
+                        onCancelOrder={handleCancelOrder}
+                        onRefresh={forceRefresh}
+                      />
+                    </motion.div>
+                  ))}
+                </KDSScrollContainer>
+              </div>
+            );
+          })() : (
             <div className="flex-1 relative bg-purple-50/30 flex flex-col min-h-0 pb-safe">
               {/* History List - Horizontal Scroll similar to active */}
               <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-2 pt-2 pb-2 custom-scrollbar">
