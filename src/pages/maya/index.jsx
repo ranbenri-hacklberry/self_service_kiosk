@@ -152,12 +152,14 @@ ${topCustomers}
 ${JSON.stringify(customerMap)}
 `;
 
+            const custLines = custRes.data?.map(c => `- ${c.name} (${c.phone_number}): ☕️ ${c.loyalty_coffee_count}`).join('\n') || 'אין לקוחות רשומים';
+
             setContextData(prev => ({
                 ...prev,
-                salesSummary: finalSummary,
-                status: { ...prev.status, sales: 'success' },
-                debugInfo: `${totalOrders} הזמנות (₪${weeklyRevenue.toFixed(0)})`,
-                lastUpdate: new Date().toLocaleTimeString()
+                inventoryDetails: invLines,
+                recentLogs: logLines,
+                customerDirectory: custLines,
+                status: { ...prev.status, inventory: 'success' }
             }));
         } catch (e) {
             setContextData(prev => ({ ...prev, status: { ...prev.status, sales: 'error' } }));
@@ -165,10 +167,11 @@ ${JSON.stringify(customerMap)}
 
         // 2. Inventory Intelligence (Items + Logs + Employees)
         try {
-            const [empRes, invRes, logsRes] = await Promise.all([
+            const [empRes, invRes, logsRes, custRes] = await Promise.all([
                 supabase.from('employees').select('id, name').eq('business_id', currentUser.business_id),
                 supabase.from('inventory_items').select('*').eq('business_id', currentUser.business_id).order('name'),
-                supabase.from('inventory_logs').select('*, inventory_items(name)').eq('business_id', currentUser.business_id).order('created_at', { ascending: false }).limit(15)
+                supabase.from('inventory_logs').select('*, inventory_items(name)').eq('business_id', currentUser.business_id).order('created_at', { ascending: false }).limit(15),
+                supabase.from('customers').select('name, phone_number, loyalty_coffee_count').limit(100)
             ]);
 
             const empMap = {};
@@ -246,6 +249,9 @@ ${contextData.inventoryDetails}
 
 === 📜 פעולות מלאי אחרונות (Logs) ===
 ${contextData.recentLogs}
+
+=== 📒 ספר לקוחות רשומים (Directory) ===
+${contextData.customerDirectory}
 
 === 📝 הנחיות ===
 1. עני בעברית רהוטה ומקצועית.
