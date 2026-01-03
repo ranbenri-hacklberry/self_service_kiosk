@@ -152,20 +152,19 @@ ${topCustomers}
 ${JSON.stringify(customerMap)}
 `;
 
-            const custLines = custRes.data?.map(c => `- ${c.name} (${c.phone_number}): ☕️ ${c.loyalty_coffee_count}`).join('\n') || 'אין לקוחות רשומים';
-
             setContextData(prev => ({
                 ...prev,
-                inventoryDetails: invLines,
-                recentLogs: logLines,
-                customerDirectory: custLines,
-                status: { ...prev.status, inventory: 'success' }
+                salesSummary: finalSummary,
+                status: { ...prev.status, sales: 'success' },
+                debugInfo: `${totalOrders} הזמנות (₪${weeklyRevenue.toFixed(0)})`,
+                lastUpdate: new Date().toLocaleTimeString()
             }));
         } catch (e) {
+            console.error('Sales fetch error:', e);
             setContextData(prev => ({ ...prev, status: { ...prev.status, sales: 'error' } }));
         }
 
-        // 2. Inventory Intelligence (Items + Logs + Employees)
+        // 2. Inventory Intelligence (Items + Logs + Employees + Customers)
         try {
             const [empRes, invRes, logsRes, custRes] = await Promise.all([
                 supabase.from('employees').select('id, name').eq('business_id', currentUser.business_id),
@@ -193,13 +192,17 @@ ${JSON.stringify(customerMap)}
                 return `- [${date}] עדכון ידני: ${itemName} שונה ל-${l.quantity}. בוצע ע"י: ${user}.`;
             }).join('\n') || 'אין פעולות מלאי בתקופה האחרונה';
 
+            const custLines = custRes.data?.map(c => `- ${c.name} (${c.phone_number}): ☕️ ${c.loyalty_coffee_count}`).join('\n') || 'אין לקוחות רשומים';
+
             setContextData(prev => ({
                 ...prev,
                 inventoryDetails: invLines,
                 recentLogs: logLines,
+                customerDirectory: custLines,
                 status: { ...prev.status, inventory: 'success' }
             }));
         } catch (e) {
+            console.error('Inventory/Customer fetch error:', e);
             setContextData(prev => ({ ...prev, status: { ...prev.status, inventory: 'error' } }));
         }
 
