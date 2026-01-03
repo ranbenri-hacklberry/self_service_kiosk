@@ -70,7 +70,7 @@ const ManagerHeader = ({ activeTab, onTabChange, currentUser, isImpersonating, s
                                     key={item.id}
                                     onClick={() => handleNavClick(item)}
                                     className={`
-                    relative flex flex-col items-center justify-center w-20 sm:w-24 h-12 rounded-xl transition-all duration-300 gap-1 overflow-hidden
+                    relative flex flex-col items-center justify-center w-14 sm:w-20 md:w-24 h-12 rounded-xl transition-all duration-300 gap-1 overflow-hidden
                     ${isActive && !item.isAI
                                             ? 'bg-white text-slate-900 shadow-lg shadow-white/10 ring-1 ring-white/50'
                                             : item.isAI && isActive

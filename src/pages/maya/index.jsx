@@ -5,7 +5,7 @@ import Icon from '../../components/AppIcon';
 import ManagerHeader from '../../components/manager/ManagerHeader';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { Send, Mic, MicOff, Coffee, TrendingUp, Users, Settings, RefreshCw, Loader2, BookOpen, Calendar, Package, ClipboardList } from 'lucide-react';
+import { Send, Mic, MicOff, Coffee, TrendingUp, Users, Settings, RefreshCw, Loader2, BookOpen, Calendar, Package, ClipboardList, Copy as CopyIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -221,7 +221,21 @@ ${JSON.stringify(customerMap)}
         setHistoryLoading(true);
         supabase.from('maya_chat_history').select('*').eq('employee_id', currentUser.id)
             .order('created_at', { ascending: false }).limit(50) // Get NEWEST 50
-            .then(({ data }) => { if (data) setMessages(data.reverse().map(m => ({ id: m.id, role: m.role, content: m.content }))); })
+            .then(({ data }) => {
+                if (data && data.length > 0) {
+                    // Sorting locally to be absolutely sure: Oldest first (ascending)
+                    // If created_at is identical, use ID as tiebreaker (assuming serial or sortable in some way, or at least consistent)
+                    const sorted = data.sort((a, b) => {
+                        const timeA = new Date(a.created_at).getTime();
+                        const timeB = new Date(b.created_at).getTime();
+                        if (timeA !== timeB) return timeA - timeB; // Ascending time
+                        return a.role === 'user' ? -1 : 1; // User message always comes before assistant if same millisecond
+                    });
+                    setMessages(sorted.map(m => ({ id: m.id, role: m.role, content: m.content, created_at: m.created_at })));
+                } else {
+                    setMessages([]); // Clear local state if DB is empty
+                }
+            })
             .finally(() => setHistoryLoading(false));
     }, [currentUser?.id]);
 
@@ -263,12 +277,12 @@ ${contextData.customerDirectory}
    - **בישול:** את שפית בנשמה. תמיד שמחה לתת טיפים ומתכונים.
    - **צמחים:** את בוטנאית חובבת מושבעת. יודעת הכל על גידול צמחי בית וגינה. כששואלים על צמחים, תני מדריכים מפורטים (אור, מים, דישון) באהבה גדולה.
 4. **פלרטוט:** אם מנסים לפלרטט איתך, את זורמת בקלילות ובצחוק להודעה או שתיים, אבל אז חותכת בהומור ומחזירה את השיחה לעניינים ("אוקיי, מספיק שטויות, בוא נחזור לעבודה 😉").
-5. **זיהוי מגדרי:** בתחילת השיחה, שאלי איך לקרוא למשתמש ותנסי לנחש את המגדר לפי השם (למשל, "דני" -> זכר, "דנה" -> נקבה). התאימי את הפנייה שלך בהתאם. אם לא בטוחה, שאלי בנימוס.` },
+6. **זיהוי מגדרי:** בתחילת השיחה, שאלי איך לקרוא למשתמש ותנסי לנחש את המגדר לפי השם (למשל, "דני" -> זכר, "דנה" -> נקבה). התאימי את הפנייה שלך בהתאם. אם לא בטוחה, שאלי בנימוס.
 
 === 📝 הנחיות מענה ===
-                        - השתמשי במידע למעלה כדי לענות במדויק על שאלות עסקיות.
+- השתמשי במידע למעלה כדי לענות במדויק על שאלות עסקיות.
 - אם שואלים על צמח מסוים, תני הסבר גידול מלא ומקצועי.
-- היי תמציתית ומדויקת בביזנס, ומרחיבה ומעשירה בנושאי לייף - סטייל(צמחים / בישול).` },
+- היי תמציתית ומדויקת בביזנס, ומרחיבה ומעשירה בנושאי לייף-סטייל (צמחים/בישול).` },
                         ...messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
                         { role: 'user', content: userInput }
                     ],
@@ -294,7 +308,13 @@ ${contextData.customerDirectory}
                         .limit(50);
 
                     if (latestMsgs) {
-                        setMessages(latestMsgs.reverse().map(m => ({ id: m.id, role: m.role, content: m.content })));
+                        const sorted = latestMsgs.sort((a, b) => {
+                            const timeA = new Date(a.created_at).getTime();
+                            const timeB = new Date(b.created_at).getTime();
+                            if (timeA !== timeB) return timeA - timeB;
+                            return a.role === 'user' ? -1 : 1;
+                        });
+                        setMessages(sorted.map(m => ({ id: m.id, role: m.role, content: m.content, created_at: m.created_at })));
                     }
                     setIsLoading(false);
                     return; // Exit early as we've updated state from DB
@@ -376,14 +396,14 @@ ${contextData.customerDirectory}
                 <div className="flex items-center justify-between mb-4 px-3 py-2 bg-white/60 rounded-2xl border border-slate-200/50 backdrop-blur-md shadow-sm">
                     <div className="flex items-center gap-2.5">
                         <div className="relative">
-                            <div className={`w - 2.5 h - 2.5 rounded - full ${ isContextLoading? 'bg-amber-400 animate-pulse': 'bg-emerald-500 shadow-sm' }`} />
+                            <div className={`w-2.5 h-2.5 rounded-full ${isContextLoading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500 shadow-sm'}`} />
                         </div>
                         <div className="flex flex-col">
                             <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none">
-                                {MAYA_VERSION} | {isContextLoading ? 'מעדכנת...' : `עודכן: ${ contextData.lastUpdate || 'כעת' }`}
+                                {MAYA_VERSION} | {isContextLoading ? 'מעדכנת...' : `עודכן: ${contextData.lastUpdate || 'כעת'}`}
                             </span>
                             <span className="text-[9px] text-slate-400 font-medium mt-0.5">
-                                {contextData.debugInfo} | {Object.entries(contextData.status).map(([k, v]) => `${ k }: ${ v === 'success' ? '✅' : '⏳'}`).join(' ')}
+                                {contextData.debugInfo} | {Object.entries(contextData.status).map(([k, v]) => `${k}: ${v === 'success' ? '✅' : '⏳'}`).join(' ')}
                             </span>
                         </div>
                     </div>
@@ -418,9 +438,18 @@ ${contextData.customerDirectory}
 
                     <AnimatePresence mode="popLayout">
                         {messages.map((msg) => (
-                            <motion.div key={msg.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={`flex ${ msg.role === 'user' ? 'justify-start' : 'justify-end' }`}>
-                                <div className={`relative max - w - [85 %] p - 4 rounded - [1.5rem] shadow - sm border text - sm leading - relaxed ${ msg.role === 'user' ? 'bg-slate-900 border-slate-800 text-white rounded-bl-none' : 'bg-white border-slate-100 text-slate-800 rounded-br-none shadow-indigo-100/10' }`}>
+                            <motion.div key={msg.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'} group`}>
+                                <div className={`relative max-w-[85%] py-1.5 px-3 rounded-[1.5rem] shadow-sm border text-sm leading-snug ${msg.role === 'user' ? 'bg-slate-900 border-slate-800 text-white rounded-bl-none' : 'bg-white border-slate-100 text-slate-800 rounded-br-none shadow-indigo-100/10'}`}>
                                     <div className="markdown-content text-right" dir="rtl"><ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown></div>
+                                    {msg.role === 'assistant' && (
+                                        <button
+                                            onClick={() => navigator.clipboard.writeText(msg.content)}
+                                            className="absolute bottom-1 left-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-400 hover:text-indigo-600"
+                                            title="העתק תשובה"
+                                        >
+                                            <CopyIcon size={10} />
+                                        </button>
+                                    )}
                                 </div>
                             </motion.div>
                         ))}
@@ -430,7 +459,7 @@ ${contextData.customerDirectory}
                         <div className="flex justify-end">
                             <div className="bg-white border border-indigo-50 p-3 rounded-2xl shadow-sm flex items-center gap-2">
                                 <span className="text-[11px] font-bold text-indigo-400 animate-pulse italic">מאיה מצליבה נתונים...</span>
-                                <div className="flex gap-1">{[0, 1, 2].map(i => <div key={i} className="w-1 h-1 bg-indigo-300 rounded-full animate-bounce" style={{ animationDelay: `${ i * 0.1}s` }} />)}</div>
+                                <div className="flex gap-1">{[0, 1, 2].map(i => <div key={i} className="w-1 h-1 bg-indigo-300 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.1}s` }} />)}</div>
                             </div>
                         </div>
                     )}
@@ -439,8 +468,12 @@ ${contextData.customerDirectory}
 
                 {/* Input Area */}
                 <div className="p-2 rounded-[2rem] bg-white border border-slate-200 shadow-2xl flex items-center gap-2 relative z-50">
-                    <motion.button whileTap={{ scale: 0.9 }} onClick={() => sendMessage()} disabled={!inputText.trim() || isLoading} className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-lg hover:bg-indigo-600 transition-colors">
-                        <Send size={18} className="rotate-180" />
+                    <motion.button
+                        whileTap={{ scale: 0.9 }}
+                        onClick={toggleListening}
+                        className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-slate-50 text-slate-400 hover:bg-slate-200'}`}
+                    >
+                        {isListening ? <MicOff size={18} /> : <Mic size={18} />}
                     </motion.button>
                     <input
                         type="text"
@@ -448,22 +481,16 @@ ${contextData.customerDirectory}
                         onChange={e => setInputText(e.target.value)}
                         onKeyPress={e => e.key === 'Enter' && sendMessage()}
                         placeholder={isListening ? "מקשיבה לך..." : "בואו נדבר על העסק..."}
-                        className={`flex - 1 h - 12 bg - transparent text - right text - slate - 800 focus: outline - none text - sm px - 4 font - bold ${ isListening? 'text-indigo-500 placeholder-indigo-300': '' }`}
+                        className={`flex-1 h-12 bg-transparent text-right text-slate-800 focus:outline-none text-sm px-4 font-bold ${isListening ? 'text-indigo-500 placeholder-indigo-300' : ''}`}
                         dir="rtl"
                     />
-                    <motion.button
-                        whileTap={{ scale: 0.9 }}
-                        onClick={toggleListening}
-                        className={`w - 12 h - 12 rounded - 2xl flex items - center justify - center shadow - lg transition - all ${ isListening? 'bg-red-500 text-white animate-pulse': 'bg-slate-50 text-slate-400 hover:bg-slate-200' }`}
-                    >
-                        {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                    <motion.button whileTap={{ scale: 0.9 }} onClick={() => sendMessage()} disabled={!inputText.trim() || isLoading} className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-lg hover:bg-indigo-600 transition-colors">
+                        <Send size={18} className="rotate-180" />
                     </motion.button>
                 </div>
             </div>
 
-            <style>{`.custom - scrollbar:: -webkit - scrollbar { width: 3px; }.custom - scrollbar:: -webkit - scrollbar - thumb { background: #E2E8F0; border- radius: 10px;
-            }.markdown - content p { margin- bottom: 0.4rem;
-        }`}</style>
+            <style>{`.custom-scrollbar::-webkit-scrollbar { width: 3px; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; } .markdown-content p { margin-bottom: 0.25rem; }`}</style>
         </div>
     );
 };
