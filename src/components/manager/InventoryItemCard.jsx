@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, ChevronDown, Minus, Plus, ShoppingCart, Save, History, User, AlertCircle } from 'lucide-react';
+import { Package, ChevronDown, Minus, Plus, ShoppingCart, Save, History, User, AlertCircle, RotateCcw } from 'lucide-react';
 
 const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty = 0 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -10,6 +11,9 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
     const [hasOrderChange, setHasOrderChange] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
+
+    // Backup for restore on error
+    const originalStock = useRef(Number(item.current_stock) || 0);
 
     // Get step values with safe parsing
     const countStep = useMemo(() => {
@@ -42,7 +46,9 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
     // Reset when item changes
     useEffect(() => {
         const val = parseFloat(item.current_stock);
-        setCurrentStock(isNaN(val) ? 0 : val);
+        const safeVal = isNaN(val) ? 0 : val;
+        setCurrentStock(safeVal);
+        originalStock.current = safeVal;
         setHasStockChange(false);
         setError(null);
     }, [item.current_stock]);
@@ -85,17 +91,27 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
         setHasOrderChange(true);
     }, [orderQty, orderStep, minOrder]);
 
-    // Save stock with error handling
+    // Restore to original value
+    const handleRestore = useCallback(() => {
+        setCurrentStock(originalStock.current);
+        setHasStockChange(false);
+        setError(null);
+    }, []);
+
+    // Save stock with error handling and restore capability
     const saveStock = useCallback(async () => {
         if (!hasStockChange) return;
         setSaving(true);
         setError(null);
+        const backupValue = currentStock;
         try {
             if (onStockChange) await onStockChange(item.id, currentStock);
+            originalStock.current = currentStock; // Update backup on success
             setHasStockChange(false);
         } catch (e) {
             console.error('Save failed:', e);
-            setError('שגיאה בשמירה');
+            setError('שגיאה בשמירה - לחץ לשחזור');
+            // Keep the value but show error
         } finally {
             setSaving(false);
         }
@@ -202,11 +218,20 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
                                 </div>
                             </div>
 
-                            {/* Error Display */}
+                            {/* Error Display with Restore Button */}
                             {error && (
-                                <div className="flex items-center gap-2 text-xs text-red-500 bg-red-50 px-2 py-1 rounded">
-                                    <AlertCircle size={12} />
-                                    <span>{error}</span>
+                                <div className="flex items-center justify-between gap-2 text-xs text-red-500 bg-red-50 px-2 py-1.5 rounded">
+                                    <div className="flex items-center gap-2">
+                                        <AlertCircle size={12} />
+                                        <span>{error}</span>
+                                    </div>
+                                    <button
+                                        onClick={handleRestore}
+                                        className="flex items-center gap-1 px-2 py-1 bg-red-100 hover:bg-red-200 rounded text-red-600 transition"
+                                    >
+                                        <RotateCcw size={10} />
+                                        שחזר
+                                    </button>
                                 </div>
                             )}
 
@@ -271,6 +296,32 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
             </AnimatePresence>
         </div>
     );
+};
+
+// PropTypes for type safety
+InventoryItemCard.propTypes = {
+    item: PropTypes.shape({
+        id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+        name: PropTypes.string.isRequired,
+        current_stock: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        unit: PropTypes.string,
+        count_step: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        order_step: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        min_order: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        low_stock_alert: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        last_counted_at: PropTypes.string,
+        last_counted_by_name: PropTypes.string,
+        last_count_source: PropTypes.oneOf(['manual', 'order_receipt', 'order_deduction']),
+    }).isRequired,
+    onStockChange: PropTypes.func,
+    onOrderChange: PropTypes.func,
+    draftOrderQty: PropTypes.number,
+};
+
+InventoryItemCard.defaultProps = {
+    draftOrderQty: 0,
+    onStockChange: null,
+    onOrderChange: null,
 };
 
 export default React.memo(InventoryItemCard);

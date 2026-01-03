@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import PropTypes from 'prop-types';
 import SmartStepper from '../ui/SmartStepper';
 import { Package, AlertTriangle, Sparkles, Minus, Plus, ChevronDown, Check, Search } from 'lucide-react';
 
@@ -27,6 +28,15 @@ const TripleCheckCard = ({
 }) => {
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedQuery, setDebouncedQuery] = useState('');
+
+    // Debounce search query (300ms for iPad M1 performance)
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedQuery(searchQuery);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
 
     const hasOrderedVariance = orderedQty !== null && Math.abs((parseFloat(invoicedQty) || 0) - (parseFloat(orderedQty) || 0)) > 0.01;
     const hasActualVariance = Math.abs((parseFloat(actualQty) || 0) - (parseFloat(invoicedQty) || 0)) > 0.01;
@@ -71,12 +81,12 @@ const TripleCheckCard = ({
     const nameParts = item.name.split(' ');
     const isLongName = nameParts.length > 4;
 
-    // Get top 10 closest matching items from catalog
+    // Get top 10 closest matching items from catalog (uses debounced query for performance)
     const suggestedItems = useMemo(() => {
         if (!catalogItems.length) return [];
 
         const invoiceName = item.name.toLowerCase().trim();
-        const query = searchQuery.toLowerCase().trim();
+        const query = debouncedQuery.toLowerCase().trim();
 
         // Score each catalog item
         const scored = catalogItems.map(catItem => {
@@ -122,7 +132,7 @@ const TripleCheckCard = ({
             .filter(item => query ? item.score > 0 : true)
             .sort((a, b) => b.score - a.score)
             .slice(0, 10);
-    }, [catalogItems, item.name, searchQuery]);
+    }, [catalogItems, item.name, debouncedQuery]);
 
     const handleSelectCatalogItem = (selectedItem) => {
         if (onCatalogItemSelect) {
@@ -349,4 +359,36 @@ const TripleCheckCard = ({
     );
 };
 
-export default TripleCheckCard;
+// PropTypes for type safety
+TripleCheckCard.propTypes = {
+    item: PropTypes.shape({
+        id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        name: PropTypes.string.isRequired,
+        unit: PropTypes.string,
+    }).isRequired,
+    orderedQty: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    invoicedQty: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    actualQty: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    onActualChange: PropTypes.func,
+    unitPrice: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    catalogPrice: PropTypes.number,
+    catalogItemName: PropTypes.string,
+    catalogItemId: PropTypes.string,
+    isNew: PropTypes.bool,
+    countStep: PropTypes.number,
+    catalogItems: PropTypes.array,
+    onCatalogItemSelect: PropTypes.func,
+};
+
+TripleCheckCard.defaultProps = {
+    orderedQty: null,
+    catalogPrice: 0,
+    catalogItemName: null,
+    catalogItemId: null,
+    isNew: false,
+    countStep: 1,
+    catalogItems: [],
+    onCatalogItemSelect: null,
+};
+
+export default React.memo(TripleCheckCard);
