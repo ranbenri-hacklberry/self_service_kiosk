@@ -55,7 +55,6 @@ const MayaAssistant = () => {
         // 1. Sales Intelligence (RPC)
         try {
             const { data: salesRaw, error: salesError } = await supabase.rpc('get_sales_data', {
-                p_business_id: currentUser.business_id,
                 p_start_date: lastWeek.toISOString(),
                 p_end_date: new Date().toISOString()
             });
@@ -215,21 +214,59 @@ ${contextData.recentLogs}
 
     const toggleListening = () => {
         if (isListening) {
-            if (recognitionRef.current) recognitionRef.current.stop();
+            try {
+                if (recognitionRef.current) recognitionRef.current.stop();
+            } catch (e) { console.warn('Mic stop error:', e); }
             setIsListening(false);
             return;
         }
+
+        if (!navigator.onLine) {
+            setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: '❌ אין חיבור לאינטרנט. זיהוי קולי לא זמין.' }]);
+            return;
+        }
+
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) return;
-        const recognition = new SpeechRecognition();
-        recognition.lang = 'he-IL';
-        recognition.interimResults = true;
-        recognition.onstart = () => setIsListening(true);
-        recognition.onresult = (event) => setInputText(Array.from(event.results).map(r => r[0].transcript).join(''));
-        recognition.onerror = () => setIsListening(false);
-        recognition.onend = () => setIsListening(false);
-        recognitionRef.current = recognition;
-        recognition.start();
+        if (!SpeechRecognition) {
+            alert('הדפדפן שלך לא תומך בדיבור. נסה Chrome.');
+            return;
+        }
+
+        try {
+            const recognition = new SpeechRecognition();
+            recognition.lang = 'he-IL';
+            recognition.interimResults = true;
+            recognition.continuous = false; // Stop after one sentence for stability
+
+            recognition.onstart = () => setIsListening(true);
+
+            recognition.onresult = (event) => {
+                const transcript = Array.from(event.results)
+                    .map(r => r[0].transcript)
+                    .join('');
+                setInputText(transcript);
+            };
+
+            recognition.onerror = (event) => {
+                console.warn('Speech Rec Error:', event.error);
+                setIsListening(false);
+                let msg = 'שגיאה בזיהוי דיבור.';
+                if (event.error === 'not-allowed') msg = '🚫 גישה למיקרופון נחסמה. נא לאשר בדפדפן.';
+                if (event.error === 'network') msg = '📡 בעיית רשת בזיהוי הדיבור.';
+                if (event.error === 'no-speech') return; // Ignore silence
+
+                // Show error as a small toast or message (optional)
+                setInputText(''); // Clear partial input on error
+            };
+
+            recognition.onend = () => setIsListening(false);
+
+            recognitionRef.current = recognition;
+            recognition.start();
+        } catch (e) {
+            console.error('Speech Init Error:', e);
+            setIsListening(false);
+        }
     };
 
     return (

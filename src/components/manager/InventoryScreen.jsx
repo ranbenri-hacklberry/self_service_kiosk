@@ -466,8 +466,7 @@ const InventoryScreen = () => {
         p_items: rpcItems,
         p_order_id: receivingSession.orderId,
         p_supplier_id: receivingSession.supplierId,
-        p_notes: null,
-        p_business_id: currentUser.business_id
+        p_notes: null
       });
 
       if (error) throw error;
