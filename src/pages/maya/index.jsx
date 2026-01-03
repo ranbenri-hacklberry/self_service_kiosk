@@ -220,8 +220,8 @@ ${JSON.stringify(customerMap)}
         if (!currentUser?.id) return;
         setHistoryLoading(true);
         supabase.from('maya_chat_history').select('*').eq('employee_id', currentUser.id)
-            .order('created_at', { ascending: true }).limit(20)
-            .then(({ data }) => { if (data) setMessages(data.map(m => ({ id: m.id, role: m.role, content: m.content }))); })
+            .order('created_at', { ascending: false }).limit(50) // Get NEWEST 50
+            .then(({ data }) => { if (data) setMessages(data.reverse().map(m => ({ id: m.id, role: m.role, content: m.content }))); })
             .finally(() => setHistoryLoading(false));
     }, [currentUser?.id]);
 
@@ -284,16 +284,16 @@ ${contextData.customerDirectory}
                     { business_id: currentUser.business_id, employee_id: currentUser.id, role: 'assistant', content: reply }
                 ]);
 
-                // After insert, fetch the latest messages to strictly sync with DB state
+                // After insert, fetch the latest messages (descending) to get the newest ones, then reverse for display
                 if (!error) {
                     const { data: latestMsgs } = await supabase.from('maya_chat_history')
                         .select('*')
                         .eq('employee_id', currentUser.id)
-                        .order('created_at', { ascending: true })
-                        .limit(20);
+                        .order('created_at', { ascending: false }) // Get NEWEST 50
+                        .limit(50);
 
                     if (latestMsgs) {
-                        setMessages(latestMsgs.map(m => ({ id: m.id, role: m.role, content: m.content })));
+                        setMessages(latestMsgs.reverse().map(m => ({ id: m.id, role: m.role, content: m.content })));
                     }
                     setIsLoading(false);
                     return; // Exit early as we've updated state from DB
