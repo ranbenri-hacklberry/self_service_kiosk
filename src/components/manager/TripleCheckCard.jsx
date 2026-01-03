@@ -28,21 +28,24 @@ const TripleCheckCard = ({
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
-    const hasOrderedVariance = orderedQty !== null && Math.abs(invoicedQty - orderedQty) > 0.01;
-    const hasActualVariance = Math.abs(actualQty - invoicedQty) > 0.01;
-    const hasPriceVariance = catalogPrice > 0 && Math.abs(unitPrice - catalogPrice) > 0.1;
+    const hasOrderedVariance = orderedQty !== null && Math.abs((parseFloat(invoicedQty) || 0) - (parseFloat(orderedQty) || 0)) > 0.01;
+    const hasActualVariance = Math.abs((parseFloat(actualQty) || 0) - (parseFloat(invoicedQty) || 0)) > 0.01;
+    const hasPriceVariance = catalogPrice > 0 && Math.abs((parseFloat(unitPrice) || 0) - catalogPrice) > 0.1;
 
-    // Helper to format numbers (remove .00 for integers)
+    // Helper to format numbers (remove .00 for integers) - with NaN check
     const formatValue = (val) => {
         if (val === null || val === undefined) return '-';
         const num = parseFloat(val);
+        if (isNaN(num)) return '-';
         return num % 1 === 0 ? num.toString() : num.toFixed(2);
     };
 
-    // Helper to format quantities with units (1000g -> 1kg)
+    // Helper to format quantities with units (1000g -> 1kg) - with safe parsing
     const formatQtyWithUnit = (qty, unitStr) => {
         if (qty === null || qty === undefined) return '-';
         const num = parseFloat(qty);
+        if (isNaN(num)) return '-';
+
         const lowerUnit = (unitStr || '').toLowerCase().trim();
 
         // 1000g -> 1kg

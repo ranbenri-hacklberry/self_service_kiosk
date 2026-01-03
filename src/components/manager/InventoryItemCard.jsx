@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, ChevronDown, Minus, Plus, ShoppingCart, Save, History, User } from 'lucide-react';
+import { Package, ChevronDown, Minus, Plus, ShoppingCart, Save, History, User, AlertCircle } from 'lucide-react';
 
 const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty = 0 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -9,34 +9,58 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
     const [hasStockChange, setHasStockChange] = useState(false);
     const [hasOrderChange, setHasOrderChange] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
 
-    // Get step values from item
-    const countStep = item.count_step && item.count_step > 0 ? Number(item.count_step) : 1;
-    const orderStep = item.order_step && item.order_step > 0 ? Number(item.order_step) : 1;
-    const minOrder = item.min_order && item.min_order > 0 ? Number(item.min_order) : 1;
+    // Get step values with safe parsing
+    const countStep = useMemo(() => {
+        const val = parseFloat(item.count_step);
+        return isNaN(val) || val <= 0 ? 1 : val;
+    }, [item.count_step]);
+
+    const orderStep = useMemo(() => {
+        const val = parseFloat(item.order_step);
+        return isNaN(val) || val <= 0 ? 1 : val;
+    }, [item.order_step]);
+
+    const minOrder = useMemo(() => {
+        const val = parseFloat(item.min_order);
+        return isNaN(val) || val <= 0 ? 1 : val;
+    }, [item.min_order]);
 
     // Update info
     const lastCountDate = item.last_counted_at ? new Date(item.last_counted_at) : null;
     const lastCountedByName = item.last_counted_by_name || null;
     const lastCountSource = item.last_count_source || 'manual';
 
+    // Computed values with useMemo
+    const isLowStock = useMemo(() => {
+        const stock = parseFloat(currentStock) || 0;
+        const alert = parseFloat(item.low_stock_alert) || 5;
+        return stock <= alert;
+    }, [currentStock, item.low_stock_alert]);
+
     // Reset when item changes
     useEffect(() => {
-        setCurrentStock(Number(item.current_stock) || 0);
+        const val = parseFloat(item.current_stock);
+        setCurrentStock(isNaN(val) ? 0 : val);
         setHasStockChange(false);
+        setError(null);
     }, [item.current_stock]);
 
-    // Smart step for stock
-    const handleStockChange = (delta) => {
+    // Update orderQty when draftOrderQty changes
+    useEffect(() => {
+        setOrderQty(draftOrderQty);
+    }, [draftOrderQty]);
+
+    // Smart step for stock - useCallback for performance
+    const handleStockChange = useCallback((delta) => {
         const step = countStep;
         let newVal;
 
         if (delta > 0) {
-            // Step up - snap to next step
             const nearestAbove = Math.ceil(currentStock / step) * step;
             newVal = (Math.abs(currentStock - nearestAbove) < 0.001) ? nearestAbove + step : nearestAbove;
         } else {
-            // Step down - snap to previous step
             const nearestBelow = Math.floor(currentStock / step) * step;
             newVal = (Math.abs(currentStock - nearestBelow) < 0.001) ? nearestBelow - step : nearestBelow;
         }
@@ -44,10 +68,11 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
         newVal = Math.max(0, Math.round(newVal * 100) / 100);
         setCurrentStock(newVal);
         setHasStockChange(true);
-    };
+        setError(null);
+    }, [currentStock, countStep]);
 
-    // Handle order quantity change
-    const handleOrderChange = (delta) => {
+    // Handle order quantity change - useCallback
+    const handleOrderChange = useCallback((delta) => {
         let newVal;
         if (delta > 0) {
             newVal = orderQty === 0 ? minOrder : orderQty + orderStep;
@@ -58,37 +83,37 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
         newVal = Math.max(0, newVal);
         setOrderQty(newVal);
         setHasOrderChange(true);
-    };
+    }, [orderQty, orderStep, minOrder]);
 
-    // Save stock
-    const saveStock = async () => {
+    // Save stock with error handling
+    const saveStock = useCallback(async () => {
         if (!hasStockChange) return;
         setSaving(true);
+        setError(null);
         try {
             if (onStockChange) await onStockChange(item.id, currentStock);
             setHasStockChange(false);
         } catch (e) {
             console.error('Save failed:', e);
+            setError('שגיאה בשמירה');
         } finally {
             setSaving(false);
         }
-    };
+    }, [hasStockChange, onStockChange, item.id, currentStock]);
 
-    // Save order
-    const saveOrder = () => {
+    // Save order - useCallback
+    const saveOrder = useCallback(() => {
         if (onOrderChange) onOrderChange(item.id, orderQty);
         setHasOrderChange(false);
-    };
+    }, [onOrderChange, item.id, orderQty]);
 
-    const isLowStock = currentStock <= (item.low_stock_alert || 5);
-
-    // Get update source text
-    const getSourceText = () => {
+    // Get update source text - useMemo
+    const sourceText = useMemo(() => {
         if (lastCountSource === 'order_receipt') return 'קליטת הזמנה';
         if (lastCountSource === 'order_deduction') return 'הזמנת לקוח';
         if (lastCountedByName) return `ספירה ע״י ${lastCountedByName}`;
         return 'ספירה ידנית';
-    };
+    }, [lastCountSource, lastCountedByName]);
 
     return (
         <div className={`bg-white rounded-xl border transition-all ${isExpanded ? 'border-blue-200 shadow-md' : 'border-gray-100 shadow-sm'}`}>
@@ -177,13 +202,21 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
                                 </div>
                             </div>
 
+                            {/* Error Display */}
+                            {error && (
+                                <div className="flex items-center gap-2 text-xs text-red-500 bg-red-50 px-2 py-1 rounded">
+                                    <AlertCircle size={12} />
+                                    <span>{error}</span>
+                                </div>
+                            )}
+
                             {/* Update Info - Single Line */}
                             {lastCountDate && (
                                 <div className="flex items-center gap-2 text-[10px] text-gray-400 px-1">
                                     <History size={10} />
                                     <span>{lastCountDate.toLocaleDateString('he-IL')} {lastCountDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</span>
                                     <span>•</span>
-                                    <span className={lastCountSource !== 'manual' ? 'text-blue-500' : ''}>{getSourceText()}</span>
+                                    <span className={lastCountSource !== 'manual' ? 'text-blue-500' : ''}>{sourceText}</span>
                                 </div>
                             )}
 
