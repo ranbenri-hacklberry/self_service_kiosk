@@ -73,6 +73,8 @@ const DeliveryAddressModal = ({
 
             if (customer) {
                 console.log('✅ Customer found:', customer.name);
+                // Ensure consistent phone field naming
+                if (customer && !customer.phone) customer.phone = customer.phone_number;
                 setFoundCustomer(customer);
                 // Pre-fill fields
                 setCustomerName(customer.name || '');
@@ -122,29 +124,39 @@ const DeliveryAddressModal = ({
         if (isOpen) fetchSettings();
     }, [isOpen, initialData.businessId]);
 
-    // Initialize Modal State
+    // Initialize Modal State - ONLY ONCE when opened
+    const hasInitialized = useRef(false);
+
     useEffect(() => {
-        if (isOpen) {
-            // Apply initial data if exists
+        if (isOpen && !hasInitialized.current) {
+            console.log('🎬 Initializing Modal Data:', initialData);
             setCustomerName(initialData.name || '');
             setCustomerPhone(initialData.phone || '');
             setDeliveryAddress(initialData.address || '');
             setSelectedNotes([]);
             setFoundCustomer(initialData.customerId ? { id: initialData.customerId, name: initialData.name } : null);
 
-            // Determine starting step based on missing info
+            // Determine starting step
             if (!initialData.phone) {
                 setStep('phone');
             } else if (!initialData.name) {
-                // If we have phone but no name, try to lookup or go to name
                 if (initialData.phone.length >= 9) lookupCustomer(initialData.phone);
                 setStep('name');
             } else {
-                // Have both, go to address
                 setStep('address');
             }
+            hasInitialized.current = true;
+        } else if (!isOpen) {
+            hasInitialized.current = false;
         }
     }, [isOpen, initialData, lookupCustomer]);
+
+    // Proactive auto-lookup as user types
+    useEffect(() => {
+        if (step === 'phone' && customerPhone.length >= 10 && !isLookingUp && !foundCustomer) {
+            lookupCustomer(customerPhone);
+        }
+    }, [customerPhone, step, isLookingUp, foundCustomer, lookupCustomer]);
 
     // Auto-Focus Input Fields
     useEffect(() => {

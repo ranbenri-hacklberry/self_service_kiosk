@@ -31,7 +31,7 @@ export const processInvoiceWithGrok = async (imageBase64) => {
 For each item, provide the following fields:
 - name: The item name in Hebrew as it appears on the invoice.
 - category: A likely category for this item (e.g., חלבי, ירקות, מאפים).
-- unit: The unit of measurement (e.g., יח', ק"ג, ליטר, מארז).
+- unit: The unit of measurement (e.g., יח', ק"ג, ליטר, חבילה).
 - current_stock_added: The actual quantity of this item received in this invoice.
 - cost_per_unit: The base price per single unit (before VAT).
 - supplier_id: Match the supplier from this list: ${SUPPLIERS_LIST.map(s => `${s.name} (${s.id})`).join(', ')}. Return only the ID.

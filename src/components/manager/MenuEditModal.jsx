@@ -439,7 +439,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         try {
             // Use cost_per_unit instead of price
             let { data, error } = await supabase.from('inventory_items')
-                .select('id, name, unit, cost_per_unit, quantity_step')
+                .select('id, name, unit, cost_per_unit, quantity_step, recipe_step')
                 .eq('business_id', user.business_id)
                 .order('name');
             console.log('📦 Inventory fetched:', data?.length, 'items', error ? `Error: ${error.message}` : '');
@@ -2161,11 +2161,13 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                 const isKg = ['kg', 'kilo', 'ק"ג'].includes((comp.unit || '').toLowerCase().trim());
                                                 const gramsValue = getQuantityInGrams(comp.quantity, comp.unit);
 
-                                                // Dynamic Step Logic
+                                                // Dynamic Step Logic - Use recipe_step for recipe ingredients
                                                 const invItem = inventoryOptions.find(i => String(i.id) === String(comp.inventory_item_id));
                                                 let step = 1;
-                                                if (invItem?.quantity_step) {
-                                                    step = Number(invItem.quantity_step);
+                                                if (invItem?.recipe_step) {
+                                                    step = Number(invItem.recipe_step);
+                                                } else if (invItem?.quantity_step) {
+                                                    step = Number(invItem.quantity_step); // Fallback
                                                 } else {
                                                     step = isKg ? 10 : 1;
                                                 }
@@ -2313,7 +2315,9 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                                         const selectedInv = inventoryOptions.find(i => String(i.id) === String(newIngredient.inventory_item_id));
                                                                         const isKg = ['kg', 'kilo', 'ק"ג'].includes((selectedInv?.unit || '').toLowerCase().trim());
                                                                         let step = 1;
-                                                                        if (selectedInv?.quantity_step) {
+                                                                        if (selectedInv?.recipe_step) {
+                                                                            step = Number(selectedInv.recipe_step);
+                                                                        } else if (selectedInv?.quantity_step) {
                                                                             step = Number(selectedInv.quantity_step);
                                                                         } else {
                                                                             step = isKg ? 10 : 1;
@@ -2339,7 +2343,9 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                                         const selectedInv = inventoryOptions.find(i => String(i.id) === String(newIngredient.inventory_item_id));
                                                                         const isKg = ['kg', 'kilo', 'ק"ג'].includes((selectedInv?.unit || '').toLowerCase().trim());
                                                                         let step = 1;
-                                                                        if (selectedInv?.quantity_step) {
+                                                                        if (selectedInv?.recipe_step) {
+                                                                            step = Number(selectedInv.recipe_step);
+                                                                        } else if (selectedInv?.quantity_step) {
                                                                             step = Number(selectedInv.quantity_step);
                                                                         } else {
                                                                             step = isKg ? 10 : 1;

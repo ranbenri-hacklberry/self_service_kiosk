@@ -1,17 +1,20 @@
 import { useState } from 'react';
 import { compressAndToBase64, fileToBase64 } from '@/utils/imageUtils';
 import { processInvoiceWithGemini } from '@/services/geminiService';
+import { processInvoiceOCR } from '@/services/ocrService';
 import { uploadInvoiceToDrive } from '@/services/driveUploadService';
 
 /**
  * Hook to handle Invoice OCR flow.
  * Handles image compression, PDF processing, API call, Drive backup, and result state.
+ * Uses secure backend OCR with fallback to direct Gemini if backend unavailable.
  */
 export const useInvoiceOCR = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [error, setError] = useState(null);
     const [ocrResult, setOcrResult] = useState(null);
     const [driveBackup, setDriveBackup] = useState(null);
+    const [imagePreview, setImagePreview] = useState(null);
 
     /**
      * Triggers the OCR process for a given file (Image or PDF).
@@ -28,15 +31,26 @@ export const useInvoiceOCR = () => {
 
         try {
             // 1. Convert to Base64 (Compress if image, direct if PDF)
-            let base64String;
+            let base64Image;
             if (file.type === 'application/pdf') {
-                base64String = await fileToBase64(file);
+                base64Image = await fileToBase64(file);
+                setImagePreview(null); // Can't preview PDFs directly
             } else {
-                base64String = await compressAndToBase64(file);
+                base64Image = await compressAndToBase64(file);
+                setImagePreview(base64Image);
             }
 
-            // 2. Call Gemini Service for OCR
-            const result = await processInvoiceWithGemini(base64String);
+            // 2. Call OCR - Try secure backend first, fallback to direct Gemini
+            let result;
+            try {
+                // Secure: API key stays on backend
+                console.log('🔒 Using secure backend OCR...');
+                result = await processInvoiceOCR(base64Image);
+            } catch (backendError) {
+                console.warn('⚠️ Backend OCR failed, falling back to direct Gemini:', backendError.message);
+                // Fallback: Direct Gemini call (less secure but works if backend is down)
+                result = await processInvoiceWithGemini(base64Image);
+            }
 
             // 3. Update state with result
             setOcrResult(result);
@@ -53,7 +67,7 @@ export const useInvoiceOCR = () => {
                 setDriveBackup({ success: false, error: driveError.message });
             }
 
-            return result;
+            return { result, base64Image };
         } catch (err) {
             console.error('OCR Scanning failed:', err);
             setError(err.message || 'Failed to process invoice. Please try again.');
@@ -68,6 +82,7 @@ export const useInvoiceOCR = () => {
         setError(null);
         setDriveBackup(null);
         setIsProcessing(false);
+        setImagePreview(null);
     };
 
     return {
@@ -76,6 +91,7 @@ export const useInvoiceOCR = () => {
         error,
         ocrResult,
         driveBackup,
+        imagePreview,
         resetOCR
     };
 };

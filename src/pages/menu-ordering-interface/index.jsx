@@ -356,6 +356,14 @@ const MenuOrderingInterface = () => {
           });
 
           customer = (rpcData && rpcData.length > 0) ? rpcData[0] : null;
+
+          if (customer && !customer.phone) {
+            customer.phone = customer.phone_number;
+          }
+          if (customer && !customer.phone_number) {
+            customer.phone_number = customer.phone;
+          }
+
           customerError = rpcError;
 
           // Cache to Dexie for offline
