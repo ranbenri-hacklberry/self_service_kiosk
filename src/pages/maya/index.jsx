@@ -276,14 +276,33 @@ ${contextData.customerDirectory}
             });
             const data = await response.json();
             const reply = data.choices?.[0]?.message?.content || 'מצטערת, משהו השתבש בתקשורת.';
-            setMessages(prev => [...prev, { id: Date.now().toString() + '-r', role: 'assistant', content: reply }]);
 
+            // Insert into DB first
             if (currentUser?.id && currentUser?.business_id) {
-                supabase.from('maya_chat_history').insert([
+                const { error } = await supabase.from('maya_chat_history').insert([
                     { business_id: currentUser.business_id, employee_id: currentUser.id, role: 'user', content: userInput },
                     { business_id: currentUser.business_id, employee_id: currentUser.id, role: 'assistant', content: reply }
-                ]).then();
+                ]);
+
+                // After insert, fetch the latest messages to strictly sync with DB state
+                if (!error) {
+                    const { data: latestMsgs } = await supabase.from('maya_chat_history')
+                        .select('*')
+                        .eq('employee_id', currentUser.id)
+                        .order('created_at', { ascending: true })
+                        .limit(20);
+
+                    if (latestMsgs) {
+                        setMessages(latestMsgs.map(m => ({ id: m.id, role: m.role, content: m.content })));
+                    }
+                    setIsLoading(false);
+                    return; // Exit early as we've updated state from DB
+                }
             }
+
+            // Fallback if DB insert fails or user not logged in fully
+            setMessages(prev => [...prev, { id: Date.now().toString() + '-r', role: 'assistant', content: reply }]);
+
         } catch (e) {
             setMessages(prev => [...prev, { id: 'err', role: 'assistant', content: 'שגיאת תקשורת.' }]);
         } finally { setIsLoading(false); }
