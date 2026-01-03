@@ -63,39 +63,100 @@ const MayaAssistant = () => {
 
             const dailyMap = {};
             const totalMap = {};
+            const customerMap = {};
             let totalOrders = salesRaw?.length || 0;
+            let weeklyRevenue = 0;
+            let totalPrepTime = 0;
+            let prepTimeCount = 0;
 
             if (Array.isArray(salesRaw)) {
                 salesRaw.forEach(order => {
                     const date = order.created_at ? order.created_at.split('T')[0] : 'unknown';
-                    if (!dailyMap[date]) dailyMap[date] = {};
+                    if (!dailyMap[date]) dailyMap[date] = { items: {}, revenue: 0, count: 0 };
+
+                    // Revenue
+                    const orderTotal = parseFloat(order.total) || 0;
+                    dailyMap[date].revenue += orderTotal;
+                    dailyMap[date].count += 1;
+                    weeklyRevenue += orderTotal;
+
+                    // Prep Time Analysis
+                    if (order.created_at && order.ready_at) {
+                        const start = new Date(order.created_at);
+                        const end = new Date(order.ready_at);
+                        const diffMins = (end - start) / 1000 / 60;
+                        if (diffMins > 0 && diffMins < 120) { // Filter out anomalies
+                            totalPrepTime += diffMins;
+                            prepTimeCount++;
+                        }
+                    }
+
+                    // Customer Intelligence
+                    const custName = order.customer_name || 'Guest';
+                    const custPhone = order.customer_phone || 'N/A';
+                    if (custPhone !== 'N/A') {
+                        if (!customerMap[custPhone]) customerMap[custPhone] = { name: custName, orders: 0, spend: 0, lastOrder: date };
+                        customerMap[custPhone].orders += 1;
+                        customerMap[custPhone].spend += orderTotal;
+                    }
+
+                    // Items
                     (order.order_items || []).forEach(item => {
                         const name = item.menu_items?.name || item.name || 'פריט לא מזוהה';
                         const qty = parseFloat(item.quantity) || 1;
-                        dailyMap[date][name] = (dailyMap[date][name] || 0) + qty;
+                        dailyMap[date].items[name] = (dailyMap[date].items[name] || 0) + qty;
                         totalMap[name] = (totalMap[name] || 0) + qty;
                     });
                 });
             }
 
+            const avgPrepTime = prepTimeCount > 0 ? (totalPrepTime / prepTimeCount).toFixed(1) : 'לא ידוע';
+
             const formatDay = (dateStr, label) => {
-                const items = dailyMap[dateStr];
-                if (!items) return `${label}: אין הזמנות רשומות.`;
-                const topItems = Object.entries(items).sort((a, b) => b[1] - a[1]).slice(0, 8);
-                return `${label}: ${topItems.map(([n, q]) => `${n} (${q})`).join(', ')}`;
+                const dayData = dailyMap[dateStr];
+                if (!dayData) return `${label} (${dateStr}): אין נתונים.`;
+
+                const topItems = Object.entries(dayData.items).sort((a, b) => b[1] - a[1]).slice(0, 5);
+                const itemStr = topItems.map(([n, q]) => `${n} (${q})`).join(', ');
+                return `${label} (${dateStr}): ₪${dayData.revenue.toLocaleString()} (${dayData.count} הזמנות). מובילים: ${itemStr}`;
             };
 
-            const daySummaries = [
-                formatDay(todayStr, "היום"),
-                formatDay(yesterdayStr, "אתמול"),
-                `סה"כ שבוע: ${Object.entries(totalMap).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([n, q]) => `${n} (${q})`).join(', ')}`
-            ].join('\n');
+            // Generate list of last 7 days for the prompt context
+            const last7Days = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const dStr = d.toLocaleDateString('en-CA');
+                const dayName = d.toLocaleDateString('he-IL', { weekday: 'long' });
+                last7Days.push(formatDay(dStr, dayName));
+            }
+
+            // Top Customers (Anonymized for prompt context, but ready for direct lookup)
+            const topCustomers = Object.entries(customerMap)
+                .sort((a, b) => b[1].spend - a[1].spend)
+                .slice(0, 5)
+                .map(([phone, data]) => `${data.name} (${phone}): ${data.orders} הזמנות, ₪${data.spend.toLocaleString()}`)
+                .join('\n');
+
+            const finalSummary = `
+=== תקציר עסקי (7 ימים) ===
+${last7Days.join('\n')}
+
+=== מדדי ביצוע (KPIs) ===
+💰 הכנסות שבועיות: ₪${weeklyRevenue.toLocaleString()}
+⏱️ זמן הכנה ממוצע: ${avgPrepTime} דקות
+👥 לקוחות בולטים:
+${topCustomers}
+
+=== נתוני לקוחות מלאים (JSON) ===
+${JSON.stringify(customerMap)}
+`;
 
             setContextData(prev => ({
                 ...prev,
-                salesSummary: daySummaries,
+                salesSummary: finalSummary,
                 status: { ...prev.status, sales: 'success' },
-                debugInfo: `${totalOrders} הזמנות`,
+                debugInfo: `${totalOrders} הזמנות (₪${weeklyRevenue.toFixed(0)})`,
                 lastUpdate: new Date().toLocaleTimeString()
             }));
         } catch (e) {
@@ -177,7 +238,7 @@ const MayaAssistant = () => {
                         {
                             role: 'system', content: `את מאיה, העוזרת האישית של ${currentUser?.name || 'המנהל'}. 🌸
                         
-=== 📊 מכירות (היום, אתמול ושבועי) ===
+=== 📊 מכירות והכנסות (פירוט יומי מלא) ===
 ${contextData.salesSummary}
 
 === 📦 מצב מלאי נוכחי (Inventory) ===
@@ -189,8 +250,9 @@ ${contextData.recentLogs}
 === 📝 הנחיות ===
 1. עני בעברית רהוטה ומקצועית.
 2. המנהל שואל על "כמה יש במלאי" או "מי עדכן" - השתמשי בדאטה המלאי והלוגים למעלה.
-3. אם זה קבלת הזמנה (supplier_order/invoice_scan), צייני את כמות ההזמנה מול מה שהתקבל.
-4. היי תמציתית, מדויקת ומעודדת.` },
+3. אם נשאלת על לקוח ספציפי (לפי טלפון או שם), חפשי אותו ב"נתוני לקוחות מלאים" וספקי את המידע המדויק.
+4. אם נשאלת על זמנים, השתמשי ב"זמן הכנה ממוצע" ב-KPI.
+5. היי תמציתית, מדויקת ומעודדת.` },
                         ...messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
                         { role: 'user', content: userInput }
                     ],
