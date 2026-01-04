@@ -205,113 +205,292 @@ const ModifierModal = (props) => {
   const [isRemoteLoading, setIsRemoteLoading] = useState(false);
 
   // 1. Reactive query from Dexie (Local) with CLAUDE'S TYPE-SAFETY FIX
+  // 1. Reactive query from Dexie (Local) - SURGICAL DEBUGGING V2.3.2
   const dexieOptions = useLiveQuery(async () => {
-    if (!targetItemId) return null;
+    const queryId = `dexie-${Date.now()}`;
+    console.log(`🔵 [${queryId}] DEXIE QUERY START`, {
+      targetItemId,
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent.substring(0, 50),
+    });
+
+    if (!targetItemId) {
+      console.log(`🔵 [${queryId}] SKIP: No targetItemId`);
+      return null;
+    }
+
     try {
-      console.log(`📦 [ModifierModal] Querying Dexie for item: ${targetItemId}`);
+      // Step 1: Linked groups
+      const linked = await db.menuitemoptions
+        .where('item_id')
+        .equals(targetItemId)
+        .toArray();
 
-      const linked = await db.menuitemoptions.where('item_id').equals(targetItemId).toArray();
-      const linkedIds = linked.map(l => String(l.group_id)); // 🔥 FORCE STRING
+      console.log(`🔵 [${queryId}] Step 1 - Linked:`, {
+        count: linked.length,
+        sample: linked[0],
+      });
 
-      const privateGroups = await db.optiongroups.where('menu_item_id').equals(targetItemId).toArray();
+      const linkedIds = linked.map(l => String(l.group_id));
 
+      // Step 2: Private groups
+      const privateGroups = await db.optiongroups
+        .where('menu_item_id')
+        .equals(targetItemId)
+        .toArray();
+
+      console.log(`🔵 [${queryId}] Step 2 - Private:`, {
+        count: privateGroups.length,
+        sample: privateGroups[0],
+      });
+
+      // Step 3: Shared groups
       let sharedGroups = [];
       if (linkedIds.length > 0) {
         sharedGroups = await db.optiongroups.bulkGet(linkedIds);
         sharedGroups = sharedGroups.filter(Boolean);
+        console.log(`🔵 [${queryId}] Step 3 - Shared:`, {
+          count: sharedGroups.length,
+          sample: sharedGroups[0],
+        });
       }
 
       const allGroups = [...privateGroups, ...sharedGroups];
 
       if (allGroups.length === 0) {
-        console.log('📦 [ModifierModal] Dexie: No groups found for this item');
+        console.warn(`🔵 [${queryId}] ⚠️ NO GROUPS FOUND - Returning null to trigger fallback`);
         return null;
       }
 
-      // 🔥 CLAUDE'S FIX: Ensure all group IDs are strings for the values query
+      // Step 4: Fetch values
       const groupIds = allGroups.map(g => String(g.id));
-      const values = await db.optionvalues.where('group_id').anyOf(groupIds).toArray();
 
-      console.log(`📦 [ModifierModal] Dexie results: ${allGroups.length} groups, ${values.length} values`);
+      console.log(`🔵 [${queryId}] Step 4 - Fetching values:`, {
+        groupCount: allGroups.length,
+        groupIdsSample: groupIds.slice(0, 3),
+        allGroupIdTypes: [...new Set(groupIds.map(id => typeof id))],
+      });
 
-      // 🔥 CRITICAL: If groups exist but NO values found, return null to FORCE Supabase fallback
+      const values = await db.optionvalues
+        .where('group_id')
+        .anyOf(groupIds)
+        .toArray();
+
+      console.log(`🔵 [${queryId}] Step 5 - Values fetched:`, {
+        valuesCount: values.length,
+        valuesSample: values.slice(0, 2),
+        valuesGroupIdTypes: [...new Set(values.map(v => typeof v.group_id))],
+      });
+
+      // CRITICAL CHECK: If groups exist but NO values
       if (allGroups.length > 0 && values.length === 0) {
-        console.warn('⚠️ [ModifierModal] Dexie has groups but NO values (Type Mismatch?). Forcing fallback.');
+        console.error(`🔵 [${queryId}] ❌ CRITICAL: ${allGroups.length} groups but 0 values!`);
+        console.error(`🔵 [${queryId}] ❌ Group IDs that failed:`, groupIds);
+        console.error(`🔵 [${queryId}] ❌ Forcing fallback to Supabase RPC`);
         return null;
       }
 
-      return allGroups.map(g => ({
+      // Step 6: Map groups with their values
+      const result = allGroups.map(g => ({
         ...g,
         values: values
-          .filter(v => String(v.group_id) === String(g.id)) // 🔥 FORCE STRING COMPARISON
+          .filter(v => String(v.group_id) === String(g.id))
           .map(v => ({
             ...v,
             name: v.name || v.value_name,
-            priceAdjustment: v.priceAdjustment || v.price_adjustment || 0
+            priceAdjustment: v.priceAdjustment || v.price_adjustment || 0,
           }))
           .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
       }));
+
+      // Final validation
+      const groupsWithValues = result.filter(g => g.values && g.values.length > 0);
+      const groupsWithoutValues = result.filter(g => !g.values || g.values.length === 0);
+
+      console.log(`🔵 [${queryId}] ✅ DEXIE SUCCESS:`, {
+        totalGroups: result.length,
+        groupsWithValues: groupsWithValues.length,
+        groupsWithoutValues: groupsWithoutValues.length,
+        emptyGroups: groupsWithoutValues.map(g => ({ id: g.id, name: g.name })),
+      });
+
+      if (groupsWithoutValues.length > 0) {
+        console.warn(`🔵 [${queryId}] ⚠️ Some groups missing values, forcing fallback`);
+        return null;
+      }
+
+      return result;
+
     } catch (err) {
-      console.error('❌ [ModifierModal] Dexie query error:', err);
+      console.error(`🔵 [${queryId}] ❌ EXCEPTION:`, {
+        error: err,
+        message: err.message,
+        stack: err.stack,
+      });
       return null;
     }
   }, [targetItemId]);
 
-  // 2. Fallback to Supabase (Remote)
+    // 2. Fallback to Supabase (Remote) - SURGICAL DEBUGGING V2.3.2
+  // ════════════════════════════════════════════════════════════════════
+  // FALLBACK EFFECT - With Enhanced Logging
+  // ════════════════════════════════════════════════════════════════════
   useEffect(() => {
-    if (!isOpen || !targetItemId) return;
+    const effectId = `effect-${Date.now()}`;
+    
+    console.log(`🟢 [${effectId}] FALLBACK EFFECT TRIGGERED`, {
+      isOpen,
+      targetItemId,
+      dexieOptions: dexieOptions === undefined ? 'UNDEFINED' : dexieOptions === null ? 'NULL' : `ARRAY(${dexieOptions.length})`,
+      isRemoteLoading,
+      hasRemoteData: !!remoteData,
+      timestamp: new Date().toISOString(),
+    });
 
-    // Wait for Dexie to resolve
-    if (dexieOptions === undefined) return;
+    // Guard clauses
+    if (!isOpen) {
+      console.log(`🟢 [${effectId}] SKIP: Modal not open`);
+      return;
+    }
 
-    // Check if we have valid data (Groups with at least some values)
-    const hasValidData = dexieOptions && dexieOptions.length > 0 && dexieOptions.some(g => g.values && g.values.length > 0);
+    if (!targetItemId) {
+      console.log(`🟢 [${effectId}] SKIP: No targetItemId`);
+      return;
+    }
 
-    // If we have data, or already loading, or already have remote data - STOP
-    if (hasValidData || isRemoteLoading || remoteData) return;
+    // Wait for Dexie to resolve (undefined → value or null)
+    if (dexieOptions === undefined) {
+      console.log(`🟢 [${effectId}] WAITING: Dexie query still pending...`);
+      return;
+    }
+
+    // Check if Dexie has valid data
+    const hasValidData = dexieOptions && 
+      dexieOptions.length > 0 && 
+      dexieOptions.every(g => g.values && g.values.length > 0);
+
+    console.log(`🟢 [${effectId}] DEXIE VALIDATION:`, {
+      dexieOptions: dexieOptions ? `${dexieOptions.length} groups` : 'null',
+      hasValidData,
+      groupsWithValues: dexieOptions ? dexieOptions.filter(g => g.values?.length > 0).length : 0,
+      groupsWithoutValues: dexieOptions ? dexieOptions.filter(g => !g.values || g.values.length === 0).length : 0,
+    });
+
+    if (hasValidData) {
+      console.log(`🟢 [${effectId}] ✅ Using Dexie data - Skipping RPC`);
+      return;
+    }
+
+    // Skip if already loading or loaded
+    if (isRemoteLoading) {
+      console.log(`🟢 [${effectId}] SKIP: Already loading from Supabase`);
+      return;
+    }
+
+    if (remoteData) {
+      console.log(`🟢 [${effectId}] SKIP: Already have remote data`);
+      return;
+    }
+
+    console.warn(`🟢 [${effectId}] 🚨 TRIGGERING SUPABASE RPC FALLBACK`);
 
     const fetchRemote = async () => {
+      const rpcId = `rpc-${Date.now()}`;
+      
+      console.group(`🟠 [${rpcId}] SUPABASE RPC START`);
+      console.log('📋 Context:', {
+        targetItemId,
+        itemIdType: typeof targetItemId,
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        location: window.location.href,
+        supabaseUrl: supabase?.supabaseUrl || 'UNDEFINED',
+        hasSupabaseKey: !!supabase?.supabaseKey,
+      });
+
       setIsRemoteLoading(true);
-      console.log(`🌐 [ModifierModal] Dexie failed/empty. Fetching from Supabase...`);
+
       try {
-        // Fetch groups
-        const { data: linkedGroups } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', targetItemId);
-        const linkedIds = (linkedGroups || []).map(l => l.group_id);
+        console.log(`🟠 [${rpcId}] Calling RPC: get_item_modifiers...`);
+        const rpcStartTime = performance.now();
+        
+        const { data, error, status, statusText } = await supabase
+          .rpc('get_item_modifiers', { 
+            target_item_id: targetItemId 
+          });
 
-        const { data: privateGrps } = await supabase.from('optiongroups').select('*').eq('menu_item_id', targetItemId);
+        const rpcDuration = performance.now() - rpcStartTime;
 
-        let sharedGrps = [];
-        if (linkedIds.length > 0) {
-          const { data: sData } = await supabase.from('optiongroups').select('*').in('id', linkedIds);
-          sharedGrps = sData || [];
+        console.log(`🟠 [${rpcId}] RPC Response:`, {
+          duration: `${rpcDuration.toFixed(2)}ms`,
+          status,
+          statusText,
+          hasError: !!error,
+          hasData: !!data,
+          dataType: data ? (Array.isArray(data) ? `Array(${data.length})` : typeof data) : 'null/undefined',
+        });
+
+        if (error) {
+          console.error(`🟠 [${rpcId}] ❌ RPC ERROR:`, {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code,
+            fullError: error,
+          });
+          console.groupEnd();
+          return;
         }
 
-        const allGroups = [...(privateGrps || []), ...sharedGrps];
-        const groupIds = allGroups.map(g => g.id);
-
-        // Fetch values
-        if (groupIds.length > 0) {
-          console.log(`🌐 [ModifierModal] Fetching remote values for groups:`, groupIds);
-          const { data: remoteValues } = await supabase.from('optionvalues').select('*').in('group_id', groupIds);
-          const values = remoteValues || [];
-
-          console.log(`🌐 [ModifierModal] Remote success: ${allGroups.length} groups, ${values.length} values`);
-
-          const enhanced = allGroups.map(g => ({
-            ...g,
-            values: values
-              .filter(v => String(v.group_id) === String(g.id))
-              .map(v => ({ ...v, name: v.name || v.value_name, priceAdjustment: v.priceAdjustment || v.price_adjustment || 0 }))
-              .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-          }));
-
-          setRemoteData(enhanced);
-        } else {
-          console.log('🌐 [ModifierModal] No remote modifiers found for this item.');
-          setRemoteData([]);
+        if (!data || data.length === 0) {
+          console.warn(`🟠 [${rpcId}] ⚠️ RPC returned empty/null`);
+          setRemoteData([]); 
+          console.groupEnd();
+          return;
         }
+
+        // Processing Logic (Simplified for brevity but robust)
+        const groupsMap = new Map();
+        data.forEach(row => {
+          if (!groupsMap.has(row.group_id)) {
+            groupsMap.set(row.group_id, {
+              id: row.group_id,
+              name: row.group_name,
+              is_required: row.is_required,
+              is_multiple_select: row.is_multiple_select,
+              min_selection: row.min_selection,
+              max_selection: row.max_selection,
+              display_order: row.display_order,
+              values: []
+            });
+          }
+          if (row.value_id) {
+            const group = groupsMap.get(row.group_id);
+            if (!group.values.some(v => v.id === row.value_id)) {
+              group.values.push({
+                id: row.value_id,
+                group_id: row.group_id,
+                name: row.value_name,
+                priceAdjustment: row.price_adjustment,
+                display_order: row.value_display_order,
+                is_default: row.is_default
+              });
+            }
+          }
+        });
+
+        const enhanced = Array.from(groupsMap.values()).map(g => ({
+          ...g,
+          values: g.values.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+        })).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
+        console.log(`🟠 [${rpcId}] ✅ Data Processed: ${enhanced.length} groups`);
+        setRemoteData(enhanced);
+        console.groupEnd();
+
       } catch (err) {
-        console.error('❌ [ModifierModal] Supabase fallback error:', err);
+        console.error(`🟠 [${rpcId}] ❌ EXCEPTION:`, err);
+        console.groupEnd();
       } finally {
         setIsRemoteLoading(false);
       }
