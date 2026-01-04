@@ -12,7 +12,7 @@
  */
 
 import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
-import { Clock, Edit, RotateCcw, Flame, Truck, Phone, MapPin } from 'lucide-react';
+import { Clock, Edit, RotateCcw, Flame, Truck, Phone, MapPin, Box, Check } from 'lucide-react';
 import { sortItems } from '../../../utils/kdsUtils';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
@@ -165,6 +165,14 @@ const OrderCard = memo(({
     };
   }, [order.items, isHistory, isKanban]);
 
+  // Calculate packing progress for Kanban
+  const packedCount = useMemo(() => {
+    if (!order.items) return 0;
+    return order.items.filter(i => i.item_status === 'ready' || i.item_status === 'shipped').length;
+  }, [order.items]);
+  const totalItems = order.items?.length || 0;
+  const isPartiallyPacked = !isHistory && !isReady && totalItems > 0 && packedCount > 0;
+
   const orderStatusLower = (order.orderStatus || '').toLowerCase();
 
   // Pending orders get special "ראיתי" button, others get normal flow
@@ -191,18 +199,24 @@ const OrderCard = memo(({
     const badgeSizeClass = isHistory ? 'w-5 h-5 text-xs' : 'w-6 h-6 text-base';
     const modSizeClass = isHistory ? 'text-[10px]' : 'text-xs';
 
+    // 🆕 Check if specific item is packed (for Kanban view)
+    const isPackedItem = isKanban && (item.item_status === 'ready' || item.item_status === 'shipped');
+
     return (
-      <div key={`${item.menuItemId}-${item.modsKey || item.id || idx}`} className={`flex flex-col ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered ? 'opacity-40' : ''}`}>
+      <div key={`${item.menuItemId}-${item.modsKey || item.id || idx}`} className={`flex flex-col ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered && !isKanban ? 'opacity-40' : ''}`}>
         <div className="flex items-start gap-[5px] relative">
-          {/* Packing Strike-through (same as KDS early delivery) */}
-          {isEarlyDelivered && (
+          {/* Packing Strike-through (only for KDS early delivery, NOT Kanban layout) */}
+          {isEarlyDelivered && !isKanban && (
             <div className="absolute top-[13px] right-7 left-1 flex items-center pointer-events-none z-10">
               <div className="w-full h-[3px] bg-slate-500/60 rounded-full" />
             </div>
           )}
 
           <div className="flex items-start gap-[5px] flex-1 min-w-0">
-            <span className={`flex items-center justify-center rounded-lg font-black shadow-sm shrink-0 mt-0 ${badgeSizeClass} ${item.quantity > 1 ? 'bg-orange-600 text-white ring-2 ring-orange-200' : (order.type === 'delayed' ? 'bg-gray-300 text-gray-600' : 'bg-slate-900 text-white')
+            {/* Quantity Badge - Green if packed */}
+            <span className={`flex items-center justify-center rounded-lg font-black shadow-sm shrink-0 mt-0 ${badgeSizeClass} ${isPackedItem
+                ? 'bg-green-600 text-white ring-2 ring-green-200'
+                : (item.quantity > 1 ? 'bg-orange-600 text-white ring-2 ring-orange-200' : (order.type === 'delayed' ? 'bg-gray-300 text-gray-600' : 'bg-slate-900 text-white'))
               }`}>
               {item.quantity}
             </span>
@@ -215,6 +229,7 @@ const OrderCard = memo(({
                       <span className={`font-bold ${item.quantity > 1 ? 'text-orange-700' : 'text-gray-900'} ${nameSizeClass}`}>
                         {item.name}
                       </span>
+                      {isPackedItem && <Check size={14} className="text-green-600 stroke-[3]" />}
                     </div>
                   );
                 }
@@ -229,6 +244,7 @@ const OrderCard = memo(({
                       <span className={`font-bold ${item.quantity > 1 ? 'text-orange-700' : 'text-gray-900'} ${nameSizeClass}`}>
                         {item.name}
                       </span>
+                      {isPackedItem && <Check size={14} className="text-green-600 stroke-[3]" />}
                     </div>
                   );
                 }
@@ -248,6 +264,9 @@ const OrderCard = memo(({
                       <span className={`font-bold ${item.quantity > 1 ? 'text-orange-700' : 'text-gray-900'} ${nameSizeClass}`}>
                         {item.name}
                       </span>
+                      {/* Check icon next to name */}
+                      {isPackedItem && <Check size={14} className="text-green-600 stroke-[3]" />}
+
                       {row1Mods.map((mod, i) => renderModLabel(mod, i))}
                     </div>
                     {remainingMods.length > 0 && (
@@ -263,7 +282,7 @@ const OrderCard = memo(({
         </div>
       </div >
     );
-  }, [isHistory, order.type, onReadyItems, order.id, order.originalOrderId]);
+  }, [isHistory, order.type, onReadyItems, order.id, order.originalOrderId, isReady, isKanban]);
 
   return (
     <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl px-[5px] pt-1.5 pb-2.5 ${isHistory ? 'mx-[2px]' : 'mx-2'} flex flex-col h-full font-heebo ${order.type === 'delayed' ? 'bg-gray-50' : 'bg-white'} ${statusStyles} border-x border-b border-gray-100 ${glowClass}`}>
@@ -421,7 +440,15 @@ const OrderCard = memo(({
             )}
 
             {!isHistory && (
-              <div className="flex items-stretch gap-2 mt-auto h-11 w-full text-sm">
+              <div className="flex items-stretch gap-2 mt-auto h-11 w-full text-sm relative">
+                {/* Packing Check Badge (Left side in RTL) */}
+                {isKanban && isPartiallyPacked && (
+                  <div className="absolute left-0 bottom-0 top-0 flex items-center justify-center bg-green-100 text-green-800 text-xs font-bold px-3 rounded-xl border border-green-200 shadow-sm z-10 transition-all">
+                    <Box size={14} className="ml-1 text-green-600" />
+                    <span>{packedCount}/{totalItems} ארוז</span>
+                  </div>
+                )}
+
                 {isReady && !isKanban && ( // 🆕 Hide undo in Kanban (can just drag back)
                   <button
                     disabled={isUpdating}

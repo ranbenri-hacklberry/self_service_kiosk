@@ -2,12 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Check, Box, Truck, User } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../context/AuthContext';
 
 export default function OrderPackingSidebar({
     order,
     onClose,
-    onMarkItemReady,
+    onMarkItemReady, // Legacy support if needed
+    onItemStatusChange, // 🆕 New prop for flexible status updates
     onFinishPacking,
     businessId
 }) {
@@ -29,13 +29,9 @@ export default function OrderPackingSidebar({
                     .eq('active', true);
 
                 if (data) {
-                    // Try to filter for drivers if 'role' or 'is_driver' exists
-                    // Based on user request, check 'role' column specifically or look for indication
-                    const likelyDrivers = data.filter(e =>
-                        (e.role === 'driver' || e.role === 'courier' || e.is_driver === true || (e.job_title && e.job_title.includes('שליח')))
-                    );
-
-                    setDrivers(likelyDrivers.length > 0 ? likelyDrivers : data);
+                    // Filter drivers using 'is_driver' column
+                    const likelyDrivers = data.filter(e => e.is_driver === true);
+                    setDrivers(likelyDrivers.length > 0 ? likelyDrivers : []);
                 }
             } catch (err) {
                 console.error("Error fetching drivers:", err);
@@ -62,15 +58,24 @@ export default function OrderPackingSidebar({
         if (!item) return;
 
         const newSelected = new Set(selectedItems);
-        const isReady = newSelected.has(itemId);
+        const wasReady = newSelected.has(itemId);
 
-        if (!isReady) {
+        // Optimistic UI update
+        if (wasReady) {
+            newSelected.delete(itemId);
+        } else {
             newSelected.add(itemId);
-            setSelectedItems(newSelected);
+        }
+        setSelectedItems(newSelected);
 
-            if (onMarkItemReady) {
-                await onMarkItemReady(order.id, [itemId]);
-            }
+        // Call API
+        if (onItemStatusChange) {
+            // Toggle logic: Ready <-> In Progress
+            const newStatus = wasReady ? 'in_progress' : 'ready';
+            await onItemStatusChange(order.id, [itemId], newStatus);
+        } else if (onMarkItemReady && !wasReady) {
+            // Legacy fallback (only mark ready)
+            await onMarkItemReady(order.id, [itemId]);
         }
     };
 
@@ -109,7 +114,7 @@ export default function OrderPackingSidebar({
                         className="fixed inset-0 bg-black z-40"
                     />
 
-                    {/* Sidebar Pane (Left side as requested) */}
+                    {/* Sidebar Pane */}
                     <motion.div
                         initial={{ x: '-100%' }}
                         animate={{ x: 0 }}
@@ -141,13 +146,13 @@ export default function OrderPackingSidebar({
                                         return (
                                             <div
                                                 key={item.id}
-                                                onClick={() => !isPacked && handleToggleItem(item.id)}
+                                                onClick={() => handleToggleItem(item.id)} // Allow toggle
                                                 className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex items-center gap-4 ${isPacked
-                                                        ? 'bg-green-50 border-green-200 shadow-sm'
-                                                        : 'bg-white border-slate-100 hover:border-blue-300 hover:shadow-md'
+                                                    ? 'bg-green-50 border-green-200 shadow-sm'
+                                                    : 'bg-white border-slate-100 hover:border-blue-300 hover:shadow-md'
                                                     }`}
                                             >
-                                                {/* Checkbox - Square style */}
+                                                {/* Checkbox */}
                                                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-all shrink-0 ${isPacked ? 'bg-green-500 border-green-500' : 'border-slate-300 bg-white'
                                                     }`}>
                                                     {isPacked && <Check size={20} className="text-white" strokeWidth={3} />}
@@ -191,7 +196,7 @@ export default function OrderPackingSidebar({
                                                 <div>
                                                     <div className="font-bold text-slate-800">{driver.name || 'ללא שם'}</div>
                                                     <div className="text-xs text-slate-400">{driver.phone || 'ללא טלפון'}</div>
-                                                    {driver.role === 'driver' && <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">שליח</span>}
+                                                    <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">שליח</span>
                                                 </div>
                                             </button>
                                         ))
@@ -200,7 +205,7 @@ export default function OrderPackingSidebar({
                                             <User size={32} className="text-slate-300 mb-2" />
                                             <div className="text-slate-500 font-bold">לא נמצאו שליחים</div>
                                             <div className="text-xs text-slate-400 mt-1">
-                                                הוסף עובדים עם תפקיד "driver" בטבלת העובדים, או וודא שמותקנת העמודה המתאימה.
+                                                וודא שלעובדים מוגדר "is_driver = true" בטבלת employees.
                                             </div>
                                         </div>
                                     )}
@@ -212,15 +217,23 @@ export default function OrderPackingSidebar({
                         <div className="p-6 bg-white border-t border-slate-100">
                             {!showDriverSelect ? (
                                 <button
-                                    onClick={handleComplete}
-                                    disabled={!allPacked}
+                                    onClick={allPacked ? handleComplete : onClose}
                                     className={`w-full py-4 rounded-xl font-black text-lg flex items-center justify-center gap-2 transition-all ${allPacked
                                             ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-200 hover:shadow-xl active:scale-95'
-                                            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                            : 'bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 shadow-sm'
                                         }`}
                                 >
-                                    <span>המשך לבחירת שליח</span>
-                                    <Truck size={20} />
+                                    {allPacked ? (
+                                        <>
+                                            <span>המשך לבחירת שליח</span>
+                                            <Truck size={20} />
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span>שמור וסגור</span>
+                                            <Check size={20} />
+                                        </>
+                                    )}
                                 </button>
                             ) : (
                                 <button

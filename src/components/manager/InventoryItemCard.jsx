@@ -61,17 +61,23 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
     // Smart step for stock - useCallback for performance
     const handleStockChange = useCallback((delta) => {
         const step = countStep;
+        const epsilon = 0.0001; // Threshold for floating point comparisons
         let newVal;
 
         if (delta > 0) {
-            const nearestAbove = Math.ceil(currentStock / step) * step;
-            newVal = (Math.abs(currentStock - nearestAbove) < 0.001) ? nearestAbove + step : nearestAbove;
+            // Snap to next Step multiple
+            // e.g. Current=2.89, Step=0.5 -> (2.89+0.0001)/0.5 = 5.78 -> ceil=6 -> 6*0.5 = 3.0
+            // e.g. Current=3.0, Step=0.5 -> (3.0+0.0001)/0.5 = 6.0002 -> ceil=7 -> 7*0.5 = 3.5
+            newVal = Math.ceil((currentStock + epsilon) / step) * step;
         } else {
-            const nearestBelow = Math.floor(currentStock / step) * step;
-            newVal = (Math.abs(currentStock - nearestBelow) < 0.001) ? nearestBelow - step : nearestBelow;
+            // Snap to previous Step multiple
+            newVal = Math.floor((currentStock - epsilon) / step) * step;
         }
 
-        newVal = Math.max(0, Math.round(newVal * 100) / 100);
+        // Handle floating point precision issues (e.g. 3.000000004)
+        newVal = parseFloat(newVal.toFixed(4));
+        newVal = Math.max(0, newVal);
+
         setCurrentStock(newVal);
         setHasStockChange(true);
         setError(null);
@@ -131,6 +137,16 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
         return 'ספירה ידנית';
     }, [lastCountSource, lastCountedByName]);
 
+
+
+    // Display convert logic
+    const { displayValue, displayUnit } = useMemo(() => {
+        if (item.unit === 'גרם' && currentStock >= 1000) {
+            return { value: (currentStock / 1000).toFixed(2), unit: 'ק״ג' };
+        }
+        return { value: currentStock, unit: item.unit };
+    }, [currentStock, item.unit]);
+
     return (
         <div className={`bg-white rounded-xl border transition-all ${isExpanded ? 'border-blue-200 shadow-md' : 'border-gray-100 shadow-sm'}`}>
             {/* Header Row */}
@@ -150,8 +166,9 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
 
                 <div className="flex items-center gap-2">
                     {/* Stock Badge */}
-                    <div className={`px-2.5 py-1 rounded-lg text-center min-w-[3rem] ${isLowStock ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-700'} ${hasStockChange ? 'ring-2 ring-blue-400' : ''}`}>
-                        <span className="font-black text-lg">{currentStock}</span>
+                    <div className={`px-2 py-1 rounded-lg text-center min-w-[3.5rem] flex flex-col items-center justify-center leading-none ${isLowStock ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-700'} ${hasStockChange ? 'ring-2 ring-blue-400' : ''}`}>
+                        <span className="font-black text-base">{displayValue}</span>
+                        <span className="text-[9px] font-bold opacity-70">{displayUnit}</span>
                     </div>
 
                     {/* Order Badge */}
@@ -188,10 +205,11 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
                                         <Minus size={16} strokeWidth={3} />
                                     </button>
 
-                                    <div className="w-14 text-center">
-                                        <span className={`font-mono text-xl font-black ${hasStockChange ? 'text-blue-600' : 'text-slate-700'}`}>
-                                            {currentStock}
+                                    <div className="w-20 text-center flex flex-col justify-center">
+                                        <span className={`font-mono text-xl font-black leading-none ${hasStockChange ? 'text-blue-600' : 'text-slate-700'}`}>
+                                            {displayValue}
                                         </span>
+                                        <span className="text-[10px] text-gray-400 font-bold">{displayUnit}</span>
                                     </div>
 
                                     <button

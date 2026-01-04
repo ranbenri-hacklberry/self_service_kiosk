@@ -983,10 +983,10 @@ const InventoryScreen = () => {
                       פריט בודד (יח׳)
                     </button>
                     <button
-                      onClick={() => setNewItemData({ ...newItemData, unit: 'ק״ג', count_step: 0.01, min_order: 0.01, order_step: 0.01 })}
-                      className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${newItemData.unit === 'ק״ג' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                      onClick={() => setNewItemData({ ...newItemData, unit: 'גרם', count_step: 100, min_order: 1000, order_step: 500, cost_per_unit: 0 })}
+                      className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${newItemData.unit === 'גרם' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                     >
-                      משקל (ק״ג)
+                      משקל (גרם)
                     </button>
                   </div>
                 </div>
@@ -1012,10 +1012,9 @@ const InventoryScreen = () => {
                       label="קפיצות ספירה"
                       value={newItemData.count_step}
                       onChange={v => setNewItemData({ ...newItemData, count_step: v })}
-                      unit={newItemData.unit === 'ק״ג' ? 'גרם' : newItemData.unit}
-                      stepSmall={newItemData.unit === 'ק״ג' ? 0.01 : 1}
-                      stepLarge={newItemData.unit === 'ק״ג' ? 0.1 : 10}
-                      format={v => newItemData.unit === 'ק״ג' ? (v * 1000).toFixed(0) : v}
+                      unit={newItemData.unit}
+                      stepSmall={10}
+                      stepLarge={100}
                     />
                   )}
 
@@ -1024,10 +1023,9 @@ const InventoryScreen = () => {
                     label="מינימום להזמנה"
                     value={newItemData.min_order}
                     onChange={v => setNewItemData({ ...newItemData, min_order: v })}
-                    unit={newItemData.unit === 'ק״ג' ? 'גרם' : newItemData.unit}
-                    stepSmall={newItemData.unit === 'ק״ג' ? 0.1 : 1}
-                    stepLarge={newItemData.unit === 'ק״ג' ? 1 : 10}
-                    format={v => newItemData.unit === 'ק״ג' ? (v * 1000).toFixed(0) : v}
+                    unit={newItemData.unit}
+                    stepSmall={100}
+                    stepLarge={500}
                   />
 
                   {/* Order Step */}
@@ -1035,17 +1033,20 @@ const InventoryScreen = () => {
                     label="קפיצות הזמנה"
                     value={newItemData.order_step}
                     onChange={v => setNewItemData({ ...newItemData, order_step: v })}
-                    unit={newItemData.unit === 'ק״ג' ? 'גרם' : newItemData.unit}
-                    stepSmall={newItemData.unit === 'ק״ג' ? 0.01 : 1}
-                    stepLarge={newItemData.unit === 'ק״ג' ? 0.1 : 10}
-                    format={v => newItemData.unit === 'ק״ג' ? (v * 1000).toFixed(0) : v}
+                    unit={newItemData.unit}
+                    stepSmall={100}
+                    stepLarge={500}
                   />
 
                   {/* Cost Picker */}
                   <NumberPicker
-                    label={`עלות ל${newItemData.unit === 'ק״ג' ? 'ק״ג' : 'יחידה'} (₪)`}
-                    value={newItemData.cost_per_unit || 0}
-                    onChange={v => setNewItemData({ ...newItemData, cost_per_unit: v })}
+                    label={newItemData.unit === 'גרם' ? 'עלות לק״ג (₪)' : `עלות ל${newItemData.unit} (₪)`}
+                    value={newItemData.unit === 'גרם' ? (newItemData.cost_per_unit * 1000) : newItemData.cost_per_unit || 0}
+                    onChange={v => {
+                      // If grams, convert price per kg back to price per gram
+                      const realCost = newItemData.unit === 'גרם' ? (v / 1000) : v;
+                      setNewItemData({ ...newItemData, cost_per_unit: realCost });
+                    }}
                     unit="₪"
                     stepSmall={1}
                     stepLarge={10}

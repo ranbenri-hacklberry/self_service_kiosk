@@ -13,7 +13,7 @@ import SMSModal from '../../components/kanban/SMSModal';
 import KDSPaymentModal from '../../pages/kds/components/KDSPaymentModal';
 import OrderPackingSidebar from '../../components/kanban/OrderPackingSidebar';
 import { sendSms } from '../../services/smsService';
-import { supabase } from '../../lib/supabase'; // 🆕 Required for direct updates
+import { supabase } from '../../lib/supabase';
 import {
     RefreshCw, ArrowRight, Bell, BellOff,
     LayoutGrid, Truck
@@ -39,6 +39,7 @@ export default function KanbanPage() {
         updateStatus,
         markOrderSeen,
         markItemsReady,
+        setItemsStatus, // 🆕 New function for Status Toggle
         refresh
     } = useOrders({
         businessId: user?.business_id
@@ -75,10 +76,10 @@ export default function KanbanPage() {
     };
 
     const handleMarkItemReady = async (orderId, itemIds) => {
-        // 1. Mark items as ready
+        // Legacy wrapper (still used by DraggableOrderCard if needed directly, but Sidebar handles its own)
         await markItemsReady(orderId, itemIds);
 
-        // 2. If order is 'new'/'pending', move to 'in_progress'
+        // If order is 'new'/'pending', move to 'in_progress'
         const order = ordersByStatus.new?.find(o => o.id === orderId) ||
             ordersByStatus.pending?.find(o => o.id === orderId);
 
@@ -134,6 +135,22 @@ export default function KanbanPage() {
 
         // Close sidebar
         setPackingOrder(null);
+    };
+
+    // Wrapper for Item Toggle to also handle Order Status progression
+    const handleItemStatusChange = async (orderId, itemIds, newStatus) => {
+        // Update item status
+        await setItemsStatus(orderId, itemIds, newStatus);
+
+        // If checking (status === 'ready'), make sure Order moves to in_progress if it was new
+        if (newStatus === 'ready') {
+            const order = ordersByStatus.new?.find(o => o.id === orderId) ||
+                ordersByStatus.pending?.find(o => o.id === orderId);
+
+            if (order && (order.order_status === 'new' || order.order_status === 'pending')) {
+                await updateStatus(orderId, 'in_progress');
+            }
+        }
     };
 
     return (
@@ -234,7 +251,9 @@ export default function KanbanPage() {
                 order={packingOrder}
                 businessId={user?.business_id}
                 onClose={() => setPackingOrder(null)}
-                // Use wrapper that also updates order status
+                // Pass the new logic that supports toggle
+                onItemStatusChange={handleItemStatusChange}
+                // Legacy fallback if sidebar specifically calls it (it shouldn't if change prop is present)
                 onMarkItemReady={handleMarkItemReady}
                 onFinishPacking={handleFinishPacking}
             />

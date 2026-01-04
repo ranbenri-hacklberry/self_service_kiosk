@@ -558,21 +558,20 @@ export function useOrders({ businessId, filters = {} } = {}) {
         healDexieData();
     }, [businessId]);
 
-    // Mark specific items as ready (packed)
-    const markItemsReady = useCallback(async (orderId, itemsToReady) => {
+    // Update status for specific items (e.g. for Packing Sidebar toggle)
+    const setItemsStatus = useCallback(async (orderId, itemIds, targetStatus = 'ready') => {
         try {
-            const itemIds = itemsToReady.map(i => i.id);
-            console.log('📦 [useOrders-V2] markItemsReady:', { orderId, itemIds });
+            console.log('📦 [useOrders-V2] setItemsStatus:', { orderId, itemIds, targetStatus });
 
             // Optimistic update in Dexie
-            await db.order_items.where('id').anyOf(itemIds).modify({ item_status: 'ready' });
+            await db.order_items.where('id').anyOf(itemIds).modify({ item_status: targetStatus });
 
             // Update state
             setOrders(prev => prev.map(o => {
                 if (String(o.id) === String(orderId)) {
                     return {
                         ...o,
-                        items: o.items.map(i => itemIds.includes(i.id) ? { ...i, item_status: 'ready' } : i)
+                        items: o.items.map(i => itemIds.includes(i.id) ? { ...i, item_status: targetStatus } : i)
                     };
                 }
                 return o;
@@ -580,18 +579,35 @@ export function useOrders({ businessId, filters = {} } = {}) {
 
             // Push to Supabase if not local
             if (!String(orderId).startsWith('L')) {
-                const { error } = await supabase.rpc('mark_items_ready_v2', {
-                    p_order_id: orderId,
-                    p_item_ids: itemIds
-                });
-                if (error) throw error;
+                // For 'ready', use the optimized RPC
+                if (targetStatus === 'ready') {
+                    const { error } = await supabase.rpc('mark_items_ready_v2', {
+                        p_order_id: orderId,
+                        p_item_ids: itemIds
+                    });
+                    if (error) throw error;
+                } else {
+                    // For other statuses (e.g. unchecking to 'in_progress'), use direct update for now
+                    const { error } = await supabase
+                        .from('order_items')
+                        .update({ item_status: targetStatus })
+                        .in('id', itemIds);
+
+                    if (error) throw error;
+                }
             }
             return true;
         } catch (err) {
-            console.error('[useOrders-V2] markItemsReady error:', err);
+            console.error('[useOrders-V2] setItemsStatus error:', err);
             return false;
         }
     }, []);
+
+    // Backward compatibility wrapper
+    const markItemsReady = useCallback((orderId, itemsToReady) => {
+        const itemIds = itemsToReady.map(i => i.id);
+        return setItemsStatus(orderId, itemIds, 'ready');
+    }, [setItemsStatus]);
 
     // Initial load
     useEffect(() => {
