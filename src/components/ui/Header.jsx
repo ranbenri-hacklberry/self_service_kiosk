@@ -95,6 +95,9 @@ const Header = memo(({
     navigate('/employee-login-screen');
   }, [navigate]);
 
+  // Get app version from context
+  const { appVersion } = useAuth();
+
   return (
     <motion.header
       initial={{ opacity: 0, y: -20 }}
@@ -194,6 +197,11 @@ const Header = memo(({
 
         {/* Status Indicators */}
         <div className="flex items-center space-x-4">
+          {/* Version Display (Requested Feature) */}
+          <div className="hidden md:block text-xs text-white/40 font-mono tracking-widest">
+            v{appVersion}
+          </div>
+
           {/* Time Display */}
           <div className="hidden sm:flex items-center space-x-2 text-sm">
             <Icon name="Clock" size={16} color="currentColor" />
