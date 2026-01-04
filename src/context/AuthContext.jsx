@@ -7,10 +7,35 @@ const API_URL = import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
     'http://localhost:8080';
 
+const APP_VERSION = '2.0.5'; // Increment this to force all iPads to reload and clear cache
+
 export const AuthProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
     const [deviceMode, setDeviceMode] = useState(null); // 'kiosk', 'kds', 'manager', 'music'
     const [isLoading, setIsLoading] = useState(true);
+
+    // 🔥 AUTO-UPDATE & CACHE REFRESH MECHANISM
+    useEffect(() => {
+        const checkVersion = () => {
+            const lastVersion = localStorage.getItem('app_version');
+            if (lastVersion && lastVersion !== APP_VERSION) {
+                console.log(`🚀 New version detected (${APP_VERSION}). Clearing cache and reloading...`);
+                // Clear local data that might be corrupted or outdated
+                localStorage.removeItem('db_version'); // Force DB migrations if any
+                localStorage.removeItem('last_full_sync');
+
+                // Do NOT use localStorage.clear() as it might remove device settings
+                // Just force a hard reload
+                window.location.reload(true);
+            }
+            localStorage.setItem('app_version', APP_VERSION);
+        };
+
+        checkVersion();
+        const interval = setInterval(checkVersion, 300000); // Check every 5 minutes
+        return () => clearInterval(interval);
+    }, []);
+
     const [syncStatus, setSyncStatus] = useState({
         inProgress: false,
         lastSync: null,
