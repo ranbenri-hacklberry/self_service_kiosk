@@ -7,7 +7,7 @@ const API_URL = import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
     'http://localhost:8080';
 
-const APP_VERSION = '2.0.8'; // 🔥 BUMP THIS TO FORCE DEXIE CLEAR & LOGOUT
+const APP_VERSION = '2.0.9'; // 🔥 NEW VERSION: FALLBACK FIX + FAST RELOAD + LOGO RESCUE
 
 export const AuthProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
@@ -47,7 +47,7 @@ export const AuthProvider = ({ children }) => {
 
         if (checkVersion()) return;
 
-        const interval = setInterval(checkVersion, 60000); // Check every minute
+        const interval = setInterval(checkVersion, 10000); // Check every 10 seconds for ultra-fast updates
         return () => clearInterval(interval);
     }, []);
 
