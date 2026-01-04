@@ -2,9 +2,13 @@
  * Maya Code Search - Using xAI Embeddings API
  * This function searches the indexed codebase for relevant chunks
  * Works on both localhost AND production
+ * 
+ * NOTE: Database has 768-dimension embeddings (from Ollama nomic-embed-text)
+ * If xAI returns different dimensions, we'll skip RAG for now
  */
 
 const XAI_API_URL = 'https://api.x.ai/v1/embeddings';
+const EXPECTED_DIMENSIONS = 768; // Match what's in the database
 
 /**
  * Get embedding for a search query using xAI API
@@ -28,10 +32,18 @@ export async function getQueryEmbedding(query) {
                 'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: 'text-embedding-3-small', // xAI embedding model
+                model: 'v1', // xAI embedding model
                 input: query
             })
         });
+
+        // Handle API not supporting embeddings
+        if (response.status === 404 || response.status === 400) {
+            const errorText = await response.text();
+            console.warn('⚠️ Maya RAG: xAI embeddings API issue:', response.status, errorText);
+            console.log('🌸 Maya will work without code search for now');
+            return null;
+        }
 
         if (!response.ok) {
             const errorText = await response.text();
@@ -44,6 +56,13 @@ export async function getQueryEmbedding(query) {
 
         if (embedding) {
             console.log('✅ Maya RAG: Got embedding (', embedding.length, 'dimensions)');
+
+            // Check if dimensions match what's in the database
+            if (embedding.length !== EXPECTED_DIMENSIONS) {
+                console.warn(`⚠️ Maya RAG: Dimension mismatch! Got ${embedding.length}, expected ${EXPECTED_DIMENSIONS}`);
+                console.log('🌸 Skipping RAG search - embeddings need to be regenerated');
+                return null;
+            }
         }
 
         return embedding || null;
@@ -73,7 +92,7 @@ export async function searchCode(supabase, query, limit = 5) {
     try {
         const { data, error } = await supabase.rpc('search_code', {
             query_embedding: embedding,
-            match_threshold: 0.4, // Lower threshold to get more results
+            match_threshold: 0.3, // Lower threshold to get more results
             match_count: limit
         });
 
