@@ -8,17 +8,31 @@ const EMBEDDING_MODEL = 'nomic-embed-text';
 
 /**
  * Get embedding for a search query using Ollama
+ * NOTE: Only works on localhost (development) - returns null on production
  */
 export async function getQueryEmbedding(query) {
+    // Only run on localhost - Ollama is not available on production/iPad
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!isLocalhost) {
+        console.log('🌸 Code search disabled on production (Ollama not available)');
+        return null;
+    }
+
     try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+
         const response = await fetch(`${OLLAMA_URL}/api/embeddings`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 model: EMBEDDING_MODEL,
                 prompt: query
-            })
+            }),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             console.error('Ollama embedding error:', response.status);
@@ -28,7 +42,10 @@ export async function getQueryEmbedding(query) {
         const data = await response.json();
         return data.embedding;
     } catch (e) {
-        console.error('Ollama connection error:', e);
+        // Silently fail on connection errors - Ollama might not be running
+        if (e.name !== 'AbortError') {
+            console.warn('Ollama not available:', e.message);
+        }
         return null;
     }
 }
