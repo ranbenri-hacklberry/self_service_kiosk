@@ -7,7 +7,7 @@ const API_URL = import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
     'http://localhost:8080';
 
-const APP_VERSION = '2.0.7'; // 🔥 INCREMENT THIS TO FORCE LOGOUT ON ALL DEVICES
+const APP_VERSION = '2.0.8'; // 🔥 BUMP THIS TO FORCE DEXIE CLEAR & LOGOUT
 
 export const AuthProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
@@ -21,15 +21,24 @@ export const AuthProvider = ({ children }) => {
             if (lastVersion && lastVersion !== APP_VERSION) {
                 console.warn(`🚨 VERSION MISMATCH (${lastVersion} -> ${APP_VERSION}). FORCING CLEAN SLATE...`);
 
-                // Clear EVERYTHING
+                // Clear simple storage
                 localStorage.clear();
                 sessionStorage.clear();
 
                 // Set the current version so we don't loop
                 localStorage.setItem('app_version', APP_VERSION);
 
-                // Force back to start
-                window.location.href = '/mode-selection';
+                // 🔥 Clear Dexie (The core fix for stale iPad data)
+                import('../db/database').then(({ db }) => {
+                    db.delete().then(() => {
+                        console.log('✅ Dexie deleted. Redirecting...');
+                        window.location.href = '/mode-selection';
+                    }).catch(() => {
+                        window.location.href = '/mode-selection';
+                    });
+                }).catch(() => {
+                    window.location.href = '/mode-selection';
+                });
                 return true;
             }
             localStorage.setItem('app_version', APP_VERSION);
