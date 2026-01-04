@@ -202,6 +202,8 @@ const ModifierModal = (props) => {
 
   // --- DATA FETCHING (DEXIE + SUPABASE FALLBACK) ---
   const [remoteData, setRemoteData] = useState(null);
+  const [rawDebugData, setRawDebugData] = useState(null);
+  const [debugStep, setDebugStep] = useState('IDLE'); // 🔥 NEW: Step Tracker // 🔥 NEW: Raw Debug v2.3.7
   const [isRemoteLoading, setIsRemoteLoading] = useState(false);
 
   // 1. Reactive query from Dexie (Local) with CLAUDE'S TYPE-SAFETY FIX
@@ -331,166 +333,100 @@ const ModifierModal = (props) => {
     }
   }, [targetItemId]);
 
-  // 2. Fallback to Supabase (Remote) - SURGICAL DEBUGGING V2.3.2
-  // ════════════════════════════════════════════════════════════════════
-  // FALLBACK EFFECT - With Enhanced Logging
-  // ════════════════════════════════════════════════════════════════════
+          // 2. Fallback to Supabase (RPC BYPASS v2) - v2.4.1
   useEffect(() => {
-    const effectId = `effect-${Date.now()}`;
+    if (!isOpen || !targetItemId) return;
+    if (dexieOptions && dexieOptions.length > 0) return;
+    if (isRemoteLoading || remoteData) return;
 
-    console.log(`🟢 [${effectId}] FALLBACK EFFECT TRIGGERED`, {
-      isOpen,
-      targetItemId,
-      dexieOptions: dexieOptions === undefined ? 'UNDEFINED' : dexieOptions === null ? 'NULL' : `ARRAY(${dexieOptions.length})`,
-      isRemoteLoading,
-      hasRemoteData: !!remoteData,
-      timestamp: new Date().toISOString(),
-    });
-
-    // Guard clauses
-    if (!isOpen) {
-      console.log(`🟢 [${effectId}] SKIP: Modal not open`);
-      return;
-    }
-
-    if (!targetItemId) {
-      console.log(`🟢 [${effectId}] SKIP: No targetItemId`);
-      return;
-    }
-
-    // Wait for Dexie to resolve (undefined → value or null)
-    if (dexieOptions === undefined) {
-      console.log(`🟢 [${effectId}] WAITING: Dexie query still pending...`);
-      return;
-    }
-
-    // Check if Dexie has valid data
-    const hasValidData = dexieOptions &&
-      dexieOptions.length > 0 &&
-      dexieOptions.every(g => g.values && g.values.length > 0);
-
-    console.log(`🟢 [${effectId}] DEXIE VALIDATION:`, {
-      dexieOptions: dexieOptions ? `${dexieOptions.length} groups` : 'null',
-      hasValidData,
-      groupsWithValues: dexieOptions ? dexieOptions.filter(g => g.values?.length > 0).length : 0,
-      groupsWithoutValues: dexieOptions ? dexieOptions.filter(g => !g.values || g.values.length === 0).length : 0,
-    });
-
-    if (hasValidData) {
-      console.log(`🟢 [${effectId}] ✅ Using Dexie data - Skipping RPC`);
-      return;
-    }
-
-    // Skip if already loading or loaded
-    if (isRemoteLoading) {
-      console.log(`🟢 [${effectId}] SKIP: Already loading from Supabase`);
-      return;
-    }
-
-    if (remoteData) {
-      console.log(`🟢 [${effectId}] SKIP: Already have remote data`);
-      return;
-    }
-
-    console.warn(`🟢 [${effectId}] 🚨 TRIGGERING SUPABASE RPC FALLBACK`);
-
-    const fetchRemote = async () => {
-      const rpcId = `rpc-${Date.now()}`;
-
-      console.group(`🟠 [${rpcId}] SUPABASE RPC START`);
-      console.log('📋 Context:', {
-        targetItemId,
-        itemIdType: typeof targetItemId,
-        timestamp: new Date().toISOString(),
-        userAgent: navigator.userAgent,
-        location: window.location.href,
-        supabaseUrl: supabase?.supabaseUrl || 'UNDEFINED',
-        hasSupabaseKey: !!supabase?.supabaseKey,
-      });
-
+        const fetchRemote = async () => {
       setIsRemoteLoading(true);
+      setRawDebugData(null); 
+      setDebugStep('INIT_BYPASS');
+
+      const updateStep = (step, data = null) => {
+        console.log(`🪜 STEP: ${step}`);
+        setDebugStep(step);
+        if (data) setRawDebugData(prev => Array.isArray(prev) ? [...prev, { step, data }] : [{ step, data }]);
+      };
 
       try {
-        console.log(`🟠 [${rpcId}] Calling RPC: get_item_modifiers...`);
-        const rpcStartTime = performance.now();
+        const tId = Number(targetItemId);
 
-        const { data, error, status, statusText } = await supabase
-          .rpc('get_item_modifiers', {
-            target_item_id: targetItemId
-          });
-
-        const rpcDuration = performance.now() - rpcStartTime;
-
-        console.log(`🟠 [${rpcId}] RPC Response:`, {
-          duration: `${rpcDuration.toFixed(2)}ms`,
-          status,
-          statusText,
-          hasError: !!error,
-          hasData: !!data,
-          dataType: data ? (Array.isArray(data) ? `Array(${data.length})` : typeof data) : 'null/undefined',
-        });
-
-        if (error) {
-          console.error(`🟠 [${rpcId}] ❌ RPC ERROR:`, {
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code,
-            fullError: error,
-          });
-          console.groupEnd();
-          return;
+        // A. FETCH GROUPS
+        updateStep('FETCH_GROUPS');
+        const { data: privGroups } = await supabase.from('optiongroups').select('*').eq('menu_item_id', tId);
+        const { data: links } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', tId);
+            
+        let sharedGroups = [];
+        if (links && links.length > 0) {
+            const linkIds = links.map(l => l.group_id);
+            const { data: sGroups } = await supabase.from('optiongroups').select('*').in('id', linkIds);
+            sharedGroups = sGroups || [];
         }
 
-        if (!data || data.length === 0) {
-          console.warn(`🟠 [${rpcId}] ⚠️ RPC returned empty/null`);
-          setRemoteData([]);
-          console.groupEnd();
-          return;
+        const allGroups = [...(privGroups || []), ...sharedGroups];
+        updateStep(`GOT_${allGroups.length}_GROUPS`, allGroups);
+
+        if (allGroups.length === 0) {
+            setRemoteData([]);
+            return;
         }
 
-        // Processing Logic (Simplified for brevity but robust)
-        const groupsMap = new Map();
-        data.forEach(row => {
-          if (!groupsMap.has(row.group_id)) {
-            groupsMap.set(row.group_id, {
-              id: row.group_id,
-              name: row.group_name,
-              is_required: row.is_required,
-              is_multiple_select: row.is_multiple_select,
-              min_selection: row.min_selection,
-              max_selection: row.max_selection,
-              display_order: row.display_order,
-              values: []
+        // B. FETCH VALUES via RPC BYPASS
+        const groupIds = allGroups.map(g => g.id);
+        updateStep('RPC_VALUES_CALL', { groupIds });
+
+        // 🔥 CALL RPC with detailed error capture
+        const { data: allValues, error: vErr } = await supabase
+            .rpc('get_values_for_groups', { target_group_ids: groupIds });
+
+        if (vErr) {
+            console.error("RPC Error Details:", vErr);
+            // 🔥 LOG THE ERROR EXPLICITLY TO DEBUGGER
+            updateStep('RPC_ERROR', { 
+                msg: vErr.message, 
+                code: vErr.code, 
+                details: vErr.details, 
+                hint: vErr.hint 
             });
-          }
-          if (row.value_id) {
-            const group = groupsMap.get(row.group_id);
-            if (!group.values.some(v => v.id === row.value_id)) {
-              group.values.push({
-                id: row.value_id,
-                group_id: row.group_id,
-                name: row.value_name,
-                priceAdjustment: row.price_adjustment,
-                display_order: row.value_display_order,
-                is_default: row.is_default
-              });
-            }
-          }
-        });
 
-        const enhanced = Array.from(groupsMap.values()).map(g => ({
-          ...g,
-          values: g.values.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-        })).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+            // Fallback
+            updateStep('FALLBACK_START');
+            const { data: fbValues, error: fbErr } = await supabase.from('optionvalues').select('*').in('group_id', groupIds);
+            
+            if (fbErr) updateStep('FALLBACK_ERROR', fbErr);
+            else updateStep(`GOT_${fbValues?.length}_VALS_FALLBACK`, fbValues);
+            
+            const result = allGroups.map(g => ({
+                ...g,
+                values: (fbValues || [])
+                    .filter(v => v.group_id === g.id)
+                    .map(v => ({ ...v, name: v.name || v.value_name || 'Unk' }))
+                    .sort((a,b) => (a.display_order||0) - (b.display_order||0))
+            }));
+            setRemoteData(result);
+            return;
+        }
 
-        console.log(`🟠 [${rpcId}] ✅ Data Processed: ${enhanced.length} groups`);
-        setRemoteData(enhanced);
-        console.groupEnd();
+        updateStep(`RPC_SUCCESS_${allValues?.length}`, allValues);
+
+        // C. MERGE
+        const result = allGroups.map(g => ({
+            ...g,
+            values: (allValues || [])
+                .filter(v => v.group_id === g.id)
+                .map(v => ({ ...v, name: v.name || v.value_name || 'Unk' })) 
+                .sort((a,b) => (a.display_order||0) - (b.display_order||0))
+        }));
+
+        setRemoteData(result);
+        updateStep('DONE_BYPASS');
 
       } catch (err) {
-        console.error(`🟠 [${rpcId}] ❌ EXCEPTION:`, err);
-        console.groupEnd();
+        console.error("Bypass Fetch Error:", err);
+        setRawDebugData({ error: err.message, step: 'CRASH' });
+        setDebugStep('ERROR');
       } finally {
         setIsRemoteLoading(false);
       }
@@ -758,6 +694,12 @@ const ModifierModal = (props) => {
       }
 
       if (current === valueId) {
+        // Allow uncheck if NOT required
+        if (!group.is_required) {
+             return { ...prev, [groupId]: null };
+        }
+        
+        // Otherwise revert to default logic
         const defaultVal = group.values?.find(v => v.is_default) ||
           group.values?.find(v => v.name?.includes('רגיל')) ||
           group.values?.[0];
@@ -1224,48 +1166,7 @@ const ModifierModal = (props) => {
 
           </div>
 
-          {/* 🕵️‍♂️ VISUAL DEBUGGER v2.3.3 - Shows status directly on screen */}
-          {isOpen && (
-            <div
-              dir="ltr"
-              className="mx-3 mb-2 p-3 bg-slate-900/95 text-green-400 font-mono text-[10px] rounded-xl overflow-hidden shadow-2xl border border-slate-700"
-              onClick={() => console.log('Debug Clicked')}
-            >
-              <div className="flex justify-between items-center border-b border-slate-700 pb-1 mb-1">
-                <span className="font-bold text-white">🚧 DEBUGGER v2.3.3</span>
-                <span className={dexieOptions && dexieOptions.length > 0 ? "text-green-400" : "text-red-400"}>
-                  {dexieOptions && dexieOptions.length > 0 ? "DEXIE OK" : "DEXIE EMPTY"}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-                <div>ITEM ID: <span className="text-white">{targetItemId}</span></div>
-                <div>LOADING: <span className={isRemoteLoading ? "text-yellow-400 animate-pulse" : "text-slate-500"}>{isRemoteLoading ? "YES" : "NO"}</span></div>
-                <div>REMOTE DATA: <span className={remoteData ? "text-green-400" : "text-slate-500"}>{remoteData ? `YES (${remoteData.length} grps)` : "NO"}</span></div>
-                <div>FINAL SOURCE: <span className="text-white font-bold">{dexieOptions && dexieOptions.length ? 'DEXIE' : remoteData ? 'SUPABASE' : 'NONE'}</span></div>
-              </div>
-
-              {/* DETAILED GROUP BREAKDOWN */}
-              <div className="mt-2 pt-1 border-t border-slate-700">
-                <div className="font-bold mb-1">Group Breakdown:</div>
-                {(dexieOptions || remoteData || []).map(g => (
-                  <div key={g.id} className="flex justify-between text-[9px] border-b border-slate-800 pb-0.5">
-                    <span className="truncate w-24">{g.name}</span>
-                    <span className={g.values && g.values.length > 0 ? "text-green-400" : "text-red-500 font-bold"}>
-                      {g.values?.length || 0} vals
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Error Display if exists */}
-              {(dexieOptions && dexieOptions.length && dexieOptions.some(g => !g.values || g.values.length === 0)) && (
-                <div className="mt-1 text-red-500 bg-red-900/20 p-1 rounded">
-                  ⚠️ DEXIE: Groups found but VALUES MISSING!
-                </div>
-              )}
-            </div>
-          )}
+                                                  
 
           <div className="p-3 bg-white border-t border-slate-100 shadow-[0_-10px_30px_rgba(0,0,0,0.03)]">
             <div className="flex gap-3">
