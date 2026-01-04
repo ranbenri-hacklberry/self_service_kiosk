@@ -200,196 +200,122 @@ const ModifierModal = (props) => {
   }, [isOpen, selectedItem, targetItemId]);
 
 
-  const liveOptions = useLiveQuery(async () => {
+  // --- DATA FETCHING (DEXIE + SUPABASE FALLBACK) ---
+  const [remoteData, setRemoteData] = useState(null);
+  const [isRemoteLoading, setIsRemoteLoading] = useState(false);
+
+  // 1. Reactive query from Dexie (Local)
+  const dexieOptions = useLiveQuery(async () => {
+    if (!targetItemId) return null;
     try {
-      if (!targetItemId) {
-        console.log('⚠️ [ModifierModal] No targetItemId');
-        return [];
-      }
-
-      console.log(`🏁 [ModifierModal] liveOptions query started for item: ${targetItemId}`);
-
-      // db is imported at top level
-
-      // 1. Get linked group IDs
       const linked = await db.menuitemoptions.where('item_id').equals(targetItemId).toArray();
-      console.log(`🔗 [ModifierModal] Found ${linked.length} links:`, linked);
       const linkedIds = linked.map(l => l.group_id);
-
-      // 2. Get private groups
       const privateGroups = await db.optiongroups.where('menu_item_id').equals(targetItemId).toArray();
-      console.log(`🔒 [ModifierModal] Found ${privateGroups.length} private groups:`, privateGroups);
 
-      // 3. Get shared groups
       let sharedGroups = [];
       if (linkedIds.length > 0) {
         sharedGroups = await db.optiongroups.bulkGet(linkedIds);
-        sharedGroups = sharedGroups.filter(Boolean); // remove undefined
-        console.log(`🌐 [ModifierModal] Found ${sharedGroups.length} shared groups:`, sharedGroups);
+        sharedGroups = sharedGroups.filter(Boolean);
       }
 
-      // 4. Combine and Unique
-      const allGroupsMap = new Map();
-      [...privateGroups, ...sharedGroups].forEach(g => {
-        // 🔥 Deduplicate by NAME to prevent duplicates if DB has multiple groups with same name
-        if (!allGroupsMap.has(g.name)) {
-          allGroupsMap.set(g.name, g);
-        }
-      });
-      let uniqueGroups = Array.from(allGroupsMap.values());
+      const allGroups = [...privateGroups, ...sharedGroups];
+      const groupIds = allGroups.map(g => g.id);
+      const values = await db.optionvalues.where('group_id').anyOf(groupIds).toArray();
 
-      console.log(`📊 [ModifierModal] Found ${uniqueGroups.length} unique named groups from Dexie`);
+      if (allGroups.length === 0) return null; // Signal we have nothing locally
 
-      // 🔥 FALLBACK: If Dexie is empty, try fetching directly from Supabase
-      if (uniqueGroups.length === 0) {
-        console.log(`🌐 [ModifierModal] Dexie empty, falling back to Supabase for item ${targetItemId}...`);
-        try {
-          // Fetch option groups linked to this item
-          const { data: linkedGroups, error: linkedErr } = await supabase
-            .from('menuitemoptions')
-            .select('group_id')
-            .eq('item_id', targetItemId);
-
-          console.log(`🔗 [Supabase Fallback] menuitemoptions result:`, { linkedGroups, linkedErr });
-
-          const groupIdsToFetch = linkedErr ? [] : (linkedGroups || []).map(l => l.group_id);
-
-          // Also get private groups for this item
-          const { data: privateGrps, error: privErr } = await supabase
-            .from('optiongroups')
-            .select('*')
-            .eq('menu_item_id', targetItemId);
-
-          console.log(`🔒 [Supabase Fallback] private optiongroups result:`, { privateGrps, privErr });
-
-          // Fetch shared groups by ID
-          let sharedGrps = [];
-          if (groupIdsToFetch.length > 0) {
-            const { data: sharedData, error: sharedErr } = await supabase
-              .from('optiongroups')
-              .select('*')
-              .in('id', groupIdsToFetch);
-            sharedGrps = sharedData || [];
-            console.log(`🌐 [Supabase Fallback] shared optiongroups result:`, { sharedData, sharedErr });
-          }
-
-          const allRemoteGroups = [...(privateGrps || []), ...sharedGrps];
-          const remoteGroupsMap = new Map();
-          allRemoteGroups.forEach(g => {
-            // 🔥 Deduplicate by NAME to prevent duplicates if DB has multiple groups with same name
-            if (!remoteGroupsMap.has(g.name)) {
-              remoteGroupsMap.set(g.name, g);
-            }
-          });
-          uniqueGroups = Array.from(remoteGroupsMap.values());
-
-          console.log(`🌐 [ModifierModal] Supabase returned ${uniqueGroups.length} unique named groups`);
-
-          // Fetch values for these groups
-          if (uniqueGroups.length > 0) {
-            const remoteGroupIds = uniqueGroups.map(g => g.id);
-            console.log(`💎 [Supabase Fallback] Fetching optionvalues for group IDs:`, remoteGroupIds);
-            const { data: remoteValues, error: valuesErr } = await supabase
-              .from('optionvalues')
-              .select('*')
-              .in('group_id', remoteGroupIds);
-
-            console.log(`💎 [Supabase Fallback] optionvalues result:`, { remoteValues, valuesErr });
-
-            const values = (remoteValues || []).map(v => ({
-              ...v,
-              name: v.name || v.value_name,
-              priceAdjustment: v.priceAdjustment || v.price_adjustment || 0
-            }));
-
-            const enhanced = uniqueGroups.map(g => ({
-              ...g,
-              values: values.filter(v => v.group_id === g.id).sort((a, b) => (a.display_order || 0) - (b.display_order || 0)),
-              is_required: g.is_required || (g.min_selection > 0)
-            }));
-
-            console.log(`✨ [ModifierModal] Supabase fallback complete:`, enhanced);
-            return enhanced.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-          }
-        } catch (fallbackErr) {
-          console.error('❌ [ModifierModal] Supabase fallback failed:', fallbackErr);
-        }
-        return [];
-      }
-
-      // 5. Fetch Values from Dexie
-      const groupIds = uniqueGroups.map(g => g.id);
-      console.log(`🎯 [ModifierModal] Fetching values for group IDs:`, groupIds);
-      const rawValues = await db.optionvalues.where('group_id').anyOf(groupIds).toArray();
-
-      // Normalize: Dexie uses value_name, but code expects name
-      let values = rawValues.map(v => ({
-        ...v,
-        name: v.name || v.value_name,
-        priceAdjustment: v.priceAdjustment || v.price_adjustment || 0
+      return allGroups.map(g => ({
+        ...g,
+        values: values
+          .filter(v => v.group_id === g.id)
+          .map(v => ({ ...v, name: v.name || v.value_name, priceAdjustment: v.priceAdjustment || v.price_adjustment || 0 }))
+          .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
       }));
-
-      // 🔥 FALLBACK FOR VALUES: If Dexie has groups but no values, fetch from Supabase
-      if (values.length === 0 && uniqueGroups.length > 0) {
-        console.log(`💎 [ModifierModal] Dexie has groups but no values. Falling back to Supabase for values...`);
-        try {
-          const { data: remoteValues, error: valuesErr } = await supabase
-            .from('optionvalues')
-            .select('*')
-            .in('group_id', groupIds.map(id => String(id)));
-
-          if (!valuesErr && remoteValues) {
-            console.log(`✨ [Supabase Fallback] Found ${remoteValues.length} values remotely`);
-            values = remoteValues.map(v => ({
-              ...v,
-              name: v.name || v.value_name,
-              priceAdjustment: v.priceAdjustment || v.price_adjustment || 0
-            }));
-          } else if (valuesErr) {
-            console.error('❌ [ModifierModal] Supabase values fallback error:', valuesErr);
-          }
-        } catch (fallbackErr) {
-          console.error('❌ [ModifierModal] Supabase values fallback exception:', fallbackErr);
-        }
-      }
-
-      console.log(`💎 [ModifierModal] Final count for values to display: ${values.length}`);
-
-      // 6. Merge values into groups
-      const enhanced = uniqueGroups.map(g => {
-        const groupValues = values.filter(v => v.group_id === g.id);
-
-        // 🔥 DE-DUPE VALUES BY NAME: Prevent "soy, soy, oat, oat"
-        const uniqueValuesMap = new Map();
-        groupValues.forEach(v => {
-          if (!uniqueValuesMap.has(v.name)) {
-            uniqueValuesMap.set(v.name, v);
-          }
-        });
-
-        return {
-          ...g,
-          values: Array.from(uniqueValuesMap.values()).sort((a, b) => (a.display_order || 0) - (b.display_order || 0)),
-          is_required: g.is_required || (g.min_selection > 0)
-        };
-      });
-
-      console.log(`✨ [ModifierModal] Final enhanced groups:`, enhanced);
-
-      // Sort groups by name (or display_order if we had it)
-      return enhanced.sort((a, b) => a.name.localeCompare(b.name));
     } catch (err) {
-      console.error('❌ [ModifierModal] Error in useLiveQuery:', err);
-      return []; // Return empty array on error to stop spinner
+      console.error('Dexie query error:', err);
+      return null;
     }
   }, [targetItemId]);
 
-  const isLoadingOptions = liveOptions === undefined;
+  // 2. Fallback to Supabase (Remote) if Dexie is empty
+  useEffect(() => {
+    if (!isOpen || !targetItemId || dexieOptions !== null) return;
+    if (remoteData || isRemoteLoading) return;
 
-  // Combine with extra groups from props
+    const fetchRemote = async () => {
+      setIsRemoteLoading(true);
+      console.log(`🌐 [ModifierModal] Dexie empty, fetching from Supabase for item ${targetItemId}...`);
+      try {
+        // Fetch groups
+        const { data: linkedGroups } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', targetItemId);
+        const linkedIds = (linkedGroups || []).map(l => l.group_id);
+
+        const { data: privateGrps } = await supabase.from('optiongroups').select('*').eq('menu_item_id', targetItemId);
+
+        let sharedGrps = [];
+        if (linkedIds.length > 0) {
+          const { data: sData } = await supabase.from('optiongroups').select('*').in('id', linkedIds);
+          sharedGrps = sData || [];
+        }
+
+        const allGroups = [...(privateGrps || []), ...sharedGrps];
+        const groupIds = allGroups.map(g => g.id);
+
+        // Fetch values
+        if (groupIds.length > 0) {
+          const { data: remoteValues } = await supabase.from('optionvalues').select('*').in('group_id', groupIds);
+          const values = remoteValues || [];
+
+          const enhanced = allGroups.map(g => ({
+            ...g,
+            values: values
+              .filter(v => v.group_id === g.id)
+              .map(v => ({ ...v, name: v.name || v.value_name, priceAdjustment: v.priceAdjustment || v.price_adjustment || 0 }))
+              .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+          }));
+
+          setRemoteData(enhanced);
+        } else {
+          setRemoteData([]); // No modifiers found remotely either
+        }
+      } catch (err) {
+        console.error('Supabase fallback error:', err);
+      } finally {
+        setIsRemoteLoading(false);
+      }
+    };
+
+    fetchRemote();
+  }, [isOpen, targetItemId, dexieOptions, remoteData, isRemoteLoading]);
+
+  // 3. Final processed options
   const optionGroups = useMemo(() => {
-    return [...(liveOptions || []), ...(props.extraGroups || [])];
-  }, [liveOptions, props.extraGroups]);
+    const raw = dexieOptions || remoteData || [];
+    const fromProps = props.extraGroups || [];
+    const combined = [...raw, ...fromProps];
+
+    // Deduplicate by name
+    const uniqueMap = new Map();
+    combined.forEach(g => {
+      if (!uniqueMap.has(g.name)) {
+        // Also deduplicate values within the group
+        const valMap = new Map();
+        (g.values || []).forEach(v => {
+          if (!valMap.has(v.name)) valMap.set(v.name, v);
+        });
+
+        uniqueMap.set(g.name, {
+          ...g,
+          values: Array.from(valMap.values()).sort((a, b) => (a.display_order || 0) - (b.display_order || 0)),
+          is_required: g.is_required || (g.min_selection > 0)
+        });
+      }
+    });
+
+    return Array.from(uniqueMap.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [dexieOptions, remoteData, props.extraGroups]);
+
+  const isLoadingOptions = dexieOptions === undefined || (dexieOptions === null && isRemoteLoading);
 
   // Handle Defaults & Auto-Add
   useEffect(() => {
