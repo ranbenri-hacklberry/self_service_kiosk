@@ -5,7 +5,7 @@ import { Monitor, ChefHat, LogOut, BarChart3, Coffee, Users, Music, ShieldAlert,
 
 const ModeSelectionScreen = () => {
     const navigate = useNavigate();
-    const { currentUser, setMode, logout } = useAuth();
+    const { currentUser, setMode, logout, appVersion } = useAuth();
 
     // Check if user is a manager/admin (case-insensitive)
     const accessLevel = (currentUser?.access_level || '').toLowerCase();
@@ -248,7 +248,7 @@ const ModeSelectionScreen = () => {
 
                 </div>
 
-                <div className="mt-6 text-center">
+                <div className="mt-6 text-center flex flex-col items-center gap-2">
                     <button
                         onClick={logout}
                         className="inline-flex items-center gap-2 text-slate-400 hover:text-white transition-colors px-4 py-2 rounded-lg hover:bg-white/10 text-sm"
@@ -256,6 +256,9 @@ const ModeSelectionScreen = () => {
                         <LogOut size={16} />
                         <span>יציאה</span>
                     </button>
+                    <div className="text-[10px] text-slate-500 font-mono opacity-50">
+                        v{appVersion}
+                    </div>
                 </div>
             </div>
         </div>
