@@ -7,8 +7,7 @@ const API_URL = import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
     'http://localhost:8080';
 
-export const APP_VERSION = '2.4.4'; // 🔥 v2.4.4: FINAL CLEAN (NO DEBUGGER)
-
+export const APP_VERSION = '3.0.2'; // 修正: ניקוי כפילויות תוספות ומיפוי מחירים מתוקן (Deduplication Fix)
 export const AuthProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
     const [deviceMode, setDeviceMode] = useState(null); // 'kiosk', 'kds', 'manager', 'music'

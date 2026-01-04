@@ -150,7 +150,7 @@ const ModifierModal = (props) => {
   const [orderNote, setOrderNote] = useState('');
   const [isNoteOpen, setIsNoteOpen] = useState(false);
   const [optionSelections, setOptionSelections] = useState({});
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(true); // 🔥 Forced Open
   // const [isLoadingOptions, setIsLoadingOptions] = useState(false); // Derived
 
   // Check if this is an espresso item
@@ -333,15 +333,15 @@ const ModifierModal = (props) => {
     }
   }, [targetItemId]);
 
-          // 2. Fallback to Supabase (RPC BYPASS v2) - v2.4.1
+  // 2. Fallback to Supabase (RPC BYPASS v2) - v2.4.1
   useEffect(() => {
     if (!isOpen || !targetItemId) return;
     if (dexieOptions && dexieOptions.length > 0) return;
     if (isRemoteLoading || remoteData) return;
 
-        const fetchRemote = async () => {
+    const fetchRemote = async () => {
       setIsRemoteLoading(true);
-      setRawDebugData(null); 
+      setRawDebugData(null);
       setDebugStep('INIT_BYPASS');
 
       const updateStep = (step, data = null) => {
@@ -357,20 +357,30 @@ const ModifierModal = (props) => {
         updateStep('FETCH_GROUPS');
         const { data: privGroups } = await supabase.from('optiongroups').select('*').eq('menu_item_id', tId);
         const { data: links } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', tId);
-            
+
         let sharedGroups = [];
         if (links && links.length > 0) {
-            const linkIds = links.map(l => l.group_id);
-            const { data: sGroups } = await supabase.from('optiongroups').select('*').in('id', linkIds);
-            sharedGroups = sGroups || [];
+          const linkIds = links.map(l => l.group_id);
+          const { data: sGroups } = await supabase.from('optiongroups').select('*').in('id', linkIds);
+          sharedGroups = sGroups || [];
         }
 
-        const allGroups = [...(privGroups || []), ...sharedGroups];
-        updateStep(`GOT_${allGroups.length}_GROUPS`, allGroups);
+        const allGroupsRaw = [...(privGroups || []), ...sharedGroups];
+
+        // DEDUPLICATE GROUPS BY ID IMMEDIATELY
+        const allGroupsMap = new Map();
+        allGroupsRaw.forEach(g => {
+          if (g && g.id && !allGroupsMap.has(g.id)) {
+            allGroupsMap.set(g.id, g);
+          }
+        });
+        const allGroups = Array.from(allGroupsMap.values());
+
+        updateStep(`GOT_${allGroups.length}_UNIQUE_GROUPS`, allGroups);
 
         if (allGroups.length === 0) {
-            setRemoteData([]);
-            return;
+          setRemoteData([]);
+          return;
         }
 
         // B. FETCH VALUES via RPC BYPASS
@@ -379,45 +389,53 @@ const ModifierModal = (props) => {
 
         // 🔥 CALL RPC with detailed error capture
         const { data: allValues, error: vErr } = await supabase
-            .rpc('get_values_for_groups', { target_group_ids: groupIds });
+          .rpc('get_values_for_groups', { target_group_ids: groupIds });
 
         if (vErr) {
-            console.error("RPC Error Details:", vErr);
-            // 🔥 LOG THE ERROR EXPLICITLY TO DEBUGGER
-            updateStep('RPC_ERROR', { 
-                msg: vErr.message, 
-                code: vErr.code, 
-                details: vErr.details, 
-                hint: vErr.hint 
-            });
+          console.error("RPC Error Details:", vErr);
+          // 🔥 LOG THE ERROR EXPLICITLY TO DEBUGGER
+          updateStep('RPC_ERROR', {
+            msg: vErr.message,
+            code: vErr.code,
+            details: vErr.details,
+            hint: vErr.hint
+          });
 
-            // Fallback
-            updateStep('FALLBACK_START');
-            const { data: fbValues, error: fbErr } = await supabase.from('optionvalues').select('*').in('group_id', groupIds);
-            
-            if (fbErr) updateStep('FALLBACK_ERROR', fbErr);
-            else updateStep(`GOT_${fbValues?.length}_VALS_FALLBACK`, fbValues);
-            
-            const result = allGroups.map(g => ({
-                ...g,
-                values: (fbValues || [])
-                    .filter(v => v.group_id === g.id)
-                    .map(v => ({ ...v, name: v.name || v.value_name || 'Unk' }))
-                    .sort((a,b) => (a.display_order||0) - (b.display_order||0))
-            }));
-            setRemoteData(result);
-            return;
+          // Fallback
+          updateStep('FALLBACK_START');
+          const { data: fbValues, error: fbErr } = await supabase.from('optionvalues').select('*').in('group_id', groupIds);
+
+          if (fbErr) updateStep('FALLBACK_ERROR', fbErr);
+          else updateStep(`GOT_${fbValues?.length}_VALS_FALLBACK`, fbValues);
+
+          const result = allGroups.map(g => ({
+            ...g,
+            values: (fbValues || [])
+              .filter(v => v.group_id === g.id)
+              .map(v => ({
+                ...v,
+                name: v.name || v.value_name || 'Unk',
+                priceAdjustment: v.price_adjustment || 0
+              }))
+              .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+          }));
+          setRemoteData(result);
+          return;
         }
 
         updateStep(`RPC_SUCCESS_${allValues?.length}`, allValues);
 
         // C. MERGE
         const result = allGroups.map(g => ({
-            ...g,
-            values: (allValues || [])
-                .filter(v => v.group_id === g.id)
-                .map(v => ({ ...v, name: v.name || v.value_name || 'Unk' })) 
-                .sort((a,b) => (a.display_order||0) - (b.display_order||0))
+          ...g,
+          values: (allValues || [])
+            .filter(v => v.group_id === g.id)
+            .map(v => ({
+              ...v,
+              name: v.name || v.value_name || 'Unk',
+              priceAdjustment: v.price_adjustment || 0
+            }))
+            .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
         }));
 
         setRemoteData(result);
@@ -443,14 +461,28 @@ const ModifierModal = (props) => {
 
     const uniqueMap = new Map();
     combined.forEach(g => {
-      if (!uniqueMap.has(g.name)) {
+      // DEDUP BY NAME: If we have multiple groups with the same name (e.g. from local & remote)
+      // we merge them. This prevents "תוספות" appearing twice.
+      const normalizedName = (g.name || '').trim();
+      const key = normalizedName;
+
+      if (!uniqueMap.has(key)) {
         const valMap = new Map();
         (g.values || []).forEach(v => {
-          if (!valMap.has(v.name)) valMap.set(v.name, v);
+          const vName = (v.name || v.value_name || '').trim();
+          if (!valMap.has(vName)) {
+            valMap.set(vName, {
+              ...v,
+              name: vName,
+              priceAdjustment: v.priceAdjustment || v.price_adjustment || 0
+            });
+          }
         });
 
-        uniqueMap.set(g.name, {
+        uniqueMap.set(key, {
           ...g,
+          id: g.id || `temp-${normalizedName}`,
+          name: normalizedName,
           values: Array.from(valMap.values()).sort((a, b) => (a.display_order || 0) - (b.display_order || 0)),
           is_required: g.is_required || (g.min_selection > 0)
         });
@@ -569,10 +601,12 @@ const ModifierModal = (props) => {
   };
 
   const { milkGroup, foamGroup, tempGroup, baseGroup, strengthGroup, otherGroups } = useMemo(() => {
-    if (!optionGroups?.length) return {
-      milkGroup: null, foamGroup: null, tempGroup: null,
-      baseGroup: null, strengthGroup: null, otherGroups: []
-    };
+    if (!optionGroups?.length) {
+      return {
+        milkGroup: null, foamGroup: null, tempGroup: null,
+        baseGroup: null, strengthGroup: null, otherGroups: []
+      };
+    }
 
     const normalize = (str) => (str || '').toLowerCase();
     const hasValue = (group, keyword) => {
@@ -584,42 +618,30 @@ const ModifierModal = (props) => {
 
     // Helper to check group name/title/category
     const checkGroup = (group, keywords, category) => {
-      const title = normalize(group.title || group.name); // Use title as primary, fallback to name
-      const cat = normalize(group.category);
-
-      if (category && cat === category) return true;
+      const title = normalize(group.title || group.name);
       return keywords.some(k => title.includes(k));
     };
 
     // 1. Milk
     const milk = optionGroups.find(g => {
       if (checkGroup(g, ['חלב', 'milk'], 'milk')) return true;
-
-      // Fallback: check values
-      const hasSoy = hasValue(g, 'סויה');
-      const hasOat = hasValue(g, 'שיבולת');
-      const hasAlmond = hasValue(g, 'שקדים');
-      return hasSoy || hasOat || hasAlmond;
+      return hasValue(g, 'סויה') || hasValue(g, 'שיבולת') || hasValue(g, 'שקדים');
     });
 
     // 2. Foam
-    const foam = optionGroups.find(g => {
-      return checkGroup(g, ['קצף', 'foam'], 'texture') || hasValue(g, 'קצף');
-    });
+    const foam = optionGroups.find(g => checkGroup(g, ['קצף', 'foam'], 'texture') || hasValue(g, 'קצף'));
 
     // 3. Temp
-    const temp = optionGroups.find(g => {
-      return checkGroup(g, ['טמפרטורה', 'חום', 'temp'], 'temperature') ||
-        hasValue(g, 'רותח') || hasValue(g, 'פושר');
-    });
+    const temp = optionGroups.find(g =>
+      checkGroup(g, ['טמפרטורה', 'חום', 'temp'], 'temperature') || hasValue(g, 'רותח') || hasValue(g, 'פושר')
+    );
 
     // 4. Base
-    let base = optionGroups.find(g => {
-      return checkGroup(g, ['בסיס', 'base', 'water'], 'base') ||
-        hasValue(g, 'בסיס') || hasValue(g, 'מים');
-    });
+    let base = optionGroups.find(g =>
+      checkGroup(g, ['בסיס', 'base', 'water'], 'base') || hasValue(g, 'בסיס') || hasValue(g, 'מים')
+    );
 
-    // Filter base group: remove orange base if item is coffee
+    // Filter base group logic for coffee (keep existing logic)
     const isCoffeeItem = selectedItem?.name?.includes('קפה') ||
       selectedItem?.name?.includes('הפוך') ||
       selectedItem?.name?.includes('אספרסו') ||
@@ -630,21 +652,26 @@ const ModifierModal = (props) => {
       const hasWaterOrMilkBase = base.values.some(v =>
         v?.name?.includes('מים') || v?.name?.includes('חלב') || v?.name?.includes('סודה')
       );
-
-      if (!hasWaterOrMilkBase) {
-        base = null;
-      }
+      if (!hasWaterOrMilkBase) base = null;
     }
 
     // 5. Strength
-    const strength = optionGroups.find(g => {
-      return checkGroup(g, ['חוזק', 'strength'], 'strength') ||
-        hasValue(g, 'חזק') || hasValue(g, 'חלש');
-    });
-
-    const others = optionGroups.filter(g =>
-      g !== milk && g !== foam && g !== temp && g !== base && g !== strength
+    const strength = optionGroups.find(g =>
+      checkGroup(g, ['חוזק', 'strength'], 'strength') || hasValue(g, 'חזק') || hasValue(g, 'חלש')
     );
+
+    // Find optionsGroup for exclusion
+    const optionsGroup = optionGroups.find(g =>
+      g.name?.includes('אפשרויות') || g.name?.includes('תוספות מיוחדות')
+    );
+
+    // Filter others: Exclude categorized groups and optionsGroup by ID
+    const others = optionGroups.filter(g => {
+      const exclusions = [
+        milk?.id, foam?.id, temp?.id, base?.id, strength?.id, optionsGroup?.id
+      ].filter(Boolean); // Remove nulls
+      return !exclusions.includes(g.id);
+    });
 
     return {
       milkGroup: milk, foamGroup: foam, tempGroup: temp,
@@ -696,9 +723,9 @@ const ModifierModal = (props) => {
       if (current === valueId) {
         // Allow uncheck if NOT required
         if (!group.is_required) {
-             return { ...prev, [groupId]: null };
+          return { ...prev, [groupId]: null };
         }
-        
+
         // Otherwise revert to default logic
         const defaultVal = group.values?.find(v => v.is_default) ||
           group.values?.find(v => v.name?.includes('רגיל')) ||
@@ -760,441 +787,446 @@ const ModifierModal = (props) => {
   if (!isOpen || !selectedItem) return null;
 
 
-  try {
-    console.log('🚀 ModifierModal Reaching Return Statement - Rendering JSX');
-    return (
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
-        dir="rtl"
-        onClick={onClose}
-      >
-        {/* Backdrop */}
-        {/* The backdrop is now part of the main container div */}
+  // console.log('🚀 ModifierModal Reaching Return Statement - Rendering JSX');
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+      dir="rtl"
+      onClick={onClose}
+    >
+      {/* Backdrop */}
+      {/* The backdrop is now part of the main container div */}
 
-        {/* Modal */}
-        <div
-          className="relative w-auto max-w-[90vw] min-w-[420px] flex flex-col bg-[#FAFAFA] rounded-[2rem] shadow-2xl overflow-hidden"
-          onClick={e => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="bg-white/80 backdrop-blur-xl px-6 py-4 flex items-center sticky top-0 z-20 border-b border-slate-100/50">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-orange-100 to-orange-50 text-orange-500 rounded-2xl flex items-center justify-center shadow-inner">
-                <Coffee size={20} strokeWidth={2.5} />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-slate-800 tracking-tight">{selectedItem.name}</h2>
-                <p className="text-sm text-slate-400">התאמה אישית</p>
-              </div>
+      {/* Modal */}
+      <div
+        className="relative w-auto max-w-[90vw] min-w-[420px] flex flex-col bg-[#FAFAFA] rounded-[2rem] shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="bg-white/80 backdrop-blur-xl px-6 py-4 flex items-center sticky top-0 z-20 border-b border-slate-100/50">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-gradient-to-br from-orange-100 to-orange-50 text-orange-500 rounded-2xl flex items-center justify-center shadow-inner">
+              <Coffee size={20} strokeWidth={2.5} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-800 tracking-tight">{selectedItem.name}</h2>
+              <p className="text-sm text-slate-400">התאמה אישית</p>
             </div>
           </div>
+        </div>
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[150px]">
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[150px]">
 
-            {/* 1. Milk Selection - Hero - MOVED TO TOP EXPLICITLY */}
-            {milkGroup && milkGroup.values && !isEspresso && (
-              <section className="order-first mb-4">
-                <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
-                  <div className="flex gap-2">
-                    {(() => {
-                      const seen = new Set();
-                      let values = milkGroup.values?.filter(value => {
-                        const name = (value.name || '').toLowerCase();
+          {/* 1. Milk Selection - Hero - MOVED TO TOP EXPLICITLY */}
+          {milkGroup && milkGroup.values && !isEspresso && (
+            <section className="order-first mb-4">
+              <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
+                <div className="flex gap-2">
+                  {(() => {
+                    const seen = new Set();
+                    let values = milkGroup.values?.filter(value => {
+                      const name = (value.name || '').toLowerCase();
 
-                        // Always filter out juices and chocolate drinks from milk options
-                        if (name.includes('תפוזים') || name.includes('לימונענע') || name.includes('גזר') || name.includes('תפוח')) return false;
-                        if (name.includes('שוקו')) return false;
+                      // Always filter out juices and chocolate drinks from milk options
+                      if (name.includes('תפוזים') || name.includes('לימונענע') || name.includes('גזר') || name.includes('תפוח')) return false;
+                      if (name.includes('שוקו')) return false;
 
-                        // Filter out special modifiers
-                        if (name.includes('נטול קפאין') || name.includes('מפורק')) return false;
-                        if (name.includes('ללא')) return false;
+                      // Filter out special modifiers
+                      if (name.includes('נטול קפאין') || name.includes('מפורק')) return false;
+                      if (name.includes('ללא')) return false;
 
-                        const shortName = name.includes('סויה') ? 'סויה' :
-                          name.includes('שיבולת') ? 'שיבולת' :
-                            name.includes('שקדים') ? 'שקדים' :
-                              name.includes('רגיל') ? 'רגיל' : name;
+                      const shortName = name.includes('סויה') ? 'סויה' :
+                        name.includes('שיבולת') ? 'שיבולת' :
+                          name.includes('שקדים') ? 'שקדים' :
+                            name.includes('רגיל') ? 'רגיל' : name;
 
-                        if (seen.has(shortName)) return false;
-                        seen.add(shortName);
-                        return true;
-                      }) || [];
+                      if (seen.has(shortName)) return false;
+                      seen.add(shortName);
+                      return true;
+                    }) || [];
 
-                      // Sort: Regular (Right), Oat, Soy
-                      values.sort((a, b) => {
-                        const aName = (a.name || '').toLowerCase();
-                        const bName = (b.name || '').toLowerCase();
+                    // Sort: Regular (Right), Oat, Soy
+                    values.sort((a, b) => {
+                      const aName = (a.name || '').toLowerCase();
+                      const bName = (b.name || '').toLowerCase();
 
-                        const getScore = (n) => {
-                          if (n.includes('רגיל')) return 10;
-                          if (n.includes('שיבולת')) return 9;
-                          if (n.includes('סויה')) return 8;
-                          if (n.includes('שקדים')) return 7;
-                          return 0;
-                        };
+                      const getScore = (n) => {
+                        if (n.includes('רגיל')) return 10;
+                        if (n.includes('שיבולת')) return 9;
+                        if (n.includes('סויה')) return 8;
+                        if (n.includes('שקדים')) return 7;
+                        return 0;
+                      };
 
-                        return getScore(bName) - getScore(aName); // Descending score
-                      });
+                      return getScore(bName) - getScore(aName); // Descending score
+                    });
 
-                      return values.map(value => {
-                        let displayName = value?.name || '';
-                        if (displayName.includes('סויה')) displayName = 'סויה';
-                        else if (displayName.includes('שיבולת')) displayName = 'שיבולת';
-                        else if (displayName.includes('שקדים')) displayName = 'שקדים';
-                        else if (displayName.includes('רגיל')) displayName = 'רגיל';
+                    return values.map(value => {
+                      let displayName = value?.name || '';
+                      if (displayName.includes('סויה')) displayName = 'סויה';
+                      else if (displayName.includes('שיבולת')) displayName = 'שיבולת';
+                      else if (displayName.includes('שקדים')) displayName = 'שקדים';
+                      else if (displayName.includes('רגיל')) displayName = 'רגיל';
 
-                        // FIX: Pass 'milk' explicitly
-                        const IconComponent = getIconForValue(value?.name || '', 'milk');
-                        const isSelected = String(optionSelections[milkGroup.id]) === String(value.id);
-                        const effectivePrice = value.priceAdjustment || 0;
-                        if (effectivePrice > 0) console.log(`🥛 Milk option price: ${value.name} = ${effectivePrice}`);
+                      // FIX: Pass 'milk' explicitly
+                      const IconComponent = getIconForValue(value?.name || '', 'milk');
+                      const isSelected = String(optionSelections[milkGroup.id]) === String(value.id);
+                      const effectivePrice = value.priceAdjustment || 0;
+                      if (effectivePrice > 0) console.log(`🥛 Milk option price: ${value.name} = ${effectivePrice}`);
 
-                        return (
-                          <MilkCard
-                            key={value.id}
-                            label={displayName}
-                            Icon={IconComponent}
-                            price={effectivePrice}
-                            isSelected={isSelected}
-                            onClick={() => toggleOption(milkGroup.id, String(value.id))}
-                          />
-                        );
-                      });
-                    })()}
+                      return (
+                        <MilkCard
+                          key={value.id}
+                          label={displayName}
+                          Icon={IconComponent}
+                          price={effectivePrice}
+                          isSelected={isSelected}
+                          onClick={() => toggleOption(milkGroup.id, String(value.id))}
+                        />
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* Loading State */}
+          {isLoadingOptions && (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+            </div>
+          )}
+
+          {/* Empty State Message */}
+          {(optionGroups || []).length === 0 && !isLoadingOptions && (
+            <div className="p-4 text-center text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200 mb-4">
+              <p className="font-medium">אין תוספות מובנות לפריט זה</p>
+              <p className="text-xs mt-1">אבל אפשר לכתוב הערות חופשיות למטה 👇</p>
+            </div>
+          )}
+
+          {/* 2. Modifiers Grid (Dynamic Columns) */}
+          {(foamGroup || tempGroup || baseGroup || strengthGroup) && (
+            <section>
+              <div className={`grid gap-4 ${[foamGroup, tempGroup, baseGroup, strengthGroup].filter(Boolean).length === 1
+                ? 'grid-cols-1'
+                : [foamGroup, tempGroup, baseGroup, strengthGroup].filter(Boolean).length === 2
+                  ? 'grid-cols-2'
+                  : [foamGroup, tempGroup, baseGroup, strengthGroup].filter(Boolean).length === 3
+                    ? 'grid-cols-3'
+                    : 'grid-cols-4'
+                }`}>
+
+                {/* Foam Column */}
+                {foamGroup && (
+                  <div className="space-y-1.5 min-w-[140px]">
+                    <p className="text-xs text-slate-400 text-center mb-1">קצף</p>
+                    {foamGroup.values?.filter(v => {
+                      const name = (v.name || '').toLowerCase();
+                      return !name.includes('רגיל') && !name.includes('default');
+                    }).map(value => {
+                      const IconComponent = getIconForValue(value.name, 'foam');
+                      const isSelected = String(optionSelections[foamGroup.id]) === String(value.id);
+                      const effectivePrice = value.priceAdjustment || 0;
+
+                      return (
+                        <ModifierPill
+                          key={value.id}
+                          label={value.name}
+                          Icon={IconComponent}
+                          isSelected={isSelected}
+                          onClick={() => toggleOption(foamGroup.id, String(value.id))}
+                          price={effectivePrice}
+                        />
+                      );
+                    })}
                   </div>
-                </div>
-              </section>
-            )}
+                )}
 
-            {/* Loading State */}
-            {isLoadingOptions && (
-              <div className="flex justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+                {/* Temperature Column */}
+                {tempGroup && (
+                  <div className="space-y-1.5 min-w-[140px]">
+                    <p className="text-xs text-slate-400 text-center mb-1">טמפרטורה</p>
+                    {tempGroup.values?.filter(v => {
+                      const name = (v.name || '').toLowerCase();
+                      return !name.includes('רגיל') && !name.includes('default');
+                    }).map(value => {
+                      const IconComponent = getIconForValue(value.name, 'temp');
+                      const isSelected = String(optionSelections[tempGroup.id]) === String(value.id);
+                      const effectivePrice = value.priceAdjustment || 0;
+
+                      return (
+                        <ModifierPill
+                          key={value.id}
+                          label={value.name}
+                          Icon={IconComponent}
+                          isSelected={isSelected}
+                          onClick={() => toggleOption(tempGroup.id, String(value.id))}
+                          price={effectivePrice}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Base Column */}
+                {baseGroup && (
+                  <div className="space-y-1.5 min-w-[140px]">
+                    <p className="text-xs text-slate-400 text-center mb-1">בסיס</p>
+                    {baseGroup.values?.filter(v => {
+                      const name = (v.name || '').toLowerCase();
+                      return !name.includes('רגיל') && !name.includes('default');
+                    }).map(value => {
+                      const IconComponent = getIconForValue(value.name, 'base');
+                      const isSelected = String(optionSelections[baseGroup.id]) === String(value.id);
+                      const effectivePrice = value.priceAdjustment || 0;
+
+                      return (
+                        <ModifierPill
+                          key={value.id}
+                          label={value.name}
+                          Icon={IconComponent}
+                          isSelected={isSelected}
+                          onClick={() => toggleOption(baseGroup.id, String(value.id))}
+                          price={effectivePrice}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Strength Column */}
+                {strengthGroup && (
+                  <div className="space-y-1.5 min-w-[140px]">
+                    <p className="text-xs text-slate-400 text-center mb-1">חוזק</p>
+                    {strengthGroup.values?.filter(v => {
+                      const name = (v.name || '').toLowerCase();
+                      return !name.includes('רגיל') && !name.includes('default');
+                    }).map(value => {
+                      const IconComponent = getIconForValue(value.name, 'strength');
+                      const isSelected = String(optionSelections[strengthGroup.id]) === String(value.id);
+                      const effectivePrice = value.priceAdjustment || 0;
+
+                      return (
+                        <ModifierPill
+                          key={value.id}
+                          label={value.name}
+                          Icon={IconComponent}
+                          isSelected={isSelected}
+                          onClick={() => toggleOption(strengthGroup.id, String(value.id))}
+                          price={effectivePrice}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+
               </div>
-            )}
+            </section>
+          )}
 
-            {/* Empty State Message */}
-            {(optionGroups || []).length === 0 && !isLoadingOptions && (
-              <div className="p-4 text-center text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200 mb-4">
-                <p className="font-medium">אין תוספות מובנות לפריט זה</p>
-                <p className="text-xs mt-1">אבל אפשר לכתוב הערות חופשיות למטה 👇</p>
-              </div>
-            )}
+          {/* 4. Other Groups (Toppings, etc.) */}
+          {otherGroups.length > 0 && (
+            <div className="flex flex-col gap-4">
+              {otherGroups.map((group) => {
+                const isMultipleSelect = group.is_multiple_select || group.type === 'multi';
+                const visibleOptions = (group.values || []).filter(v => {
+                  if (!v.name) return false;
+                  const lower = (v.name || '').toLowerCase();
+                  if (lower.includes('מפורק')) return false;
+                  if (lower.includes('נטול')) return false;
+                  if (lower.includes('רגיל') || lower.includes('default')) return false;
+                  return true;
+                });
 
-            {/* 2. Modifiers Grid (Dynamic Columns) */}
-            {(foamGroup || tempGroup || baseGroup || strengthGroup) && (
-              <section>
-                <div className={`grid gap-4 ${[foamGroup, tempGroup, baseGroup, strengthGroup].filter(Boolean).length === 1
-                  ? 'grid-cols-1'
-                  : [foamGroup, tempGroup, baseGroup, strengthGroup].filter(Boolean).length === 2
-                    ? 'grid-cols-2'
-                    : [foamGroup, tempGroup, baseGroup, strengthGroup].filter(Boolean).length === 3
-                      ? 'grid-cols-3'
-                      : 'grid-cols-4'
-                  }`}>
+                if (visibleOptions.length === 0) return null;
 
-                  {/* Foam Column */}
-                  {foamGroup && (
-                    <div className="space-y-1.5 min-w-[140px]">
-                      <p className="text-xs text-slate-400 text-center mb-1">קצף</p>
-                      {foamGroup.values?.filter(v => {
-                        const name = (v.name || '').toLowerCase();
-                        return !name.includes('רגיל') && !name.includes('default');
-                      }).map(value => {
-                        const IconComponent = getIconForValue(value.name, 'foam');
-                        const isSelected = String(optionSelections[foamGroup.id]) === String(value.id);
+                return (
+                  <div key={group.id} className="flex flex-col gap-2 bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
+                    <h4 className="text-sm font-black text-slate-800 px-1">{group.name}</h4>
+                    <div className={`grid gap-2 ${isMultipleSelect ? 'grid-cols-3' : visibleOptions.length <= 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                      {visibleOptions.map(value => {
+                        const IconComponent = getIconForValue(value.name, group.name);
+                        const valueIdStr = String(value.id);
+                        let isSelected;
+                        if (isMultipleSelect) {
+                          const selectedArray = Array.isArray(optionSelections[group.id])
+                            ? optionSelections[group.id]
+                            : [];
+                          isSelected = selectedArray.some(id => String(id) === valueIdStr);
+                        } else {
+                          isSelected = String(optionSelections[group.id]) === valueIdStr;
+                        }
+
                         const effectivePrice = value.priceAdjustment || 0;
+                        if (effectivePrice > 0) console.log(`🍕 Option price: ${value.name} (Group: ${group.name}) = ${effectivePrice}`);
 
                         return (
-                          <ModifierPill
+                          <button
                             key={value.id}
-                            label={value.name}
-                            Icon={IconComponent}
-                            isSelected={isSelected}
-                            onClick={() => toggleOption(foamGroup.id, String(value.id))}
-                            price={effectivePrice}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Temperature Column */}
-                  {tempGroup && (
-                    <div className="space-y-1.5 min-w-[140px]">
-                      <p className="text-xs text-slate-400 text-center mb-1">טמפרטורה</p>
-                      {tempGroup.values?.filter(v => {
-                        const name = (v.name || '').toLowerCase();
-                        return !name.includes('רגיל') && !name.includes('default');
-                      }).map(value => {
-                        const IconComponent = getIconForValue(value.name, 'temp');
-                        const isSelected = String(optionSelections[tempGroup.id]) === String(value.id);
-                        const effectivePrice = value.priceAdjustment || 0;
-
-                        return (
-                          <ModifierPill
-                            key={value.id}
-                            label={value.name}
-                            Icon={IconComponent}
-                            isSelected={isSelected}
-                            onClick={() => toggleOption(tempGroup.id, String(value.id))}
-                            price={effectivePrice}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Base Column */}
-                  {baseGroup && (
-                    <div className="space-y-1.5 min-w-[140px]">
-                      <p className="text-xs text-slate-400 text-center mb-1">בסיס</p>
-                      {baseGroup.values?.filter(v => {
-                        const name = (v.name || '').toLowerCase();
-                        return !name.includes('רגיל') && !name.includes('default');
-                      }).map(value => {
-                        const IconComponent = getIconForValue(value.name, 'base');
-                        const isSelected = String(optionSelections[baseGroup.id]) === String(value.id);
-                        const effectivePrice = value.priceAdjustment || 0;
-
-                        return (
-                          <ModifierPill
-                            key={value.id}
-                            label={value.name}
-                            Icon={IconComponent}
-                            isSelected={isSelected}
-                            onClick={() => toggleOption(baseGroup.id, String(value.id))}
-                            price={effectivePrice}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Strength Column */}
-                  {strengthGroup && (
-                    <div className="space-y-1.5 min-w-[140px]">
-                      <p className="text-xs text-slate-400 text-center mb-1">חוזק</p>
-                      {strengthGroup.values?.filter(v => {
-                        const name = (v.name || '').toLowerCase();
-                        return !name.includes('רגיל') && !name.includes('default');
-                      }).map(value => {
-                        const IconComponent = getIconForValue(value.name, 'strength');
-                        const isSelected = String(optionSelections[strengthGroup.id]) === String(value.id);
-                        const effectivePrice = value.priceAdjustment || 0;
-
-                        return (
-                          <ModifierPill
-                            key={value.id}
-                            label={value.name}
-                            Icon={IconComponent}
-                            isSelected={isSelected}
-                            onClick={() => toggleOption(strengthGroup.id, String(value.id))}
-                            price={effectivePrice}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
-
-                </div>
-              </section>
-            )}
-
-            {/* 4. Other Groups (Toppings, etc.) */}
-            {otherGroups.length > 0 && (
-              <div className="flex flex-col gap-4">
-                {otherGroups.map((group) => {
-                  const isMultipleSelect = group.is_multiple_select || group.type === 'multi';
-                  const visibleOptions = (group.values || []).filter(v => {
-                    if (!v.name) return false;
-                    const lower = (v.name || '').toLowerCase();
-                    if (lower.includes('מפורק')) return false;
-                    if (lower.includes('נטול')) return false;
-                    if (lower.includes('רגיל') || lower.includes('default')) return false;
-                    return true;
-                  });
-
-                  if (visibleOptions.length === 0) return null;
-
-                  return (
-                    <div key={group.id} className="flex flex-col gap-2 bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
-                      <h4 className="text-sm font-black text-slate-800 px-1">{group.name}</h4>
-                      <div className={`grid gap-2 ${isMultipleSelect ? 'grid-cols-3' : visibleOptions.length <= 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
-                        {visibleOptions.map(value => {
-                          const IconComponent = getIconForValue(value.name, group.name);
-                          const valueIdStr = String(value.id);
-                          let isSelected;
-                          if (isMultipleSelect) {
-                            const selectedArray = Array.isArray(optionSelections[group.id])
-                              ? optionSelections[group.id]
-                              : [];
-                            isSelected = selectedArray.some(id => String(id) === valueIdStr);
-                          } else {
-                            isSelected = String(optionSelections[group.id]) === valueIdStr;
-                          }
-
-                          const effectivePrice = value.priceAdjustment || 0;
-                          if (effectivePrice > 0) console.log(`🍕 Option price: ${value.name} (Group: ${group.name}) = ${effectivePrice}`);
-
-                          return (
-                            <button
-                              key={value.id}
-                              onClick={() => toggleOption(group.id, String(value.id))}
-                              className={`
+                            onClick={() => toggleOption(group.id, String(value.id))}
+                            className={`
                                 relative flex flex-col items-center justify-center gap-1.5 py-4 px-3 rounded-2xl
                                 font-semibold transition-all duration-200 touch-manipulation min-h-[88px] active:scale-95
                                 ${isSelected
-                                  ? "bg-orange-50 text-orange-600 ring-2 ring-orange-400 ring-offset-2 shadow-lg shadow-orange-100"
-                                  : "bg-white text-slate-500 hover:bg-slate-50 border border-slate-100 shadow-sm hover:shadow-md"
-                                }
+                                ? "bg-orange-50 text-orange-600 ring-2 ring-orange-400 ring-offset-2 shadow-lg shadow-orange-100"
+                                : "bg-white text-slate-500 hover:bg-slate-50 border border-slate-100 shadow-sm hover:shadow-md"
+                              }
                               `}
-                            >
-                              <IconComponent
-                                size={24}
-                                strokeWidth={isSelected ? 2.5 : 2}
-                                className={`transition-transform duration-200 ${isSelected ? "scale-110" : ""}`}
-                              />
-                              <span className="text-sm text-center">{value.name || value.value_name}</span>
-                              {effectivePrice > 0 && (
-                                <span className={`text-xs font-medium ${isSelected ? "text-orange-500" : "text-slate-400"}`}>
-                                  +₪{effectivePrice}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* 3. Special Options Row: Decaf | Note - AT BOTTOM */}
-            <section className="mt-2">
-              {(() => {
-                const specialOptions = [];
-                const isCoffeeItem = selectedItem?.name?.includes('אספרסו') ||
-                  selectedItem?.name?.includes('הפוך') ||
-                  selectedItem?.name?.includes('מוקה') ||
-                  selectedItem?.name?.includes('אמריקנו');
-
-                [...(optionGroups || [])].forEach(group => {
-                  group.values?.forEach(val => {
-                    if (val.name?.includes('מפורק')) {
-                      specialOptions.push({ ...val, groupId: group.id });
-                    }
-                    if (val.name?.includes('נטול') && isCoffeeItem) {
-                      specialOptions.push({ ...val, groupId: group.id });
-                    }
-                  });
-                });
-
-                specialOptions.sort((a, b) => {
-                  const aIsDecaf = a.name?.includes('נטול');
-                  const bIsDecaf = b.name?.includes('נטול');
-                  if (aIsDecaf && !bIsDecaf) return -1;
-                  if (!aIsDecaf && bIsDecaf) return 1;
-                  return 0;
-                });
-
-                const hasSpecialOptions = specialOptions.length > 0;
-                const gridCols = hasSpecialOptions ? 'grid-cols-2' : 'grid-cols-1';
-
-                return (
-                  <div className={`grid gap-3 ${gridCols}`}>
-                    {hasSpecialOptions && (
-                      <div className="flex gap-2">
-                        {specialOptions.map(value => {
-                          const IconComponent = getIconForValue(value.name, '');
-                          const isSelected = String(optionSelections[value.groupId]) === String(value.id);
-                          const effectivePrice = value.priceAdjustment || 0;
-                          const displayName = value.name.includes('נטול') ? 'נטול קפאין' : 'מפורק';
-
-                          return (
-                            <button
-                              key={value.id}
-                              onClick={() => toggleOption(value.groupId, String(value.id))}
-                              className={`flex-1 relative flex items-center justify-center gap-2 h-[50px] rounded-xl border transition-all duration-200 ${isSelected
-                                ? 'bg-purple-50 border-purple-200 ring-1 ring-purple-500'
-                                : 'bg-white border-slate-200 hover:border-slate-300'
-                                }`}
-                            >
-                              <IconComponent size={16} className={isSelected ? 'text-purple-600' : 'text-slate-400'} />
-                              <span className={`text-sm font-bold ${isSelected ? 'text-purple-700' : 'text-slate-600'}`}>
-                                {displayName}
+                          >
+                            <IconComponent
+                              size={24}
+                              strokeWidth={isSelected ? 2.5 : 2}
+                              className={`transition-transform duration-200 ${isSelected ? "scale-110" : ""}`}
+                            />
+                            <span className="text-sm text-center">{value.name || value.value_name}</span>
+                            {effectivePrice > 0 && (
+                              <span className={`text-xs font-medium ${isSelected ? "text-orange-500" : "text-slate-400"}`}>
+                                +₪{effectivePrice}
                               </span>
-                              {effectivePrice > 0 && (
-                                <span className="text-[10px] text-slate-400 ml-1">+{effectivePrice}₪</span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* Note Input Pill - Only show if allow_notes is not false */}
-                    {selectedItem?.allow_notes !== false && (
-                      <div className={`relative flex items-center h-[50px] rounded-xl border transition-all duration-200 ${orderNote.length > 0
-                        ? 'bg-orange-50 border-orange-500 ring-1 ring-orange-500'
-                        : 'bg-white border-slate-200 hover:border-slate-300'
-                        }`}>
-
-                        <input
-                          type="text"
-                          value={orderNote}
-                          onChange={(e) => setOrderNote(e.target.value)}
-                          maxLength={20}
-                          placeholder="הוסף הערה"
-                          className={`w-full h-full bg-transparent text-center font-bold text-sm focus:outline-none px-2 placeholder:text-slate-400 ${orderNote.length > 0 ? 'text-orange-600' : 'text-slate-800'
-                            }`}
-                        />
-
-                        {orderNote.length > 0 && (
-                          <span className="absolute bottom-1 left-2 text-[9px] text-orange-400 font-medium">
-                            {orderNote.length}/20
-                          </span>
-                        )}
-                      </div>
-                    )}
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 );
-              })()}
-            </section>
-
-
-
-          </div>
-
-                                                  
-
-          <div className="p-3 bg-white border-t border-slate-100 shadow-[0_-10px_30px_rgba(0,0,0,0.03)]">
-            <div className="flex gap-3">
-              <button
-                onClick={onClose}
-                className="w-1/3 h-12 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold transition-colors active:scale-95"
-              >
-                ביטול
-              </button>
-              <button
-                onClick={handleAdd}
-                className="flex-1 bg-slate-900 hover:bg-black text-white h-12 rounded-2xl flex items-center justify-between px-6 text-base font-bold shadow-xl shadow-slate-300/50 transition-colors active:scale-98"
-              >
-                <span>הוסף להזמנה</span>
-                <div className="flex items-center gap-2 bg-white/15 px-3 py-1 rounded-xl">
-                  <span>₪{totalPrice}</span>
-                  <Check size={16} />
-                </div>
-              </button>
+              })}
             </div>
+          )}
+
+          {/* 3. Special Options Row: Decaf | Note - AT BOTTOM */}
+          <section className="mt-2">
+            {(() => {
+              const specialOptions = [];
+              const isCoffeeItem = selectedItem?.name?.includes('אספרסו') ||
+                selectedItem?.name?.includes('הפוך') ||
+                selectedItem?.name?.includes('מוקה') ||
+                selectedItem?.name?.includes('אמריקנו');
+
+              const seenNames = new Set();
+              [...(optionGroups || [])].forEach(group => {
+                group.values?.forEach(val => {
+                  const name = val.name || '';
+                  if (name.includes('מפורק') && !seenNames.has('מפורק')) {
+                    specialOptions.push({ ...val, groupId: group.id });
+                    seenNames.add('מפורק');
+                  }
+                  if (name.includes('נטול') && !seenNames.has('נטול')) {
+                    specialOptions.push({ ...val, groupId: group.id });
+                    seenNames.add('נטול');
+                  }
+                });
+              });
+
+              specialOptions.sort((a, b) => {
+                const aIsDecaf = a.name?.includes('נטול');
+                const bIsDecaf = b.name?.includes('נטול');
+                if (aIsDecaf && !bIsDecaf) return -1;
+                if (!aIsDecaf && bIsDecaf) return 1;
+                return 0;
+              });
+
+              console.log('🔍 SPECIAL OPTIONS DEBUG:');
+              specialOptions.forEach((o, idx) => {
+                console.log(`  [${idx}] Name: "${o.name}" | ID: ${o.id} | GroupID: ${o.groupId}`);
+              });
+              const hasSpecialOptions = specialOptions.length > 0;
+              const gridCols = hasSpecialOptions ? 'grid-cols-2' : 'grid-cols-1';
+
+              return (
+                <div className={`grid gap-3 ${gridCols}`}>
+                  {hasSpecialOptions && (
+                    <div className="flex gap-2">
+                      {specialOptions.map(value => {
+                        const IconComponent = getIconForValue(value.name, '');
+                        const isSelected = String(optionSelections[value.groupId]) === String(value.id);
+                        const effectivePrice = value.priceAdjustment || 0;
+                        const displayName = value.name.includes('נטול') ? 'נטול קפאין' : 'מפורק';
+
+                        return (
+                          <button
+                            key={value.id}
+                            onClick={() => toggleOption(value.groupId, String(value.id))}
+                            className={`flex-1 relative flex items-center justify-center gap-2 h-[50px] rounded-xl border transition-all duration-200 ${isSelected
+                              ? 'bg-purple-50 border-purple-200 ring-1 ring-purple-500'
+                              : 'bg-white border-slate-200 hover:border-slate-300'
+                              }`}
+                          >
+                            <IconComponent size={16} className={isSelected ? 'text-purple-600' : 'text-slate-400'} />
+                            <span className={`text-sm font-bold ${isSelected ? 'text-purple-700' : 'text-slate-600'}`}>
+                              {displayName}
+                            </span>
+                            {effectivePrice > 0 && (
+                              <span className="text-[10px] text-slate-400 ml-1">+{effectivePrice}₪</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Note Input Pill - Only show if allow_notes is not false */}
+                  {selectedItem?.allow_notes !== false && (
+                    <div className={`relative flex items-center h-[50px] rounded-xl border transition-all duration-200 ${orderNote.length > 0
+                      ? 'bg-orange-50 border-orange-500 ring-1 ring-orange-500'
+                      : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}>
+
+                      <input
+                        type="text"
+                        value={orderNote}
+                        onChange={(e) => setOrderNote(e.target.value)}
+                        maxLength={20}
+                        placeholder="הוסף הערה"
+                        className={`w-full h-full bg-transparent text-center font-bold text-sm focus:outline-none px-2 placeholder:text-slate-400 ${orderNote.length > 0 ? 'text-orange-600' : 'text-slate-800'
+                          }`}
+                      />
+
+                      {orderNote.length > 0 && (
+                        <span className="absolute bottom-1 left-2 text-[9px] text-orange-400 font-medium">
+                          {orderNote.length}/20
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </section>
+
+
+
+        </div>
+
+
+
+
+        <div className="p-3 bg-white border-t border-slate-100 shadow-[0_-10px_30px_rgba(0,0,0,0.03)]">
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="w-1/3 h-12 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold transition-colors active:scale-95"
+            >
+              ביטול
+            </button>
+            <button
+              onClick={handleAdd}
+              className="flex-1 bg-slate-900 hover:bg-black text-white h-12 rounded-2xl flex items-center justify-between px-6 text-base font-bold shadow-xl shadow-slate-300/50 transition-colors active:scale-98"
+            >
+              <span>הוסף להזמנה</span>
+              <div className="flex items-center gap-2 bg-white/15 px-3 py-1 rounded-xl">
+                <span>₪{totalPrice}</span>
+                <Check size={16} />
+              </div>
+            </button>
           </div>
-        </div >
+        </div>
       </div >
-    );
-  } catch (error) {
-    console.error("ModifierModal crashed:", error, error.message, error.stack);
-    return null;
-  }
+    </div >
+  );
+
 };
 
 export default React.memo(ModifierModal);

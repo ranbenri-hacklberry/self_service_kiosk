@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import MenuCategoryFilter from './components/MenuCategoryFilter';
@@ -72,6 +72,7 @@ const MenuOrderingInterface = () => {
   const [isProcessingOrder, setIsProcessingOrder] = useState(false);
   const [showConfirmationModal, setShowConfirmationModal] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const editDataLoadedRef = useRef(false); // Track if edit data was loaded
   const [editingOrderData, setEditingOrderData] = useState(null);
   const [currentCustomer, setCurrentCustomer] = useState(() => {
     const raw = localStorage.getItem('currentCustomer');
@@ -727,6 +728,18 @@ const MenuOrderingInterface = () => {
     // In edit mode, we check cartHistory. In new order mode, we check if cart or customer is present.
     const hasChanges = isEditMode ? cartHistory.length > 0 : (hasItems || hasCustomerInfo);
 
+    // In edit mode, if cart is empty (loading failed), allow immediate exit
+    if (isEditMode && !hasItems) {
+      console.log('🔙 Edit mode with empty cart - allowing exit without confirmation');
+      clearOrderSessionState();
+      if (origin === 'kds') {
+        navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
+      } else {
+        navigate('/mode-selection');
+      }
+      return;
+    }
+
     if (hasChanges) {
       console.log('⚠️ Unsaved changes detected, showing exit confirmation');
       setShowExitConfirmModal(true);
@@ -814,117 +827,7 @@ const MenuOrderingInterface = () => {
   };
 
   // Check for edit mode on component mount
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const editOrderId = urlParams.get('editOrderId');
-
-    // Safety Check: Redirect if ID is explicitly "undefined" string
-    if (editOrderId === 'undefined' || editOrderId === 'null') {
-      console.error('❌ Detected invalid editOrderId in URL:', editOrderId);
-      navigate(currentUser?.business_id ? '/kds' : '/'); // Fallback logic
-      return;
-    }
-
-    if (editOrderId) {
-      const editData = sessionStorage.getItem('editOrderData');
-      if (editData) {
-        try {
-          const parsedData = JSON.parse(editData);
-
-          if (!parsedData || !parsedData.id || parsedData.id === 'undefined') {
-            console.error('❌ Computed invalid order data from session:', parsedData);
-            sessionStorage.removeItem('editOrderData');
-            alert('נתוני הזמנה לא תקינים. חוזר למסך ראשי.');
-            navigate('/kds', { state: { viewMode: parsedData?.viewMode || 'active' } });
-            return;
-          }
-
-          console.log('✅ Loaded Edit Order Data Validated:', parsedData.id);
-          setIsEditMode(true);
-          setEditingOrderData(parsedData);
-
-          // Load the existing order items into cart with correct prices
-          const orderItems = parsedData.items?.map(item => {
-            // Find the corresponding menu item to get base price
-            const menuItem = menuItems.find(menu => menu.id === item.menuItemId || menu.id === item.id);
-            const calculatedPrice = calculateItemPriceWithMods(item, menuItem);
-
-            // Convert mods (JSON string or object) to selectedOptions format
-            let selectedOptions = item.selectedOptions || [];
-            if (!selectedOptions.length && item.mods) {
-              try {
-                // If mods is a string, parse it
-                const parsedMods = typeof item.mods === 'string' ? JSON.parse(item.mods) : item.mods;
-
-                // If parsedMods is an array of value IDs, convert to selectedOptions format
-                if (Array.isArray(parsedMods)) {
-                  selectedOptions = parsedMods
-                    .filter(id => id !== null && id !== undefined)
-                    .map(valueId => ({
-                      valueId: Number(valueId),
-                      valueName: '', // Will be filled when needed
-                      groupId: null,
-                      priceAdjustment: 0
-                    }));
-                } else if (typeof parsedMods === 'object') {
-                  // If it's an object, convert to array format
-                  selectedOptions = Object.entries(parsedMods)
-                    .filter(([key, value]) => value !== null && value !== undefined && value !== 0)
-                    .map(([key, value]) => ({
-                      valueId: Number(value),
-                      valueName: '',
-                      groupId: null,
-                      priceAdjustment: 0
-                    }));
-                }
-              } catch (e) {
-                console.error('Error parsing mods:', e);
-                selectedOptions = [];
-              }
-            }
-
-            console.log(`📦 Loading item for edit: ${item.name} `, {
-              menuItemId: item.menuItemId,
-              id: item.id,
-              mods: item.mods,
-              selectedOptions: selectedOptions
-            });
-
-            return {
-              ...item,
-              // Ensure menuItemId is preserved (INTEGER, not UUID)
-              menuItemId: item.menuItemId || item.menu_item_id || (menuItem?.id),
-              id: item.id, // Keep the UUID for cart item identification
-              // Convert mods back to selectedOptions format
-              selectedOptions: selectedOptions,
-              // Ensure correct price calculation
-              price: calculatedPrice,
-              originalPrice: calculatedPrice,
-              tempId: item.tempId || uuidv4() // Ensure stable ID for React keys
-            };
-          }) || [];
-
-          cartSetItems(orderItems);
-
-          // Set customer data
-          if (parsedData.customerName) {
-            const customerData = {
-              name: parsedData.customerName,
-              phone: parsedData.customerPhone,
-              isAnonymous: !parsedData.customerPhone
-            };
-            setCurrentCustomer(customerData);
-            localStorage.setItem('currentCustomer', JSON.stringify(customerData));
-          }
-
-          // Clear the sessionStorage data
-          sessionStorage.removeItem('editOrderData');
-        } catch (error) {
-          console.error('Error loading edit order data:', error);
-        }
-      }
-    }
-  }, []);
+  // Order Editing Flow Removed so edit data loads after menu is ready
 
   // NOTE: filteredItems, groupedItems, handleCategoryChange מגיעים כעת מ-useMenuItems hook
 

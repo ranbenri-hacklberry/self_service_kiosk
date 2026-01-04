@@ -707,47 +707,10 @@ const KdsScreen = () => {
   };
 
   const handleEditOrder = (order) => {
-    // handleEditOrder ALWAYS opens the edit/view screen
-    // Payment modal is opened separately via onPaymentCollected (the cash register button)
-
-    // READY ORDERS: Open the edit modal
-    const isReady = order.type === 'ready' || order.orderStatus === 'ready';
-    if (isReady) {
-      console.log('🖊️ KDS: Opening Edit Modal for Ready Order:', order.id);
-      setEditingOrder(order);
-      setIsEditModalOpen(true);
-      return;
-    }
-
-    // HISTORY/COMPLETED ORDERS: Navigate to restricted edit screen
-    const isRestricted = viewMode === 'history' || order.order_status === 'completed' || order.order_status === 'cancelled';
-    const isFromHistory = viewMode === 'history';
-
-    if (isRestricted) {
-      console.log('🖊️ KDS: Navigating to RESTRICTED edit order (History):', order.id);
-      // Save minimal data to session storage to pass context
-      const editData = {
-        id: order.id,
-        orderNumber: order.orderNumber,
-        restrictedMode: true,
-        viewMode: viewMode,
-        returnToActiveOnChange: isFromHistory // NEW: Flag to indicate we should switch to active tab if changes are made
-      };
-      sessionStorage.setItem('editOrderData', JSON.stringify(editData));
-      sessionStorage.setItem('order_origin', 'kds');
-      // Navigate directly to cart
-      navigate(`/menu-ordering-interface?editOrderId=${order.id}`, {
-        state: {
-          orderId: order.id,
-          viewMode: viewMode,
-          returnToActiveOnChange: isFromHistory // Pass in state as well
-        }
-      });
-    } else {
-      console.log('🖊️ KDS: Opening Edit Modal for Active Order:', order.id);
-      setEditingOrder(order);
-      setIsEditModalOpen(true);
-    }
+    // Open the quick view modal (View/Early Delivery)
+    console.log('🖊️ KDS: Opening View Modal for Order:', order.id);
+    setEditingOrder(order);
+    setIsEditModalOpen(true);
   };
 
   const handleCloseEditModal = () => {
@@ -1000,6 +963,8 @@ const KdsScreen = () => {
           onClose={() => setHistoryInfoModal({ isOpen: false, orderNumber: null })}
           orderNumber={historyInfoModal.orderNumber}
         />
+
+
 
         <OrderEditModal
           isOpen={isEditModalOpen}
