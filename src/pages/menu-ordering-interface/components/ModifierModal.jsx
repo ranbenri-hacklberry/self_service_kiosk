@@ -238,13 +238,15 @@ const ModifierModal = (props) => {
 
       // 🔥 FALLBACK: If Dexie is empty, try fetching directly from Supabase
       if (uniqueGroups.length === 0) {
-        console.log(`🌐 [ModifierModal] Dexie empty, falling back to Supabase...`);
+        console.log(`🌐 [ModifierModal] Dexie empty, falling back to Supabase for item ${targetItemId}...`);
         try {
           // Fetch option groups linked to this item
           const { data: linkedGroups, error: linkedErr } = await supabase
             .from('menuitemoptions')
             .select('group_id')
             .eq('item_id', targetItemId);
+
+          console.log(`🔗 [Supabase Fallback] menuitemoptions result:`, { linkedGroups, linkedErr });
 
           const groupIdsToFetch = linkedErr ? [] : (linkedGroups || []).map(l => l.group_id);
 
@@ -254,14 +256,17 @@ const ModifierModal = (props) => {
             .select('*')
             .eq('menu_item_id', targetItemId);
 
+          console.log(`🔒 [Supabase Fallback] private optiongroups result:`, { privateGrps, privErr });
+
           // Fetch shared groups by ID
           let sharedGrps = [];
           if (groupIdsToFetch.length > 0) {
-            const { data: sharedData } = await supabase
+            const { data: sharedData, error: sharedErr } = await supabase
               .from('optiongroups')
               .select('*')
               .in('id', groupIdsToFetch);
             sharedGrps = sharedData || [];
+            console.log(`🌐 [Supabase Fallback] shared optiongroups result:`, { sharedData, sharedErr });
           }
 
           const allRemoteGroups = [...(privateGrps || []), ...sharedGrps];
@@ -274,10 +279,13 @@ const ModifierModal = (props) => {
           // Fetch values for these groups
           if (uniqueGroups.length > 0) {
             const remoteGroupIds = uniqueGroups.map(g => g.id);
-            const { data: remoteValues } = await supabase
+            console.log(`💎 [Supabase Fallback] Fetching optionvalues for group IDs:`, remoteGroupIds);
+            const { data: remoteValues, error: valuesErr } = await supabase
               .from('optionvalues')
               .select('*')
               .in('group_id', remoteGroupIds);
+
+            console.log(`💎 [Supabase Fallback] optionvalues result:`, { remoteValues, valuesErr });
 
             const values = (remoteValues || []).map(v => ({
               ...v,
