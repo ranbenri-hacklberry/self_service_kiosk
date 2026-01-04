@@ -1,51 +1,54 @@
 /**
- * Maya Code Search - Using local Ollama embeddings
+ * Maya Code Search - Using xAI Embeddings API
  * This function searches the indexed codebase for relevant chunks
+ * Works on both localhost AND production
  */
 
-const OLLAMA_URL = 'http://localhost:11434';
-const EMBEDDING_MODEL = 'nomic-embed-text';
+const XAI_API_URL = 'https://api.x.ai/v1/embeddings';
 
 /**
- * Get embedding for a search query using Ollama
- * NOTE: Only works on localhost (development) - returns null on production
+ * Get embedding for a search query using xAI API
+ * Works on both development and production!
  */
 export async function getQueryEmbedding(query) {
-    // Only run on localhost - Ollama is not available on production/iPad
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    if (!isLocalhost) {
-        console.log('🌸 Code search disabled on production (Ollama not available)');
+    const apiKey = import.meta.env.VITE_XAI_API_KEY;
+
+    if (!apiKey) {
+        console.warn('🌸 Code search: No xAI API key found');
         return null;
     }
 
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+        console.log('🔍 Maya RAG: Getting embedding for query...');
 
-        const response = await fetch(`${OLLAMA_URL}/api/embeddings`, {
+        const response = await fetch(XAI_API_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
             body: JSON.stringify({
-                model: EMBEDDING_MODEL,
-                prompt: query
-            }),
-            signal: controller.signal
+                model: 'text-embedding-3-small', // xAI embedding model
+                input: query
+            })
         });
 
-        clearTimeout(timeoutId);
-
         if (!response.ok) {
-            console.error('Ollama embedding error:', response.status);
+            const errorText = await response.text();
+            console.error('❌ xAI Embedding error:', response.status, errorText);
             return null;
         }
 
         const data = await response.json();
-        return data.embedding;
-    } catch (e) {
-        // Silently fail on connection errors - Ollama might not be running
-        if (e.name !== 'AbortError') {
-            console.warn('Ollama not available:', e.message);
+        const embedding = data.data?.[0]?.embedding;
+
+        if (embedding) {
+            console.log('✅ Maya RAG: Got embedding (', embedding.length, 'dimensions)');
         }
+
+        return embedding || null;
+    } catch (e) {
+        console.error('❌ xAI Embedding fetch error:', e.message);
         return null;
     }
 }
@@ -62,23 +65,29 @@ export async function searchCode(supabase, query, limit = 5) {
     const embedding = await getQueryEmbedding(query);
 
     if (!embedding) {
-        console.error('Failed to get embedding for query');
+        console.warn('🌸 Maya RAG: No embedding available, skipping code search');
         return [];
     }
 
     // 2. Search in Supabase using the RPC
-    const { data, error } = await supabase.rpc('search_code', {
-        query_embedding: embedding,
-        match_threshold: 0.4, // Lower threshold to get more results
-        match_count: limit
-    });
+    try {
+        const { data, error } = await supabase.rpc('search_code', {
+            query_embedding: embedding,
+            match_threshold: 0.4, // Lower threshold to get more results
+            match_count: limit
+        });
 
-    if (error) {
-        console.error('Code search error:', error);
+        if (error) {
+            console.error('❌ Code search RPC error:', error);
+            return [];
+        }
+
+        console.log('✅ Maya RAG: Found', data?.length || 0, 'matching code chunks');
+        return data || [];
+    } catch (e) {
+        console.error('❌ Code search exception:', e);
         return [];
     }
-
-    return data || [];
 }
 
 /**

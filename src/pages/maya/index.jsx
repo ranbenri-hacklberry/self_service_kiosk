@@ -274,11 +274,20 @@ ${formatCodeContext(codeResults)}
                 }
             }
 
+            // Check API Key
+            const apiKey = import.meta.env.VITE_XAI_API_KEY;
+            console.log('🔑 Maya API Key check:', apiKey ? `✅ Found (${apiKey.substring(0, 10)}...)` : '❌ MISSING!');
+
+            if (!apiKey) {
+                throw new Error('API Key לא נמצא! בדוק את קובץ .env.local');
+            }
+
+            console.log('📡 Maya: Sending request to xAI API...');
             const response = await fetch('https://api.x.ai/v1/chat/completions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${import.meta.env.VITE_XAI_API_KEY}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                 body: JSON.stringify({
-                    model: 'grok-code-fast-1',
+                    model: 'grok-3-fast',
                     messages: [
                         {
                             role: 'system', content: `את מאיה, המנהלת הדיגיטלית והמפתחת הראשית של המערכת. 🌸
@@ -342,7 +351,17 @@ ${codeContext}
                     temperature: 0.1
                 })
             });
+
+            console.log('📡 Maya: Response status:', response.status, response.statusText);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Maya API Error:', response.status, errorText);
+                throw new Error(`API Error ${response.status}: ${errorText}`);
+            }
+
             const data = await response.json();
+            console.log('✅ Maya: Got response:', data);
             const reply = data.choices?.[0]?.message?.content || 'מצטערת, משהו השתבש בתקשורת.';
 
             // Insert into DB first
@@ -378,7 +397,37 @@ ${codeContext}
             setMessages(prev => [...prev, { id: Date.now().toString() + '-r', role: 'assistant', content: reply }]);
 
         } catch (e) {
-            setMessages(prev => [...prev, { id: 'err', role: 'assistant', content: 'שגיאת תקשורת.' }]);
+            console.error('❌ Maya Error:', e);
+            const errorMessage = e.message || 'Unknown error';
+
+            // Maya gives a detailed, technical explanation as the system's expert
+            let detailedError = `🛠️ **אופס, נתקלתי בבעיה טכנית!**\n\n`;
+
+            if (errorMessage.includes('API Key') || errorMessage.includes('MISSING')) {
+                detailedError += `**הבעיה:** חסר API Key לשירות xAI (Grok).\n\n`;
+                detailedError += `**פתרון:**\n`;
+                detailedError += `1. בדוק שקובץ \`.env.local\` קיים בתיקיית הפרויקט\n`;
+                detailedError += `2. ודא שיש שורה: \`VITE_XAI_API_KEY=xai-xxxxx\`\n`;
+                detailedError += `3. הפעל מחדש את שרת הפיתוח (\`npm run dev\`)\n`;
+                detailedError += `4. בפרודקשן: הוסף את המשתנה ב-Vercel Dashboard → Settings → Environment Variables`;
+            } else if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+                detailedError += `**הבעיה:** API Key לא תקין או פג תוקף.\n\n`;
+                detailedError += `**פתרון:** צור API Key חדש ב-[console.x.ai](https://console.x.ai) והחלף אותו ב-\`.env.local\``;
+            } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+                detailedError += `**הבעיה:** חריגה ממגבלת הבקשות (Rate Limit).\n\n`;
+                detailedError += `**פתרון:** המתן כדקה ונסה שוב. אם זה קורה הרבה, שדרג את התוכנית ב-xAI.`;
+            } else if (errorMessage.includes('500') || errorMessage.includes('502') || errorMessage.includes('503')) {
+                detailedError += `**הבעיה:** שרתי xAI לא זמינים כרגע.\n\n`;
+                detailedError += `**פתרון:** זו בעיה בצד שלהם, נסה שוב בעוד כמה דקות.`;
+            } else if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+                detailedError += `**הבעיה:** אין חיבור לאינטרנט או חסימת CORS.\n\n`;
+                detailedError += `**פתרון:** בדוק את החיבור לאינטרנט. אם עובד מ-localhost, ייתכן שצריך להפעיל דרך HTTPS.`;
+            } else {
+                detailedError += `**הבעיה:** ${errorMessage}\n\n`;
+                detailedError += `**מה לעשות:** פתח את Console (F12) ותראה לוגים מפורטים יותר. אם הבעיה נמשכת, פנה לתמיכה.`;
+            }
+
+            setMessages(prev => [...prev, { id: 'err-' + Date.now(), role: 'assistant', content: detailedError }]);
         } finally { setIsLoading(false); }
     }, [inputText, isLoading, contextData, currentUser, messages]);
 
