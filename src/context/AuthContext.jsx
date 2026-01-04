@@ -7,7 +7,7 @@ const API_URL = import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
     'http://localhost:8080';
 
-export const APP_VERSION = '2.3.4'; // 🔥 VISUAL DEBUGGER + BREAKDOWN
+export const APP_VERSION = '2.3.5'; // 🔥 FINAL FIX: RPC COLUMN NAMES
 
 export const AuthProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
