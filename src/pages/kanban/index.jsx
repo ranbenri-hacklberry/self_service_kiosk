@@ -12,13 +12,14 @@ import { KanbanBoard } from '../../components/kanban';
 import SMSModal from '../../components/kanban/SMSModal';
 import KDSPaymentModal from '../../pages/kds/components/KDSPaymentModal';
 import OrderPackingSidebar from '../../components/kanban/OrderPackingSidebar';
-import { sendSms } from '../../services/smsService'; // 🆕 Import SMS service
+import { sendSms } from '../../services/smsService';
+import { supabase } from '../../lib/supabase'; // 🆕 Required for direct updates
 import {
     RefreshCw, ArrowRight, Bell, BellOff,
     LayoutGrid, Truck
 } from 'lucide-react';
 
-// Columns to show (removed 'pending' as per user request)
+// Columns to show
 const STAFF_COLUMNS = ['new', 'in_prep', 'ready', 'shipped', 'delivered'];
 
 export default function KanbanPage() {
@@ -27,7 +28,7 @@ export default function KanbanPage() {
     const [alertsEnabled, setAlertsEnabled] = useState(true);
     const [paymentModal, setPaymentModal] = useState({ show: false, order: null });
     const [smsModal, setSmsModal] = useState({ show: false, order: null });
-    const [packingOrder, setPackingOrder] = useState(null); // 🆕 Packing Sidebar State
+    const [packingOrder, setPackingOrder] = useState(null);
     const user = currentUser;
 
     // Get orders
@@ -37,7 +38,7 @@ export default function KanbanPage() {
         isLoading,
         updateStatus,
         markOrderSeen,
-        markItemsReady, // 🆕 For packing
+        markItemsReady,
         refresh
     } = useOrders({
         businessId: user?.business_id
@@ -67,8 +68,7 @@ export default function KanbanPage() {
     };
 
     const handleCardClick = (order) => {
-        // Only open packing sidebar for 'new' or 'in_progress'
-        // Also allow 'pending' just in case
+        // Only open packing sidebar for 'new' or 'in_progress' or 'pending'
         if (['new', 'in_progress', 'pending'].includes(order.order_status)) {
             setPackingOrder(order);
         }
@@ -100,19 +100,36 @@ export default function KanbanPage() {
             }
         }
 
-        // 1. Update status to 'ready'
-        await updateStatus(orderId, 'ready');
+        try {
+            // 1. Assign Driver in Database immediately
+            const { error: updateError } = await supabase
+                .from('orders')
+                .update({
+                    courier_id: driver.id
+                })
+                .eq('id', orderId);
 
-        // 2. Send SMS to driver
-        if (driver && driver.phone && order) {
-            const message = `היי ${driver.name}, חבילה חדשה מוכנה לאיסוף! 📦\nלקוח: ${order.customerName}\nהזמנה: #${order.orderNumber}\nכתובת: ${order.deliveryAddress || 'איסוף עצמי'}\nבהצלחה!`;
-
-            try {
-                await sendSms(driver.phone, message);
-                console.log('✅ SMS sent to driver');
-            } catch (err) {
-                console.error('❌ Failed to send SMS to driver:', err);
+            if (updateError) {
+                console.error("Failed to assign driver:", updateError);
             }
+
+            // 2. Update status to 'ready'
+            await updateStatus(orderId, 'ready');
+
+            // 3. Send SMS to driver
+            if (driver && driver.phone && order) {
+                const message = `היי ${driver.name}, חבילה חדשה מוכנה לאיסוף! 📦\nלקוח: ${order.customerName}\nהזמנה: #${order.orderNumber}\nכתובת: ${order.deliveryAddress || 'איסוף עצמי'}\nבהצלחה!`;
+
+                try {
+                    await sendSms(driver.phone, message);
+                    console.log('✅ SMS sent to driver');
+                } catch (err) {
+                    console.error('❌ Failed to send SMS to driver:', err);
+                }
+            }
+
+        } catch (err) {
+            console.error("❌ Error in finish packing flow:", err);
         }
 
         // Close sidebar
@@ -204,10 +221,10 @@ export default function KanbanPage() {
                         onOrderStatusUpdate={handleStatusUpdate}
                         onPaymentCollected={handlePaymentCollected}
                         onMarkSeen={markOrderSeen}
-                        onReadyItems={markItemsReady} // 🆕 Pass through
+                        onReadyItems={markItemsReady}
                         onSmsClick={(order) => setSmsModal({ show: true, order })}
-                        onRefresh={refresh} // 🆕 Pull to refresh
-                        onEditOrder={handleCardClick} // 🆕 Open sidebar
+                        onRefresh={refresh}
+                        onEditOrder={handleCardClick}
                     />
                 )}
             </main>
