@@ -356,11 +356,23 @@ const ModifierModal = (props) => {
       console.log(`💎 [ModifierModal] Final count for values to display: ${values.length}`);
 
       // 6. Merge values into groups
-      const enhanced = uniqueGroups.map(g => ({
-        ...g,
-        values: values.filter(v => v.group_id === g.id).sort((a, b) => (a.display_order || 0) - (b.display_order || 0)),
-        is_required: g.is_required || (g.min_selection > 0)
-      }));
+      const enhanced = uniqueGroups.map(g => {
+        const groupValues = values.filter(v => v.group_id === g.id);
+
+        // 🔥 DE-DUPE VALUES BY NAME: Prevent "soy, soy, oat, oat"
+        const uniqueValuesMap = new Map();
+        groupValues.forEach(v => {
+          if (!uniqueValuesMap.has(v.name)) {
+            uniqueValuesMap.set(v.name, v);
+          }
+        });
+
+        return {
+          ...g,
+          values: Array.from(uniqueValuesMap.values()).sort((a, b) => (a.display_order || 0) - (b.display_order || 0)),
+          is_required: g.is_required || (g.min_selection > 0)
+        };
+      });
 
       console.log(`✨ [ModifierModal] Final enhanced groups:`, enhanced);
 
