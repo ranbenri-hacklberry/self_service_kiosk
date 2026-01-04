@@ -1,88 +1,90 @@
 /**
- * Maya Code Search - Using Supabase code_chunks with text search
- * Fallback to simple text matching since embeddings require server-side processing
+ * Maya Code Search - Using Google Gemini Embeddings
+ * This function searches the indexed codebase using semantic search
  * Works on both localhost AND production
  */
 
+const GEMINI_EMBEDDING_URL = 'https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent';
+
 /**
- * Search code using simple text matching in Supabase
- * 
+ * Get embedding for a search query using Google Gemini API
+ * Returns 768-dimension embedding (matches our Supabase code_chunks)
+ */
+export async function getQueryEmbedding(query) {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+    if (!apiKey) {
+        console.warn('🌸 Code search: No Gemini API key found');
+        return null;
+    }
+
+    try {
+        console.log('🔍 Maya RAG: Getting embedding from Gemini...');
+
+        const response = await fetch(`${GEMINI_EMBEDDING_URL}?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: 'models/text-embedding-004',
+                content: {
+                    parts: [{ text: query }]
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Gemini Embedding error:', response.status, errorText);
+            return null;
+        }
+
+        const data = await response.json();
+        const embedding = data.embedding?.values;
+
+        if (embedding) {
+            console.log('✅ Maya RAG: Got Gemini embedding (', embedding.length, 'dimensions)');
+        }
+
+        return embedding || null;
+    } catch (e) {
+        console.error('❌ Gemini Embedding fetch error:', e.message);
+        return null;
+    }
+}
+
+/**
+ * Search code chunks using the embedding and Supabase vector search
  * @param {object} supabase - Supabase client
  * @param {string} query - The search query
  * @param {number} limit - Number of results to return
  * @returns {Promise<Array>} - Array of matching code chunks
  */
 export async function searchCode(supabase, query, limit = 5) {
-    if (!query || query.trim().length < 2) {
-        console.warn('🌸 Code search: Query too short');
+    // 1. Get embedding for the query
+    const embedding = await getQueryEmbedding(query);
+
+    if (!embedding) {
+        console.warn('🌸 Maya RAG: No embedding available, skipping code search');
         return [];
     }
 
+    // 2. Search in Supabase using the RPC
     try {
-        console.log('🔍 Maya RAG: Searching codebase in Supabase...');
+        console.log('🔍 Maya RAG: Searching with vector similarity...');
 
-        // Extract keywords from query (Hebrew and English)
-        const keywords = query
-            .toLowerCase()
-            .split(/[\s,.\-_]+/)
-            .filter(k => k.length > 2)
-            .slice(0, 5); // Max 5 keywords
-
-        console.log('🔑 Keywords:', keywords);
-
-        if (keywords.length === 0) {
-            return [];
-        }
-
-        // Build search query - search in content and file_path
-        // Using multiple OR conditions for keyword matching
-        let searchQuery = supabase
-            .from('code_chunks')
-            .select('file_path, content, summary')
-            .limit(limit * 2); // Get more results, will filter
-
-        // Add text search conditions
-        // Search for any keyword in content or file_path
-        const orConditions = keywords.map(kw =>
-            `content.ilike.%${kw}%,file_path.ilike.%${kw}%`
-        ).join(',');
-
-        const { data, error } = await supabase
-            .from('code_chunks')
-            .select('file_path, content, summary')
-            .or(orConditions)
-            .limit(limit);
-
-        if (error) {
-            console.error('❌ Code search error:', error);
-            return [];
-        }
-
-        // Score results by keyword matches
-        const scoredResults = (data || []).map(chunk => {
-            const contentLower = (chunk.content || '').toLowerCase();
-            const pathLower = (chunk.file_path || '').toLowerCase();
-            let score = 0;
-
-            keywords.forEach(kw => {
-                if (contentLower.includes(kw)) score += 2;
-                if (pathLower.includes(kw)) score += 3;
-            });
-
-            return {
-                ...chunk,
-                similarity: Math.min(score / (keywords.length * 5), 1) // Normalize to 0-1
-            };
+        const { data, error } = await supabase.rpc('search_code', {
+            query_embedding: embedding,
+            match_threshold: 0.3, // Lower threshold for more results
+            match_count: limit
         });
 
-        // Sort by score and take top results
-        const results = scoredResults
-            .sort((a, b) => b.similarity - a.similarity)
-            .slice(0, limit);
+        if (error) {
+            console.error('❌ Code search RPC error:', error);
+            return [];
+        }
 
-        console.log('✅ Maya RAG: Found', results.length, 'matching code chunks');
-        return results;
-
+        console.log('✅ Maya RAG: Found', data?.length || 0, 'matching code chunks');
+        return data || [];
     } catch (e) {
         console.error('❌ Code search exception:', e);
         return [];
@@ -98,11 +100,6 @@ export function formatCodeContext(results) {
     }
 
     return results.map((r, i) =>
-        `**[${i + 1}] ${r.file_path}** (relevance: ${(r.similarity * 100).toFixed(0)}%)\n\`\`\`\n${r.content}\n\`\`\``
+        `**[${i + 1}] ${r.file_path}** (similarity: ${(r.similarity * 100).toFixed(0)}%)\n\`\`\`\n${r.content}\n\`\`\``
     ).join('\n\n');
-}
-
-// Legacy function - kept for compatibility
-export async function getQueryEmbedding(query) {
-    return null;
 }
