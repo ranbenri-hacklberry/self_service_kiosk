@@ -174,12 +174,10 @@ const ModifierModal = (props) => {
 
   // DEBUG: Check Dexie data on mount
   useEffect(() => {
-    console.log('🔍 [DEBUG] useEffect triggered:', { isOpen, hasSelectedItem: !!selectedItem, targetItemId });
+    if (!isOpen || !selectedItem) return;
 
-    if (!isOpen || !selectedItem) {
-      console.log('⚠️ [DEBUG] Skipping - modal not open or no item');
-      return;
-    }
+    // alert(`DEBUG: Opening Modal for ${selectedItem?.name} (ID: ${targetItemId})`);
+    console.log('🔍 [DEBUG] useEffect triggered:', { isOpen, hasSelectedItem: !!selectedItem, targetItemId });
 
     (async () => {
       try {
