@@ -572,7 +572,7 @@ export function useOrders({ businessId, filters = {} } = {}) {
                 if (String(o.id) === String(orderId)) {
                     return {
                         ...o,
-                        items: o.items.map(i => itemIds.includes(i.id) ? { ...i, item_status: 'ready', is_early_delivered: true } : i)
+                        items: o.items.map(i => itemIds.includes(i.id) ? { ...i, item_status: 'ready' } : i)
                     };
                 }
                 return o;
