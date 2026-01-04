@@ -105,7 +105,30 @@ const Header = memo(({
       <div className="flex items-center justify-between h-16 px-6">
         {/* Logo Section */}
         <div className="flex items-center">
-          <div className="flex items-center space-x-3">
+          <div
+            className="flex items-center space-x-3 cursor-pointer"
+            onContextMenu={(e) => e.preventDefault()}
+            onTouchStart={(e) => {
+              const timer = setTimeout(() => {
+                const confirmed = window.confirm('האם ברצונך לצאת ולחזור לבחירת מצב?');
+                if (confirmed) navigate('/mode-selection');
+              }, 3000);
+              e.currentTarget.dataset.logoutTimer = timer;
+            }}
+            onTouchEnd={(e) => {
+              clearTimeout(e.currentTarget.dataset.logoutTimer);
+            }}
+            onMouseDown={(e) => {
+              const timer = setTimeout(() => {
+                const confirmed = window.confirm('האם ברצונך לצאת ולחזור לבחירת מצב?');
+                if (confirmed) navigate('/mode-selection');
+              }, 3000);
+              e.currentTarget.dataset.logoutTimer = timer;
+            }}
+            onMouseUp={(e) => {
+              clearTimeout(e.currentTarget.dataset.logoutTimer);
+            }}
+          >
             <motion.div
               whileHover={{ rotate: 10, scale: 1.1 }}
               className="bg-white/10 p-2 rounded-kiosk-sm"

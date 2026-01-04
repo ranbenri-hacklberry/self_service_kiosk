@@ -237,10 +237,14 @@ const ModifierModal = (props) => {
     }
   }, [targetItemId]);
 
-  // 2. Fallback to Supabase (Remote) if Dexie is empty
+  // 2. Fallback to Supabase (Remote) if Dexie is empty OR missing values
   useEffect(() => {
-    if (!isOpen || !targetItemId || dexieOptions !== null) return;
-    if (remoteData || isRemoteLoading) return;
+    if (!isOpen || !targetItemId) return;
+
+    // 🔥 NEW AGGRESSIVE CONDITION: Fallback if Dexie is null OR if it returned groups but NO values
+    const hasDexieData = dexieOptions && dexieOptions.length > 0 && dexieOptions.some(g => g.values && g.values.length > 0);
+
+    if (hasDexieData || isRemoteLoading || remoteData) return;
 
     const fetchRemote = async () => {
       setIsRemoteLoading(true);
