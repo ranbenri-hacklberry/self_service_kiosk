@@ -5,7 +5,7 @@ import Icon from '../../components/AppIcon';
 import ManagerHeader from '../../components/manager/ManagerHeader';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { Send, Mic, MicOff, Coffee, TrendingUp, Users, Settings, RefreshCw, Loader2, BookOpen, Calendar, Package, ClipboardList, Copy as CopyIcon } from 'lucide-react';
+import { Send, Mic, MicOff, Coffee, TrendingUp, Users, Settings, RefreshCw, Loader2, BookOpen, Calendar, Package, ClipboardList, Copy as CopyIcon, Edit2, Check, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { searchCode, formatCodeContext } from '@/services/codeSearchService';
@@ -20,6 +20,8 @@ const MayaAssistant = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isImpersonating, setIsImpersonating] = useState(false);
     const [historyLoading, setHistoryLoading] = useState(false);
+    const [editingMessageId, setEditingMessageId] = useState(null);
+    const [editContent, setEditContent] = useState('');
 
     // Context Data
     const [contextData, setContextData] = useState({
@@ -47,6 +49,40 @@ const MayaAssistant = () => {
         localStorage.removeItem('manager_auth_time');
         localStorage.removeItem('manager_employee_id');
         navigate('/mode-selection');
+    };
+
+    // Handle saving edited/corrected message
+    const handleSaveEdit = async (messageId) => {
+        if (!editContent.trim()) return;
+
+        try {
+            // Update in Supabase - add [תוקן] prefix to mark as corrected
+            const correctedContent = `✅ **[תשובה מתוקנת]**\n\n${editContent.trim()}`;
+
+            const { error } = await supabase
+                .from('maya_chat_history')
+                .update({ content: correctedContent })
+                .eq('id', messageId);
+
+            if (error) {
+                console.error('Error saving edit:', error);
+                alert('שגיאה בשמירת התיקון');
+                return;
+            }
+
+            // Update local state
+            setMessages(prev => prev.map(msg =>
+                msg.id === messageId
+                    ? { ...msg, content: correctedContent }
+                    : msg
+            ));
+
+            setEditingMessageId(null);
+            setEditContent('');
+            console.log('✅ Maya learned from correction:', messageId);
+        } catch (e) {
+            console.error('Edit save error:', e);
+        }
     };
 
     // Context Loader - Full Business Intelligence
@@ -551,15 +587,56 @@ ${codeContext}
                         {messages.map((msg) => (
                             <motion.div key={msg.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'} group`}>
                                 <div className={`relative max-w-[85%] py-1.5 px-3 rounded-[1.5rem] shadow-sm border text-sm leading-snug ${msg.role === 'user' ? 'bg-slate-900 border-slate-800 text-white rounded-bl-none' : 'bg-white border-slate-100 text-slate-800 rounded-br-none shadow-indigo-100/10'}`}>
-                                    <div className="markdown-content text-right" dir="rtl"><ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown></div>
-                                    {msg.role === 'assistant' && (
-                                        <button
-                                            onClick={() => navigator.clipboard.writeText(msg.content)}
-                                            className="absolute bottom-1 left-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-400 hover:text-indigo-600"
-                                            title="העתק תשובה"
-                                        >
-                                            <CopyIcon size={10} />
-                                        </button>
+
+                                    {/* Edit Mode */}
+                                    {editingMessageId === msg.id ? (
+                                        <div className="space-y-2 min-w-[300px]">
+                                            <textarea
+                                                value={editContent}
+                                                onChange={(e) => setEditContent(e.target.value)}
+                                                className="w-full p-2 border rounded-xl text-sm text-right resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                                rows={4}
+                                                dir="rtl"
+                                                placeholder="תקן את התשובה..."
+                                            />
+                                            <div className="flex gap-2 justify-end">
+                                                <button
+                                                    onClick={() => { setEditingMessageId(null); setEditContent(''); }}
+                                                    className="px-3 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 flex items-center gap-1"
+                                                >
+                                                    <X size={12} /> ביטול
+                                                </button>
+                                                <button
+                                                    onClick={() => handleSaveEdit(msg.id)}
+                                                    className="px-3 py-1 text-xs bg-green-500 hover:bg-green-600 text-white rounded-lg flex items-center gap-1"
+                                                >
+                                                    <Check size={12} /> שמור תיקון
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {/* Normal View */}
+                                            <div className="markdown-content text-right" dir="rtl"><ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown></div>
+
+                                            {/* Action Buttons for Assistant Messages - Below message, bigger for mobile */}
+                                            {msg.role === 'assistant' && (
+                                                <div className="flex gap-2 mt-2 pt-2 border-t border-slate-100 opacity-60 group-hover:opacity-100 transition-opacity">
+                                                    <button
+                                                        onClick={() => navigator.clipboard.writeText(msg.content)}
+                                                        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-indigo-600 text-xs font-medium transition-all"
+                                                    >
+                                                        <CopyIcon size={14} /> העתק
+                                                    </button>
+                                                    <button
+                                                        onClick={() => { setEditingMessageId(msg.id); setEditContent(msg.content.replace(/^✅ \*\*\[תשובה מתוקנת\]\*\*\n\n/, '')); }}
+                                                        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 rounded-lg text-amber-600 hover:text-amber-700 text-xs font-medium transition-all"
+                                                    >
+                                                        <Edit2 size={14} /> תקן
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
                             </motion.div>
