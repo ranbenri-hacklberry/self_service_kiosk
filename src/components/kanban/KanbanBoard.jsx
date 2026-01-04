@@ -11,6 +11,7 @@ import {
     rectIntersection,
     KeyboardSensor,
     PointerSensor,
+    TouchSensor,
     useSensor,
     useSensors,
     defaultDropAnimationSideEffects
@@ -44,11 +45,19 @@ export function KanbanBoard({
     const sensors = useSensors(
         useSensor(PointerSensor, {
             activationConstraint: {
-                distance: 8 // Minimum drag distance before activation
-            }
+                distance: 8,
+            },
+        }),
+        useSensor(TouchSensor, {
+            // Touch sensor with delay helps differatiate between scrolling and dragging
+            // But since we disabled scrolling on the card, we want immediate response
+            activationConstraint: {
+                delay: 100, // Slight delay to prevent accidental drags
+                tolerance: 5,
+            },
         }),
         useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates
+            coordinateGetter: sortableKeyboardCoordinates,
         })
     );
 

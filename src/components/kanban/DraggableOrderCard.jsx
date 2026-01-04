@@ -65,6 +65,7 @@ export function DraggableOrderCard({
         transition: transition || 'transform 200ms cubic-bezier(0.2, 0, 0, 1)',
         zIndex: isDragging ? 200 : 'auto',
         opacity: isDragging ? 0.3 : 1, // Dim instead of hiding completely for better UX
+        touchAction: 'none' // 🛑 Prevent scrolling while dragging on touch devices
     };
 
     const isOnlineOrder = order.order_origin === 'online';
@@ -87,15 +88,13 @@ export function DraggableOrderCard({
         <div
             ref={setNodeRef}
             style={style}
+            {...attributes}
+            {...listeners}
             onClick={handleClick}
             className={`group relative w-full ${isUnseen ? 'ring-2 ring-blue-400 animate-pulse rounded-2xl' : ''}`}
         >
-            {/* Drag Handle - A small bar at the top or side to prevent click interference */}
-            <div
-                {...attributes}
-                {...listeners}
-                className="absolute top-0 left-0 right-0 h-10 z-20 cursor-grab active:cursor-grabbing flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-t-2xl bg-gradient-to-b from-slate-200/50 to-transparent"
-            >
+            {/* Drag Handle Indicator (Visual Only) */}
+            <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
                 <GripVertical size={16} className="text-slate-400" />
             </div>
 
