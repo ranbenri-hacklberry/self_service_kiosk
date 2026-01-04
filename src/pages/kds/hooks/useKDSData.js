@@ -329,6 +329,7 @@ export const useKDSData = () => {
                                             mods: item.mods,
                                             notes: item.notes,
                                             item_status: item.item_status,
+                                            is_early_delivered: !!item.is_early_delivered, // 🔥 PRESERVE FLAG
                                             course_stage: item.course_stage || 1,
                                             created_at: item.created_at || order.created_at
                                         });
@@ -463,6 +464,7 @@ export const useKDSData = () => {
                                         mods: item.mods || [],
                                         notes: item.notes,
                                         item_status: item.item_status,
+                                        is_early_delivered: !!item.is_early_delivered, // 🔥 PRESERVE FLAG
                                         course_stage: item.course_stage || 1,
                                         quantity: item.quantity,
                                         order_id: item.order_id,
@@ -504,7 +506,7 @@ export const useKDSData = () => {
                         try {
                             const { data: readyItems } = await supabase
                                 .from('order_items')
-                                .select('id, mods, notes, item_status, course_stage, quantity, order_id, menu_items!inner(name, price, kds_routing_logic, is_prep_required)')
+                                .select('id, mods, notes, item_status, is_early_delivered, course_stage, quantity, order_id, menu_items!inner(name, price, kds_routing_logic, is_prep_required)')
                                 .in('order_id', orderIds)
                                 .in('item_status', ['ready', 'completed']) // Fetch both ready and completed items
                                 .abortSignal(signal);
@@ -542,7 +544,7 @@ export const useKDSData = () => {
                     // Fetch orders with active items (in_progress, new, pending, ready)
                     const { data: rescueOrders } = await supabase
                         .from('orders')
-                        .select('*, order_items!inner(id, item_status, mods, notes, course_stage, quantity, menu_items!inner(name, price, kds_routing_logic, is_prep_required))')
+                        .select('*, order_items!inner(id, item_status, is_early_delivered, mods, notes, course_stage, quantity, menu_items!inner(name, price, kds_routing_logic, is_prep_required))')
                         .gt('updated_at', lookbackTime)
                         .in('order_items.item_status', ['in_progress', 'new', 'pending', 'ready'])
                         .eq('business_id', businessId)
@@ -742,6 +744,7 @@ export const useKDSData = () => {
                                         mods: item.mods || [],
                                         notes: item.notes,
                                         item_status: item.item_status,
+                                        is_early_delivered: !!item.is_early_delivered, // 🔥 PRESERVE FLAG
                                         course_stage: item.course_stage || 1,
                                         quantity: item.quantity,
                                         order_id: item.order_id,
@@ -1298,10 +1301,17 @@ export const useKDSData = () => {
                 await db.orders.update(smartOrderId, updateFields);
 
                 // Update local items
-                console.log(`💾 Updating items for ${smartOrderId} to status: ${itemStatus}`);
-                await db.order_items.where('order_id').equals(smartOrderId).modify({
-                    item_status: itemStatus
-                });
+                const itemStatusForItems = nextStatus === 'completed' ? 'completed' :
+                    nextStatus === 'ready' ? 'ready' : 'in_progress';
+                const shouldResetEarlyMarks = ['ready', 'completed', 'shipped'].includes(nextStatus);
+
+                await db.order_items
+                    .where('order_id')
+                    .equals(smartOrderId)
+                    .modify(it => {
+                        it.item_status = itemStatusForItems;
+                        if (shouldResetEarlyMarks) it.is_early_delivered = false;
+                    });
 
                 // ALWAYS queue status updates - they will be synced AFTER the CREATE_ORDER completes
                 // For local orders, we store the localOrderId so the sync can match them up
@@ -1539,7 +1549,13 @@ export const useKDSData = () => {
                     const itemStatus = nextStatus === 'completed' ? 'completed' :
                         nextStatus === 'ready' ? 'ready' :
                             nextStatus === 'new' ? 'new' : 'in_progress';
-                    await db.order_items.where('order_id').equals(smartId).modify({ item_status: itemStatus });
+
+                    const shouldResetEarlyMarks = ['ready', 'completed', 'shipped'].includes(nextStatus);
+
+                    await db.order_items.where('order_id').equals(smartId).modify(it => {
+                        it.item_status = itemStatus;
+                        if (shouldResetEarlyMarks) it.is_early_delivered = false;
+                    });
                 } catch (e) {
                     console.warn('Dexie background update failed:', e);
                 }
@@ -1587,6 +1603,14 @@ export const useKDSData = () => {
                 }
 
                 log('✅ [SERVER] Supabase update confirmed');
+
+                // ✅ Reset early delivered marks on Supabase if order moved to ready/completed
+                if (['ready', 'completed', 'shipped'].includes(nextStatus)) {
+                    supabase.from('order_items')
+                        .update({ is_early_delivered: false })
+                        .eq('order_id', realOrderId)
+                        .then(() => log('🧹 [SERVER] Cleared early marks for', realOrderId));
+                }
 
                 // Delayed refresh to clear pending_sync flag once server matures
                 // Extended to 2 seconds to allow layout animations to settle
@@ -1672,6 +1696,58 @@ export const useKDSData = () => {
             });
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleToggleEarlyDelivered = async (orderId, itemId, currentValue) => {
+        try {
+            const newValue = !currentValue;
+            log(`🔄 [TOGGLE-EARLY] Item ${itemId}: ${currentValue} -> ${newValue}`);
+
+            // 1. Optimistic UI update
+            const updateItemInList = (list) => list.map(order => ({
+                ...order,
+                items: order.items?.map(item => {
+                    const ids = item.ids || [item.id];
+                    if (ids.includes(itemId)) {
+                        return { ...item, is_early_delivered: newValue };
+                    }
+                    return item;
+                })
+            }));
+
+            setCurrentOrders(prev => updateItemInList(prev));
+
+            // 2. Supabase Update
+            const { error } = await supabase.rpc('toggle_early_delivered', {
+                p_item_id: itemId,
+                p_value: newValue
+            });
+
+            if (error) {
+                // Revert state on error
+                const revertItemInList = (list) => list.map(order => ({
+                    ...order,
+                    items: order.items?.map(item => {
+                        const ids = item.ids || [item.id];
+                        if (ids.includes(itemId)) {
+                            return { ...item, is_early_delivered: currentValue };
+                        }
+                        return item;
+                    })
+                }));
+                setCurrentOrders(prev => revertItemInList(prev));
+                throw error;
+            }
+
+            // 3. Dexie Update
+            await db.order_items.update(itemId, { is_early_delivered: newValue });
+
+            log('✅ [TOGGLE-EARLY] Success');
+            return true;
+        } catch (err) {
+            console.error('❌ [TOGGLE-EARLY] Error:', err);
+            return false;
         }
     };
 
@@ -2454,6 +2530,7 @@ export const useKDSData = () => {
         updateOrderStatus,
         handleFireItems,
         handleReadyItems,
+        handleToggleEarlyDelivered,
         handleUndoLastAction,
         handleConfirmPayment,
         handleCancelOrder,
