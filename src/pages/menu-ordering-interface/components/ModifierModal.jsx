@@ -229,10 +229,15 @@ const ModifierModal = (props) => {
 
       // 4. Combine and Unique
       const allGroupsMap = new Map();
-      [...privateGroups, ...sharedGroups].forEach(g => allGroupsMap.set(g.id, g));
+      [...privateGroups, ...sharedGroups].forEach(g => {
+        // 🔥 Deduplicate by NAME to prevent duplicates if DB has multiple groups with same name
+        if (!allGroupsMap.has(g.name)) {
+          allGroupsMap.set(g.name, g);
+        }
+      });
       let uniqueGroups = Array.from(allGroupsMap.values());
 
-      console.log(`📊 [ModifierModal] Found ${uniqueGroups.length} unique groups from Dexie`);
+      console.log(`📊 [ModifierModal] Found ${uniqueGroups.length} unique named groups from Dexie`);
 
       // 🔥 FALLBACK: If Dexie is empty, try fetching directly from Supabase
       if (uniqueGroups.length === 0) {
@@ -269,10 +274,15 @@ const ModifierModal = (props) => {
 
           const allRemoteGroups = [...(privateGrps || []), ...sharedGrps];
           const remoteGroupsMap = new Map();
-          allRemoteGroups.forEach(g => remoteGroupsMap.set(g.id, g));
+          allRemoteGroups.forEach(g => {
+            // 🔥 Deduplicate by NAME to prevent duplicates if DB has multiple groups with same name
+            if (!remoteGroupsMap.has(g.name)) {
+              remoteGroupsMap.set(g.name, g);
+            }
+          });
           uniqueGroups = Array.from(remoteGroupsMap.values());
 
-          console.log(`🌐 [ModifierModal] Supabase returned ${uniqueGroups.length} groups`);
+          console.log(`🌐 [ModifierModal] Supabase returned ${uniqueGroups.length} unique named groups`);
 
           // Fetch values for these groups
           if (uniqueGroups.length > 0) {
