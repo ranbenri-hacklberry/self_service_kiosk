@@ -169,7 +169,8 @@ const ModifierModal = (props) => {
   // --- LOCAL FIRST DATA FETCHING ---
   const targetItemId = useMemo(() => {
     if (!selectedItem) return null;
-    return selectedItem.menu_item_id || selectedItem.menuItemId || selectedItem.id;
+    const rawId = selectedItem.menu_item_id || selectedItem.menuItemId || selectedItem.id;
+    return rawId ? Number(rawId) : null;
   }, [selectedItem]);
 
   // DEBUG: Check Dexie data on mount
@@ -322,13 +323,37 @@ const ModifierModal = (props) => {
       const rawValues = await db.optionvalues.where('group_id').anyOf(groupIds).toArray();
 
       // Normalize: Dexie uses value_name, but code expects name
-      const values = rawValues.map(v => ({
+      let values = rawValues.map(v => ({
         ...v,
         name: v.name || v.value_name,
         priceAdjustment: v.priceAdjustment || v.price_adjustment || 0
       }));
 
-      console.log(`💎 [ModifierModal] Found ${values.length} values:`, values);
+      // 🔥 FALLBACK FOR VALUES: If Dexie has groups but no values, fetch from Supabase
+      if (values.length === 0 && uniqueGroups.length > 0) {
+        console.log(`💎 [ModifierModal] Dexie has groups but no values. Falling back to Supabase for values...`);
+        try {
+          const { data: remoteValues, error: valuesErr } = await supabase
+            .from('optionvalues')
+            .select('*')
+            .in('group_id', groupIds.map(id => String(id)));
+
+          if (!valuesErr && remoteValues) {
+            console.log(`✨ [Supabase Fallback] Found ${remoteValues.length} values remotely`);
+            values = remoteValues.map(v => ({
+              ...v,
+              name: v.name || v.value_name,
+              priceAdjustment: v.priceAdjustment || v.price_adjustment || 0
+            }));
+          } else if (valuesErr) {
+            console.error('❌ [ModifierModal] Supabase values fallback error:', valuesErr);
+          }
+        } catch (fallbackErr) {
+          console.error('❌ [ModifierModal] Supabase values fallback exception:', fallbackErr);
+        }
+      }
+
+      console.log(`💎 [ModifierModal] Final count for values to display: ${values.length}`);
 
       // 6. Merge values into groups
       const enhanced = uniqueGroups.map(g => ({
