@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Check, Info, AlertCircle, Image, PlayCircle } from 'lucide-react';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
+
+// Variants for smooth animation
+const taskVariants = {
+    initial: { opacity: 0, height: 0 },
+    animate: { opacity: 1, height: 'auto', transition: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } },
+    exit: { opacity: 0, height: 0, transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] } }
+};
 
 const TaskManagementView = ({ tasks, onComplete, title }) => {
     const [selectedTask, setSelectedTask] = useState(null);
@@ -16,7 +24,12 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
     }, [tasks, selectedTask]);
 
     const TaskRow = ({ task }) => (
-        <div
+        <motion.div
+            layout
+            variants={taskVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
             onClick={() => setSelectedTask(task)}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all
                 ${selectedTask?.id === task.id
@@ -37,7 +50,7 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
 
             {/* Task Name */}
             <span className="flex-1 font-bold text-gray-800 text-base truncate">{task.name}</span>
-        </div>
+        </motion.div>
     );
 
     return (
@@ -57,7 +70,9 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
                             אפשר להתחיל עכשיו ({preClosingTasks.length})
                         </h3>
                         <div className="grid grid-cols-2 gap-3">
-                            {preClosingTasks.map(task => <TaskRow key={task.id} task={task} />)}
+                            <AnimatePresence>
+                                {preClosingTasks.map(task => <TaskRow key={task.id} task={task} />)}
+                            </AnimatePresence>
                         </div>
                     </div>
                 )}
@@ -72,7 +87,9 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
                             </h3>
                         )}
                         <div className="grid grid-cols-2 gap-3">
-                            {regularTasks.map(task => <TaskRow key={task.id} task={task} />)}
+                            <AnimatePresence>
+                                {regularTasks.map(task => <TaskRow key={task.id} task={task} />)}
+                            </AnimatePresence>
                         </div>
                     </div>
                 )}
@@ -91,10 +108,10 @@ const TaskManagementView = ({ tasks, onComplete, title }) => {
                     <div className="space-y-5 animate-fadeIn">
                         {/* Image/Video Area */}
                         {selectedTask.image_url ? (
-                            <img 
-                                src={selectedTask.image_url} 
-                                alt={selectedTask.name} 
-                                className="w-full h-48 object-cover rounded-2xl shadow-md" 
+                            <img
+                                src={selectedTask.image_url}
+                                alt={selectedTask.name}
+                                className="w-full h-48 object-cover rounded-2xl shadow-md"
                             />
                         ) : (
                             <div className="w-full h-48 bg-gradient-to-br from-slate-100 to-slate-200 rounded-2xl flex flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-300">

@@ -63,7 +63,7 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
         }
 
         const targetBusinessId = businessId;
-        const CACHE_KEY = `menu_items_cache_${targetBusinessId}`;
+        const CACHE_KEY = `menu_items_cache_v2_${targetBusinessId}`;
         const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
         // 1. Try to load from Cache first
@@ -93,7 +93,7 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
 
             let query = supabase
                 .from('menu_items')
-                .select('id, name, price, category, image_url, is_hot_drink, kds_routing_logic, allow_notes, is_in_stock, description')
+                .select('id, name, price, sale_price, category, image_url, is_hot_drink, kds_routing_logic, allow_notes, is_in_stock, description')
                 .eq('business_id', targetBusinessId)
                 .not('is_in_stock', 'eq', false)
                 .order('category', { ascending: true })
@@ -152,23 +152,30 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
                 seenIds.add(item.id);
                 return true;
             })
-            .map((item) => ({
-                id: item?.id,
-                name: item?.name,
-                price: item?.price,
-                category: getCategoryId(item?.category),
-                image: item?.image_url || "https://images.unsplash.com/photo-1551024506-0bccd828d307",
-                imageAlt: `${item?.name} - פריט תפריט מבית הקפה`,
-                available: true,
-                isPopular: false,
-                is_hot_drink: item?.is_hot_drink,
-                kds_routing_logic: item?.kds_routing_logic,
-                allow_notes: item?.allow_notes,
-                db_category: item?.category,
-                calories: 0,
-                description: null,
-                options: []
-            }));
+            .map((item) => {
+                const regularPrice = Number(item?.price || 0);
+                const salePrice = Number(item?.sale_price || 0);
+                const isOnSale = salePrice > 0 && salePrice < regularPrice;
+
+                return {
+                    id: item?.id,
+                    name: item?.name,
+                    price: isOnSale ? salePrice : regularPrice,
+                    originalPrice: isOnSale ? regularPrice : null,
+                    category: getCategoryId(item?.category),
+                    image: item?.image_url || "https://images.unsplash.com/photo-1551024506-0bccd828d307",
+                    imageAlt: `${item?.name} - פריט תפריט מבית הקפה`,
+                    available: true,
+                    isPopular: false,
+                    is_hot_drink: item?.is_hot_drink,
+                    kds_routing_logic: item?.kds_routing_logic,
+                    allow_notes: item?.allow_notes,
+                    db_category: item?.category,
+                    calories: 0,
+                    description: null,
+                    options: []
+                }
+            });
     }, [rawMenuData, getCategoryId]);
 
     // Load menu items on mount

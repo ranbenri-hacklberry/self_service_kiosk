@@ -1,522 +1,327 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Package, ChevronDown, ChevronUp, History, Minus, Plus, ShoppingCart, Edit2, X } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import PropTypes from 'prop-types';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Package, ChevronDown, Minus, Plus, ShoppingCart, Save, History, User, AlertCircle, RotateCcw } from 'lucide-react';
 
-const InventoryItemCard = ({ item, onStockChange, onOrderChange, onItemUpdate, draftOrderQty = 0 }) => {
+const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty = 0 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [currentStock, setCurrentStock] = useState(Number(item.current_stock) || 0);
     const [orderQty, setOrderQty] = useState(draftOrderQty);
-    const [updating, setUpdating] = useState(false);
-    const [isEditing, setIsEditing] = useState(false);
+    const [hasStockChange, setHasStockChange] = useState(false);
+    const [hasOrderChange, setHasOrderChange] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
 
-    // Size multiplier for weighted items (Small/Medium/Large)
-    const [sizeMultiplier, setSizeMultiplier] = useState('medium');
+    // Backup for restore on error
+    const originalStock = useRef(Number(item.current_stock) || 0);
 
-    const [editData, setEditData] = useState({
-        name: item.name || '',
-        unit: item.unit || "יח׳",
-        cost_per_unit: item.cost_per_unit || 0,
-        count_step: item.count_step || 1,
-        unit_weight_grams: item.unit_weight_grams || 0,
-        min_order: item.min_order || 1,
-        order_step: item.order_step || 1,
-        units_per_kg: item.units_per_kg || 0,
-        case_quantity: item.case_quantity || 0,
-        measurement_note: item.measurement_note || ''
-    });
+    // Get step values with safe parsing
+    const countStep = useMemo(() => {
+        const val = parseFloat(item.count_step);
+        return isNaN(val) || val <= 0 ? 1 : val;
+    }, [item.count_step]);
 
-    const timeoutRef = useRef(null);
-    const [lastCountDate, setLastCountDate] = useState(item.last_counted_at ? new Date(item.last_counted_at) : null);
+    const orderStep = useMemo(() => {
+        const val = parseFloat(item.order_step);
+        return isNaN(val) || val <= 0 ? 1 : val;
+    }, [item.order_step]);
 
-    // Cleanup timeout on unmount
+    const minOrder = useMemo(() => {
+        const val = parseFloat(item.min_order);
+        return isNaN(val) || val <= 0 ? 1 : val;
+    }, [item.min_order]);
+
+    // Update info
+    const lastCountDate = item.last_counted_at ? new Date(item.last_counted_at) : null;
+    const lastCountedByName = item.last_counted_by_name || null;
+    const lastCountSource = item.last_count_source || 'manual';
+
+    // Computed values with useMemo
+    const isLowStock = useMemo(() => {
+        const stock = parseFloat(currentStock) || 0;
+        const alert = parseFloat(item.low_stock_alert) || 5;
+        return stock <= alert;
+    }, [currentStock, item.low_stock_alert]);
+
+    // Reset when item changes
     useEffect(() => {
-        return () => {
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        };
+        const val = parseFloat(item.current_stock);
+        const safeVal = isNaN(val) ? 0 : val;
+        setCurrentStock(safeVal);
+        originalStock.current = safeVal;
+        setHasStockChange(false);
+        setError(null);
+    }, [item.current_stock]);
+
+    // Update orderQty when draftOrderQty changes
+    useEffect(() => {
+        setOrderQty(draftOrderQty);
+    }, [draftOrderQty]);
+
+    // Smart step for stock - useCallback for performance
+    const handleStockChange = useCallback((delta) => {
+        const step = countStep;
+        let newVal;
+
+        if (delta > 0) {
+            const nearestAbove = Math.ceil(currentStock / step) * step;
+            newVal = (Math.abs(currentStock - nearestAbove) < 0.001) ? nearestAbove + step : nearestAbove;
+        } else {
+            const nearestBelow = Math.floor(currentStock / step) * step;
+            newVal = (Math.abs(currentStock - nearestBelow) < 0.001) ? nearestBelow - step : nearestBelow;
+        }
+
+        newVal = Math.max(0, Math.round(newVal * 100) / 100);
+        setCurrentStock(newVal);
+        setHasStockChange(true);
+        setError(null);
+    }, [currentStock, countStep]);
+
+    // Handle order quantity change - useCallback
+    const handleOrderChange = useCallback((delta) => {
+        let newVal;
+        if (delta > 0) {
+            newVal = orderQty === 0 ? minOrder : orderQty + orderStep;
+        } else {
+            newVal = orderQty - orderStep;
+            if (newVal < minOrder) newVal = 0;
+        }
+        newVal = Math.max(0, newVal);
+        setOrderQty(newVal);
+        setHasOrderChange(true);
+    }, [orderQty, orderStep, minOrder]);
+
+    // Restore to original value
+    const handleRestore = useCallback(() => {
+        setCurrentStock(originalStock.current);
+        setHasStockChange(false);
+        setError(null);
     }, []);
 
-    // --- LOGIC FOR UNITS & STEPS ---
-    const unitLower = (item.unit || '').trim().toLowerCase();
-    const isUnitItem = ['unit', "יח׳", 'יחידה', 'item', 'piece'].some(u => unitLower === u || unitLower.startsWith(u));
-    const isWeightedItem = ['kg', 'ק"ג', "ק״ג", 'קג', 'kilogram', 'gram', 'גרם'].some(u => unitLower.includes(u));
-
-    // Size multipliers for weighted items (based on units_per_kg)
-    const sizeMultipliers = {
-        small: 0.6,
-        medium: 1.0,
-        large: 1.5
-    };
-
-    // Calculate weight step based on units_per_kg and size multiplier
-    const getWeightStep = () => {
-        if (!isWeightedItem || !item.units_per_kg || item.units_per_kg <= 0) {
-            return isUnitItem ? 1 : 0.25;
+    // Save stock with error handling and restore capability
+    const saveStock = useCallback(async () => {
+        if (!hasStockChange) return;
+        setSaving(true);
+        setError(null);
+        const backupValue = currentStock;
+        try {
+            if (onStockChange) await onStockChange(item.id, currentStock);
+            originalStock.current = currentStock; // Update backup on success
+            setHasStockChange(false);
+        } catch (e) {
+            console.error('Save failed:', e);
+            setError('שגיאה בשמירה - לחץ לשחזור');
+            // Keep the value but show error
+        } finally {
+            setSaving(false);
         }
-        // units_per_kg = how many units in 1kg (e.g., 5 potatoes = 1kg means each is 200g)
-        const baseWeightKg = 1 / item.units_per_kg;
-        const multipliedWeight = baseWeightKg * sizeMultipliers[sizeMultiplier];
-        // Round to 2 decimal places
-        return Math.round(multipliedWeight * 100) / 100;
-    };
+    }, [hasStockChange, onStockChange, item.id, currentStock]);
 
-    const countStep = getWeightStep();
+    // Save order - useCallback
+    const saveOrder = useCallback(() => {
+        if (onOrderChange) onOrderChange(item.id, orderQty);
+        setHasOrderChange(false);
+    }, [onOrderChange, item.id, orderQty]);
 
-    // Case quantity for bulk orders
-    const caseQty = item.case_quantity && item.case_quantity > 0 ? item.case_quantity : 0;
-    const orderStep = caseQty > 0 ? caseQty : 1;
+    // Get update source text - useMemo
+    const sourceText = useMemo(() => {
+        if (lastCountSource === 'order_receipt') return 'קליטת הזמנה';
+        if (lastCountSource === 'order_deduction') return 'הזמנת לקוח';
+        if (lastCountedByName) return `ספירה ע״י ${lastCountedByName}`;
+        return 'ספירה ידנית';
+    }, [lastCountSource, lastCountedByName]);
 
-    const handleStockUpdate = (newValue) => {
-        // Negative check - ensure count doesn't go below 0
-        let val = Math.max(0, newValue);
-
-        if (isUnitItem) val = Math.round(val);
-        val = Math.round(val * 100) / 100;
-
-        setCurrentStock(val);
-        setUpdating(true);
-        setLastCountDate(new Date());
-
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        timeoutRef.current = setTimeout(async () => {
-            try {
-                if (onStockChange) await onStockChange(item.id, val);
-            } finally {
-                setUpdating(false);
-            }
-        }, 800);
-    };
-
-    const handleOrderUpdate = (newValue) => {
-        // Negative check
-        let val = Math.max(0, newValue);
-
-        const minOrder = caseQty > 0 ? caseQty : 1;
-        if (val > 0 && val < minOrder) val = minOrder;
-
-        if (caseQty > 0 && val > 0) {
-            const remainder = val % caseQty;
-            if (remainder !== 0) {
-                val = Math.round(val / caseQty) * caseQty;
-                if (val === 0 && newValue > 0) val = caseQty;
-            }
-        } else {
-            val = Math.round(val);
-        }
-
-        val = Math.round(val * 100) / 100;
-        setOrderQty(val);
-        if (onOrderChange) onOrderChange(item.id, val);
-    };
-
-    const incrementOrder = () => {
-        const minOrder = caseQty > 0 ? caseQty : 1;
-        let next = orderQty === 0 ? minOrder : orderQty + orderStep;
-        handleOrderUpdate(next);
-    };
-
-    const decrementOrder = () => {
-        const minOrder = caseQty > 0 ? caseQty : 1;
-        let next = orderQty - orderStep;
-        if (next < minOrder) next = 0;
-        handleOrderUpdate(next);
-    };
-
-    // Edit Modal
-    if (isEditing) {
-        return (
-            <>
-                {/* Backdrop */}
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" onClick={() => setIsEditing(false)} />
-
-                {/* Bottom Modal */}
-                <motion.div
-                    initial={{ y: '100%' }}
-                    animate={{ y: 0 }}
-                    exit={{ y: '100%' }}
-                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                    className="fixed bottom-0 left-0 right-0 bg-white z-50 rounded-t-3xl shadow-2xl p-0 min-h-[70vh] flex flex-col max-h-[90vh]"
-                    onClick={e => e.stopPropagation()}
-                >
-                    {/* Modal Header */}
-                    <div className="p-6 pb-6 bg-white rounded-t-3xl border-b border-gray-50 shrink-0 relative">
-                        <button
-                            onClick={() => setIsEditing(false)}
-                            className="absolute top-6 right-6 w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition-colors"
-                        >
-                            <X size={20} />
-                        </button>
-
-                        <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
-                        <h3 className="text-2xl font-black text-slate-800 text-center">עריכת פריט מלאי</h3>
-                        <p className="text-sm text-gray-400 text-center font-bold mt-1">{item.name}</p>
-                    </div>
-
-                    {/* Scrollable Form Content */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-8">
-                        {/* Basic Details */}
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-sm font-bold text-slate-500 mb-1 block">שם הפריט</label>
-                                <input
-                                    type="text"
-                                    value={editData.name}
-                                    onChange={e => setEditData({ ...editData, name: e.target.value })}
-                                    className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 focus:border-blue-500 outline-none font-bold text-xl text-center"
-                                    placeholder="שם הפריט..."
-                                />
-                            </div>
-
-                            {/* Measurement Note */}
-                            <div>
-                                <label className="text-sm font-bold text-slate-500 mb-1 block">הערת מדידה</label>
-                                <input
-                                    type="text"
-                                    value={editData.measurement_note}
-                                    onChange={e => setEditData({ ...editData, measurement_note: e.target.value })}
-                                    className="w-full p-3 bg-gray-50 rounded-xl border border-gray-100 focus:border-blue-500 outline-none font-medium text-sm text-center"
-                                    placeholder='לדוגמה: "תפוח אדמה בינוני ~ 200 גרם"'
-                                />
-                            </div>
-
-                            {/* Type Selector */}
-                            <div className="bg-gray-100 p-1.5 rounded-2xl flex">
-                                <button
-                                    onClick={() => setEditData({ ...editData, unit: "יח׳", count_step: 1, min_order: 1, order_step: 1 })}
-                                    className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${editData.unit === "יח׳" ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                                >
-                                    פריט בודד (יח׳)
-                                </button>
-                                <button
-                                    onClick={() => setEditData({ ...editData, unit: "ק״ג", count_step: 0.01, min_order: 0.01, order_step: 0.01 })}
-                                    className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${editData.unit === "ק״ג" ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                                >
-                                    משקל (ק״ג)
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Configuration Pickers */}
-                        <div className="space-y-3">
-                            {/* Units per KG (for weighted items) */}
-                            {editData.unit === "ק״ג" && (
-                                <NumberPicker
-                                    label="יחידות לק״ג"
-                                    value={editData.units_per_kg || 0}
-                                    onChange={v => setEditData({ ...editData, units_per_kg: v })}
-                                    unit="יח׳"
-                                    stepSmall={1}
-                                    stepLarge={5}
-                                />
-                            )}
-
-                            {/* Case Quantity */}
-                            <NumberPicker
-                                label="כמות במארז"
-                                value={editData.case_quantity || 0}
-                                onChange={v => setEditData({ ...editData, case_quantity: v })}
-                                unit={editData.unit}
-                                stepSmall={1}
-                                stepLarge={5}
-                            />
-
-                            {/* Unit Weight (Only if Units) */}
-                            {editData.unit === "יח׳" && (
-                                <NumberPicker
-                                    label="משקל יחידה (גרם)"
-                                    value={editData.unit_weight_grams || 0}
-                                    onChange={v => setEditData({ ...editData, unit_weight_grams: v })}
-                                    unit="גרם"
-                                    stepSmall={10}
-                                    stepLarge={100}
-                                />
-                            )}
-
-                            {/* Cost per Unit */}
-                            <NumberPicker
-                                label="מחיר ליחידה"
-                                value={editData.cost_per_unit}
-                                onChange={v => setEditData({ ...editData, cost_per_unit: v })}
-                                unit="₪"
-                                stepSmall={0.1}
-                                stepLarge={1}
-                            />
-
-                            {/* Min Order */}
-                            <NumberPicker
-                                label="מינימום הזמנה"
-                                value={editData.min_order}
-                                onChange={v => setEditData({ ...editData, min_order: v })}
-                                unit={editData.unit}
-                                stepSmall={editData.unit === "ק״ג" ? 0.1 : 1}
-                                stepLarge={editData.unit === "ק״ג" ? 1 : 10}
-                            />
-
-                            {/* Order Step */}
-                            <NumberPicker
-                                label="צעד הזמנה"
-                                value={editData.order_step}
-                                onChange={v => setEditData({ ...editData, order_step: v })}
-                                unit={editData.unit}
-                                stepSmall={editData.unit === "ק״ג" ? 0.1 : 1}
-                                stepLarge={editData.unit === "ק״ג" ? 1 : 10}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="h-10"></div>
-
-                    {/* Fixed Footer Action */}
-                    <div className="p-4 border-t border-gray-100 bg-white shrink-0">
-                        <button
-                            onClick={async () => {
-                                if (onItemUpdate) {
-                                    await onItemUpdate(item.id, editData);
-                                }
-                                setIsEditing(false);
-                            }}
-                            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xl shadow-xl shadow-slate-200 active:scale-[0.98] transition-all"
-                        >
-                            שמור שינויים
-                        </button>
-                    </div>
-                </motion.div>
-            </>
-        );
-    }
-
-    // Main Card View
     return (
-        <div className={`bg-white rounded-2xl border transition-all duration-200 ${isExpanded ? 'border-blue-300 shadow-md ring-1 ring-blue-100' : 'border-gray-200 shadow-sm'} overflow-hidden`}>
-            {/* Header - Always Visible */}
+        <div className={`bg-white rounded-xl border transition-all ${isExpanded ? 'border-blue-200 shadow-md' : 'border-gray-100 shadow-sm'}`}>
+            {/* Header Row */}
             <div
                 onClick={() => setIsExpanded(!isExpanded)}
-                className={`p-3 flex items-center justify-between cursor-pointer select-none transition-colors ${isExpanded ? 'bg-blue-50/30' : 'bg-white hover:bg-gray-50'}`}
+                className={`px-3 py-2.5 flex items-center justify-between cursor-pointer ${isExpanded ? 'bg-blue-50/40' : 'hover:bg-gray-50'}`}
             >
-                {/* Right: Item Info */}
-                <div className="flex items-center gap-3 overflow-hidden flex-1">
-                    <div className={`w-10 h-10 flex items-center justify-center rounded-xl shrink-0 transition-colors ${currentStock <= (item.low_stock_alert || 5) ? 'bg-red-100 text-red-500' : 'bg-gray-100 text-gray-500'}`}>
-                        <Package size={20} strokeWidth={1.5} />
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className={`w-9 h-9 flex items-center justify-center rounded-lg ${isLowStock ? 'bg-red-100 text-red-500' : 'bg-gray-100 text-gray-400'}`}>
+                        <Package size={18} />
                     </div>
-                    <div className="flex flex-col min-w-0 justify-center">
-                        <h3 className="font-black text-gray-800 text-lg truncate leading-tight">{item.name}</h3>
-                        <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-bold text-gray-400">{item.unit || "יח׳"}</span>
-                            {/* Measurement Note Display */}
-                            {item.measurement_note && (
-                                <span className="text-[10px] font-medium text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">
-                                    {item.measurement_note}
-                                </span>
-                            )}
-                        </div>
+                    <div className="flex flex-col min-w-0">
+                        <h4 className="font-bold text-gray-800 text-sm truncate">{item.name}</h4>
+                        <span className="text-[11px] text-gray-400">{item.unit}</span>
                     </div>
                 </div>
 
-                {/* Left: Alerts & Chevron */}
-                <div className="flex items-center gap-3 pl-1">
-                    {/* Current Stock Badge (Collapsed Only) */}
-                    {!isExpanded && (
-                        <div className={`flex flex-col items-center justify-center px-3 py-1.5 rounded-xl border min-w-[3.5rem] transition-colors ${currentStock <= (item.low_stock_alert || 5)
-                            ? 'bg-red-50 border-red-100 text-red-600'
-                            : 'bg-gray-50 border-gray-100 text-gray-700'
-                            }`}>
-                            <span className="text-[9px] font-bold text-gray-400 leading-none mb-0.5 uppercase tracking-wide">מלאי</span>
-                            <span className="font-black text-lg leading-none">{currentStock}</span>
-                        </div>
-                    )}
-
-                    {/* Draft Indicator */}
-                    {orderQty > 0 && !isExpanded && (
-                        <div className="flex flex-col items-center justify-center bg-blue-50 text-blue-600 px-3 py-1.5 rounded-xl border border-blue-100 min-w-[3.5rem]">
-                            <ShoppingCart size={12} className="mb-0.5" />
-                            <span className="font-black text-sm leading-none">+{orderQty}</span>
-                        </div>
-                    )}
-
-                    <div className={`p-1 rounded-full text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-180 bg-gray-100' : ''}`}>
-                        <ChevronDown size={20} />
+                <div className="flex items-center gap-2">
+                    {/* Stock Badge */}
+                    <div className={`px-2.5 py-1 rounded-lg text-center min-w-[3rem] ${isLowStock ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-700'} ${hasStockChange ? 'ring-2 ring-blue-400' : ''}`}>
+                        <span className="font-black text-lg">{currentStock}</span>
                     </div>
+
+                    {/* Order Badge */}
+                    {orderQty > 0 && (
+                        <div className="px-2 py-1 rounded-lg bg-blue-50 text-blue-600 flex items-center gap-1">
+                            <ShoppingCart size={12} />
+                            <span className="font-bold text-sm">+{orderQty}</span>
+                        </div>
+                    )}
+
+                    <ChevronDown size={18} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                 </div>
             </div>
 
-            {/* Expanded Content - Controls */}
-            {isExpanded && (
-                <div className="border-t border-gray-100 p-4 bg-white space-y-5 animate-in slide-in-from-top-4 duration-300">
+            {/* Expanded Content */}
+            <AnimatePresence>
+                {isExpanded && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="border-t border-gray-100 overflow-hidden"
+                    >
+                        <div className="p-3 space-y-3">
+                            {/* Stock Row */}
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-bold text-gray-500 whitespace-nowrap">מלאי</span>
 
-                    {/* 1. Stock Update Section */}
-                    <div>
-                        <div className="flex flex-col mb-3">
-                            <span className="text-xs font-bold text-gray-800 flex items-center gap-2">
-                                <History size={14} className="text-blue-500" />
-                                {lastCountDate
-                                    ? `ספירה אחרונה ב-${lastCountDate.toLocaleDateString('he-IL')}`
-                                    : 'טרם בוצעה ספירה'
-                                }
-                            </span>
-                            {lastCountDate && (
-                                <span className="text-[10px] text-gray-400 mt-0.5 mr-6">
-                                    ומתאריך {lastCountDate.toLocaleDateString('he-IL')} הערכה לפי נתונים
-                                </span>
-                            )}
-                        </div>
+                                <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg">
+                                    <button
+                                        onClick={() => handleStockChange(-1)}
+                                        className="w-9 h-9 flex items-center justify-center bg-white rounded-lg shadow-sm text-slate-500 hover:text-red-500 hover:bg-red-50 transition active:scale-95"
+                                    >
+                                        <Minus size={16} strokeWidth={3} />
+                                    </button>
 
-                        {/* Size Multiplier Toggle - Only for weighted items with units_per_kg */}
-                        {isWeightedItem && item.units_per_kg > 0 && (
-                            <div className="mb-4">
-                                <label className="text-xs font-bold text-gray-500 mb-2 block">גודל יחידה:</label>
-                                <div className="bg-gray-100 p-1 rounded-xl flex gap-1">
+                                    <div className="w-14 text-center">
+                                        <span className={`font-mono text-xl font-black ${hasStockChange ? 'text-blue-600' : 'text-slate-700'}`}>
+                                            {currentStock}
+                                        </span>
+                                    </div>
+
                                     <button
-                                        onClick={() => setSizeMultiplier('small')}
-                                        className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all ${sizeMultiplier === 'small' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                        onClick={() => handleStockChange(1)}
+                                        className="w-9 h-9 flex items-center justify-center bg-white rounded-lg shadow-sm text-slate-500 hover:text-green-600 hover:bg-green-50 transition active:scale-95"
                                     >
-                                        קטן
-                                    </button>
-                                    <button
-                                        onClick={() => setSizeMultiplier('medium')}
-                                        className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all ${sizeMultiplier === 'medium' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                                    >
-                                        בינוני
-                                    </button>
-                                    <button
-                                        onClick={() => setSizeMultiplier('large')}
-                                        className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all ${sizeMultiplier === 'large' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                                    >
-                                        גדול
+                                        <Plus size={16} strokeWidth={3} />
                                     </button>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1 text-center">
-                                    צעד: {(countStep * 1000).toFixed(0)} גרם
-                                </p>
-                            </div>
-                        )}
 
-                        <div className="flex items-center gap-3">
-                            <button 
-                                onClick={() => handleStockUpdate(currentStock - countStep)} 
-                                className="h-12 flex-1 flex items-center justify-center bg-gray-50 border border-gray-200 rounded-xl text-red-500 hover:bg-red-50 hover:border-red-200 active:scale-95 transition-all"
-                            >
-                                <Minus size={20} strokeWidth={3} />
-                            </button>
-                            <div className="w-20 text-center">
-                                <span className="block font-black text-2xl text-gray-800">{currentStock}</span>
-                                <span className="text-[10px] text-gray-400 font-bold -mt-1 block">{item.unit}</span>
+                                {/* Save Stock Button */}
+                                <div className="w-11">
+                                    {hasStockChange && (
+                                        <motion.button
+                                            initial={{ scale: 0 }}
+                                            animate={{ scale: 1 }}
+                                            onClick={saveStock}
+                                            disabled={saving}
+                                            className="w-10 h-10 bg-blue-600 text-white rounded-lg shadow-md flex items-center justify-center hover:bg-blue-700 active:scale-90 transition-all"
+                                        >
+                                            <Save size={18} />
+                                        </motion.button>
+                                    )}
+                                </div>
                             </div>
-                            <button 
-                                onClick={() => handleStockUpdate(currentStock + countStep)} 
-                                className="h-12 flex-1 flex items-center justify-center bg-gray-50 border border-gray-200 rounded-xl text-green-600 hover:bg-green-50 hover:border-green-200 active:scale-95 transition-all"
-                            >
-                                <Plus size={20} strokeWidth={3} />
-                            </button>
+
+                            {/* Error Display with Restore Button */}
+                            {error && (
+                                <div className="flex items-center justify-between gap-2 text-xs text-red-500 bg-red-50 px-2 py-1.5 rounded">
+                                    <div className="flex items-center gap-2">
+                                        <AlertCircle size={12} />
+                                        <span>{error}</span>
+                                    </div>
+                                    <button
+                                        onClick={handleRestore}
+                                        className="flex items-center gap-1 px-2 py-1 bg-red-100 hover:bg-red-200 rounded text-red-600 transition"
+                                    >
+                                        <RotateCcw size={10} />
+                                        שחזר
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Update Info - Single Line */}
+                            {lastCountDate && (
+                                <div className="flex items-center gap-2 text-[10px] text-gray-400 px-1">
+                                    <History size={10} />
+                                    <span>{lastCountDate.toLocaleDateString('he-IL')} {lastCountDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</span>
+                                    <span>•</span>
+                                    <span className={lastCountSource !== 'manual' ? 'text-blue-500' : ''}>{sourceText}</span>
+                                </div>
+                            )}
+
+                            <div className="h-px bg-gray-100"></div>
+
+                            {/* Order Row */}
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="flex flex-col">
+                                    <span className="text-xs font-bold text-gray-500">הזמנה</span>
+                                    {minOrder > 1 && <span className="text-[9px] text-gray-400">מינ׳ {minOrder}</span>}
+                                </div>
+
+                                <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg">
+                                    <button
+                                        onClick={() => handleOrderChange(-1)}
+                                        className="w-9 h-9 flex items-center justify-center bg-white rounded-lg shadow-sm text-slate-500 hover:text-red-500 hover:bg-red-50 transition active:scale-95"
+                                    >
+                                        <Minus size={16} strokeWidth={3} />
+                                    </button>
+
+                                    <div className="w-14 text-center">
+                                        <span className={`font-mono text-xl font-black ${orderQty > 0 ? 'text-blue-600' : 'text-gray-300'}`}>
+                                            {orderQty || '-'}
+                                        </span>
+                                    </div>
+
+                                    <button
+                                        onClick={() => handleOrderChange(1)}
+                                        className="w-9 h-9 flex items-center justify-center bg-white rounded-lg shadow-sm text-slate-500 hover:text-green-600 hover:bg-green-50 transition active:scale-95"
+                                    >
+                                        <Plus size={16} strokeWidth={3} />
+                                    </button>
+                                </div>
+
+                                {/* Save Order Button */}
+                                <div className="w-11">
+                                    {hasOrderChange && orderQty !== draftOrderQty && (
+                                        <motion.button
+                                            initial={{ scale: 0 }}
+                                            animate={{ scale: 1 }}
+                                            onClick={saveOrder}
+                                            className="w-10 h-10 bg-green-600 text-white rounded-lg shadow-md flex items-center justify-center hover:bg-green-700 active:scale-90 transition-all"
+                                        >
+                                            <Save size={18} />
+                                        </motion.button>
+                                    )}
+                                </div>
+                            </div>
                         </div>
-                    </div>
-
-                    <div className="h-px bg-gray-50 w-full"></div>
-
-                    {/* 2. Order Update Section - Uses case_quantity for bulk */}
-                    <div className={`p-4 rounded-2xl transition-colors ${orderQty > 0 ? 'bg-blue-50/50 border border-blue-100' : 'bg-gray-50/50 border border-transparent'}`}>
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="flex flex-col">
-                                <span className="text-sm font-black text-blue-900 flex items-center gap-1.5">
-                                    <ShoppingCart size={16} className="text-blue-500" />
-                                    הוספה להזמנה
-                                </span>
-                                {caseQty > 0 && (
-                                    <span className="text-[11px] font-bold text-blue-400 mt-0.5">
-                                        מארז: {caseQty} {item.unit}
-                                    </span>
-                                )}
-                            </div>
-                            {orderQty > 0 && <span className="text-xs font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-md">בעגלה</span>}
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                            <button 
-                                onClick={decrementOrder} 
-                                className="h-12 w-12 flex items-center justify-center bg-white border border-gray-200 rounded-xl text-gray-400 hover:text-red-500 hover:border-red-200 shadow-sm active:scale-95 transition-all"
-                            >
-                                <Minus size={20} strokeWidth={3} />
-                            </button>
-                            <div className="flex-1 text-center">
-                                <span className={`block font-black text-2xl ${orderQty > 0 ? 'text-blue-600' : 'text-gray-300'}`}>
-                                    {orderQty > 0 ? orderQty : '-'}
-                                </span>
-                                {caseQty > 0 && orderQty > 0 && (
-                                    <span className="text-[10px] text-blue-400 font-bold">
-                                        ({Math.round(orderQty / caseQty)} מארזים)
-                                    </span>
-                                )}
-                            </div>
-                            <button 
-                                onClick={incrementOrder} 
-                                className="h-12 w-12 flex items-center justify-center bg-white border border-gray-200 rounded-xl text-blue-600 hover:bg-blue-600 hover:text-white hover:border-blue-600 shadow-sm active:scale-95 transition-all"
-                            >
-                                <Plus size={20} strokeWidth={3} />
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Edit Button - Only when expanded */}
-                    <div className="pt-2">
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setIsEditing(true);
-                            }}
-                            className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 rounded-lg font-bold text-sm transition-all flex items-center gap-2 border border-blue-100 hover:border-blue-200"
-                            title="עריכת פרטי פריט"
-                        >
-                            <Edit2 size={14} strokeWidth={2} />
-                            עריכת פרטים
-                        </button>
-                    </div>
-                </div>
-            )}
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };
 
-// NumberPicker Component
-const NumberPicker = ({ value, onChange, label, unit = '', stepSmall = 1, stepLarge = 10, format = (v) => v, min = 0 }) => {
-    const handleChange = (delta) => {
-        const next = Math.max(min, value + delta);
-        onChange(Number(next.toFixed(3)));
-    };
+// PropTypes for type safety
+InventoryItemCard.propTypes = {
+    item: PropTypes.shape({
+        id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+        name: PropTypes.string.isRequired,
+        current_stock: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        unit: PropTypes.string,
+        count_step: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        order_step: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        min_order: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        low_stock_alert: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        last_counted_at: PropTypes.string,
+        last_counted_by_name: PropTypes.string,
+        last_count_source: PropTypes.oneOf(['manual', 'order_receipt', 'order_deduction']),
+    }).isRequired,
+    onStockChange: PropTypes.func,
+    onOrderChange: PropTypes.func,
+    draftOrderQty: PropTypes.number,
+};
 
-    return (
-        <div className="bg-white rounded-xl border border-gray-100 p-2 shadow-sm flex items-center justify-between gap-2 h-16">
-            {/* Label */}
-            <label className="text-xs font-black text-gray-500 shrink-0 w-20 leading-3 whitespace-normal text-right pl-1 flex items-center h-full">
-                {label}
-            </label>
-
-            <div className="flex items-center gap-2 flex-1 justify-end h-full">
-                {/* Decrease */}
-                <div className="flex gap-1 h-full items-center">
-                    <button onClick={() => handleChange(-stepLarge)} className="w-10 h-10 bg-red-50 text-red-600 rounded-lg font-bold text-xs flex items-center justify-center hover:bg-red-100 transition-colors active:scale-95 leading-none">
-                        -{stepLarge < 1 && unit === "גרם" ? stepLarge * 1000 : stepLarge}
-                    </button>
-                    <button onClick={() => handleChange(-stepSmall)} className="w-10 h-10 bg-gray-50 text-gray-600 rounded-lg font-bold text-sm flex items-center justify-center hover:bg-gray-100 transition-colors active:scale-95 leading-none">
-                        -{stepSmall < 1 && unit === "גרם" ? stepSmall * 1000 : stepSmall}
-                    </button>
-                </div>
-
-                {/* Value */}
-                <div className="min-w-[4rem] text-center flex flex-col justify-center">
-                    <div className="text-xl font-black text-slate-800 tracking-tight leading-none">{format(value)}</div>
-                    {unit && <div className="text-[10px] font-bold text-gray-400 mt-0.5">{unit}</div>}
-                </div>
-
-                {/* Increase */}
-                <div className="flex gap-1 h-full items-center">
-                    <button onClick={() => handleChange(stepSmall)} className="w-10 h-10 bg-gray-50 text-gray-600 rounded-lg font-bold text-sm flex items-center justify-center hover:bg-gray-100 transition-colors active:scale-95 leading-none">
-                        +{stepSmall < 1 && unit === "גרם" ? stepSmall * 1000 : stepSmall}
-                    </button>
-                    <button onClick={() => handleChange(stepLarge)} className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg font-bold text-xs flex items-center justify-center hover:bg-blue-100 transition-colors active:scale-95 leading-none">
-                        +{stepLarge < 1 && unit === "גרם" ? stepLarge * 1000 : stepLarge}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
+InventoryItemCard.defaultProps = {
+    draftOrderQty: 0,
+    onStockChange: null,
+    onOrderChange: null,
 };
 
 export default React.memo(InventoryItemCard);

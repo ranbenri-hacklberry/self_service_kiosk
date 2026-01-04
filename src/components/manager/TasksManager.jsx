@@ -1,10 +1,17 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { PlusCircle, X, Check, ClipboardList, ChevronLeft, Trash2, Coffee, ExternalLink } from 'lucide-react';
 import ConfirmationModal from '../ui/ConfirmationModal';
+
+// Variants for smooth animation
+const taskVariants = {
+  initial: { opacity: 0, height: 0 },
+  animate: { opacity: 1, height: 'auto', transition: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } },
+  exit: { opacity: 0, height: 0, transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] } }
+};
 
 const TasksManager = () => {
   const { currentUser } = useAuth();
@@ -71,13 +78,13 @@ const TasksManager = () => {
 
       const { data: completions } = await supabase
         .from('task_completions')
-        .select('recurring_task_id,created_at') // Removed space
+        .select('recurring_task_id,completed_at')
         .eq('completion_date', dateStr);
 
       const completionMap = new Map();
       completions?.forEach(c => {
-        if (c.created_at) {
-          completionMap.set(c.recurring_task_id, c.created_at);
+        if (c.completed_at) {
+          completionMap.set(c.recurring_task_id, c.completed_at);
         }
       });
       // Force new map instance
@@ -170,11 +177,18 @@ const TasksManager = () => {
       setShowMenuItemModal(true);
     } else {
       // Regular task - open edit modal
+      // Extract selected days from weekly_schedule
+      const schedule = task.weekly_schedule || {};
+      const selectedDays = Object.keys(schedule)
+        .filter(dayIdx => schedule[dayIdx]?.qty > 0)
+        .map(d => parseInt(d));
+
       setEditingTask(task);
       setTaskForm({
         name: task.name || '',
         description: task.description || '',
-        is_pre_closing: task.is_pre_closing || false
+        is_pre_closing: task.is_pre_closing || false,
+        selectedDays: selectedDays.length > 0 ? selectedDays : [0, 1, 2, 3, 4, 5, 6]
       });
       setShowEditModal(true);
     }
@@ -185,7 +199,8 @@ const TasksManager = () => {
     setTaskForm({
       name: '',
       description: '',
-      is_pre_closing: activeTab === 'pre_closing'
+      is_pre_closing: activeTab === 'pre_closing',
+      selectedDays: [0, 1, 2, 3, 4, 5, 6] // Default: all days
     });
     setShowEditModal(true);
   };
@@ -202,6 +217,13 @@ const TasksManager = () => {
       };
       const category = categoryByTab[activeTab] || 'פתיחה';
 
+      // Convert selectedDays to weekly_schedule
+      const selectedDays = taskForm.selectedDays || [0, 1, 2, 3, 4, 5, 6];
+      const weeklySchedule = {};
+      selectedDays.forEach(dayIdx => {
+        weeklySchedule[dayIdx] = { qty: 1, mode: 'fixed' };
+      });
+
       if (editingTask) {
         // Update existing
         const { error } = await supabase
@@ -209,14 +231,20 @@ const TasksManager = () => {
           .update({
             name: taskForm.name,
             description: taskForm.description,
-            is_pre_closing: taskForm.is_pre_closing
+            is_pre_closing: taskForm.is_pre_closing,
+            weekly_schedule: weeklySchedule
           })
           .eq('id', editingTask.id)
           .eq('business_id', currentUser?.business_id);
 
         if (error) throw error;
       } else {
-        // Create new
+        // Create new - Set as daily by default (all 7 days)
+        const defaultSchedule = {};
+        for (let i = 0; i < 7; i++) {
+          defaultSchedule[i] = { qty: 1, mode: 'fixed' };
+        }
+
         const { error } = await supabase
           .from('recurring_tasks')
           .insert([{
@@ -226,6 +254,7 @@ const TasksManager = () => {
             is_pre_closing: taskForm.is_pre_closing,
             is_active: true,
             frequency: 'Daily',
+            weekly_schedule: defaultSchedule, // Daily schedule for all days
             business_id: currentUser?.business_id
           }]);
 
@@ -346,7 +375,7 @@ const TasksManager = () => {
         if (error) throw error;
 
         // Update local state - Add ID with timestamp
-        setCompletedToday(prev => new Map(prev).set(task.id, data?.created_at || new Date().toISOString()));
+        setCompletedToday(prev => new Map(prev).set(task.id, data?.completed_at || new Date().toISOString()));
         setShowPrepEditModal(false); // Close modal if marking complete from there
       }
     } catch (err) {
@@ -426,116 +455,140 @@ const TasksManager = () => {
                 </button>
               </div>
             ) : (
-              sortedTasks.map(task => {
-                // Get today's quantity from weekly_schedule
-                const todayIdx = new Date().getDay();
-                const schedule = task.weekly_schedule || {};
-                const todayConfig = schedule[todayIdx];
-                const todayQty = todayConfig?.qty || task.quantity || 0;
-                const isPrepTask = activeTab === 'pre_closing';
-                const hasTodayTask = todayQty > 0;
-                const isCompleted = completedToday.has(task.id);
-                const isUrgent = hasTodayTask && !isCompleted; // Scheduled today + not done
-
-                // Get days with tasks
-                const daysWithTasks = Object.entries(schedule)
-                  .filter(([_, config]) => config?.qty > 0)
-                  .map(([day]) => ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'][parseInt(day)]);
-
-                return (
-                  <div
-                    key={task.id}
-                    onClick={() => handleTaskClick(task)}
-                    className={`bg-white rounded-xl shadow-sm border p-2 pr-2 flex items-center gap-3 relative transition-all cursor-pointer group h-[88px] hover:shadow-md ${isCompleted
-                        ? 'border-green-300 bg-green-50/50'
-                        : isUrgent
-                          ? 'border-orange-300 bg-orange-50/30 ring-2 ring-orange-200'
-                          : isPrepTask && !hasTodayTask
-                            ? 'border-gray-200 opacity-50'
-                            : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50'
-                      }`}
-                  >
-                    {/* Icon / Complete Action Area (Right visually, Start of DOM) */}
-                    <div
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleTaskCompletion(task);
-                      }}
-                      className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center transition-all ${isCompleted
-                        ? 'bg-green-600 text-white shadow-md shadow-green-200'
-                        : 'bg-gray-100 text-gray-400 hover:bg-green-50 hover:text-green-600 active:scale-90 cursor-pointer'
-                        }`}
-                    >
-                      {isCompleted ? (
-                        <div className="flex flex-col items-center justify-center p-1">
-                          <Check size={28} strokeWidth={3} className="mb-0.5" />
-                          <span className="text-[10px] font-bold opacity-90 leading-none">
-                            {(() => {
-                              const ts = completedToday.get(task.id);
-                              if (!ts) return '';
-                              try {
-                                return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                              } catch (e) {
-                                return '';
-                              }
-                            })()}
-                          </span>
-                        </div>
-                      ) : isPrepTask && todayQty > 0 ? (
-                        <div className="flex flex-col items-center">
-                          <Check size={18} className="mb-px opacity-30" />
-                          <span className="text-xl font-black leading-none">{todayQty}</span>
-                          <span className="text-[10px] font-bold opacity-70">יח׳</span>
-                        </div>
-                      ) : task.menu_item_id ? (
-                        <Coffee size={24} />
-                      ) : (
-                        <ClipboardList size={24} />
-                      )}
-                    </div>
-
-                    {/* Content (Middle) */}
-                    <div className="flex-1 flex flex-col justify-center min-w-0 h-full py-1">
-                      <h3 className="font-bold text-gray-800 text-base leading-tight truncate mb-1 group-hover:text-blue-700 transition-colors">
-                        {task.name}
+              <>
+                {/* Pending Tasks Section */}
+                {sortedTasks.filter(task => {
+                  const todayIdx = new Date().getDay();
+                  const schedule = task.weekly_schedule || {};
+                  const todayConfig = schedule[todayIdx];
+                  const todayQty = todayConfig?.qty || task.quantity || 0;
+                  const hasTodayTask = todayQty > 0;
+                  const isCompleted = completedToday.has(task.id);
+                  return hasTodayTask && !isCompleted;
+                }).length > 0 && (
+                    <div className="mb-2">
+                      <h3 className="text-xs font-black text-orange-600 uppercase tracking-wider mb-2 px-2">
+                        ⏳ ממתינות לביצוע היום
                       </h3>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {task.menu_item_id && (
-                          <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100">
-                            מתפריט
-                          </span>
-                        )}
-                        {isPrepTask && daysWithTasks.length > 0 && (
-                          <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
-                            {daysWithTasks.join(' ')}
-                          </span>
-                        )}
-                        {!isPrepTask && task.description && (
-                          <span className="text-xs text-gray-400 truncate max-w-[150px]">
-                            {task.description}
-                          </span>
-                        )}
-                      </div>
                     </div>
+                  )}
 
-                    {/* Actions (Left visually, End of DOM) */}
-                    <div className="pl-2 flex-shrink-0 flex items-center gap-2">
-                      {!task.menu_item_id && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteTask(task);
-                          }}
-                          className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-50 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                <LayoutGroup>
+                  <AnimatePresence mode="wait">
+                    {sortedTasks.map(task => {
+                      // Get today's quantity from weekly_schedule
+                      const todayIdx = new Date().getDay();
+                      const schedule = task.weekly_schedule || {};
+                      const todayConfig = schedule[todayIdx];
+                      const todayQty = todayConfig?.qty || task.quantity || 0;
+                      const isPrepTask = activeTab === 'pre_closing';
+                      const hasTodayTask = todayQty > 0;
+                      const isCompleted = completedToday.has(task.id);
+                      const isUrgent = hasTodayTask && !isCompleted; // Scheduled today + not done
+
+                      // Get days with tasks
+                      const daysWithTasks = Object.entries(schedule)
+                        .filter(([_, config]) => config?.qty > 0)
+                        .map(([day]) => ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'][parseInt(day)]);
+
+                      return (
+                        <motion.div
+                          key={task.id}
+                          variants={taskVariants}
+                          onClick={() => handleTaskClick(task)}
+                          className={`bg-white rounded-xl shadow-sm border p-2 pr-2 flex items-center gap-3 relative transition-all cursor-pointer group h-[88px] hover:shadow-md ${isCompleted
+                            ? 'border-green-300 bg-green-50/50'
+                            : isUrgent
+                              ? 'border-orange-300 bg-orange-50/30 ring-2 ring-orange-200'
+                              : isPrepTask && !hasTodayTask
+                                ? 'border-gray-200 opacity-50'
+                                : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50'
+                            }`}
                         >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                      <ChevronLeft size={18} className="text-gray-300" />
-                    </div>
-                  </div>
-                );
-              })
+                          {/* Icon / Complete Action Area (Right visually, Start of DOM) */}
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleTaskCompletion(task);
+                            }}
+                            className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center transition-all ${isCompleted
+                              ? 'bg-green-600 text-white shadow-md shadow-green-200'
+                              : 'bg-gray-100 text-gray-400 hover:bg-green-50 hover:text-green-600 active:scale-90 cursor-pointer'
+                              }`}
+                          >
+                            {isCompleted ? (
+                              <div className="flex flex-col items-center justify-center p-1">
+                                <Check size={28} strokeWidth={3} className="mb-0.5" />
+                                <span className="text-[10px] font-bold opacity-90 leading-none">
+                                  {(() => {
+                                    const ts = completedToday.get(task.id);
+                                    if (!ts) return '';
+                                    try {
+                                      return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                    } catch (e) {
+                                      return '';
+                                    }
+                                  })()}
+                                </span>
+                              </div>
+                            ) : isPrepTask && todayQty > 0 ? (
+                              <div className="flex flex-col items-center">
+                                <Check size={18} className="mb-px opacity-30" />
+                                <span className="text-xl font-black leading-none">{todayQty}</span>
+                                <span className="text-[10px] font-bold opacity-70">יח׳</span>
+                              </div>
+                            ) : task.menu_item_id ? (
+                              <Coffee size={24} />
+                            ) : (
+                              <ClipboardList size={24} />
+                            )}
+                          </div>
+
+                          {/* Content (Middle) */}
+                          <div className="flex-1 flex flex-col justify-center min-w-0 h-full py-1">
+                            <h3 className="font-bold text-gray-800 text-base leading-tight truncate mb-1 group-hover:text-blue-700 transition-colors">
+                              {task.name}
+                            </h3>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {task.menu_item_id && (
+                                <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100">
+                                  מתפריט
+                                </span>
+                              )}
+                              {isPrepTask && daysWithTasks.length > 0 && (
+                                <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                                  {daysWithTasks.join(' ')}
+                                </span>
+                              )}
+                              {!isPrepTask && task.description && (
+                                <span className="text-xs text-gray-400 truncate max-w-[150px]">
+                                  {task.description}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Actions (Left visually, End of DOM) */}
+                          <div className="pl-2 flex-shrink-0 flex items-center gap-2">
+                            {!task.menu_item_id && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteTask(task);
+                                }}
+                                className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-50 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
+                            <ChevronLeft size={18} className="text-gray-300" />
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                </LayoutGroup>
+              </>
             )}
           </motion.div>
         </AnimatePresence>
@@ -613,6 +666,42 @@ const TasksManager = () => {
                     </label>
                   </div>
                 )}
+
+                {/* Days Selection */}
+                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                  <label className="text-sm font-bold text-slate-500 mb-3 block">ימי ביצוע</label>
+                  <div className="flex gap-2 justify-center flex-wrap">
+                    {DAYS_FULL.map((dayName, idx) => {
+                      const isSelected = taskForm.selectedDays?.includes(idx) ?? true; // Default: all selected
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            const current = taskForm.selectedDays || [0, 1, 2, 3, 4, 5, 6];
+                            const updated = isSelected
+                              ? current.filter(d => d !== idx)
+                              : [...current, idx].sort();
+                            setTaskForm({ ...taskForm, selectedDays: updated });
+                          }}
+                          className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${isSelected
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'bg-white text-gray-400 border border-gray-200'
+                            }`}
+                        >
+                          {dayName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTaskForm({ ...taskForm, selectedDays: [0, 1, 2, 3, 4, 5, 6] })}
+                    className="mt-3 w-full py-2 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                  >
+                    בחר הכל
+                  </button>
+                </div>
               </div>
 
               {/* Save Button */}

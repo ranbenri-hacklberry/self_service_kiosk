@@ -3,8 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import InventoryItemCard from './InventoryItemCard';
-import { Search, Truck, Plus, X, ArrowRight, Package, ShoppingCart, Check, ChevronLeft, ChevronRight, Settings, PlusCircle, Save } from 'lucide-react';
+import TripleCheckCard from './TripleCheckCard';
+import { Search, Truck, Plus, X, ArrowRight, Package, ShoppingCart, Check, ChevronLeft, ChevronRight, Settings, PlusCircle, Save, ScanLine, Camera, Upload, AlertTriangle } from 'lucide-react';
 import ConfirmationModal from '../ui/ConfirmationModal';
+import { useInvoiceOCR } from '@/hooks/useInvoiceOCR';
+
 
 /**
  * Inventory Manager Screen
@@ -67,6 +70,20 @@ const InventoryScreen = () => {
 
   const [isCopied, setIsCopied] = useState(false);
 
+  // 🆕 Scanner Modal State
+  const [showScannerModal, setShowScannerModal] = useState(false);
+  const [scannerStep, setScannerStep] = useState('choose'); // 'choose' | 'uploading' | 'results'
+  const fileInputRef = useState(null);
+
+  // 🆕 Invoice OCR Hook
+  const { scanInvoice, isProcessing: isScanning, error: scanError, ocrResult, resetOCR } = useInvoiceOCR();
+
+  // 🆕 Triple-Check Receiving Session State
+  const [receivingSession, setReceivingSession] = useState(null);
+  // receivingSession = { items: [{name, invoicedQty, actualQty, unitPrice, countStep, isNew}], orderId, supplierId }
+  const [isConfirmingReceipt, setIsConfirmingReceipt] = useState(false);
+
+
   const fetchData = useCallback(async () => {
     if (!currentUser?.business_id) return;
     setLoading(true);
@@ -79,6 +96,14 @@ const InventoryScreen = () => {
       if (supError) throw supError;
       setSuppliers(suppliersData || []);
 
+      // Fetch employees for name mapping
+      const { data: employeesData } = await supabase
+        .from('employees')
+        .select('id, name')
+        .eq('business_id', currentUser.business_id);
+      const employeeMap = {};
+      (employeesData || []).forEach(e => { employeeMap[e.id] = e.name; });
+
       const { data: itemsData, error: itemError } = await supabase
         .from('inventory_items')
         .select(`*, supplier:suppliers(*)`)
@@ -86,7 +111,13 @@ const InventoryScreen = () => {
         .order('name')
         .range(0, 2000);
       if (itemError) throw itemError;
-      setItems(itemsData || []);
+
+      // Map the counted_by name
+      const itemsWithNames = (itemsData || []).map(item => ({
+        ...item,
+        last_counted_by_name: item.last_counted_by ? employeeMap[item.last_counted_by] || null : null
+      }));
+      setItems(itemsWithNames);
     } catch (err) {
       console.error('Error fetching inventory:', err);
     } finally {
@@ -188,16 +219,33 @@ const InventoryScreen = () => {
     });
   };
 
-  const handleStockUpdate = async (itemId, newStock) => {
+  const handleStockUpdate = async (itemId, newStock, source = 'manual') => {
     try {
-      const { error } = await supabase
-        .from('inventory_items')
-        .update({ current_stock: newStock, last_updated: new Date() })
-        .eq('id', itemId);
-      if (error) throw error;
-      setItems(prev => prev.map(i => i.id === itemId ? { ...i, current_stock: newStock } : i));
+      console.log('📦 Updating stock via RPC:', itemId, newStock, source);
+      const { data, error } = await supabase.rpc('update_inventory_stock', {
+        p_item_id: itemId,
+        p_new_stock: newStock,
+        p_counted_by: currentUser?.id || null,
+        p_source: source
+      });
+
+      if (error) {
+        console.error('❌ Stock update error:', error);
+        throw error;
+      }
+
+      console.log('✅ Stock updated successfully:', data);
+      setItems(prev => prev.map(i => i.id === itemId ? {
+        ...i,
+        current_stock: newStock,
+        last_counted_at: new Date().toISOString(),
+        last_counted_by: currentUser?.id,
+        last_counted_by_name: data?.counted_by_name || currentUser?.name,
+        last_count_source: source
+      } : i));
     } catch (error) {
       console.error('Error updating stock:', error);
+      alert('שגיאה בעדכון המלאי: ' + error.message);
     }
   };
 
@@ -347,6 +395,145 @@ const InventoryScreen = () => {
     }
   };
 
+  // 🆕 Initialize Triple-Check Session from OCR Results
+  const initializeReceivingSession = useCallback((ocrData, orderId = null, supplierId = null) => {
+    if (!ocrData?.items) return;
+
+    const sessionItems = ocrData.items.map(ocrItem => {
+      const name = ocrItem.name || ocrItem.description || 'פריט ללא שם';
+      const invoicedQty = ocrItem.quantity || ocrItem.amount || 0;
+      const unitPrice = ocrItem.price || ocrItem.cost_per_unit || 0;
+
+      // Try to match with existing inventory item
+      const matchedItem = items.find(inv =>
+        inv.name.toLowerCase() === name.toLowerCase() ||
+        inv.name.includes(name) ||
+        name.includes(inv.name)
+      );
+
+      return {
+        id: ocrItem.id || `temp-${Date.now()}-${Math.random()}`,
+        name,
+        unit: ocrItem.unit || matchedItem?.unit || 'יח׳',
+        invoicedQty,
+        actualQty: invoicedQty, // Default to invoiced
+        unitPrice,
+        countStep: matchedItem?.count_step || 1,
+        inventoryItemId: matchedItem?.id || null,
+        isNew: !matchedItem,
+        matchedItem
+      };
+    });
+
+    setReceivingSession({
+      items: sessionItems,
+      orderId,
+      supplierId,
+      totalInvoiced: ocrData.total_amount || sessionItems.reduce((sum, i) => sum + (i.invoicedQty * i.unitPrice), 0)
+    });
+  }, [items]);
+
+  // 🆕 Update Actual Quantity in Receiving Session
+  const updateActualQuantity = useCallback((itemId, newQty) => {
+    setReceivingSession(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        items: prev.items.map(item =>
+          item.id === itemId ? { ...item, actualQty: newQty } : item
+        )
+      };
+    });
+  }, []);
+
+  // 🆕 Confirm Receipt - Call RPC
+  const confirmReceipt = async () => {
+    if (!receivingSession || !currentUser?.business_id) return;
+
+    setIsConfirmingReceipt(true);
+    try {
+      // Prepare items for RPC
+      const rpcItems = receivingSession.items
+        .filter(item => item.inventoryItemId) // Only items that exist in inventory
+        .map(item => ({
+          inventory_item_id: item.inventoryItemId,
+          actual_qty: item.actualQty,
+          invoiced_qty: item.invoicedQty,
+          unit_price: item.unitPrice
+        }));
+
+      const { data, error } = await supabase.rpc('receive_inventory_shipment', {
+        p_items: rpcItems,
+        p_order_id: receivingSession.orderId,
+        p_supplier_id: receivingSession.supplierId,
+        p_notes: null
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        console.log('✅ Receipt confirmed:', data);
+        setReceivingSession(null);
+        setShowScannerModal(false);
+        setScannerStep('choose');
+        resetOCR();
+        await fetchData();
+        alert(`✅ קבלה אושרה! ${data.items_processed} פריטים עודכנו`);
+      } else {
+        throw new Error(data?.error || 'Unknown error');
+      }
+    } catch (err) {
+      console.error('Error confirming receipt:', err);
+      alert('שגיאה באישור הקבלה: ' + err.message);
+    } finally {
+      setIsConfirmingReceipt(false);
+    }
+  };
+
+  // 🆕 Initialize Receiving Session from Order (NO INVOICE)
+  const initializeReceivingFromOrder = useCallback((order) => {
+    if (!order?.items || order.items.length === 0) {
+      alert('אין פריטים בהזמנה');
+      return;
+    }
+
+    const sessionItems = order.items.map((orderItem, idx) => {
+      // Try to match with existing inventory item
+      const matchedItem = items.find(inv =>
+        inv.name.toLowerCase() === (orderItem.name || '').toLowerCase() ||
+        inv.name.includes(orderItem.name) ||
+        (orderItem.name && orderItem.name.includes(inv.name))
+      );
+
+      return {
+        id: orderItem.id || `order-item-${idx}-${Date.now()}`,
+        name: orderItem.name || 'פריט ללא שם',
+        unit: orderItem.unit || matchedItem?.unit || 'יח׳',
+        invoicedQty: null, // No invoice!
+        orderedQty: orderItem.qty || 0, // From order
+        actualQty: orderItem.qty || 0, // Default to ordered
+        unitPrice: orderItem.price || matchedItem?.cost_per_unit || 0,
+        countStep: matchedItem?.count_step || 1,
+        inventoryItemId: matchedItem?.id || null,
+        isNew: !matchedItem,
+        matchedItem
+      };
+    });
+
+    setReceivingSession({
+      items: sessionItems,
+      orderId: order.id,
+      supplierId: order.supplier_id || null,
+      supplierName: order.supplier_name,
+      hasInvoice: false, // 🆕 Flag to indicate no invoice
+      totalInvoiced: 0
+    });
+
+    // Open the scanner modal to show the triple-check UI
+    setShowScannerModal(true);
+    setScannerStep('results'); // Skip to results step
+  }, [items]);
+
   // --- NAVIGATION HELPERS ---
   const selectSupplier = (supplierId) => {
     setSelectedSupplier(supplierId);
@@ -463,16 +650,29 @@ const InventoryScreen = () => {
             </button>
           </div>
 
-          {/* Right Spacer / Actions */}
+          {/* Right Spacer */}
           <div className="w-1/4 flex justify-end">
-            {/* Empty for balance or could put user profile/settings */}
+            {/* Reserved for future actions */}
           </div>
         </div>
 
         {/* --- SUB-HEADER: Title & Add Action (New Row) --- */}
         {activeTab === 'counts' && currentView === 'suppliers' && (
-          <div className="px-4 py-2 flex justify-end max-w-4xl mx-auto w-full">
-            <button onClick={() => setShowSupplierModal(true)} className="bg-blue-600 text-white rounded-xl px-4 py-2 font-bold shadow-md shadow-blue-200 hover:bg-blue-700 transition-colors flex items-center gap-2">
+          <div className="px-4 py-2 flex justify-between items-center max-w-4xl mx-auto w-full gap-3">
+            {/* Scan Invoice Button - Left */}
+            <button
+              onClick={() => setShowScannerModal(true)}
+              className="bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl px-4 py-2 font-bold shadow-lg shadow-purple-200 hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2"
+            >
+              <ScanLine size={20} />
+              <span>סרוק חשבונית</span>
+            </button>
+
+            {/* Add Supplier Button - Right */}
+            <button
+              onClick={() => setShowSupplierModal(true)}
+              className="bg-blue-600 text-white rounded-xl px-4 py-2 font-bold shadow-md shadow-blue-200 hover:bg-blue-700 transition-colors flex items-center gap-2"
+            >
               <PlusCircle size={20} />
               <span>ספק חדש</span>
             </button>
@@ -653,8 +853,41 @@ const InventoryScreen = () => {
                 ) : (
                   sentOrders.map(order => (
                     <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                      <div className="bg-amber-50 px-4 py-3 border-b border-amber-100 flex justify-between items-center"><div><h3 className="font-black text-gray-800 text-sm">{order.supplier_name}</h3><span className="text-xs text-gray-500">{new Date(order.created_at).toLocaleDateString('he-IL')}</span></div><span className="bg-amber-200 text-amber-800 text-[10px] font-bold px-2 py-1 rounded">נשלח • ממתין</span></div>
-                      <div className="p-4"><ul className="space-y-2 mb-4">{order.items.map((it, idx) => (<li key={idx} className="text-sm flex justify-between text-gray-700 border-b border-gray-50 pb-1 last:border-0"><span>{it.name}</span><span className="font-mono bg-gray-100 px-1 rounded">{it.qty} {it.unit}</span></li>))}</ul><button onClick={() => markOrderReceived(order.id)} className="w-full py-2 bg-white border border-green-200 text-green-700 hover:bg-green-50 rounded-lg text-sm font-bold flex items-center justify-center gap-2"><Check size={16} /> סמן שהסחורה התקבלה</button></div>
+                      <div className="bg-amber-50 px-4 py-3 border-b border-amber-100 flex justify-between items-center">
+                        <div>
+                          <h3 className="font-black text-gray-800 text-sm">{order.supplier_name}</h3>
+                          <span className="text-xs text-gray-500">{new Date(order.created_at).toLocaleDateString('he-IL')}</span>
+                        </div>
+                        <span className="bg-amber-200 text-amber-800 text-[10px] font-bold px-2 py-1 rounded">נשלח • ממתין</span>
+                      </div>
+                      <div className="p-4">
+                        <ul className="space-y-2 mb-4">
+                          {order.items.map((it, idx) => (
+                            <li key={idx} className="text-sm flex justify-between text-gray-700 border-b border-gray-50 pb-1 last:border-0">
+                              <span>{it.name}</span>
+                              <span className="font-mono bg-gray-100 px-1 rounded">{it.qty} {it.unit}</span>
+                            </li>
+                          ))}
+                        </ul>
+
+                        {/* Two buttons: Quick confirm OR Triple-check without invoice */}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => initializeReceivingFromOrder(order)}
+                            className="flex-1 py-2.5 bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
+                          >
+                            <Package size={16} />
+                            קבלה ללא חשבונית
+                          </button>
+                          <button
+                            onClick={() => markOrderReceived(order.id)}
+                            className="flex-1 py-2.5 bg-white border border-green-200 text-green-700 hover:bg-green-50 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
+                          >
+                            <Check size={16} />
+                            סמן התקבל
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ))
                 )}
@@ -873,6 +1106,350 @@ const InventoryScreen = () => {
                   </button>
                 </div>
               </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* 🆕 --- SCANNER MODAL --- */}
+      <AnimatePresence>
+        {showScannerModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setShowScannerModal(false);
+                setScannerStep('choose');
+                resetOCR();
+              }}
+              className="fixed inset-0 bg-black z-40"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 bg-white z-50 rounded-t-3xl shadow-2xl p-6 min-h-[60vh] max-h-[85vh] overflow-y-auto"
+            >
+              <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-6" />
+
+              {/* Choose Step */}
+              {scannerStep === 'choose' && (
+                <div className="space-y-6">
+                  <div className="text-center">
+                    <div className="w-20 h-20 mx-auto bg-gradient-to-r from-purple-100 to-blue-100 rounded-2xl flex items-center justify-center mb-4">
+                      <ScanLine size={40} className="text-purple-600" />
+                    </div>
+                    <h3 className="text-2xl font-black text-slate-800">סריקת חשבונית</h3>
+                    <p className="text-sm text-gray-400 mt-2">בחר איך להעלות את החשבונית</p>
+                  </div>
+
+                  <div className="space-y-3 max-w-md mx-auto">
+                    {/* Camera Option */}
+                    <button
+                      onClick={async () => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = 'image/*';
+                        input.capture = 'environment';
+                        input.onchange = async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setScannerStep('scanning');
+                            try {
+                              await scanInvoice(file);
+                              setScannerStep('results');
+                            } catch (err) {
+                              setScannerStep('choose');
+                            }
+                          }
+                        };
+                        input.click();
+                      }}
+                      className="w-full p-6 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-xl shadow-purple-200"
+                    >
+                      <Camera size={24} />
+                      <span>פתח מצלמה</span>
+                    </button>
+
+                    {/* Upload Option */}
+                    <button
+                      onClick={() => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = 'image/*,.pdf,application/pdf';
+                        input.onchange = async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setScannerStep('scanning');
+                            try {
+                              await scanInvoice(file);
+                              setScannerStep('results');
+                            } catch (err) {
+                              setScannerStep('choose');
+                            }
+                          }
+                        };
+                        input.click();
+                      }}
+                      className="w-full p-6 bg-white border-2 border-gray-200 text-gray-700 rounded-2xl font-black text-lg flex items-center justify-center gap-3 hover:border-blue-400 hover:bg-blue-50 transition-all"
+                    >
+                      <Upload size={24} />
+                      <span>העלה תמונה או PDF</span>
+                    </button>
+
+                    {/* Cancel */}
+                    <button
+                      onClick={() => {
+                        setShowScannerModal(false);
+                        setScannerStep('choose');
+                      }}
+                      className="w-full py-3 text-gray-400 font-bold hover:text-gray-600 transition-colors"
+                    >
+                      ביטול
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Scanning Step */}
+              {scannerStep === 'scanning' && (
+                <div className="flex flex-col items-center justify-center min-h-[40vh] space-y-6">
+                  <div className="relative">
+                    <div className="w-24 h-24 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <ScanLine size={32} className="text-purple-600" />
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-xl font-black text-slate-800">סורק חשבונית...</h3>
+                    <p className="text-sm text-gray-400 mt-2">AI מזהה פריטים ומחירים</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Results Step */}
+              {scannerStep === 'results' && (
+                <div className="space-y-6">
+                  <div className="text-center">
+                    <div className="w-16 h-16 mx-auto bg-green-100 rounded-2xl flex items-center justify-center mb-4">
+                      <Check size={32} className="text-green-600" />
+                    </div>
+                    <h3 className="text-2xl font-black text-slate-800">סריקה הושלמה!</h3>
+
+                    {/* Supplier Info */}
+                    {ocrResult?.supplier_detected && (
+                      <div className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 bg-purple-50 text-purple-700 rounded-full text-sm font-black border border-purple-100">
+                        <span className="opacity-60 text-[10px] uppercase">ספק זהה:</span>
+                        <span>{ocrResult.supplier_detected}</span>
+                      </div>
+                    )}
+
+                    {/* Status Bar with Tokens & Cost */}
+                    {ocrResult?.usageMetadata && (
+                      <div className="mt-4 flex items-center justify-center gap-4 text-[10px] font-bold uppercase tracking-wider text-gray-400 bg-gray-50 py-2 px-4 rounded-full border border-gray-100 mx-auto w-fit">
+                        <div className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
+                          <span>{ocrResult.usageMetadata.totalTokenCount} TOKENS</span>
+                        </div>
+                        <div className="flex items-center gap-1 border-r border-gray-200 pr-4 ml-4">
+                          <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+                          <span>EST. COST: ${(ocrResult.usageMetadata.totalTokenCount * 0.00001).toFixed(4)}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Error Display */}
+                  {scanError && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                      <p className="text-sm text-red-600 font-bold">{scanError}</p>
+                    </div>
+                  )}
+
+                  {/* Items List - Legacy View OR Triple-Check View */}
+                  {ocrResult?.items && ocrResult.items.length > 0 && (
+                    <div className="space-y-3">
+                      {/* Initialize Triple-Check Button (if not already initialized) */}
+                      {!receivingSession && (
+                        <button
+                          onClick={() => initializeReceivingSession(ocrResult)}
+                          className="w-full py-3 bg-purple-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-colors"
+                        >
+                          <Package size={20} />
+                          התחל אימות קבלה (Triple-Check)
+                        </button>
+                      )}
+
+                      {/* Triple-Check View */}
+                      {receivingSession && (
+                        <div className="space-y-3">
+                          {/* No Invoice Warning Banner */}
+                          {receivingSession.hasInvoice === false && (
+                            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 flex items-center gap-3">
+                              <AlertTriangle size={20} className="text-orange-500 shrink-0" />
+                              <div>
+                                <p className="text-sm font-bold text-orange-800">קבלה ללא חשבונית</p>
+                                <p className="text-xs text-orange-600">הפריטים מבוססים על ההזמנה בלבד. לא התקבלה תעודת משלוח/חשבונית.</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Header */}
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2 text-slate-600">
+                              <span className="font-bold">הוזמן</span>
+                              <span>|</span>
+                              {receivingSession.hasInvoice !== false ? (
+                                <span className="font-bold text-blue-600">בחשבונית</span>
+                              ) : (
+                                <span className="font-bold text-orange-500">—</span>
+                              )}
+                              <span>|</span>
+                              <span className="font-bold text-green-600">בפועל</span>
+                            </div>
+                            {receivingSession.items.some(i => i.isNew) && (
+                              <span className="flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full font-bold">
+                                <AlertTriangle size={12} />
+                                {receivingSession.items.filter(i => i.isNew).length} פריטים חדשים
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Items List */}
+                          <div className="max-h-[35vh] overflow-y-auto pr-2 space-y-3">
+                            {receivingSession.items.map((item) => (
+                              <TripleCheckCard
+                                key={item.id}
+                                item={item}
+                                orderedQty={item.orderedQty || null}
+                                invoicedQty={item.invoicedQty}
+                                actualQty={item.actualQty}
+                                onActualChange={(newQty) => updateActualQuantity(item.id, newQty)}
+                                unitPrice={item.unitPrice}
+                                isNew={item.isNew}
+                                countStep={item.countStep}
+                              />
+                            ))}
+                          </div>
+
+                          {/* Total Summary */}
+                          <div className={`${receivingSession.hasInvoice === false ? 'bg-orange-900' : 'bg-slate-900'} text-white rounded-2xl p-3.5 shadow-lg relative overflow-hidden mx-auto max-w-[85%] border ${receivingSession.hasInvoice === false ? 'border-orange-700' : 'border-slate-700'}`}>
+                            <div className="absolute top-0 right-0 w-20 h-20 bg-purple-500/10 blur-2xl rounded-full translate-x-10 -translate-y-10"></div>
+                            <div className="flex justify-between items-center relative z-10 gap-3">
+                              <div className="space-y-0">
+                                <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest leading-none mb-1">סה״כ בפועל</p>
+                                <h4 className="text-xl font-black text-white leading-none">
+                                  ₪{receivingSession.items.reduce((sum, i) => sum + (i.actualQty * i.unitPrice), 0).toFixed(2)}
+                                </h4>
+                              </div>
+                              {receivingSession.hasInvoice !== false ? (
+                                <div className="text-center">
+                                  <div className="text-[8px] font-bold text-blue-300 uppercase leading-none mb-0.5">חשבונית</div>
+                                  <div className="text-base font-black leading-none">₪{receivingSession.totalInvoiced?.toFixed(2) || '0'}</div>
+                                </div>
+                              ) : (
+                                <div className="text-center">
+                                  <div className="text-[8px] font-bold text-orange-300 uppercase leading-none mb-0.5">ללא חשבונית</div>
+                                  <div className="text-base font-black leading-none">—</div>
+                                </div>
+                              )}
+                              <div className="bg-white/10 px-2.5 py-1.5 rounded-lg border border-white/5 flex flex-col items-center justify-center min-w-[50px]">
+                                <div className="text-[8px] font-bold text-green-300 uppercase leading-none mb-0.5">פריטים</div>
+                                <div className="text-base font-black text-center leading-none">{receivingSession.items.length}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Legacy View (if not in Triple-Check mode) */}
+                      {!receivingSession && (
+                        <div className="max-h-[40vh] overflow-y-auto pr-2 space-y-2">
+                          {ocrResult.items.map((item, idx) => {
+                            const qty = item.quantity || item.amount || item.current_stock_added || 0;
+                            const price = item.price || item.cost_per_unit || item.cost || 0;
+                            const subtotal = (qty * price).toFixed(2);
+                            const name = item.name || item.description || 'פריט ללא שם';
+
+                            return (
+                              <div key={idx} className="bg-white border border-gray-100 shadow-sm rounded-xl p-4 flex justify-between items-center hover:border-blue-200 transition-colors">
+                                <div className="flex-1">
+                                  <h4 className="font-bold text-gray-800 text-sm leading-tight mb-1">{name}</h4>
+                                  <div className="flex items-center gap-2 text-xs text-gray-400">
+                                    <span className="bg-gray-100 px-1.5 py-0.5 rounded">{qty} {item.unit || 'יח\''}</span>
+                                    <span>×</span>
+                                    <span>₪{price}</span>
+                                  </div>
+                                </div>
+                                <div className="text-left font-black text-gray-900 pr-4 border-r border-gray-50">
+                                  ₪{subtotal}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3">
+                    {receivingSession ? (
+                      <>
+                        <button
+                          onClick={confirmReceipt}
+                          disabled={isConfirmingReceipt}
+                          className="flex-1 py-4 bg-green-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-700 transition-colors disabled:opacity-50"
+                        >
+                          {isConfirmingReceipt ? (
+                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          ) : (
+                            <>
+                              <Check size={20} />
+                              אישור קבלה
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setReceivingSession(null);
+                            setScannerStep('choose');
+                            resetOCR();
+                          }}
+                          className="px-6 py-4 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-colors"
+                        >
+                          ביטול
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => {
+                            setScannerStep('choose');
+                            resetOCR();
+                          }}
+                          className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
+                        >
+                          סרוק שוב
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowScannerModal(false);
+                            setScannerStep('choose');
+                            resetOCR();
+                          }}
+                          className="flex-1 py-4 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-colors"
+                        >
+                          סגור
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </motion.div>
           </>
         )}
