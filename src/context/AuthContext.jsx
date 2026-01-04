@@ -199,6 +199,50 @@ export const AuthProvider = ({ children }) => {
         return () => clearInterval(interval);
     }, [currentUser?.business_id]);
 
+    // 🕛 MIDNIGHT AUTO-LOGOUT: Force logout at midnight every day
+    useEffect(() => {
+        const checkMidnightLogout = () => {
+            const now = new Date();
+            const hours = now.getHours();
+            const minutes = now.getMinutes();
+
+            // Check if it's between 00:00 and 00:05 (5-minute window)
+            if (hours === 0 && minutes < 5) {
+                const lastMidnightLogout = localStorage.getItem('last_midnight_logout');
+                const today = now.toDateString();
+
+                // Only logout once per day
+                if (lastMidnightLogout !== today) {
+                    console.log('🕛 MIDNIGHT AUTO-LOGOUT: Clearing all sessions...');
+
+                    // Mark that we did midnight logout today
+                    localStorage.setItem('last_midnight_logout', today);
+
+                    // Clear ALL session data
+                    localStorage.removeItem('kiosk_user');
+                    localStorage.removeItem('kiosk_auth_time');
+                    localStorage.removeItem('kiosk_mode');
+                    localStorage.removeItem('manager_auth_key');
+                    localStorage.removeItem('manager_auth_time');
+                    localStorage.removeItem('manager_employee_id');
+                    localStorage.removeItem('currentCustomer');
+                    sessionStorage.removeItem('employee_session');
+
+                    // Force reload to login screen
+                    window.location.href = '/mode-selection';
+                }
+            }
+        };
+
+        // Check immediately
+        checkMidnightLogout();
+
+        // Then check every minute
+        const midnightInterval = setInterval(checkMidnightLogout, 60 * 1000);
+
+        return () => clearInterval(midnightInterval);
+    }, []);
+
     const login = (employee) => {
         setCurrentUser(employee);
         localStorage.setItem('kiosk_user', JSON.stringify(employee));
