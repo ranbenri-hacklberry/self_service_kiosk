@@ -81,7 +81,7 @@ const ManagerDashboard = () => {
     }
   }, [currentUser?.business_id]);
 
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
 
   useEffect(() => {
     const authKey = localStorage.getItem('manager_auth_key');
@@ -89,7 +89,7 @@ const ManagerDashboard = () => {
     window.history.pushState(null, document.title, window.location.href);
     const handlePopState = (event) => {
       window.history.pushState(null, document.title, window.location.href);
-      setShowLogoutConfirm(true);
+      // Modal removed - back button is blocked
     };
     window.addEventListener('popstate', handlePopState);
     return () => {
@@ -132,7 +132,7 @@ const ManagerDashboard = () => {
         onTabChange={setActiveTab}
         currentUser={currentUser}
         isImpersonating={isImpersonating}
-        setShowLogoutConfirm={setShowLogoutConfirm}
+        onLogout={handleLogout}
       />
 
       <main className="flex-1 overflow-y-auto bg-slate-50">
@@ -153,29 +153,7 @@ const ManagerDashboard = () => {
         </AnimatePresence>
       </main>
 
-      {/* Logout Confirmation Modal */}
-      <AnimatePresence>
-        {showLogoutConfirm && (
-          <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-[2rem] p-8 shadow-2xl max-w-sm w-full text-center border border-slate-100"
-            >
-              <div className="w-20 h-20 bg-red-50 rounded-3xl flex items-center justify-center mx-auto mb-6 text-red-500 shadow-inner">
-                <LogOut size={40} />
-              </div>
-              <h2 className="text-2xl font-black text-slate-900 mb-2">לצאת מהמערכת?</h2>
-              <p className="text-slate-500 text-sm font-medium mb-8">פעולה זו תנתק אותך מממשק הניהול ותחזיר אותך למסך הפתיחה.</p>
-              <div className="flex gap-4">
-                <button onClick={handleLogout} className="flex-1 bg-red-600 text-white font-bold h-14 rounded-2xl hover:bg-red-700 transition-all shadow-lg shadow-red-200 active:scale-95">כן, צא</button>
-                <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 bg-slate-100 text-slate-600 font-bold h-14 rounded-2xl hover:bg-slate-200 transition-all active:scale-95">ביטול</button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+
     </div>
   );
 };

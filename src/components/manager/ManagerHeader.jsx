@@ -11,7 +11,7 @@ import {
     Reply
 } from 'lucide-react';
 
-const ManagerHeader = ({ activeTab, onTabChange, currentUser, isImpersonating, setShowLogoutConfirm }) => {
+const ManagerHeader = ({ activeTab, onTabChange, currentUser, isImpersonating, onLogout }) => {
     const navigate = useNavigate();
 
     const navItems = [
@@ -51,7 +51,7 @@ const ManagerHeader = ({ activeTab, onTabChange, currentUser, isImpersonating, s
                 {/* Action Side (Logout) */}
                 <div className="flex items-center w-12 lg:w-32">
                     <button
-                        onClick={() => setShowLogoutConfirm(true)}
+                        onClick={onLogout}
                         className="group flex items-center justify-center w-10 h-10 rounded-xl transition-all bg-slate-800/50 hover:bg-red-500/20 border border-slate-700/50 hover:border-red-500/50 text-slate-400 hover:text-red-500 shadow-sm"
                         aria-label={isImpersonating ? 'חזור לסופר אדמין' : 'התנתק מהמערכת'}
                     >

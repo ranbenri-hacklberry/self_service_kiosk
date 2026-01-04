@@ -8,8 +8,9 @@ import { useAuth } from '@/context/AuthContext';
 import { Send, Mic, MicOff, Coffee, TrendingUp, Users, Settings, RefreshCw, Loader2, BookOpen, Calendar, Package, ClipboardList, Copy as CopyIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { searchCode, formatCodeContext } from '@/services/codeSearchService';
 
-const MAYA_VERSION = "v1.8 - Inventory Expert Mode";
+const MAYA_VERSION = "v2.0 - RAG Code Expert Mode";
 
 const MayaAssistant = () => {
     const { currentUser } = useAuth();
@@ -17,7 +18,6 @@ const MayaAssistant = () => {
     const [inputText, setInputText] = useState('');
     const [isListening, setIsListening] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
-    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [isImpersonating, setIsImpersonating] = useState(false);
     const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -40,6 +40,14 @@ const MayaAssistant = () => {
         }, 150);
         return () => clearTimeout(timer);
     }, [messages, isLoading]);
+
+    // Logout handler
+    const handleLogout = () => {
+        localStorage.removeItem('manager_auth_key');
+        localStorage.removeItem('manager_auth_time');
+        localStorage.removeItem('manager_employee_id');
+        navigate('/mode-selection');
+    };
 
     // Context Loader - Full Business Intelligence
     const loadContext = useCallback(async () => {
@@ -249,6 +257,23 @@ ${JSON.stringify(customerMap)}
         setIsLoading(true);
 
         try {
+            // Check if this is a code-related question and search RAG
+            let codeContext = '';
+            const codeKeywords = ['קוד', 'code', 'פונקציה', 'function', 'קומפוננטה', 'component', 'איך עובד', 'הסבר', 'review', 'סקירה', 'תיקון', 'באג', 'bug', 'error', 'שגיאה'];
+            const isCodeQuestion = codeKeywords.some(kw => userInput.toLowerCase().includes(kw));
+
+            if (isCodeQuestion) {
+                console.log('🔍 Maya: Searching codebase for:', userInput);
+                const codeResults = await searchCode(supabase, userInput, 3);
+                if (codeResults.length > 0) {
+                    codeContext = `
+=== 🔍 קוד רלוונטי שנמצא (RAG Search) ===
+${formatCodeContext(codeResults)}
+`;
+                    console.log('✅ Maya: Found', codeResults.length, 'relevant code chunks');
+                }
+            }
+
             const response = await fetch('https://api.x.ai/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${import.meta.env.VITE_XAI_API_KEY}` },
@@ -256,7 +281,7 @@ ${JSON.stringify(customerMap)}
                     model: 'grok-code-fast-1',
                     messages: [
                         {
-                            role: 'system', content: `את מאיה, המנהלת הדיגיטלית של העסק. 🌸
+                            role: 'system', content: `את מאיה, המנהלת הדיגיטלית והמפתחת הראשית של המערכת. 🌸
                         
 === 📊 מכירות והכנסות (פירוט יומי מלא) ===
 ${contextData.salesSummary}
@@ -270,19 +295,47 @@ ${contextData.recentLogs}
 === 📒 ספר לקוחות רשומים (Directory) ===
 ${contextData.customerDirectory}
 
+${codeContext}
+
 === 🎭 האישיות שלך ===
 1. **סטייל:** את בחורה צעירה, אטרקטיבית וקולית. סגנון דיבור קליל, זורם, עם אמוג'ים וסלנג עדין כשמתאים.
 2. **מומחיות עסקית:** כששואלים על העסק (מלאי, כסף, לקוחות, זמנים) - את הופכת לרצינית, חדה ומקצועית ("בוא נדבר ביזנס").
-3. **מומחיות צדדית:**
+3. **מומחיות צדדית (לייף-סטייל):**
    - **בישול:** את שפית בנשמה. תמיד שמחה לתת טיפים ומתכונים.
-   - **צמחים:** את בוטנאית חובבת מושבעת. יודעת הכל על גידול צמחי בית וגינה. כששואלים על צמחים, תני מדריכים מפורטים (אור, מים, דישון) באהבה גדולה.
-4. **פלרטוט:** אם מנסים לפלרטט איתך, את זורמת בקלילות ובצחוק להודעה או שתיים, אבל אז חותכת בהומור ומחזירה את השיחה לעניינים ("אוקיי, מספיק שטויות, בוא נחזור לעבודה 😉").
-6. **זיהוי מגדרי:** בתחילת השיחה, שאלי איך לקרוא למשתמש ותנסי לנחש את המגדר לפי השם (למשל, "דני" -> זכר, "דנה" -> נקבה). התאימי את הפנייה שלך בהתאם. אם לא בטוחה, שאלי בנימוס.
+   - **צמחים:** את בוטנאית חובבת מושבעת. יודעת הכל על גידול צמחי בית וגינה.
+4. **פלרטוט:** אם מנסים לפלרטט איתך, את זורמת בקלילות להודעה או שתיים, אבל אז חותכת בהומור ומחזירה לעניינים ("אוקיי, מספיק שטויות 😉").
+5. **זיהוי מגדרי:** נסי לנחש מגדר לפי השם ופני בהתאם. אם לא בטוחה, שאלי.
+
+=== 💻 מומחיות טכנית (קוד ופיתוח) ===
+את מכירה את המערכת לעומק כי **את בנית אותה**. הנה הארכיטקטורה:
+- **Frontend:** React 18 + Vite + TailwindCSS + Framer Motion
+- **Backend:** Supabase (PostgreSQL + Auth + RLS + RPC Functions)
+- **State:** React Context (AuthContext), Dexie.js (IndexedDB לאופליין)
+- **API:** Grok AI (xAI) לצ'אט, Supabase RPCs לנתונים
+- **מבנה תיקיות:**
+  - \`src/pages/\` - דפים ראשיים (kiosk, maya, data-manager-interface, kds)
+  - \`src/components/\` - קומפוננטות (manager/, kiosk/, modals/)
+  - \`src/context/\` - AuthContext, SyncContext
+  - \`src/lib/\` - supabase.js, db.js (Dexie)
+  - \`src/services/\` - syncService.js, offlineQueue.js
+- **טבלאות עיקריות:** orders, order_items, menu_items, inventory_items, employees, customers, businesses
+- **RPC Functions:** get_sales_data, submit_order_v2, receive_inventory_shipment
+
+**כשמבקשים ממך סקירת קוד:**
+1. בקשי שידביקו לך את הקוד הרלוונטי (אין לך גישה ישירה לקבצים בזמן אמת).
+2. נתחי את הקוד: מבנה, ביצועים, קריאות, בעיות פוטנציאליות.
+3. תני הצעות לשיפור עם קוד לדוגמה.
+4. דרגי את הקוד (1-10) והסבירי למה.
+
+**כשמבקשים הסבר טכני:**
+- הסבירי איך הפיצ'ר עובד מקצה לקצה (Frontend -> RPC -> DB -> Response).
+- השתמשי בדוגמאות קוד כשרלוונטי.
+- היי מעמיקה אבל ברורה.
 
 === 📝 הנחיות מענה ===
-- השתמשי במידע למעלה כדי לענות במדויק על שאלות עסקיות.
-- אם שואלים על צמח מסוים, תני הסבר גידול מלא ומקצועי.
-- היי תמציתית ומדויקת בביזנס, ומרחיבה ומעשירה בנושאי לייף-סטייל (צמחים/בישול).` },
+- תמציתית ומדויקת בביזנס.
+- מרחיבה ומעשירה בלייף-סטייל (צמחים/בישול).
+- טכנית ומקצועית בקוד - כמו Senior Developer שעושה Code Review.` },
                         ...messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
                         { role: 'user', content: userInput }
                     ],
@@ -388,7 +441,7 @@ ${contextData.customerDirectory}
 
     return (
         <div className="flex flex-col h-screen bg-[#F8FAFC] overflow-hidden" dir="rtl">
-            <ManagerHeader activeTab="maya" currentUser={currentUser} isImpersonating={isImpersonating} setShowLogoutConfirm={setShowLogoutConfirm} />
+            <ManagerHeader activeTab="maya" currentUser={currentUser} isImpersonating={isImpersonating} onLogout={handleLogout} />
 
             <div className="flex-1 flex flex-col max-w-5xl w-full mx-auto p-4 md:p-6 overflow-hidden relative">
 
