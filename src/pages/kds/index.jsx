@@ -382,7 +382,8 @@ const Header = ({
 
   const handleNewOrder = () => {
     sessionStorage.setItem('order_origin', 'kds');
-    navigate('/menu-ordering-interface');
+    // Navigate to menu with clear indicators
+    navigate('/?from=kds&new=true');
   };
 
   const handleExit = () => {

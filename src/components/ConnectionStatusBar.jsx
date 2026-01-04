@@ -9,118 +9,68 @@ import { Wifi, WifiOff, RefreshCw, CloudDownload } from 'lucide-react';
  */
 const ConnectionStatusBar = ({ isIntegrated = false }) => {
     const { status, refresh } = useConnection();
-    const { currentUser, syncStatus } = useAuth();
+    const { currentUser } = useAuth();
+    const [lastSyncTime, setLastSyncTime] = React.useState(localStorage.getItem('last_sync_time'));
 
-    const [syncDiffs, setSyncDiffs] = React.useState(0);
-    const [isChecking, setIsChecking] = React.useState(false);
+    // Update last sync time from storage
+    React.useEffect(() => {
+        const updateTime = () => setLastSyncTime(localStorage.getItem('last_sync_time'));
+        const interval = setInterval(updateTime, 10000); // Check every 10s
+        window.addEventListener('storage', updateTime);
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener('storage', updateTime);
+        };
+    }, []);
 
-    // Base styles for the pill
-    const baseStyles = isIntegrated
-        ? "text-[10px] px-2.5 py-1 rounded-full flex items-center gap-1.5 border transition-all duration-300 h-7"
-        : "fixed top-3 left-3 z-[100] text-[10px] px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-lg backdrop-blur-md border transition-all duration-300";
+    const formatSyncTime = (timestamp) => {
+        if (!timestamp) return 'לא סונכרן';
+        const syncDate = new Date(parseInt(timestamp));
+        if (isNaN(syncDate)) return 'לא סונכרן';
 
-    const runSyncDoctor = async () => {
-        if (!currentUser?.business_id || isChecking) return;
-        setIsChecking(true);
-        try {
-            const { getSyncDiffs, healOrder } = await import('@/services/syncService');
-            const result = await getSyncDiffs(currentUser.business_id);
+        const now = new Date();
+        const isToday = syncDate.toDateString() === now.toDateString();
 
-            if (result.success && result.diffs.length > 0) {
-                console.log(`🚑 Sync Doctor found ${result.diffs.length} issues. Healing...`);
-                setSyncDiffs(result.diffs.length);
+        const yesterday = new Date();
+        yesterday.setDate(now.getDate() - 1);
+        const isYesterday = syncDate.toDateString() === yesterday.toDateString();
 
-                // Auto-heal mismatches
-                for (const diff of result.diffs) {
-                    await healOrder(diff, currentUser.business_id);
-                }
+        const dayBefore = new Date();
+        dayBefore.setDate(now.getDate() - 2);
+        const isDayBefore = syncDate.toDateString() === dayBefore.toDateString();
 
-                // Re-check after healing
-                const recheck = await getSyncDiffs(currentUser.business_id);
-                setSyncDiffs(recheck.success ? recheck.diffs.length : 0);
-            } else {
-                setSyncDiffs(0);
-            }
-        } catch (err) {
-            console.error('Sync Doctor Error:', err);
-        } finally {
-            setIsChecking(false);
-        }
+        const timeStr = syncDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+
+        if (isToday) return `היום ${timeStr}`;
+        if (isYesterday) return `אתמול ${timeStr}`;
+        if (isDayBefore) return `שלשום ${timeStr}`;
+        return syncDate.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' });
     };
 
-    // Auto-check periodically
-    React.useEffect(() => {
-        const interval = setInterval(runSyncDoctor, 60000 * 5); // Every 5 minutes
-        runSyncDoctor();
-        return () => clearInterval(interval);
-    }, [currentUser?.business_id]);
+    const isOnline = status === 'online' || status === 'local-only' || status === 'cloud-only';
+    const isChecking = status === 'checking';
 
-    const syncIndicator = (
-        <div className="absolute -bottom-6 right-0 left-0 flex justify-center pointer-events-auto">
-            <button
-                onClick={runSyncDoctor}
-                disabled={isChecking}
-                className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[8px] font-black border transition-all ${syncDiffs > 0
-                    ? 'bg-amber-500 text-white border-amber-600 animate-pulse'
-                    : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
-                    }`}
-            >
-                {isChecking ? (
-                    <RefreshCw size={8} className="animate-spin" />
-                ) : (
-                    <CloudDownload size={8} />
+    return (
+        <div className={`flex flex-col items-start gap-0.5 min-w-[70px] ${isIntegrated ? '' : 'fixed top-3 left-3 z-[100] bg-white/80 backdrop-blur-md p-1.5 rounded-xl border shadow-sm'}`} dir="rtl">
+            <div className="flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full transition-all duration-500 shadow-sm ${isChecking ? 'bg-blue-400 animate-pulse' :
+                        isOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' :
+                            'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'
+                    }`} />
+                <span className="text-[10px] font-black text-slate-700 leading-none">
+                    {isChecking ? 'בודק...' : isOnline ? 'מחובר' : 'מנותק'}
+                </span>
+                {!isOnline && !isChecking && (
+                    <button onClick={refresh} className="text-slate-400 hover:text-slate-600 transition-colors">
+                        <RefreshCw size={8} />
+                    </button>
                 )}
-                <span>{syncDiffs > 0 ? `תיקון ${syncDiffs}` : 'סנכרון תקין'}</span>
-            </button>
+            </div>
+            <div className="text-[8px] font-medium text-slate-400 leading-tight whitespace-nowrap">
+                סונכרן: <span className="text-slate-500">{formatSyncTime(lastSyncTime)}</span>
+            </div>
         </div>
     );
-
-    const content = (() => {
-        if (status === 'online' || status === 'local-only' || status === 'cloud-only') {
-            return (
-                <div className={`${baseStyles} bg-green-500/15 text-green-700 border-green-200/50 relative mb-4`}>
-                    <Wifi size={10} strokeWidth={2.5} />
-                    <span className="font-bold">מחובר</span>
-                    {syncIndicator}
-                </div>
-            );
-        }
-
-        if (status === 'checking') {
-            return (
-                <div className={`${baseStyles} bg-blue-500/15 text-blue-700 border-blue-200/50 relative mb-4`}>
-                    <RefreshCw size={10} strokeWidth={2.5} className="animate-spin" />
-                    <span className="font-bold">בודק...</span>
-                </div>
-            );
-        }
-
-        return (
-            <div className={`${baseStyles} bg-red-500/15 text-red-700 border-red-200/50 relative mb-4`}>
-                <WifiOff size={10} strokeWidth={2.5} />
-                <span className="font-bold">מנותק</span>
-                <button
-                    onClick={refresh}
-                    className="p-0.5 hover:bg-red-200/50 rounded-full transition-colors"
-                >
-                    <RefreshCw size={9} />
-                </button>
-                {syncIndicator}
-            </div>
-        );
-    })();
-
-    if (!content) return null;
-
-    if (isIntegrated) {
-        return (
-            <div className="flex items-center justify-center w-full">
-                {content}
-            </div>
-        );
-    }
-
-    return content;
 };
 
 export default ConnectionStatusBar;

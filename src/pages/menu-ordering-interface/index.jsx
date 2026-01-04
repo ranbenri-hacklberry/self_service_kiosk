@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import MenuCategoryFilter from './components/MenuCategoryFilter';
 import MenuGrid from './components/MenuGrid';
@@ -14,7 +14,7 @@ import OrderConfirmationModal from '@/components/ui/OrderConfirmationModal';
 import CustomerInfoModal from '@/components/CustomerInfoModal';
 import { addCoffeePurchase, getLoyaltyCount, handleLoyaltyAdjustment, getLoyaltyRedemptionForOrder } from "@/lib/loyalty";
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth, APP_VERSION } from '@/context/AuthContext';
 import ConnectionStatusBar from '@/components/ConnectionStatusBar';
 import MiniMusicPlayer from '@/components/music/MiniMusicPlayer';
 import Icon from '@/components/AppIcon';
@@ -25,7 +25,7 @@ const ORDER_ORIGIN_STORAGE_KEY = 'order_origin';
 
 const MenuOrderingInterface = () => {
   console.log('🚀 MenuOrderingInterface component rendering...');
-  const { currentUser } = useAuth();
+  const { currentUser, deviceMode } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   console.log('📍 Location state received:', location.state);
@@ -112,6 +112,16 @@ const MenuOrderingInterface = () => {
   // --- Soldier Discount State ---
   const [soldierDiscountEnabled, setSoldierDiscountEnabled] = useState(false);
   const [soldierDiscountId, setSoldierDiscountId] = useState(null); // UUID from discounts table
+
+  const [searchParams] = useSearchParams();
+  const fromKDSParam = searchParams.get('from') === 'kds';
+
+  useEffect(() => {
+    if (fromKDSParam) {
+      console.log('📡 Detected from=kds in URL, setting session storage');
+      sessionStorage.setItem(ORDER_ORIGIN_STORAGE_KEY, 'kds');
+    }
+  }, [fromKDSParam]);
 
   // --- Edit Mode Logic ---
   useEffect(() => {
@@ -660,13 +670,13 @@ const MenuOrderingInterface = () => {
     // Force a small delay to ensure React state updates if needed, though navigation usually handles it
   };
 
-  const handleCloseConfirmation = () => {
+  const handleCloseConfirmation = useCallback(() => {
     // Save confirmation data BEFORE clearing it
     const confirmationData = showConfirmationModal;
     const navigationFromConfirmation = confirmationData?.navigationTarget;
 
     setShowConfirmationModal(null);
-    const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
+    const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) || (fromKDSParam ? 'kds' : null);
     const editDataRaw = sessionStorage.getItem('editOrderData');
     const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
 
@@ -696,14 +706,19 @@ const MenuOrderingInterface = () => {
       }
 
       clearOrderSessionState();
-      navigate('/kds', { state: { viewMode: targetView } });
+      navigate('/kds', { state: { viewMode: targetView }, replace: true });
       return;
     }
 
-    console.log('📞 Starting new order');
+    console.log('📞 Starting new order - Cleaning state and clearing URL params');
     clearOrderSessionState();
-    // OFFLINE FIX: Manual state reset instead of window.location.reload()
-    // This prevents the browser from showing "No Internet" screen when offline.
+
+    // 🔥 CRITICAL: Clean URL params to prevent "sticky" KDS origin for next order
+    if (location.search) {
+      navigate('/', { replace: true });
+    }
+
+    // Reset local state for fresh order
     setIsEditMode(false);
     setEditingOrderData(null);
     setSoldierDiscountEnabled(false);
@@ -712,11 +727,12 @@ const MenuOrderingInterface = () => {
     setShowConfirmationModal(null);
     handleCategoryChange('hot-drinks');
     window.scrollTo(0, 0);
-  };
+  }, [showConfirmationModal, navigate, cartHistory, handleCategoryChange, fromKDSParam, location.search]);
 
   // Handle back button from header
   const handleBack = () => {
-    const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
+    // CAPTURE context first!
+    const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) || (fromKDSParam ? 'kds' : null);
     const editDataRaw = sessionStorage.getItem('editOrderData');
     const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
 
@@ -725,35 +741,24 @@ const MenuOrderingInterface = () => {
     const hasItems = cartItems.length > 0;
 
     // Determine if there are unsaved changes
-    // In edit mode, we check cartHistory. In new order mode, we check if cart or customer is present.
     const hasChanges = isEditMode ? cartHistory.length > 0 : (hasItems || hasCustomerInfo);
 
-    // In edit mode, if cart is empty (loading failed), allow immediate exit
-    if (isEditMode && !hasItems) {
-      console.log('🔙 Edit mode with empty cart - allowing exit without confirmation');
-      clearOrderSessionState();
-      if (origin === 'kds') {
-        navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
-      } else {
-        navigate('/mode-selection');
-      }
-      return;
-    }
-
-    if (hasChanges) {
+    if (hasChanges && !(isEditMode && !hasItems)) {
       console.log('⚠️ Unsaved changes detected, showing exit confirmation');
       setShowExitConfirmModal(true);
       return;
     }
 
-    // NO CHANGES - Still needs careful cleanup before navigating
-    console.log('🔙 Header Back clicked (No changes) - Cleaning up and returning');
+    // NO CHANGES or Loading Error - Clean up and navigate
+    console.log('🔙 Header Back clicked - Cleaning up and returning to:', origin || 'mode-selection');
+
+    // 🛡️ CRITICAL: Clear AFTER capturing origin
     clearOrderSessionState();
 
     if (origin === 'kds') {
-      navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
+      navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' }, replace: true });
     } else {
-      navigate('/mode-selection');
+      navigate('/mode-selection', { replace: true });
     }
   };
 
@@ -2253,10 +2258,10 @@ const MenuOrderingInterface = () => {
           <button
             onClick={handleBack}
             className="flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 w-10 h-10 rounded-xl transition-all"
-            title={sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) === 'kds' ? "חזרה ל-KDS" : "חזרה לדף הבית"}
+            title={(sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) === 'kds' || fromKDSParam) ? "חזרה ל-KDS" : "חזרה לדף הבית"}
           >
             <Icon
-              name={sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) === 'kds' ? "ChevronRight" : "Home"}
+              name={(sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) === 'kds' || fromKDSParam) ? "ChevronRight" : "Home"}
               size={20}
             />
           </button>
@@ -2297,8 +2302,13 @@ const MenuOrderingInterface = () => {
         </div>
 
         {/* Left Side Group (RTL): Logo or Title */}
-        <div className="text-xl font-black text-slate-800 tracking-tight">
-          iCaffe Kiosk
+        <div className="flex flex-col items-start">
+          <div className="text-xl font-black text-slate-800 tracking-tight leading-none">
+            iCaffe Kiosk
+          </div>
+          <div className="text-[9px] font-mono text-slate-400 mt-0.5">
+            v{APP_VERSION}
+          </div>
         </div>
       </div>
 
@@ -2508,16 +2518,18 @@ const MenuOrderingInterface = () => {
               </button>
               <button
                 onClick={() => {
+                  // CAPTURE origin BEFORE clearing
+                  const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) || (fromKDSParam ? 'kds' : null);
+                  const editDataRaw = sessionStorage.getItem('editOrderData');
+                  const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
+
                   clearOrderSessionState();
                   setShowExitConfirmModal(false);
 
-                  const origin = sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY);
                   if (origin === 'kds') {
-                    const editDataRaw = sessionStorage.getItem('editOrderData');
-                    const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
-                    navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' } });
+                    navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' }, replace: true });
                   } else {
-                    navigate('/mode-selection');
+                    navigate('/mode-selection', { replace: true });
                   }
                 }}
                 className="flex-1 py-4 bg-orange-500 text-white rounded-xl font-bold text-lg hover:bg-orange-600 transition"
@@ -2530,7 +2542,7 @@ const MenuOrderingInterface = () => {
       )}
       {/* Version Number */}
       <div className="fixed bottom-1 left-2 text-[10px] text-gray-400 font-mono z-50 pointer-events-none opacity-50">
-        v2.5
+        {APP_VERSION}
       </div>
 
     </div>

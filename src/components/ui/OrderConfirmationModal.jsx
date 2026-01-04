@@ -168,7 +168,13 @@ const OrderConfirmationModal = ({ isOpen, orderDetails, onStartNewOrder }) => {
         </div>
 
         {/* Footer */}
-        <div className="p-5 bg-gradient-to-t from-slate-100 to-slate-50 border-t border-slate-100 text-center">
+        <div className="p-5 bg-gradient-to-t from-slate-100 to-slate-50 border-t border-slate-100 flex flex-col items-center gap-4">
+          <button
+            onClick={() => onStartNewOrder?.()}
+            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-xl hover:bg-slate-800 transition shadow-lg active:scale-[0.98]"
+          >
+            הזמנה חדשה
+          </button>
           <p className="text-sm font-bold text-slate-400 flex items-center justify-center gap-2">
             <span className="animate-spin inline-block">⏳</span>
             חוזרים למסך הראשי...
