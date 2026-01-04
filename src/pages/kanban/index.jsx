@@ -150,6 +150,7 @@ export default function KanbanPage() {
                         onMarkSeen={markOrderSeen}
                         onReadyItems={markItemsReady} // 🆕 Pass through
                         onSmsClick={(order) => setSmsModal({ show: true, order })}
+                        onRefresh={refresh} // 🆕 Pull to refresh
                     />
                 )}
             </main>

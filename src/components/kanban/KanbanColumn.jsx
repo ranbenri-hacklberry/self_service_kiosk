@@ -7,6 +7,8 @@ import React from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import DraggableOrderCard from './DraggableOrderCard';
+import { motion } from 'framer-motion';
+import { RefreshCw } from 'lucide-react';
 
 // Column styling by status
 const COLUMN_STYLES = {
@@ -57,7 +59,8 @@ export function KanbanColumn({
     onEditOrder,
     onMarkSeen,
     onReadyItems, // 🆕 For packing toggle
-    onSmsClick
+    onSmsClick,
+    onRefresh // 🆕
 }) {
     const { setNodeRef, isOver } = useDroppable({ id: status });
 
@@ -86,29 +89,46 @@ export function KanbanColumn({
                 )}
             </div>
 
-            {/* Cards Container */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-4 flex flex-col items-center">
-                <SortableContext items={orderIds} strategy={verticalListSortingStrategy}>
-                    {orders.length === 0 ? (
-                        <div className="flex items-center justify-center h-32 text-gray-400 text-sm italic">
-                            אין הזמנות
-                        </div>
-                    ) : (
-                        orders.map(order => (
-                            <DraggableOrderCard
-                                key={order.id}
-                                order={order}
-                                businessType={businessType}
-                                onOrderStatusUpdate={onOrderStatusUpdate}
-                                onPaymentCollected={onPaymentCollected}
-                                onEditOrder={onEditOrder}
-                                onMarkSeen={onMarkSeen}
-                                onReadyItems={onReadyItems} // 🆕 Pass through
-                                onSmsClick={onSmsClick}
-                            />
-                        ))
-                    )}
-                </SortableContext>
+            {/* Cards Container with Pull to Refresh */}
+            <div className="flex-1 overflow-hidden relative">
+                <div className="absolute top-4 left-0 right-0 flex justify-center opacity-50 z-0">
+                    <RefreshCw className="animate-spin text-blue-400" size={24} />
+                </div>
+
+                <motion.div
+                    className="h-full overflow-y-auto p-3 space-y-4 flex flex-col items-center bg-inherit relative z-10"
+                    drag="y"
+                    dragConstraints={{ top: 0, bottom: 0 }}
+                    dragElastic={0.2}
+                    onDragEnd={(e, { offset }) => {
+                        if (offset.y > 100 && onRefresh) {
+                            console.log('🔄 Pull to refresh triggered!');
+                            onRefresh();
+                        }
+                    }}
+                >
+                    <SortableContext items={orderIds} strategy={verticalListSortingStrategy}>
+                        {orders.length === 0 ? (
+                            <div className="flex items-center justify-center h-32 text-gray-400 text-sm italic w-full">
+                                אין הזמנות
+                            </div>
+                        ) : (
+                            orders.map(order => (
+                                <DraggableOrderCard
+                                    key={order.id}
+                                    order={order}
+                                    businessType={businessType}
+                                    onOrderStatusUpdate={onOrderStatusUpdate}
+                                    onPaymentCollected={onPaymentCollected}
+                                    onEditOrder={onEditOrder}
+                                    onMarkSeen={onMarkSeen}
+                                    onReadyItems={onReadyItems} // 🆕 Pass through
+                                    onSmsClick={onSmsClick}
+                                />
+                            ))
+                        )}
+                    </SortableContext>
+                </motion.div>
             </div>
         </div>
     );

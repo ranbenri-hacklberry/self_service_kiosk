@@ -31,7 +31,8 @@ export function KanbanBoard({
     onEditOrder,
     onMarkSeen,
     onReadyItems, // 🆕 For packing toggle
-    onSmsClick
+    onSmsClick,
+    onRefresh // 🆕
 }) {
     const [activeOrder, setActiveOrder] = useState(null);
     const [items, setItems] = useState(ordersByStatus);
@@ -153,6 +154,7 @@ export function KanbanBoard({
                         onMarkSeen={onMarkSeen}
                         onReadyItems={onReadyItems} // 🆕 Pass through
                         onSmsClick={onSmsClick}
+                        onRefresh={onRefresh} // 🆕 Pass down
                     />
                 ))}
             </div>
