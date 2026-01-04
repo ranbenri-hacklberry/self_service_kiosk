@@ -204,12 +204,15 @@ const ModifierModal = (props) => {
   const [remoteData, setRemoteData] = useState(null);
   const [isRemoteLoading, setIsRemoteLoading] = useState(false);
 
-  // 1. Reactive query from Dexie (Local)
+  // 1. Reactive query from Dexie (Local) with CLAUDE'S TYPE-SAFETY FIX
   const dexieOptions = useLiveQuery(async () => {
     if (!targetItemId) return null;
     try {
+      console.log(`📦 [ModifierModal] Querying Dexie for item: ${targetItemId}`);
+
       const linked = await db.menuitemoptions.where('item_id').equals(targetItemId).toArray();
-      const linkedIds = linked.map(l => l.group_id);
+      const linkedIds = linked.map(l => String(l.group_id)); // 🔥 FORCE STRING
+
       const privateGroups = await db.optiongroups.where('menu_item_id').equals(targetItemId).toArray();
 
       let sharedGroups = [];
@@ -219,36 +222,57 @@ const ModifierModal = (props) => {
       }
 
       const allGroups = [...privateGroups, ...sharedGroups];
-      const groupIds = allGroups.map(g => g.id);
+
+      if (allGroups.length === 0) {
+        console.log('📦 [ModifierModal] Dexie: No groups found for this item');
+        return null;
+      }
+
+      // 🔥 CLAUDE'S FIX: Ensure all group IDs are strings for the values query
+      const groupIds = allGroups.map(g => String(g.id));
       const values = await db.optionvalues.where('group_id').anyOf(groupIds).toArray();
 
-      if (allGroups.length === 0) return null; // Signal we have nothing locally
+      console.log(`📦 [ModifierModal] Dexie results: ${allGroups.length} groups, ${values.length} values`);
+
+      // 🔥 CRITICAL: If groups exist but NO values found, return null to FORCE Supabase fallback
+      if (allGroups.length > 0 && values.length === 0) {
+        console.warn('⚠️ [ModifierModal] Dexie has groups but NO values (Type Mismatch?). Forcing fallback.');
+        return null;
+      }
 
       return allGroups.map(g => ({
         ...g,
         values: values
-          .filter(v => v.group_id === g.id)
-          .map(v => ({ ...v, name: v.name || v.value_name, priceAdjustment: v.priceAdjustment || v.price_adjustment || 0 }))
+          .filter(v => String(v.group_id) === String(g.id)) // 🔥 FORCE STRING COMPARISON
+          .map(v => ({
+            ...v,
+            name: v.name || v.value_name,
+            priceAdjustment: v.priceAdjustment || v.price_adjustment || 0
+          }))
           .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
       }));
     } catch (err) {
-      console.error('Dexie query error:', err);
+      console.error('❌ [ModifierModal] Dexie query error:', err);
       return null;
     }
   }, [targetItemId]);
 
-  // 2. Fallback to Supabase (Remote) if Dexie is empty OR missing values
+  // 2. Fallback to Supabase (Remote)
   useEffect(() => {
     if (!isOpen || !targetItemId) return;
 
-    // 🔥 NEW AGGRESSIVE CONDITION: Fallback if Dexie is null OR if it returned groups but NO values
-    const hasDexieData = dexieOptions && dexieOptions.length > 0 && dexieOptions.some(g => g.values && g.values.length > 0);
+    // Wait for Dexie to resolve
+    if (dexieOptions === undefined) return;
 
-    if (hasDexieData || isRemoteLoading || remoteData) return;
+    // Check if we have valid data (Groups with at least some values)
+    const hasValidData = dexieOptions && dexieOptions.length > 0 && dexieOptions.some(g => g.values && g.values.length > 0);
+
+    // If we have data, or already loading, or already have remote data - STOP
+    if (hasValidData || isRemoteLoading || remoteData) return;
 
     const fetchRemote = async () => {
       setIsRemoteLoading(true);
-      console.log(`🌐 [ModifierModal] Dexie empty, fetching from Supabase for item ${targetItemId}...`);
+      console.log(`🌐 [ModifierModal] Dexie failed/empty. Fetching from Supabase...`);
       try {
         // Fetch groups
         const { data: linkedGroups } = await supabase.from('menuitemoptions').select('group_id').eq('item_id', targetItemId);
@@ -267,23 +291,27 @@ const ModifierModal = (props) => {
 
         // Fetch values
         if (groupIds.length > 0) {
+          console.log(`🌐 [ModifierModal] Fetching remote values for groups:`, groupIds);
           const { data: remoteValues } = await supabase.from('optionvalues').select('*').in('group_id', groupIds);
           const values = remoteValues || [];
+
+          console.log(`🌐 [ModifierModal] Remote success: ${allGroups.length} groups, ${values.length} values`);
 
           const enhanced = allGroups.map(g => ({
             ...g,
             values: values
-              .filter(v => v.group_id === g.id)
+              .filter(v => String(v.group_id) === String(g.id))
               .map(v => ({ ...v, name: v.name || v.value_name, priceAdjustment: v.priceAdjustment || v.price_adjustment || 0 }))
               .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
           }));
 
           setRemoteData(enhanced);
         } else {
-          setRemoteData([]); // No modifiers found remotely either
+          console.log('🌐 [ModifierModal] No remote modifiers found for this item.');
+          setRemoteData([]);
         }
       } catch (err) {
-        console.error('Supabase fallback error:', err);
+        console.error('❌ [ModifierModal] Supabase fallback error:', err);
       } finally {
         setIsRemoteLoading(false);
       }
@@ -292,17 +320,15 @@ const ModifierModal = (props) => {
     fetchRemote();
   }, [isOpen, targetItemId, dexieOptions, remoteData, isRemoteLoading]);
 
-  // 3. Final processed options
+  // 3. Merge and Deduplicate Final results
   const optionGroups = useMemo(() => {
     const raw = dexieOptions || remoteData || [];
     const fromProps = props.extraGroups || [];
     const combined = [...raw, ...fromProps];
 
-    // Deduplicate by name
     const uniqueMap = new Map();
     combined.forEach(g => {
       if (!uniqueMap.has(g.name)) {
-        // Also deduplicate values within the group
         const valMap = new Map();
         (g.values || []).forEach(v => {
           if (!valMap.has(v.name)) valMap.set(v.name, v);
@@ -319,7 +345,7 @@ const ModifierModal = (props) => {
     return Array.from(uniqueMap.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [dexieOptions, remoteData, props.extraGroups]);
 
-  const isLoadingOptions = dexieOptions === undefined || (dexieOptions === null && isRemoteLoading);
+  const isLoadingOptions = (dexieOptions === undefined) || (!optionGroups.length && isRemoteLoading);
 
   // Handle Defaults & Auto-Add
   useEffect(() => {
