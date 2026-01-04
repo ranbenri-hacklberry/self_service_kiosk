@@ -11,6 +11,8 @@ import { useOrderAlerts } from '../../hooks/useOrderAlerts';
 import { KanbanBoard } from '../../components/kanban';
 import SMSModal from '../../components/kanban/SMSModal';
 import KDSPaymentModal from '../../pages/kds/components/KDSPaymentModal';
+import OrderPackingSidebar from '../../components/kanban/OrderPackingSidebar';
+import { sendSms } from '../../services/smsService'; // 🆕 Import SMS service
 import {
     RefreshCw, ArrowRight, Bell, BellOff,
     LayoutGrid, Truck
@@ -25,6 +27,7 @@ export default function KanbanPage() {
     const [alertsEnabled, setAlertsEnabled] = useState(true);
     const [paymentModal, setPaymentModal] = useState({ show: false, order: null });
     const [smsModal, setSmsModal] = useState({ show: false, order: null });
+    const [packingOrder, setPackingOrder] = useState(null); // 🆕 Packing Sidebar State
     const user = currentUser;
 
     // Get orders
@@ -61,6 +64,59 @@ export default function KanbanPage() {
     const handlePaymentConfirmed = async (orderId, paymentMethod) => {
         setPaymentModal({ show: false, order: null });
         refresh();
+    };
+
+    const handleCardClick = (order) => {
+        // Only open packing sidebar for 'new' or 'in_progress'
+        // Also allow 'pending' just in case
+        if (['new', 'in_progress', 'pending'].includes(order.order_status)) {
+            setPackingOrder(order);
+        }
+    };
+
+    const handleMarkItemReady = async (orderId, itemIds) => {
+        // 1. Mark items as ready
+        await markItemsReady(orderId, itemIds);
+
+        // 2. If order is 'new'/'pending', move to 'in_progress'
+        const order = ordersByStatus.new?.find(o => o.id === orderId) ||
+            ordersByStatus.pending?.find(o => o.id === orderId);
+
+        if (order && (order.order_status === 'new' || order.order_status === 'pending')) {
+            await updateStatus(orderId, 'in_progress');
+        }
+    };
+
+    const handleFinishPacking = async (orderId, driver) => {
+        console.log(`📦 [KanbanPage] Finished packing ${orderId} assigned to driver ${driver.name}`);
+
+        // Find full order details for SMS
+        let order = null;
+        for (const status of Object.keys(ordersByStatus)) {
+            const found = ordersByStatus[status]?.find(o => o.id === orderId);
+            if (found) {
+                order = found;
+                break;
+            }
+        }
+
+        // 1. Update status to 'ready'
+        await updateStatus(orderId, 'ready');
+
+        // 2. Send SMS to driver
+        if (driver && driver.phone && order) {
+            const message = `היי ${driver.name}, חבילה חדשה מוכנה לאיסוף! 📦\nלקוח: ${order.customerName}\nהזמנה: #${order.orderNumber}\nכתובת: ${order.deliveryAddress || 'איסוף עצמי'}\nבהצלחה!`;
+
+            try {
+                await sendSms(driver.phone, message);
+                console.log('✅ SMS sent to driver');
+            } catch (err) {
+                console.error('❌ Failed to send SMS to driver:', err);
+            }
+        }
+
+        // Close sidebar
+        setPackingOrder(null);
     };
 
     return (
@@ -151,9 +207,20 @@ export default function KanbanPage() {
                         onReadyItems={markItemsReady} // 🆕 Pass through
                         onSmsClick={(order) => setSmsModal({ show: true, order })}
                         onRefresh={refresh} // 🆕 Pull to refresh
+                        onEditOrder={handleCardClick} // 🆕 Open sidebar
                     />
                 )}
             </main>
+
+            {/* Packing Sidebar */}
+            <OrderPackingSidebar
+                order={packingOrder}
+                businessId={user?.business_id}
+                onClose={() => setPackingOrder(null)}
+                // Use wrapper that also updates order status
+                onMarkItemReady={handleMarkItemReady}
+                onFinishPacking={handleFinishPacking}
+            />
 
             {/* Modals */}
             {smsModal.show && (

@@ -82,6 +82,10 @@ export function DraggableOrderCard({
         if (isUnseen && onMarkSeen) {
             onMarkSeen(order.id);
         }
+
+        if (onEditOrder) {
+            onEditOrder(order);
+        }
     };
 
     return (
