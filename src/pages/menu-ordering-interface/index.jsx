@@ -113,7 +113,7 @@ const MenuOrderingInterface = () => {
   const [soldierDiscountEnabled, setSoldierDiscountEnabled] = useState(false);
   const [soldierDiscountId, setSoldierDiscountId] = useState(null); // UUID from discounts table
 
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const fromKDSParam = searchParams.get('from') === 'kds';
 
   useEffect(() => {
@@ -633,12 +633,14 @@ const MenuOrderingInterface = () => {
         orderId: cleanOrderId
       });
 
-      if (shouldBeRestricted) {
-        console.log('🔒 Setting Restricted Mode (Cancelled)');
-        setIsRestrictedMode(true);
-      } else {
-        console.log('✅ Setting Full Edit Mode (Active/History/Paid)');
-        setIsRestrictedMode(false);
+      setIsRestrictedMode(shouldBeRestricted ? true : false);
+
+      // 🔥 CRITICAL: Clear the query param after successful load to prevent re-triggering
+      const newParams = new URLSearchParams(searchParams);
+      if (newParams.has('editOrderId')) {
+        console.log('🧹 Cleaning editOrderId from URL');
+        newParams.delete('editOrderId');
+        setSearchParams(newParams, { replace: true });
       }
 
     } catch (err) {

@@ -436,126 +436,181 @@ const CustomerInfoModal = ({
     };
 
     // Render phone entry step
-    const renderPhoneStep = () => (
-        <>
-            {/* Content - No header */}
-            <div className="p-4 space-y-3">
-                {/* Phone Display */}
-                <div
-                    className={`w-full h-14 bg-gray-50 rounded-xl border-2 flex items-center justify-center transition-colors ${error ? 'border-red-200 bg-red-50' : 'border-gray-100'
-                        }`}
-                >
-                    <div className="text-2xl font-mono font-bold text-gray-800 tracking-wider" dir="ltr">
-                        {formatPhoneDisplay(phoneNumber) || '___-___-____'}
-                    </div>
+    const renderPhoneStep = () => {
+        const hasExistingPhone = currentCustomer?.phone && currentCustomer.phone.length >= 9;
+
+        return (
+            <>
+                {/* Content - No header */}
+                <div className="p-4 space-y-3">
+                    {/* Existing Phone Display (if exists) */}
+                    {hasExistingPhone && phoneNumber === currentCustomer.phone && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Phone size={18} className="text-blue-600" />
+                                <span className="text-blue-800 font-bold">טלפון קיים:</span>
+                                <span className="text-blue-900 font-mono font-black text-lg" dir="ltr">
+                                    {formatPhoneDisplay(currentCustomer.phone)}
+                                </span>
+                            </div>
+                            <button
+                                onClick={() => setPhoneNumber('')}
+                                className="text-blue-600 hover:text-blue-800 p-1 rounded-lg hover:bg-blue-100 transition"
+                                title="ערוך טלפון"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" /></svg>
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Phone Input */}
+                    {(!hasExistingPhone || phoneNumber !== currentCustomer.phone) && (
+                        <>
+                            <div
+                                className={`w-full h-14 bg-gray-50 rounded-xl border-2 flex items-center justify-center transition-colors ${error ? 'border-red-200 bg-red-50' : 'border-gray-100'
+                                    }`}
+                            >
+                                <div className="text-2xl font-mono font-bold text-gray-800 tracking-wider" dir="ltr">
+                                    {formatPhoneDisplay(phoneNumber) || '___-___-____'}
+                                </div>
+                            </div>
+
+                            {/* Error Message */}
+                            {error && (
+                                <div className="text-red-600 text-sm font-bold text-center flex items-center justify-center gap-1">
+                                    <span>⚠️</span>
+                                    {error}
+                                </div>
+                            )}
+
+                            {/* Keypad */}
+                            <NumericKeypad onKeyPress={handleKeypadPress} />
+                        </>
+                    )}
                 </div>
 
-                {/* Error Message */}
-                {error && (
-                    <div className="text-red-600 text-sm font-bold text-center flex items-center justify-center gap-1">
-                        <span>⚠️</span>
-                        {error}
-                    </div>
-                )}
-
-                {/* Keypad */}
-                <NumericKeypad onKeyPress={handleKeypadPress} />
-            </div>
-
-            {/* Footer */}
-            <div className="p-6 border-t border-gray-200 flex gap-3">
-                <button
-                    onClick={onClose}
-                    className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
-                >
-                    ביטול
-                </button>
-                <button
-                    onClick={handlePhoneLookup}
-                    disabled={phoneNumber.length !== 10 || isLoading}
-                    className={`flex-1 py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 ${phoneNumber.length === 10 && !isLoading
-                        ? 'bg-orange-500 text-white hover:bg-orange-600'
-                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        }`}
-                >
-                    {isLoading ? (
-                        <>
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                            בודק...
-                        </>
-                    ) : (
-                        'המשך'
-                    )}
-                </button>
-            </div>
-        </>
-    );
+                {/* Footer */}
+                <div className="p-6 border-t border-gray-200 flex gap-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
+                    >
+                        ביטול
+                    </button>
+                    <button
+                        onClick={handlePhoneLookup}
+                        disabled={phoneNumber.length !== 10 || isLoading}
+                        className={`flex-1 py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 ${phoneNumber.length === 10 && !isLoading
+                            ? 'bg-orange-500 text-white hover:bg-orange-600'
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            }`}
+                    >
+                        {isLoading ? (
+                            <>
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                                בודק...
+                            </>
+                        ) : (
+                            'המשך'
+                        )}
+                    </button>
+                </div>
+            </>
+        );
+    };
 
     // Render name entry step
-    const renderNameStep = () => (
-        <>
-            {/* Content - No header */}
-            <div className="p-4 space-y-3">
-                {/* Name Input */}
-                <input
-                    ref={nameInputRef}
-                    type="text"
-                    value={customerName}
-                    onChange={(e) => {
-                        setCustomerName(e.target.value);
-                        setError('');
-                    }}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && customerName.trim()) {
-                            handleNameSubmit();
-                        }
-                    }}
-                    placeholder="הכנס שם..."
-                    className={`w-full h-14 bg-gray-50 rounded-xl border-2 px-4 text-xl font-bold text-gray-800 text-center transition-colors ${error ? 'border-red-200 bg-red-50' : 'border-gray-100 focus:border-purple-400'
-                        } outline-none`}
-                    dir="rtl"
-                />
+    const renderNameStep = () => {
+        const hasExistingName = currentCustomer?.name && !['אורח', 'אורח אנונימי', 'הזמנה מהירה'].includes(currentCustomer.name);
 
-                {/* Error Message */}
-                {error && (
-                    <div className="text-red-600 text-sm font-bold text-center flex items-center justify-center gap-1">
-                        <span>⚠️</span>
-                        {error}
-                    </div>
-                )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-6 border-t border-gray-200 flex gap-3">
-                <button
-                    onClick={onClose}
-                    className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
-                >
-                    ביטול
-                </button>
-                <button
-                    onClick={handleNameSubmit}
-                    disabled={!customerName.trim() || isLoading}
-                    className={`flex-1 py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 ${customerName.trim() && !isLoading
-                        ? 'bg-purple-500 text-white hover:bg-purple-600'
-                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        }`}
-                >
-                    {isLoading ? (
-                        <>
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                            שומר...
-                        </>
-                    ) : (
-                        <>
-                            <Check className="w-5 h-5" />
-                            אישור
-                        </>
+        return (
+            <>
+                {/* Content - No header */}
+                <div className="p-4 space-y-3">
+                    {/* Existing Name Indicator */}
+                    {hasExistingName && customerName === currentCustomer.name && (
+                        <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                                <User size={18} className="text-purple-600" />
+                                <span className="text-purple-800 font-bold">שם קיים:</span>
+                                <span className="text-purple-900 font-black text-lg">
+                                    {currentCustomer.name}
+                                </span>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setCustomerName('');
+                                    setTimeout(() => nameInputRef.current?.focus(), 50);
+                                }}
+                                className="text-purple-600 hover:text-purple-800 p-1 rounded-lg hover:bg-purple-100 transition"
+                                title="ערוך שם"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" /></svg>
+                            </button>
+                        </div>
                     )}
-                </button>
-            </div>
-        </>
-    );
+
+                    {/* Name Input */}
+                    <input
+                        ref={nameInputRef}
+                        type="text"
+                        value={customerName}
+                        onChange={(e) => {
+                            setCustomerName(e.target.value);
+                            setError('');
+                        }}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && customerName.trim()) {
+                                handleNameSubmit();
+                            }
+                        }}
+                        placeholder={hasExistingName ? 'לחץ לעריכת השם...' : 'הכנס שם...'}
+                        className={`w-full h-14 bg-gray-50 rounded-xl border-2 px-4 text-xl font-bold text-gray-800 text-center transition-colors ${error ? 'border-red-200 bg-red-50' : 'border-gray-100 focus:border-purple-400'
+                            } outline-none`}
+                        dir="rtl"
+                    />
+
+                    {/* Error Message */}
+                    {error && (
+                        <div className="text-red-600 text-sm font-bold text-center flex items-center justify-center gap-1">
+                            <span>⚠️</span>
+                            {error}
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="p-6 border-t border-gray-200 flex gap-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
+                    >
+                        ביטול
+                    </button>
+                    <button
+                        onClick={handleNameSubmit}
+                        disabled={!customerName.trim() || isLoading}
+                        className={`flex-1 py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 ${customerName.trim() && !isLoading
+                            ? 'bg-purple-500 text-white hover:bg-purple-600'
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            }`}
+                    >
+                        {isLoading ? (
+                            <>
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                                שומר...
+                            </>
+                        ) : (
+                            <>
+                                <Check className="w-5 h-5" />
+                                אישור
+                            </>
+                        )}
+                    </button>
+                </div>
+            </>
+        );
+    };
 
     return (
         <div

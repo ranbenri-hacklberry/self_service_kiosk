@@ -93,6 +93,7 @@ const OrderCard = memo(({
   onPaymentCollected,
   onFireItems,
   onReadyItems,
+  onToggleEarlyDelivered,
   onEditOrder,
   onCancelOrder,
   onRefresh
@@ -185,7 +186,7 @@ const OrderCard = memo(({
     : (isKanban ? 'w-full' : (isLargeOrder ? 'w-[420px]' : 'w-[280px]'));
 
   const renderItemRow = useCallback((item, idx, isLarge) => {
-    const isEarlyDelivered = item.is_early_delivered || item.item_status === 'ready' || item.item_status === 'shipped';
+    const isEarlyDelivered = !isReady && !isHistory && (item.is_early_delivered || item.item_status === 'ready' || item.item_status === 'shipped');
     const nameSizeClass = isHistory ? 'text-sm' : 'text-base';
     const badgeSizeClass = isHistory ? 'w-5 h-5 text-xs' : 'w-6 h-6 text-base';
     const modSizeClass = isHistory ? 'text-[10px]' : 'text-xs';
@@ -200,17 +201,7 @@ const OrderCard = memo(({
             </div>
           )}
 
-          <div
-            onClick={async (e) => {
-              if (isHistory || !onReadyItems) return;
-              e.stopPropagation();
-              const ids = item.ids || [item.id];
-              const itemsPayload = ids.map(id => ({ id }));
-              console.log('📦 [Kanban/KDS] Toggling item packed/ready status', { itemId: item.id });
-              await onReadyItems(order.id || order.originalOrderId, itemsPayload);
-            }}
-            className={`cursor-pointer active:scale-95 transition-transform flex items-start gap-[5px] flex-1 min-w-0`}
-          >
+          <div className="flex items-start gap-[5px] flex-1 min-w-0">
             <span className={`flex items-center justify-center rounded-lg font-black shadow-sm shrink-0 mt-0 ${badgeSizeClass} ${item.quantity > 1 ? 'bg-orange-600 text-white ring-2 ring-orange-200' : (order.type === 'delayed' ? 'bg-gray-300 text-gray-600' : 'bg-slate-900 text-white')
               }`}>
               {item.quantity}
@@ -270,13 +261,13 @@ const OrderCard = memo(({
             </div>
           </div>
         </div>
-      </div>
+      </div >
     );
   }, [isHistory, order.type, onReadyItems, order.id, order.originalOrderId]);
 
   return (
-    <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl px-[5px] py-3 ${isHistory ? 'mx-[2px]' : 'mx-2'} flex flex-col h-full font-heebo ${order.type === 'delayed' ? 'bg-gray-50' : 'bg-white'} ${statusStyles} border-x border-b border-gray-100 ${glowClass}`}>
-      <div className="flex justify-between items-start mb-1 border-b border-gray-50 pb-1">
+    <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl px-[5px] pt-1.5 pb-2.5 ${isHistory ? 'mx-[2px]' : 'mx-2'} flex flex-col h-full font-heebo ${order.type === 'delayed' ? 'bg-gray-50' : 'bg-white'} ${statusStyles} border-x border-b border-gray-100 ${glowClass}`}>
+      <div className="flex justify-between items-start mb-0.5 border-b border-gray-50 pb-0.5">
         <div className="flex flex-col overflow-hidden flex-1">
           <div className="flex flex-col w-full">
             <div className="flex items-center gap-2 w-full">
@@ -317,25 +308,10 @@ const OrderCard = memo(({
               )}
             </div>
 
-            {/* Customer Details: Phone and Address */}
-            {(order.customerPhone || order.deliveryAddress) && (
-              <div className="mt-1 flex flex-col gap-0.5">
-                {order.customerPhone && (
-                  <div className="text-[11px] text-slate-500 font-bold flex items-center gap-1">
-                    <Phone size={10} />
-                    <span className="font-mono">{order.customerPhone}</span>
-                  </div>
-                )}
-                {order.deliveryAddress && (
-                  <div className="text-[11px] text-slate-600 font-black flex items-start gap-1 leading-tight">
-                    <MapPin size={10} className="mt-0.5 shrink-0" />
-                    <span className="line-clamp-2">{order.deliveryAddress}</span>
-                  </div>
-                )}
-              </div>
-            )}
+
           </div>
         </div>
+
 
         <div className="text-left flex flex-col items-end shrink-0 ml-2 gap-1.5">
           <div className="flex items-center gap-2">
@@ -504,7 +480,7 @@ const OrderCard = memo(({
           </>
         )}
       </div>
-    </div>
+    </div >
   );
 }, (prevProps, nextProps) => {
   // CUSTOM COMPARISON: Only re-render if essential order properties changed
@@ -519,9 +495,13 @@ const OrderCard = memo(({
     prevProps.order.updated_at === nextProps.order.updated_at &&
     prevProps.order.type === nextProps.order.type &&
     prevProps.order.items?.length === nextProps.order.items?.length &&
-    // Check total items quantity and ready status count to detect changes
-    prevProps.order.items?.reduce((acc, i) => acc + i.quantity, 0) === nextProps.order.items?.reduce((acc, i) => acc + i.quantity, 0) &&
-    prevProps.order.items?.filter(i => i.is_early_delivered).length === nextProps.order.items?.filter(i => i.is_early_delivered).length
+    // Check item statuses and early delivery flags to detect changes
+    prevProps.order.items?.every((item, idx) => {
+      const nextItem = nextProps.order.items[idx];
+      return item.id === nextItem?.id &&
+        item.item_status === nextItem?.item_status &&
+        item.is_early_delivered === nextItem?.is_early_delivered;
+    })
   );
 });
 

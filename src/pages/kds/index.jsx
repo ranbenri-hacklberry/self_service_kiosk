@@ -506,6 +506,7 @@ const KdsScreen = () => {
     updateOrderStatus: updateOrderStatusBase,
     handleFireItems,
     handleReadyItems,
+    handleToggleEarlyDelivered,
     handleUndoLastAction,
     handleConfirmPayment,
     handleCancelOrder
@@ -776,7 +777,7 @@ const KdsScreen = () => {
                         onOrderStatusUpdate={handleStatusUpdate}
                         onPaymentCollected={handlePaymentCollected}
                         onFireItems={handleFireItems}
-                        onReadyItems={handleReadyItems}
+                        onToggleEarlyDelivered={handleToggleEarlyDelivered}
                         onEditOrder={handleEditOrder}
                         onCancelOrder={handleCancelOrder}
                         onRefresh={forceRefresh}
@@ -811,6 +812,7 @@ const KdsScreen = () => {
                         glowClass={newOrderIds.has(order.id) ? 'glow-ready' : ''}
                         onOrderStatusUpdate={handleStatusUpdate}
                         onPaymentCollected={handlePaymentCollected}
+                        onToggleEarlyDelivered={handleToggleEarlyDelivered}
                         onEditOrder={handleEditOrder}
                         onCancelOrder={handleCancelOrder}
                         onRefresh={forceRefresh}
@@ -845,7 +847,7 @@ const KdsScreen = () => {
                           onOrderStatusUpdate={() => { }} // No Action
                           onPaymentCollected={(o) => handlePaymentCollected(o, true)} // From history
                           onFireItems={() => { }} // No Action
-                          onReadyItems={() => { }} // No Action
+                          onToggleEarlyDelivered={handleToggleEarlyDelivered}
                           onEditOrder={handleEditOrder} // Allow Edit (Restricted)
                           onCancelOrder={() => { }} // No Action
                           onRefresh={() => { }}

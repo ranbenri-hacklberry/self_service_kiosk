@@ -97,9 +97,9 @@ const ProtectedRoute = ({ children }) => {
   // Handle root path redirect based on mode
   if (location.pathname === '/' && deviceMode) {
     const params = new URLSearchParams(location.search);
-    const isNewOrderFromKds = params.get('from') === 'kds';
+    const isNavigationFromKds = params.get('from') === 'kds' || params.has('editOrderId');
 
-    if (!isNewOrderFromKds) {
+    if (!isNavigationFromKds) {
       if (deviceMode === 'kds') {
         return <Navigate to="/kds" replace />;
       } else if (deviceMode === 'manager') {
@@ -108,7 +108,7 @@ const ProtectedRoute = ({ children }) => {
         return <Navigate to="/music" replace />;
       }
     }
-    // For 'kiosk' mode OR new orders from KDS, let it fall through to MenuOrderingInterface
+    // For 'kiosk' mode OR incoming KDS requests, let it fall through to MenuOrderingInterface
   }
 
   return <PageTransition>{children}</PageTransition>;
