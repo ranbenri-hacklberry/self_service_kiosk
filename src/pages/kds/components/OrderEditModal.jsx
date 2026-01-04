@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Check, Edit, Phone, User } from 'lucide-react';
+import { X, Check, Phone, User } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import CustomerInfoModal from '../../../components/CustomerInfoModal';
 
 /**
  * OrderEditModal - Simple modal for viewing order items and marking early delivery
  * Uses is_early_delivered field for display only - doesn't affect other status logic
- * 
- * ⚠️ DESIGN NOTE: Do NOT change the styling/design of this component without explicit user approval.
  */
 
 const OrderEditModal = ({
@@ -26,14 +24,11 @@ const OrderEditModal = ({
     const [showCustomerInfoModal, setShowCustomerInfoModal] = useState(false);
     const [customerInfoModalMode, setCustomerInfoModalMode] = useState('phone');
 
-    // memoize customer data to prevent unnecessary re-renders of the sub-modal
     const currentCustomerData = React.useMemo(() => {
-        // Filter phone number: If it contains 'GUEST' or is likely an ID (not a real phone), return empty string
         const phone = orderData?.customer_phone || '';
         const phoneStr = phone.toString();
         const sanitizedPhone = (phoneStr.includes('GUEST') || phoneStr.includes('_') || phoneStr.length > 15) ? '' : phoneStr;
 
-        // Similarly for name
         const name = orderData?.customer_name || '';
         const nameStr = typeof name === 'string' ? name : '';
         const sanitizedName = (nameStr.includes('GUEST') || ['אורח', 'אורח אנונימי'].includes(nameStr)) ? '' : nameStr;
@@ -63,37 +58,27 @@ const OrderEditModal = ({
             payment_method: order.paymentMethod || order.payment_method
         });
 
-        // 1. Flatten items: Each ID in 'ids' becomes an individual row
         const flattened = [];
         const seenIds = new Set();
 
         order.items.forEach(item => {
             const itemIds = item.ids && item.ids.length > 0 ? item.ids : [item.id];
-
             itemIds.forEach(id => {
                 if (id && seenIds.has(id)) return;
                 if (id) seenIds.add(id);
 
                 flattened.push({
                     id: id,
-                    menu_item_id: item.menu_item_id || item.menuItemId,
                     name: item.name,
                     quantity: 1,
                     price: item.price || 0,
                     status: item.status,
-                    course_stage: item.course_stage || 1,
-                    is_early_delivered: item.is_early_delivered || false,
-                    modifiers: item.modifiers,
-                    notes: item.notes
+                    is_early_delivered: item.is_early_delivered || false
                 });
             });
         });
 
-        const activeItems = flattened
-            .filter(i => i.status !== 'cancelled')
-            .sort((a, b) => a.name.localeCompare(b.name));
-
-        setItems(activeItems);
+        setItems(flattened.filter(i => i.status !== 'cancelled'));
         setIsLoading(false);
     };
 
@@ -107,7 +92,6 @@ const OrderEditModal = ({
 
     const handleToggleEarlyDelivered = async (item) => {
         if (processingItemId || isHistoryMode) return;
-
         setProcessingItemId(item.id);
         const newValue = !item.is_early_delivered;
 
@@ -117,13 +101,9 @@ const OrderEditModal = ({
                 p_value: newValue
             });
 
-            if (error) {
-                console.error('Failed to update is_early_delivered:', error.message);
-            } else {
+            if (!error) {
                 setItems(prevItems =>
-                    prevItems.map(i =>
-                        i.id === item.id ? { ...i, is_early_delivered: newValue } : i
-                    )
+                    prevItems.map(i => i.id === item.id ? { ...i, is_early_delivered: newValue } : i)
                 );
                 if (onRefresh) onRefresh();
             }
@@ -134,187 +114,56 @@ const OrderEditModal = ({
         }
     };
 
-    const handleOpenFullEditor = () => {
-        if (!orderData || !items.length) return;
-
-        try {
-            const itemsToUse = items && items.length > 0
-                ? items.map(item => ({
-                    id: item.id,
-                    menu_item_id: item.menu_item_id || item.menuItemId,
-                    menuItemId: item.menu_item_id || item.menuItemId,
-                    name: item.name,
-                    price: item.price,
-                    quantity: item.quantity,
-                    mods: item.modifiers,
-                    notes: item.notes,
-                    selectedOptions: [],
-                    course_stage: item.course_stage || 1
-                }))
-                : items;
-
-            const calculatedTotal = itemsToUse.reduce((sum, item) =>
-                sum + (item.price || 0) * (item.quantity || 1), 0
-            );
-
-            const totalToUse = order.totalAmount || calculatedTotal;
-
-            const editData = {
-                id: orderData.id,
-                orderNumber: orderData.order_number,
-                customerName: orderData.customer_name,
-                customerId: order.customerId,
-                customerPhone: order.customerPhone,
-                isPaid: orderData.is_paid || order.isPaid,
-                paymentMethod: orderData.payment_method || order.paymentMethod || order.payment_method,
-                totalAmount: totalToUse,
-                originalTotal: totalToUse,
-                originalPaidAmount: order.paidAmount || totalToUse,
-                items: itemsToUse,
-                originalItems: itemsToUse,
-                restrictedMode: isHistoryMode,
-                // CRITICAL: Pass original order status so menu-ordering-interface knows to reset it to 'in_progress'
-                originalOrderStatus: order.orderStatus || order.order_status || 'completed'
-            };
-
-            sessionStorage.setItem('editOrderData', JSON.stringify(editData));
-            navigate(`/menu-ordering-interface?editOrderId=${orderData.id}`);
-        } catch (err) {
-            console.error('Error opening full editor:', err);
-        }
-    };
-
     const formatPrice = (price) => {
-        if (!price) return '';
         const num = Number(price);
-        const hasDecimals = num % 1 !== 0;
-        return `₪${hasDecimals ? num.toFixed(2) : num.toFixed(0)}`;
+        return `₪${num.toFixed(0)}`;
     };
 
     return (
-        <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={onClose}
-        >
-            <div
-                className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
-                onClick={e => e.stopPropagation()}
-                dir="rtl"
-            >
-                {/* Header: #Order (Left) | עריכה מלאה (Right) */}
-                <div className="bg-white p-4 flex items-center justify-between">
-                    <button
-                        onClick={handleOpenFullEditor}
-                        className="px-4 py-2 rounded-xl bg-orange-100 text-orange-500 font-bold text-sm flex items-center gap-2 hover:bg-orange-200 transition"
-                    >
-                        <Edit size={18} />
-                        <span>עריכה מלאה</span>
-                    </button>
-
-                    <h2 className="text-xl font-bold text-slate-800">
-                        #{orderData?.order_number}
-                    </h2>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()} dir="rtl">
+                <div className="bg-white p-4 flex items-center justify-between border-b">
+                    <h2 className="text-xl font-bold text-slate-800">פרטי הזמנה #{orderData?.order_number}</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition"><X size={24} /></button>
                 </div>
 
-                {/* Items List */}
-                <div className="px-4 pb-4 space-y-2 max-h-[50vh] overflow-y-auto">
-                    {isLoading ? (
-                        <div className="flex justify-center items-center h-20">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
+                <div className="px-4 py-4 space-y-2 max-h-[50vh] overflow-y-auto">
+                    {items.map((item) => (
+                        <div key={item.id} onClick={() => handleToggleEarlyDelivered(item)} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl cursor-pointer hover:bg-gray-100 transition-all active:scale-[0.99]">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 me-3 ${item.is_early_delivered ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'}`}>
+                                <Check size={20} strokeWidth={3} />
+                            </div>
+                            <div className="flex-1 flex items-center justify-between gap-3">
+                                <span className={`text-lg font-bold ${item.is_early_delivered ? 'text-gray-400 line-through' : 'text-slate-800'}`}>{item.name}</span>
+                                <div className={`text-base font-bold ${item.is_early_delivered ? 'text-gray-400' : 'text-gray-600'}`}>{formatPrice(item.price)}</div>
+                            </div>
                         </div>
-                    ) : (
-                        items.map((item) => {
-                            const isMarked = item.is_early_delivered;
-                            return (
-                                <div
-                                    key={item.id}
-                                    onClick={() => handleToggleEarlyDelivered(item)}
-                                    className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl cursor-pointer hover:bg-gray-100 transition-all active:scale-[0.99]"
-                                    dir="rtl"
-                                >
-                                    {/* Right side: Checkbox */}
-                                    <div className={`
-                                        w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 me-3
-                                        ${isMarked
-                                            ? 'bg-green-500 text-white'
-                                            : 'bg-gray-200 text-gray-400'}
-                                    `}>
-                                        <Check size={20} strokeWidth={3} />
-                                    </div>
-
-                                    {/* Left side: Name + Price */}
-                                    <div className="flex-1 flex items-center justify-between gap-3">
-                                        <span className={`text-lg font-bold ${isMarked ? 'text-gray-400 line-through' : 'text-slate-800'}`}>
-                                            {item.name}
-                                        </span>
-                                        <div className={`text-base font-bold ${isMarked ? 'text-gray-400' : 'text-gray-600'}`}>
-                                            {formatPrice(item.price * (item.quantity || 1))}
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })
-                    )}
-
-                    {items.length === 0 && !isLoading && (
-                        <div className="text-center py-8 text-gray-400">
-                            <p className="text-lg font-bold">אין פריטים בהזמנה</p>
-                        </div>
-                    )}
+                    ))}
                 </div>
 
-                {/* Customer Info Buttons */}
                 {!isLoading && orderData && (
                     <div className="px-4 pb-4 flex items-center justify-center gap-3">
-                        {/* Orange button - Add Phone + Name */}
-                        <button
-                            onClick={() => { setCustomerInfoModalMode('phone-then-name'); setShowCustomerInfoModal(true); }}
-                            className="px-5 py-3 rounded-full bg-orange-500 text-white font-bold text-sm flex items-center gap-2 hover:bg-orange-600 transition-all active:scale-95"
-                        >
-                            <Phone size={18} />
-                            <span>הוסף טלפון+שם</span>
+                        <button onClick={() => { setCustomerInfoModalMode('phone-then-name'); setShowCustomerInfoModal(true); }} className="px-5 py-3 rounded-full bg-orange-500 text-white font-bold text-sm flex items-center gap-2 hover:bg-orange-600 transition-all active:scale-95">
+                            <Phone size={18} /><span>טלפון+שם</span>
                         </button>
-
-                        {/* White/Gray button - Add Name Only */}
-                        <button
-                            onClick={() => { setCustomerInfoModalMode('name'); setShowCustomerInfoModal(true); }}
-                            className="px-5 py-3 rounded-full bg-white text-gray-700 border border-gray-300 font-bold text-sm flex items-center gap-2 hover:bg-gray-50 transition-all active:scale-95"
-                        >
-                            <User size={18} />
-                            <span>הוסף שם</span>
+                        <button onClick={() => { setCustomerInfoModalMode('name'); setShowCustomerInfoModal(true); }} className="px-5 py-3 rounded-full bg-white text-gray-700 border border-gray-300 font-bold text-sm flex items-center gap-2 hover:bg-gray-50 transition-all active:scale-95">
+                            <User size={18} /><span>שם בלבד</span>
                         </button>
                     </div>
                 )}
 
-                {/* Footer - Dark Close Button */}
-                <div className="p-4">
-                    <button
-                        onClick={onClose}
-                        className="w-full py-4 bg-slate-900 text-white font-bold text-lg rounded-2xl hover:bg-slate-800 transition active:scale-[0.98]"
-                    >
-                        סגור
-                    </button>
-                </div>
+                <div className="p-4"><button onClick={onClose} className="w-full py-4 bg-slate-900 text-white font-bold text-lg rounded-2xl">סגור</button></div>
             </div>
 
-            {/* Customer Info Modal */}
             <CustomerInfoModal
                 isOpen={showCustomerInfoModal}
                 onClose={() => setShowCustomerInfoModal(false)}
                 mode={customerInfoModalMode}
                 currentCustomer={currentCustomerData}
                 onCustomerUpdate={async (updatedCustomer) => {
-                    setOrderData({
-                        ...orderData,
-                        customer_id: updatedCustomer.id,
-                        customer_phone: updatedCustomer.phone,
-                        customer_name: updatedCustomer.name
-                    });
+                    setOrderData({ ...orderData, customer_id: updatedCustomer.id, customer_phone: updatedCustomer.phone, customer_name: updatedCustomer.name });
                     setShowCustomerInfoModal(false);
-                    setTimeout(() => {
-                        onRefresh?.();
-                        onClose();
-                    }, 1000);
+                    setTimeout(() => { onRefresh?.(); onClose(); }, 1000);
                 }}
                 orderId={orderData?.id}
             />
