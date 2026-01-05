@@ -776,14 +776,46 @@ const KDSInventoryScreen = ({ onExit }) => {
     }, [items, selectedSupplierId, search]);
 
 
-    // Handle Local Stock Change
+    // Handle Local Stock Change with Smart Rounding
+    // First step snaps to the nearest grid multiple, then continues in even steps
     const handleStockChange = (itemId, change) => {
+        const item = items.find(i => i.id === itemId);
+        if (!item) return;
+
+        const step = Math.abs(change); // The step size (e.g., 500 for grams)
+        const isIncrement = change > 0;
+
         setStockUpdates(prev => {
             const currentVal = prev[itemId] !== undefined
                 ? prev[itemId]
-                : (items.find(i => i.id === itemId)?.current_stock || 0);
+                : (item.current_stock || 0);
 
-            const newVal = Math.max(0, currentVal + change);
+            let newVal;
+
+            // Check if current value is already on a step multiple
+            const epsilon = 0.001; // For floating point comparison
+            const isOnGrid = Math.abs(currentVal % step) < epsilon || Math.abs((currentVal % step) - step) < epsilon;
+
+            if (isOnGrid) {
+                // Already on grid, just add/subtract the step
+                newVal = currentVal + change;
+            } else {
+                // Not on grid - snap to nearest grid point in the direction of change
+                if (isIncrement) {
+                    // Snap UP to next grid point
+                    newVal = Math.ceil(currentVal / step) * step;
+                } else {
+                    // Snap DOWN to previous grid point
+                    newVal = Math.floor(currentVal / step) * step;
+                }
+            }
+
+            // Ensure we don't go below 0
+            newVal = Math.max(0, newVal);
+
+            // Round to 2 decimal places to avoid floating point issues
+            newVal = Math.round(newVal * 100) / 100;
+
             return { ...prev, [itemId]: newVal };
         });
     };
@@ -882,7 +914,31 @@ const KDSInventoryScreen = ({ onExit }) => {
                     {filteredItems.map(item => {
                         const currentStock = stockUpdates[item.id] !== undefined ? stockUpdates[item.id] : item.current_stock;
                         const isChanged = stockUpdates[item.id] !== undefined && stockUpdates[item.id] !== item.current_stock;
-                        const price = item.cost_per_unit > 0 ? `₪${item.cost_per_unit}` : null;
+
+                        // Get count step from item (in grams), default to 500g for gram items, 1 for others
+                        const countStep = item.count_step || (item.unit === 'גרם' ? 500 : 1);
+
+                        // Smart Price Display - show per Kg for gram items
+                        let priceDisplay = null;
+                        if (item.cost_per_unit > 0) {
+                            if (item.unit === 'גרם') {
+                                const pricePerKg = (item.cost_per_unit * 1000).toFixed(2);
+                                priceDisplay = `₪${pricePerKg}/ק״ג`;
+                            } else {
+                                priceDisplay = `₪${item.cost_per_unit}`;
+                            }
+                        }
+
+                        // Smart Stock Display - show as Kg when unit is grams
+                        let displayStock, displayUnit;
+                        if (item.unit === 'גרם') {
+                            // Always show in Kg for gram items, with 2 decimal places
+                            displayStock = (currentStock / 1000).toFixed(2);
+                            displayUnit = 'ק״ג';
+                        } else {
+                            displayStock = currentStock;
+                            displayUnit = item.unit;
+                        }
 
                         return (
                             <div key={item.id} className="bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between hover:border-blue-300 transition-colors group">
@@ -890,8 +946,8 @@ const KDSInventoryScreen = ({ onExit }) => {
                                     <div className="flex flex-col">
                                         <h4 className="font-bold text-slate-800 text-sm leading-tight">{item.name}</h4>
                                         <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
-                                            <span>{item.unit}</span>
-                                            {price && <span className="text-green-600 bg-green-50 px-1.5 rounded font-bold">{price}</span>}
+                                            <span>{displayUnit}</span>
+                                            {priceDisplay && <span className="text-green-600 bg-green-50 px-1.5 rounded font-bold">{priceDisplay}</span>}
                                         </div>
                                     </div>
                                 </div>
@@ -899,20 +955,20 @@ const KDSInventoryScreen = ({ onExit }) => {
                                 <div className="flex items-center gap-3">
                                     <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
                                         <button
-                                            onClick={() => handleStockChange(item.id, -1)}
+                                            onClick={() => handleStockChange(item.id, -countStep)}
                                             className="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-500 hover:text-red-500 hover:bg-red-50 transition active:scale-95"
                                         >
                                             <span className="text-xl font-bold leading-none mb-1">-</span>
                                         </button>
 
-                                        <div className="w-12 text-center">
-                                            <span className={`font-mono text-xl font-black ${isChanged ? 'text-blue-600' : 'text-slate-700'}`}>
-                                                {currentStock}
+                                        <div className="w-16 text-center">
+                                            <span className={`font-mono text-lg font-black ${isChanged ? 'text-blue-600' : 'text-slate-700'}`}>
+                                                {displayStock}
                                             </span>
                                         </div>
 
                                         <button
-                                            onClick={() => handleStockChange(item.id, 1)}
+                                            onClick={() => handleStockChange(item.id, countStep)}
                                             className="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-500 hover:text-green-600 hover:bg-green-50 transition active:scale-95"
                                         >
                                             <Plus size={16} strokeWidth={3} />
@@ -936,10 +992,12 @@ const KDSInventoryScreen = ({ onExit }) => {
                             </div>
                         );
                     })}
+
                     {filteredItems.length === 0 && (
                         <div className="col-span-2 text-center py-20 text-gray-400">
                             <p>לא נמצאו פריטים</p>
                         </div>
+
                     )}
                 </div>
             )}
