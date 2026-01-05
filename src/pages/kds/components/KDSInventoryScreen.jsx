@@ -945,10 +945,12 @@ const KDSInventoryScreen = ({ onExit }) => {
                                 <div className="flex items-center gap-4 flex-1">
                                     <div className="flex flex-col">
                                         <h4 className="font-bold text-slate-800 text-sm leading-tight">{item.name}</h4>
-                                        <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
-                                            <span>{displayUnit}</span>
-                                            {priceDisplay && <span className="text-green-600 bg-green-50 px-1.5 rounded font-bold">{priceDisplay}</span>}
-                                        </div>
+                                        {item.location && (
+                                            <div className="flex items-center gap-1 text-xs text-amber-600 mt-0.5">
+                                                <span>📍</span>
+                                                <span>{item.location}</span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
