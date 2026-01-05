@@ -249,6 +249,25 @@ const InventoryScreen = () => {
     }
   };
 
+  // Handle location update
+  const handleLocationUpdate = async (itemId, newLocation) => {
+    try {
+      console.log('📍 Updating location:', itemId, newLocation);
+      const { error } = await supabase
+        .from('inventory_items')
+        .update({ location: newLocation })
+        .eq('id', itemId);
+
+      if (error) throw error;
+
+      console.log('✅ Location updated successfully');
+      setItems(prev => prev.map(i => i.id === itemId ? { ...i, location: newLocation } : i));
+    } catch (error) {
+      console.error('Error updating location:', error);
+      throw error;
+    }
+  };
+
   const handleFinishOrder = async (group) => {
     if (!currentUser?.business_id) return;
     setLoading(true);
@@ -774,7 +793,7 @@ const InventoryScreen = () => {
                         draftOrderQty={draftOrders[item.id]?.qty || 0}
                         onStockChange={handleStockUpdate}
                         onOrderChange={(itemId, val) => handleOrderChange(itemId, val, item)}
-                        onItemUpdate={handleItemUpdate}
+                        onLocationChange={handleLocationUpdate}
                       />
                     ))
                   )}

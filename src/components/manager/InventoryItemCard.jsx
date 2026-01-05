@@ -1,9 +1,19 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, ChevronDown, Minus, Plus, ShoppingCart, Save, History, User, AlertCircle, RotateCcw } from 'lucide-react';
+import { Package, ChevronDown, Minus, Plus, ShoppingCart, Save, History, User, AlertCircle, RotateCcw, MapPin } from 'lucide-react';
 
-const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty = 0 }) => {
+// Common storage locations for autocomplete
+const COMMON_LOCATIONS = [
+    'מקפיא - מקרר מטבח',
+    'מקרר ראשי',
+    'מחסן יבש',
+    'מדף עליון',
+    'מדף תחתון',
+    'ארון אחסון',
+];
+
+const InventoryItemCard = ({ item, onStockChange, onOrderChange, onLocationChange, draftOrderQty = 0 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [currentStock, setCurrentStock] = useState(Number(item.current_stock) || 0);
     const [orderQty, setOrderQty] = useState(draftOrderQty);
@@ -11,6 +21,11 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
     const [hasOrderChange, setHasOrderChange] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
+
+    // Location state
+    const [location, setLocation] = useState(item.location || '');
+    const [isEditingLocation, setIsEditingLocation] = useState(false);
+    const [hasLocationChange, setHasLocationChange] = useState(false);
 
     // Backup for restore on error
     const originalStock = useRef(Number(item.current_stock) || 0);
@@ -290,6 +305,64 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, draftOrderQty =
                                     )}
                                 </div>
                             </div>
+
+                            <div className="h-px bg-gray-100"></div>
+
+                            {/* Location Row */}
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                    <MapPin size={14} className="text-amber-500" />
+                                    <span className="text-xs font-bold text-gray-500">מיקום</span>
+                                </div>
+
+                                {isEditingLocation ? (
+                                    <div className="flex items-center gap-2 flex-1">
+                                        <input
+                                            type="text"
+                                            value={location}
+                                            onChange={(e) => {
+                                                setLocation(e.target.value);
+                                                setHasLocationChange(true);
+                                            }}
+                                            placeholder="הזן מיקום..."
+                                            list="location-suggestions"
+                                            className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-400 outline-none"
+                                            autoFocus
+                                        />
+                                        <datalist id="location-suggestions">
+                                            {COMMON_LOCATIONS.map(loc => (
+                                                <option key={loc} value={loc} />
+                                            ))}
+                                        </datalist>
+                                        <button
+                                            onClick={async () => {
+                                                if (hasLocationChange && onLocationChange) {
+                                                    setSaving(true);
+                                                    try {
+                                                        await onLocationChange(item.id, location);
+                                                        setHasLocationChange(false);
+                                                    } catch (e) {
+                                                        console.error('Failed to save location:', e);
+                                                    } finally {
+                                                        setSaving(false);
+                                                    }
+                                                }
+                                                setIsEditingLocation(false);
+                                            }}
+                                            className="px-3 py-2 bg-amber-500 text-white rounded-lg text-xs font-bold hover:bg-amber-600 transition"
+                                        >
+                                            שמור
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <button
+                                        onClick={() => setIsEditingLocation(true)}
+                                        className="px-3 py-1.5 bg-amber-50 text-amber-700 rounded-lg text-xs font-medium hover:bg-amber-100 transition flex items-center gap-1"
+                                    >
+                                        {location || 'הוסף מיקום'}
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </motion.div>
                 )}
@@ -315,6 +388,7 @@ InventoryItemCard.propTypes = {
     }).isRequired,
     onStockChange: PropTypes.func,
     onOrderChange: PropTypes.func,
+    onLocationChange: PropTypes.func,
     draftOrderQty: PropTypes.number,
 };
 
@@ -322,6 +396,7 @@ InventoryItemCard.defaultProps = {
     draftOrderQty: 0,
     onStockChange: null,
     onOrderChange: null,
+    onLocationChange: null,
 };
 
 export default React.memo(InventoryItemCard);
