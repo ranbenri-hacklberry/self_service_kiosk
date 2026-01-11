@@ -8,7 +8,8 @@ const ShipmentModal = ({
     order,
     onUpdateStatus, // Function to update order status
     onUpdateOrder, // 🆕 Function to update generic fields (e.g. driver)
-    onToggleItemPacked // Function to toggle item packing
+    onToggleItemPacked, // Function to toggle item packing
+    onShipmentConfirmed // 🆕 Explicit handler for shipment confirmation
 }) => {
     const [step, setStep] = useState('packing'); // 'packing' | 'driver'
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,7 +58,7 @@ const ShipmentModal = ({
             // Initialize packed items
             const initialPacked = new Set();
             order.items?.forEach(item => {
-                if (item.is_packed) {
+                if (item.is_packed || item.item_status === 'ready') {
                     initialPacked.add(item.id);
                 }
             });
@@ -111,9 +112,9 @@ const ShipmentModal = ({
                 newStatus = 'in_prep';
             }
         } else if (packedCount === totalItems) {
-            // All packed -> 'ready'
-            if (currentStatus !== 'ready' && currentStatus !== 'shipped' && currentStatus !== 'delivered') {
-                newStatus = 'ready';
+            // All packed -> 'shipped' (Changed from 'ready' per user request)
+            if (currentStatus !== 'shipped' && currentStatus !== 'delivered') {
+                newStatus = 'shipped';
             }
         }
 
@@ -132,15 +133,18 @@ const ShipmentModal = ({
     const handleSaveDriver = async () => {
         setIsSubmitting(true);
         try {
+            // 1. Save driver details first
             const updateData = {
                 driver_id: selectedDriver?.id || null,
                 driver_name: driverName,
                 driver_phone: driverPhone,
                 courier_name: 'שליח פנימי', // Internal courier
-                order_status: 'shipped' // 🆕 Move to shipped tab immediately
+                // We don't set status here if we rely on onShipmentConfirmed, 
+                // but setting it ensures backend is updated regardless.
+                order_status: 'shipped'
             };
 
-            // Use hook update function if available (Optimistic UI)
+            // Use hook update function if available (Optimistic UI for driver fields)
             if (onUpdateOrder) {
                 const success = await onUpdateOrder(order.id, updateData);
                 if (!success) throw new Error('Update failed');
@@ -154,7 +158,12 @@ const ShipmentModal = ({
                 if (error) throw error;
             }
 
-            onClose();
+            // 2. Confirm Shipment (Updates status + UI + Closes Modal)
+            if (onShipmentConfirmed) {
+                await onShipmentConfirmed(order.id);
+            } else {
+                onClose();
+            }
         } catch (err) {
             console.error('Error saving driver:', err);
             alert('שגיאה בשמירת פרטי שליח');

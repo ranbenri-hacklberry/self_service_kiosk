@@ -207,6 +207,7 @@ export default function KanbanPage() {
                     onUpdateStatus={handleStatusUpdate}
                     onUpdateOrder={updateOrderFields} // 🆕
                     onToggleItemPacked={markItemsReady}
+                    onShipmentConfirmed={handleShipmentConfirmed} // 🆕 Pass explicit confirm handler
                 />
             )}
 
