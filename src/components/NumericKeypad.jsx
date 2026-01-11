@@ -10,7 +10,7 @@ const NumericKeypad = ({ onKeyPress }) => {
     ];
 
     return (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-3" dir="ltr">
             {keys.map((key) => (
                 <button
                     key={key}
