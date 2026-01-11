@@ -19,6 +19,7 @@ import OrderEditModal from './components/OrderEditModal';
 import DateScroller from './components/DateScroller';
 import MiniMusicPlayer from '../../components/music/MiniMusicPlayer';
 import ConnectionStatusBar from '../../components/ConnectionStatusBar';
+import BusinessInfoBar from '../../components/BusinessInfoBar';
 import { useKDSData } from './hooks/useKDSData';
 
 // Simple Error Boundary for KDS
@@ -404,17 +405,13 @@ const Header = ({
   };
 
   return (
-    <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-2 flex justify-between items-center border-b border-gray-200 font-heebo">
-      <div className="flex items-center gap-4">
+    <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-2 flex items-center border-b border-gray-200 font-heebo">
+      {/* Right Side - Main Controls */}
+      <div className="flex items-center gap-3 flex-1">
         {/* Home Button (Far Right) */}
-        <button onClick={handleExit} className="p-2 text-gray-400 hover:text-red-500 hover:bg-neutral-100 rounded-xl transition mr-[-8px]">
+        <button onClick={handleExit} className="p-2 text-gray-400 hover:text-red-500 hover:bg-neutral-100 rounded-xl transition">
           <House size={20} />
         </button>
-
-        {/* Title */}
-        <h1 className="text-xl font-black text-slate-800">
-          מסך מטבח
-        </h1>
 
         {/* View Mode Toggle */}
         <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1">
@@ -451,20 +448,21 @@ const Header = ({
         >
           <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
         </button>
-
-        {/* Mini Music Player Group */}
-        <div className="flex items-center gap-2 bg-slate-50/50 p-1 rounded-2xl border border-slate-100">
-          <MiniMusicPlayer />
-          <ConnectionStatusBar isIntegrated={true} />
-        </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="text-lg font-black text-slate-700 hidden md:block">
+      {/* Center - Clock & Connection Status */}
+      <div className="flex items-center gap-3 px-4">
+        <div className="text-lg font-black text-slate-700">
           {lastUpdated.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
         </div>
+        <ConnectionStatusBar isIntegrated={true} />
+      </div>
 
-        <div className="w-px h-6 bg-gray-200 hidden md:block" />
+      {/* Left Side - Music + Actions */}
+      <div className="flex items-center gap-3 flex-1 justify-end">
+        <MiniMusicPlayer />
+
+        <div className="w-px h-6 bg-gray-200" />
 
         <button
           onClick={canUndo ? onUndoLastAction : undefined}
@@ -474,7 +472,7 @@ const Header = ({
           <RotateCcw size={18} />
         </button>
 
-
+        {/* New Order Button (Far Left = Last in RTL) */}
         <button onClick={handleNewOrder} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition shadow-sm text-sm font-bold">
           <Plus size={16} /> הזמנה
         </button>
@@ -709,6 +707,14 @@ const KdsScreen = () => {
   };
 
   const handleEditOrder = (order) => {
+    // If in history mode, go directly to full edit
+    if (viewMode === 'history') {
+      const realOrderId = (order.originalOrderId || order.id || '').toString().replace(/-stage-\d+/, '').replace('-ready', '');
+      console.log('🖊️ KDS History: Redirecting to full edit for:', realOrderId);
+      navigate(`/?editOrderId=${realOrderId}&from=kds`, { replace: true });
+      return;
+    }
+
     // Open the quick view modal (View/Early Delivery)
     console.log('🖊️ KDS: Opening View Modal for Order:', order.id);
     setEditingOrder(order);

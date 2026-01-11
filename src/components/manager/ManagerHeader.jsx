@@ -117,10 +117,27 @@ const ManagerHeader = ({ activeTab, onTabChange, currentUser, isImpersonating, o
                 </nav>
 
                 {/* User Side Placeholder / Business Info */}
-                <div className="hidden lg:flex items-center justify-end w-12 lg:w-32 gap-3 text-left">
+                <div className="hidden lg:flex items-center justify-end w-48 gap-3 text-left">
                     <div className="flex flex-col">
-                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-none mb-1 text-right">מנהל מערכת</span>
-                        <span className="text-xs text-slate-300 font-black truncate max-w-[100px] leading-none text-right">{currentUser?.name || 'משתמש'}</span>
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-none mb-1 text-right">
+                            {isImpersonating ? (
+                                <span className="text-blue-500">Super Admin Mode</span>
+                            ) : (
+                                'מנהל מערכת'
+                            )}
+                        </span>
+                        <div className="flex flex-col items-end">
+                            <span className="text-xs text-slate-300 font-black truncate max-w-[150px] leading-none text-right">
+                                {isImpersonating && currentUser?.impersonating_business_name ? (
+                                    <>
+                                        <span className="opacity-60 text-[10px] block mb-0.5">מנהל את:</span>
+                                        <span className="text-white">{currentUser.impersonating_business_name}</span>
+                                    </>
+                                ) : (
+                                    currentUser?.name || 'משתמש'
+                                )}
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>

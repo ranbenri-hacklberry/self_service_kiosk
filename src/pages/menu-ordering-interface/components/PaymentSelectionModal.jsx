@@ -16,7 +16,9 @@ const PaymentSelectionModal = ({
   isRefund = false,
   refundAmount = 0,
   originalPaymentMethod = null,
-  businessId = null
+  businessId = null,
+  customerName = '', // 🆕 Added prop
+  customerPhone = '' // 🆕 Added prop
 }) => {
   const [step, setStep] = useState('selection'); // 'selection' or 'pos_instruction'
   const [isProcessing, setIsProcessing] = useState(false);
@@ -107,12 +109,16 @@ const PaymentSelectionModal = ({
   };
 
   const buildOrderPayload = (paymentMethod, isPaid) => {
+    // Priority: Props (Transient/Manual Input) > LocalStorage (Persisted Customer)
     const customerDataString = localStorage.getItem('currentCustomer');
-    const customerData = customerDataString ? JSON.parse(customerDataString) : {};
+    const localCustomer = customerDataString ? JSON.parse(customerDataString) : {};
+
+    const finalName = customerName || localCustomer.name || '';
+    const finalPhone = customerPhone || localCustomer.phone || '';
 
     return {
-      customer_phone: customerData?.phone || '',
-      customer_name: customerData?.name || '',
+      customer_phone: finalPhone,
+      customer_name: finalName,
       payment_method: paymentMethod,
       is_paid: isPaid,
       total_amount: finalPrice, // Use final price with discount

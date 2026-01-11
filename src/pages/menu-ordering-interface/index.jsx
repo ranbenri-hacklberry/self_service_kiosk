@@ -38,6 +38,7 @@ const MenuOrderingInterface = () => {
     activeCategory,
     filteredItems,
     groupedItems,
+    categories,
     handleCategoryChange,
     isFoodItem,
     fetchMenuItems
@@ -477,8 +478,8 @@ const MenuOrderingInterface = () => {
             is_hot_drink: item.menu_items.is_hot_drink,
             selectedOptions: selectedOptions,
             notes: item.notes,
-            isDelayed: item.course_stage === 2, // Restore the flag!
-            originalStatus: item.item_status, // Keep track of backend status (e.g. in_progress)
+            isDelayed: item.item_status === 'held', // Reflects current KDS state (Fired items are not delayed)
+            originalStatus: item.item_status, // Keep track of backend status
             tempId: uuidv4() // Ensure stable ID for React keys
           };
         });
@@ -760,6 +761,7 @@ const MenuOrderingInterface = () => {
     if (origin === 'kds') {
       navigate('/kds', { state: { viewMode: editData?.viewMode || 'active' }, replace: true });
     } else {
+      // Always go to mode-selection (Home) from Kiosk
       navigate('/mode-selection', { replace: true });
     }
   };
@@ -1451,9 +1453,11 @@ const MenuOrderingInterface = () => {
       const priceDifference = finalTotal - originalTotal;
 
       // אם אין שינוי במחיר ואין הוספת פריטים חדשים, בצע עדכון ישיר ללא מודאל תשלום ובלי הודעת אישור
+      // אם אין שינוי במחיר ואין הוספת פריטים חדשים, וגם ההזמנה כבר שולמה, בצע עדכון ישיר ללא מודאל
+      // אם ההזמנה לא שולמה, אנחנו רוצים לאפשר תשלום ולכן לא נדלג על המודאל
       const hasAddedItems = cartHistory.some(h => h.type === 'ADD_ITEM');
 
-      if (Math.abs(priceDifference) === 0 && !hasAddedItems) {
+      if (Math.abs(priceDifference) === 0 && !hasAddedItems && editingOrderData?.isPaid) {
         console.log('✏️ No price change and no new items, updating directly (skip confirmation)...');
         handlePaymentSelect({
           paymentMethod: editingOrderData?.paymentMethod || 'cash',
@@ -1711,16 +1715,23 @@ const MenuOrderingInterface = () => {
 
           // CRITICAL FIX: Preserve status if item is already ready or completed
           // to prevent overwriting KDS work while editing.
-          let finalStatus = item.originalStatus || (item.isDelayed ? 'pending' : 'in_progress');
+          let finalStatus = item.originalStatus || (item.isDelayed ? 'held' : 'new');
 
-          // Only force 'in_progress' for new items or items that were modified 
+          // Only force 'new' for new items or items that were modified 
           // (if we want to be safe, but for now let's just preserve 'ready' and 'completed')
-          if (item.originalStatus === 'ready' || item.originalStatus === 'completed' || item.originalStatus === 'cancelled') {
-            finalStatus = item.originalStatus;
-          } else if (item.isDelayed) {
-            finalStatus = (item.originalStatus === 'in_progress' ? 'in_progress' : 'pending');
-          } else if (!item.originalStatus) {
-            finalStatus = 'in_progress';
+          // FIX: Allow bidirectional status change (Active <-> Delayed)
+          // If User explicitly delays item in UI, force 'held'.
+          if (item.isDelayed) {
+            finalStatus = 'held';
+          } else {
+            // Sent to kitchen (Active)
+            // Keep final states if they were already reached
+            if (['ready', 'completed', 'cancelled'].includes(item.originalStatus)) {
+              finalStatus = item.originalStatus;
+            } else {
+              // Otherwise set to in_progress (Active)
+              finalStatus = 'in_progress';
+            }
           }
 
           console.log('🛡️ Save Status Check:', {
@@ -1820,7 +1831,7 @@ const MenuOrderingInterface = () => {
                 ...((item.custom_note || item.mods?.custom_note) ? [`__NOTE__:${item.custom_note || item.mods.custom_note}`] : [])
               ],
               notes: item.notes || null,
-              item_status: item.isDelayed ? 'pending' : 'in_progress',
+              item_status: item.isDelayed ? 'held' : 'in_progress',
               course_stage: item.isDelayed ? 2 : 1
             };
           });
@@ -1847,6 +1858,50 @@ const MenuOrderingInterface = () => {
         console.log('☕ Original Coffee Count calculated:', originalCoffeeCount);
       }
 
+      // Check connectivity status early
+      const isOnline = navigator.onLine;
+
+      // --- 🆕 AUTO-SAVE CUSTOMER & ADDRESS (DELIVERY) ---
+      // Ensures that customers created/used in Delivery flow are saved to DB for future lookup
+      let finalCustomerId = customerId;
+
+      if (orderType === 'delivery' && isOnline && realPhone && customerNameForOrder) {
+        console.log('🚚 Delivery Order: Ensuring customer exists and saving address...');
+        try {
+          // 1. Create or Update Customer (returns UUID)
+          const { data: guaranteedId, error: custError } = await supabase.rpc('create_or_update_customer', {
+            p_business_id: currentUser?.business_id,
+            p_phone: realPhone,
+            p_name: customerNameForOrder,
+            p_id: finalCustomerId || null
+          });
+
+          if (custError) {
+            console.warn('⚠️ Failed to auto-create customer record:', custError);
+          } else if (guaranteedId) {
+            console.log('✅ Customer record secured:', guaranteedId);
+            finalCustomerId = guaranteedId;
+
+            // 2. Save Address to Customer Record (if provided)
+            if (deliveryAddress) {
+              const { error: addrError } = await supabase
+                .from('customers')
+                .update({
+                  delivery_address: deliveryAddress,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', guaranteedId);
+
+              if (addrError) console.warn('⚠️ Failed to save address to customer:', addrError);
+              else console.log('✅ Address saved to customer record');
+            }
+          }
+        } catch (err) {
+          console.error('❌ Error in customer auto-save flow:', err);
+        }
+      }
+      // ----------------------------------------------------
+
       // Build payload matching submit_order_v3 function signature exactly
       const client = supabase;
       const orderPayload = {
@@ -1854,7 +1909,7 @@ const MenuOrderingInterface = () => {
         p_customer_name: customerNameForOrder || 'אורח אנונימי',
         p_items: preparedItems,
         p_is_paid: orderData?.is_paid || false,
-        p_customer_id: customerId || null,
+        p_customer_id: finalCustomerId || null, // Updated ID
         p_payment_method: orderData?.payment_method || null,
         p_refund: isRefund,
         p_refund_amount: isRefund ? Number(originalTotalForRefund - finalTotal) : 0,
@@ -1877,6 +1932,14 @@ const MenuOrderingInterface = () => {
         p_delivery_notes: orderType === 'delivery' ? deliveryNotes : null
       };
 
+      console.log('📦 DELIVERY DEBUG:', {
+        type: orderPayload.p_order_type,
+        addressInState: deliveryAddress,
+        addressInPayload: orderPayload.p_delivery_address,
+        hasRealPhone: !!realPhone,
+        customerName: customerNameForOrder
+      });
+
       console.log('📤 Sending Order Payload:', JSON.stringify(orderPayload, null, 2));
       console.log('💰 p_final_total sent:', orderPayload.p_final_total); // <--- בדיקה קריטית
       console.log('  - Items count:', orderPayload.p_items?.length || 0);
@@ -1894,7 +1957,7 @@ const MenuOrderingInterface = () => {
       // OFFLINE-FIRST: Check if we're online before attempting to submit
       let orderResult = null;
       let orderError = null;
-      const isOnline = navigator.onLine;
+      // const isOnline = navigator.onLine; // Moved up
 
       if (isOnline) {
         // Online: Submit to Supabase normally
@@ -1947,7 +2010,7 @@ const MenuOrderingInterface = () => {
               price: item.price,
               mods: item.mods,
               notes: item.notes,
-              item_status: item.item_status || 'in_progress', // Shows in KDS
+              item_status: item.item_status || 'new', // Shows in KDS
               course_stage: item.course_stage || 1,
               created_at: new Date().toISOString()
             });
@@ -2064,10 +2127,8 @@ const MenuOrderingInterface = () => {
           // Even if we skip confirmation, if objects were changed (e.g. status) we might want active,
           // but usually skipConfirmation means no real preparation changes.
           // Let's check if items were ADDED just in case.
-          const itemsAdded = cartHistory.some(h => h.type === 'ADD_ITEM');
-          const targetView = itemsAdded ? 'active' : (editData?.viewMode || 'active');
-
-          navigate('/kds', { state: { viewMode: targetView } });
+          // User Request: Always return to active, even if no changes (History -> Active)
+          navigate('/kds', { state: { viewMode: 'active' } });
         } else {
           // OFFLINE FIX: Manual reset instead of reload
           clearOrderSessionState();
@@ -2145,7 +2206,7 @@ const MenuOrderingInterface = () => {
         isPaid: orderData?.is_paid ?? true,
         isEdit: isEditMode,
         // Pass info for navigation after close
-        navigationTarget: hasChanges ? 'active' : 'history'
+        navigationTarget: 'active'
       });
 
       // Background fetch order number
@@ -2253,10 +2314,10 @@ const MenuOrderingInterface = () => {
     <div className="min-h-screen bg-gray-50 font-heebo" dir="rtl">
 
       {/* Top Navigation Bar */}
-      <div className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 sticky top-0 z-30 shadow-sm">
+      <div className="bg-white border-b border-gray-200 flex items-center px-6 py-3 sticky top-0 z-30 shadow-sm">
 
         {/* Right Side Group (RTL): Home/Back Button + Sync */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-1">
           <button
             onClick={handleBack}
             className="flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 w-10 h-10 rounded-xl transition-all"
@@ -2297,20 +2358,17 @@ const MenuOrderingInterface = () => {
           </button>
         </div>
 
-        {/* Center: Mini Player & Connection Group */}
-        <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
-          <MiniMusicPlayer />
+        {/* Center - Clock & Connection Status */}
+        <div className="flex items-center gap-3 px-4">
+          <div className="text-lg font-black text-slate-700">
+            {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+          </div>
           <ConnectionStatusBar isIntegrated={true} />
         </div>
 
-        {/* Left Side Group (RTL): Logo or Title */}
-        <div className="flex flex-col items-start">
-          <div className="text-xl font-black text-slate-800 tracking-tight leading-none">
-            iCaffe Kiosk
-          </div>
-          <div className="text-[9px] font-mono text-slate-400 mt-0.5">
-            v{APP_VERSION}
-          </div>
+        {/* Left Side (RTL = far left): Music Player */}
+        <div className="flex items-center gap-2 flex-1 justify-end">
+          <MiniMusicPlayer />
         </div>
       </div>
 
@@ -2353,6 +2411,7 @@ const MenuOrderingInterface = () => {
             <MenuCategoryFilter
               activeCategory={activeCategory}
               onCategoryChange={handleCategoryChange}
+              categories={categories}
             />
           </div>
 
@@ -2439,7 +2498,7 @@ const MenuOrderingInterface = () => {
                 is_required: true,
                 is_multiple_select: false,
                 values: [
-                  { id: 'ready', name: 'קיבל מוכן (מהמדף)', priceAdjustment: 0 },
+                  { id: 'ready', name: 'קיבל מוכן (מהמדף)', priceAdjustment: 0, is_default: true },
                   { id: 'prep', name: 'דורש הכנה (הכן עכשיו)', priceAdjustment: 0 }
                 ]
               }]
@@ -2471,6 +2530,8 @@ const MenuOrderingInterface = () => {
             refundAmount={Math.abs(priceDifference)}
             originalPaymentMethod={editingOrderData?.paymentMethod}
             businessId={currentUser?.business_id}
+            customerName={currentCustomer?.name || ''} // 🆕 Pass Name
+            customerPhone={currentCustomer?.phone || editingOrderData?.customerPhone || ''} // 🆕 Pass Phone
           />
         );
       })()}

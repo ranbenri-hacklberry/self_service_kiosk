@@ -25,7 +25,8 @@ export const processInvoiceWithGemini = async (base64String, retryCount = 0) => 
     }
 
     // Try Gemini 3 Flash first, then fallback to 1.5 Flash if it fails
-    const modelName = retryCount > 0 ? "gemini-1.5-flash" : "gemini-3-flash-preview";
+    // Standard configuration: Flash for speed/cost, Pro for backup/accuracy
+    const modelName = retryCount > 0 ? "gemini-1.5-pro" : "gemini-1.5-flash";
     const model = genAI.getGenerativeModel({ model: modelName });
 
     const mimeMatch = base64String.match(/^data:([^;]+);base64,(.+)$/);
@@ -39,14 +40,20 @@ export const processInvoiceWithGemini = async (base64String, retryCount = 0) => 
 2. חלץ את **התאריך שמופיע על המסמך** (לא תאריך של היום!) - חפש תאריך ליד "תאריך:", "ת.משלוח", "תאריך הפקה" וכו'
 3. זהה את **שם הספק** בדיוק כפי שמופיע על המסמך (בראש המסמך, בלוגו, או בחותמת)
 
-שים לב לפרטים הקטנים: שמות פריטים בעברית כולל משקלים (למשל \"תות שדה קפוא 1 ק\"ג\"), כמותות ויחידות מידה.
+**המרת יחידות - קריטי!**
+המערכת שלנו עובדת בגרמים. אם המחיר בחשבונית הוא "לק\"ג" או "לקילו" או "ל-1 ק\"ג":
+- המר את המחיר מ-₪/ק"ג ל-₪/גרם על ידי חלוקה ב-1000
+- לדוגמה: 29₪ לק"ג → price: 0.029, unit: "גרם", price_source: "kg"
+- אם המחיר הוא ליחידה רגילה (פריט, קרטון, ליטר) - השאר כמו שהוא
 
 עבור כל פריט, ספק את השדות הבאים:
 - name: שם הפריט המלא בעברית (כולל משקל אם מופיע)
 - category: קטגוריה מתאימה (חלבי, ירקות, קפואים, פירות, יבשים, משקאות)
-- unit: יחידת מידה בדיוק כפי שמופיע (יח', ק\"ג, ליטר, קרטון, מארז)
-- quantity: הכמות המספרית בלבד
-- price: מחיר ליחידה אחת כמספר בלבד (ללא סמל ₪)
+- unit: יחידת מידה - אם המקור היה ק"ג, רשום "גרם"
+- quantity: הכמות המספרית - אם הכמות היתה בק"ג, המר לגרמים (x1000)
+- price: מחיר ליחידה אחת - אם המקור היה לק"ג, חלק ב-1000
+- price_source: "kg" אם המחיר המקורי היה לקילו, "unit" אם היה ליחידה
+- original_price_per_kg: המחיר המקורי לק"ג (רק אם price_source="kg")
 
 החזר **רק** אובייקט JSON תקין בפורמט הבא:
 {
@@ -56,7 +63,7 @@ export const processInvoiceWithGemini = async (base64String, retryCount = 0) => 
   "document_date": "YYYY-MM-DD (התאריך שמופיע על המסמך!)",
   "total_amount": 0,
   "items": [
-    { "name": "...", "category": "...", "unit": "...", "quantity": 0, "price": 0 }
+    { "name": "...", "category": "...", "unit": "גרם או יח' או ליטר", "quantity": 0, "price": 0, "price_source": "kg או unit", "original_price_per_kg": 0 }
   ]
 }`;
 

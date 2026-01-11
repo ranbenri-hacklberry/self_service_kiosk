@@ -173,10 +173,22 @@ export const useKDSDataLocal = () => {
                     // Check for KDS override in mods
                     let hasOverride = false;
                     const mods = item.mods;
-                    if (typeof mods === 'string' && mods.includes('__KDS_OVERRIDE__')) {
-                        hasOverride = true;
-                    } else if (Array.isArray(mods) && mods.includes('__KDS_OVERRIDE__')) {
-                        hasOverride = true;
+                    if (typeof mods === 'string') {
+                        if (mods.includes('__KDS_OVERRIDE__')) {
+                            hasOverride = true;
+                        } else {
+                            // Try parsing as JSON
+                            try {
+                                const parsed = JSON.parse(mods);
+                                if (parsed?.kds_override === true) hasOverride = true;
+                                if (Array.isArray(parsed) && parsed.includes('__KDS_OVERRIDE__')) hasOverride = true;
+                            } catch (e) { /* ignore */ }
+                        }
+                    } else if (Array.isArray(mods)) {
+                        if (mods.includes('__KDS_OVERRIDE__')) hasOverride = true;
+                    } else if (mods && typeof mods === 'object') {
+                        // Direct object check
+                        if (mods.kds_override === true) hasOverride = true;
                     }
 
                     // Routing logic

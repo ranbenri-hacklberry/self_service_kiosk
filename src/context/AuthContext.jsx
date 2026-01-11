@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
+import { supabase } from '../lib/supabase'; // 🆕 FIX: Import supabase client
 
 const AuthContext = createContext(null);
 
@@ -108,7 +109,7 @@ export const AuthProvider = ({ children }) => {
 
     // Load state from localStorage on mount with expiration check
     useEffect(() => {
-        const checkAuth = () => {
+        const checkAuth = async () => {
             console.log('🔐 AuthContext: Checking stored session...');
             const storedSession = localStorage.getItem('kiosk_user');
             const storedTime = localStorage.getItem('kiosk_auth_time');
@@ -121,7 +122,33 @@ export const AuthProvider = ({ children }) => {
 
                 if (hoursPassed < 18) {
                     try {
-                        const sessionUser = JSON.parse(storedSession);
+                        let sessionUser = JSON.parse(storedSession);
+
+                        // Fetch business_name if missing from stored session
+                        if (!sessionUser.business_name && sessionUser.business_id) {
+                            console.log('🏢 Fetching missing business_name for business_id:', sessionUser.business_id);
+                            try {
+                                const { data: businessData, error } = await supabase
+                                    .from('businesses')
+                                    .select('name')
+                                    .eq('id', sessionUser.business_id)
+                                    .single();
+
+                                console.log('🏢 Business fetch result:', { data: businessData, error });
+
+                                if (businessData?.name) {
+                                    sessionUser = { ...sessionUser, business_name: businessData.name };
+                                    // Update localStorage with enriched data
+                                    localStorage.setItem('kiosk_user', JSON.stringify(sessionUser));
+                                    console.log('✅ Business name saved:', businessData.name);
+                                }
+                            } catch (e) {
+                                console.warn('❌ Could not fetch business name for session:', e);
+                            }
+                        } else {
+                            console.log('🏢 Business name already present:', sessionUser.business_name);
+                        }
+
                         setCurrentUser(sessionUser);
 
                         // DEEP FIX: If accessing through icaffe domain, ensure we don't get stuck in old kiosk mode
@@ -282,9 +309,28 @@ export const AuthProvider = ({ children }) => {
         return () => clearInterval(midnightInterval);
     }, []);
 
-    const login = (employee) => {
-        setCurrentUser(employee);
-        localStorage.setItem('kiosk_user', JSON.stringify(employee));
+    const login = async (employee) => {
+        // If business_name is missing, fetch it from the database
+        let enrichedEmployee = { ...employee };
+
+        if (!employee.business_name && employee.business_id) {
+            try {
+                const { data: businessData } = await supabase
+                    .from('businesses')
+                    .select('name')
+                    .eq('id', employee.business_id)
+                    .single();
+
+                if (businessData?.name) {
+                    enrichedEmployee.business_name = businessData.name;
+                }
+            } catch (e) {
+                console.warn('Could not fetch business name:', e);
+            }
+        }
+
+        setCurrentUser(enrichedEmployee);
+        localStorage.setItem('kiosk_user', JSON.stringify(enrichedEmployee));
         localStorage.setItem('kiosk_auth_time', Date.now().toString());
 
         // Color force full sync on next background run
@@ -293,17 +339,77 @@ export const AuthProvider = ({ children }) => {
     };
 
     const logout = () => {
+        const originalAdminStr = localStorage.getItem('original_super_admin');
+
+        if (originalAdminStr) {
+            // RESTORE SUPER ADMIN SESSION
+            try {
+                const originalAdmin = JSON.parse(originalAdminStr);
+                console.log('🔙 Restoring Super Admin session:', originalAdmin.name);
+
+                setCurrentUser(originalAdmin);
+                localStorage.setItem('kiosk_user', originalAdminStr);
+                localStorage.setItem('kiosk_auth_time', Date.now().toString());
+
+                // Cleanup impersonation flags
+                localStorage.removeItem('original_super_admin');
+                localStorage.removeItem('return_to_super_portal');
+                localStorage.removeItem('last_full_sync'); // Clear sync state from the other business
+
+                window.location.href = '/super-admin';
+                return;
+            } catch (e) {
+                console.error('Failed to restore super admin', e);
+                // Fallthrough to normal logout
+            }
+        }
+
+        // Normal Logout
         setCurrentUser(null);
         setDeviceMode(null);
         localStorage.removeItem('kiosk_user');
         localStorage.removeItem('kiosk_auth_time');
         localStorage.removeItem('kiosk_mode');
         localStorage.removeItem('last_sync_time');
+        window.location.href = '/';
     };
 
     const setMode = (mode) => {
         setDeviceMode(mode);
         localStorage.setItem('kiosk_mode', mode);
+    };
+
+    const switchBusinessContext = (businessId, businessName) => {
+        if (!currentUser?.is_super_admin) {
+            console.error('Only super admins can switch business context');
+            return;
+        }
+
+        // Save original identity
+        localStorage.setItem('original_super_admin', JSON.stringify(currentUser));
+
+        const impersonatedUser = {
+            ...currentUser,
+            business_id: businessId,
+            access_level: 'Manager', // Elevate to manager
+            is_admin: true,
+            impersonating_business_name: businessName,
+            is_impersonating: true
+        };
+
+        console.log('🚀 Switching context to:', businessName);
+
+        setCurrentUser(impersonatedUser);
+        localStorage.setItem('kiosk_user', JSON.stringify(impersonatedUser));
+        localStorage.setItem('return_to_super_portal', 'true');
+
+        // Force sync for new business
+        localStorage.removeItem('last_full_sync');
+        localStorage.setItem('last_sync_time', Date.now().toString());
+
+        // Clear mode so they can choose
+        setDeviceMode(null);
+        localStorage.removeItem('kiosk_mode');
     };
 
     return (
@@ -313,6 +419,7 @@ export const AuthProvider = ({ children }) => {
             login,
             logout,
             setMode,
+            switchBusinessContext,
             isLoading,
             syncStatus,
             triggerSync,

@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { Search, Truck, Plus, X, ArrowRight, Package, Save, Check, RefreshCw, ChevronLeft, Trash2, Edit2, AlertTriangle, ChevronDown, ChevronUp, Clock, House, Camera, Upload, ScanLine } from 'lucide-react';
 import ConfirmationModal from '../../../components/ui/ConfirmationModal';
 import ConnectionStatusBar from '../../../components/ConnectionStatusBar';
+import BusinessInfoBar from '../../../components/BusinessInfoBar';
 import MiniMusicPlayer from '../../../components/music/MiniMusicPlayer';
 import TripleCheckCard from '../../../components/manager/TripleCheckCard';
 import { useInvoiceOCR } from '@/hooks/useInvoiceOCR';
@@ -30,6 +31,166 @@ const levenshteinDistance = (str1, str2) => {
         }
     }
     return dp[m][n];
+};
+
+// Scanning Animation with Pixar-style warehouse clerk images
+const SCANNING_STEPS = [
+    { title: 'מעלה תמונה...', subtitle: 'מכין את הקובץ לעיבוד', image: '/clerk_1.png' },
+    { title: 'מנתח חשבונית...', subtitle: 'AI סורק את המסמך', image: '/clerk_2.png' },
+    { title: 'מזהה פריטים...', subtitle: 'מחפש שמות מוצרים', image: '/clerk_3.png' },
+    { title: 'בודק כמויות...', subtitle: 'מתאים יחידות מידה', image: '/clerk_4.png' },
+    { title: 'מביא את החשבונית!', subtitle: 'עוד שנייה...', video: '/doginvoice.mp4' },
+];
+
+const ScanningAnimation = ({ isDataReady, onComplete }) => {
+    const [stepIndex, setStepIndex] = useState(0);
+    const [localProgress, setLocalProgress] = useState(0); // 0 to 100
+    const [hasReached95, setHasReached95] = useState(false);
+
+    const STEP_DURATION = 4000; // 4 seconds per step
+    const STEPS_COUNT = SCANNING_STEPS.length; // 5 steps
+
+    useEffect(() => {
+        // Continuous progress update
+        const startTime = Date.now();
+        const timer = setInterval(() => {
+            const elapsed = Date.now() - startTime;
+
+            // Calculate progress based on time
+            // Steps 1-4 (0-16s) -> 0-80%
+            // Step 5 (16-20s) -> 80-95%
+            let currentProgress = 0;
+            if (elapsed < 16000) {
+                currentProgress = (elapsed / 16000) * 80;
+                setStepIndex(Math.floor(elapsed / 4000));
+            } else if (elapsed < 20000) {
+                currentProgress = 80 + ((elapsed - 16000) / 4000) * 15;
+                setStepIndex(4);
+            } else {
+                currentProgress = 95;
+                setStepIndex(4);
+                setHasReached95(true);
+            }
+
+            setLocalProgress(prev => Math.max(prev, currentProgress));
+        }, 50);
+
+        return () => clearInterval(timer);
+    }, []);
+
+    // Handle finishing logic: jump from 95 to 100 when data is ready
+    useEffect(() => {
+        if (hasReached95 && isDataReady) {
+            // Smoothly move from 95 to 100 in 500ms
+            const start = localProgress;
+            const startTime = Date.now();
+            const finishTimer = setInterval(() => {
+                const elapsed = Date.now() - startTime;
+                const p = Math.min(1, elapsed / 500);
+                const nextProgress = start + (100 - start) * p;
+                setLocalProgress(nextProgress);
+
+                if (p >= 1) {
+                    clearInterval(finishTimer);
+                    setTimeout(onComplete, 200); // Small delay for UX
+                }
+            }, 30);
+            return () => clearInterval(finishTimer);
+        }
+    }, [hasReached95, isDataReady, onComplete]);
+
+    const currentStep = SCANNING_STEPS[stepIndex];
+
+    return (
+        <div className="h-full flex flex-col items-center justify-center">
+            {/* Warehouse Clerk Image or Video */}
+            <AnimatePresence mode="wait">
+                <motion.div
+                    key={stepIndex}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.4 }}
+                    className="mb-6"
+                >
+                    {currentStep.video ? (
+                        <div className="relative w-60 h-60 rounded-xl overflow-hidden bg-slate-50">
+                            <video
+                                src={currentStep.video}
+                                autoPlay
+                                muted
+                                playsInline
+                                className="w-full h-full object-cover scale-[1.15] brightness-105"
+                            />
+                            {/* Lighter gray overlay with higher transparency */}
+                            <div className="absolute inset-0 bg-slate-400/10 pointer-events-none" />
+                        </div>
+                    ) : (
+                        <div className="relative w-60 h-60 rounded-xl overflow-hidden bg-slate-50">
+                            <img
+                                src={currentStep.image}
+                                alt={currentStep.title}
+                                className="w-full h-full object-contain p-2"
+                            />
+                        </div>
+                    )}
+                </motion.div>
+            </AnimatePresence>
+
+            {/* Rotating Messages */}
+            <AnimatePresence mode="wait">
+                <motion.div
+                    key={stepIndex}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.3 }}
+                    className="text-center"
+                >
+                    <h3 className="text-xl font-black text-slate-800">{currentStep.title}</h3>
+                    <p className="text-sm text-gray-400 mt-2">{currentStep.subtitle}</p>
+                </motion.div>
+            </AnimatePresence>
+
+            {/* Progress Bar with Percentage */}
+            <div className="mt-8 flex flex-col items-center">
+                <div className="w-64 h-3 bg-gray-200 rounded-full overflow-hidden shadow-inner">
+                    <motion.div
+                        className="h-full bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 rounded-full"
+                        animate={{ width: `${localProgress}%` }}
+                        transition={{
+                            duration: 0.8,
+                            ease: [0.33, 1, 0.68, 1] // Organic cubic-out easing
+                        }}
+                    />
+                </div>
+                <div className="flex items-center gap-2 mt-3">
+                    <span className="text-lg font-black text-purple-600">
+                        {Math.round(localProgress)}%
+                    </span>
+                </div>
+            </div>
+
+            {/* Step indicator */}
+            <div className="flex gap-2 mt-6">
+                {SCANNING_STEPS.map((_, idx) => (
+                    <motion.div
+                        key={idx}
+                        className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${idx === stepIndex
+                            ? 'bg-purple-600'
+                            : idx < stepIndex
+                                ? 'bg-purple-400'
+                                : 'bg-gray-200'
+                            }`}
+                        animate={{
+                            scale: idx === stepIndex ? 1.4 : 1,
+                            backgroundColor: idx === stepIndex ? '#9333ea' : idx < stepIndex ? '#c084fc' : '#e2e8f0'
+                        }}
+                    />
+                ))}
+            </div>
+        </div>
+    );
 };
 
 const KDSInventoryScreen = ({ onExit }) => {
@@ -71,9 +232,18 @@ const KDSInventoryScreen = ({ onExit }) => {
     // 🆕 Scanner Modal State
     const [showScannerModal, setShowScannerModal] = useState(false);
     const [scannerStep, setScannerStep] = useState('choose'); // 'choose' | 'scanning' | 'results'
+    const [successMessage, setSuccessMessage] = useState(null); // { title: string, message: string }
 
     // ⚙️ Invoice OCR Hook
     const { scanInvoice, isProcessing: isScanning, error: scanError, ocrResult, imagePreview, resetOCR } = useInvoiceOCR();
+    const [uiScanning, setUiScanning] = useState(false);
+
+    // Sync uiScanning with isScanning but let it finish gracefully
+    useEffect(() => {
+        if (isScanning) {
+            setUiScanning(true);
+        }
+    }, [isScanning]);
 
     // 🆕 Triple-Check Receiving Session
     const [receivingSession, setReceivingSession] = useState(() => {
@@ -177,7 +347,19 @@ const KDSInventoryScreen = ({ onExit }) => {
 
             Object.values(draft).forEach(itemData => {
                 if (itemData.status === 'received' && itemData.qty > 0 && itemData.itemId) {
-                    updates.push(supabase.rpc('increment_stock', { p_item_id: itemData.itemId, p_delta: itemData.qty }));
+                    // FIX: Multiply by package size (weight_per_unit) to update inventory in base units
+                    const item = items.find(i => i.id === itemData.itemId);
+                    let multiplier = 1;
+                    if (item) {
+                        if (item.weight_per_unit > 0) {
+                            multiplier = item.weight_per_unit;
+                        } else if (['גרם', 'מ״ל', 'מ"ל'].includes(item.unit)) {
+                            multiplier = 1000; // Default factor for weight/volume if not explicit
+                        }
+                    }
+
+                    const actualQtyToAdd = itemData.qty * multiplier;
+                    updates.push(supabase.rpc('increment_stock', { p_item_id: itemData.itemId, p_delta: actualQtyToAdd }));
                 }
             });
 
@@ -224,10 +406,21 @@ const KDSInventoryScreen = ({ onExit }) => {
             setReceiptDrafts(prev => { const n = { ...prev }; delete n[orderId]; return n; });
             fetchIncomingOrders(); // Refresh list
             setSelectedOrderId(null);
+            setSuccessMessage({
+                title: 'הקבלה אושרה!',
+                message: 'המלאי עודכן וההזמנה נסגרה בהצלחה.'
+            });
 
         } catch (err) {
             console.error('Receipt processing failed:', err);
-            alert('שגיאה בעיבוד הקבלה');
+            setConfirmModal({
+                isOpen: true,
+                title: 'שגיאה',
+                message: 'אירעה שגיאה בעיבוד הקבלה. אנא נסה שנית.',
+                variant: 'danger',
+                confirmText: 'סגור',
+                onConfirm: () => setConfirmModal(prev => ({ ...prev, isOpen: false }))
+            });
         } finally {
             setSaving(false);
         }
@@ -264,6 +457,7 @@ const KDSInventoryScreen = ({ onExit }) => {
             const { data: suppliersData, error: supError } = await supabase
                 .from('suppliers')
                 .select('*')
+                .eq('business_id', currentUser.business_id)  // CRITICAL: Filter by business
                 .order('name');
 
             if (supError) throw supError;
@@ -340,6 +534,20 @@ const KDSInventoryScreen = ({ onExit }) => {
         const findBestCatalogMatch = (invoiceName) => {
             const normalizedInvoiceName = invoiceName.toLowerCase().trim();
 
+            // 0. PRIORITY CHECK: Match against existing inventory items' supplier_product_name
+            // This is the "Learning" feature - if we saved this invoice name before, we match it instantly!
+            const inventorySupplierNameMatch = items.find(i =>
+                i.supplier_product_name && (
+                    i.supplier_product_name.toLowerCase() === normalizedInvoiceName ||
+                    (i.supplier_product_name.length > 3 && normalizedInvoiceName.includes(i.supplier_product_name.toLowerCase()))
+                )
+            );
+
+            if (inventorySupplierNameMatch) {
+                console.log(`🎯 Found direct inventory match by supplier name: ${invoiceName} -> ${inventorySupplierNameMatch.name}`);
+                return { ...inventorySupplierNameMatch, inInventory: true };
+            }
+
             // 1. FIRST CHECK: Look for exact match in supplier catalog mappings
             const supplierMatch = supplierCatalog.find(sc =>
                 sc.supplier_name.toLowerCase() === normalizedInvoiceName ||
@@ -383,14 +591,19 @@ const KDSInventoryScreen = ({ onExit }) => {
 
             const stopWords = ['קילו', 'ק"ג', 'גרם', 'ליטר', 'מל', 'יח', 'יחידות', 'חבילה', 'ארגז', 'גדולות', 'קטנות'];
             const cleanName = normalizedInvoiceName
+                .replace(/[()\[\]{}]/g, '') // Remove brackets first
                 .replace(/\d+%/g, '')
                 .replace(/\d+\s?(גרם|קילו|ליטר|מל|kg|gr|ml|lt)/gi, '')
+                .replace(/['"״׳]/g, '') // Remove quotes
                 .replace(/\s+/g, ' ')
                 .trim();
 
             const invoiceTokens = cleanName.split(/[\s,.-]+/)
                 .filter(w => w.length > 1 && !stopWords.includes(w.toLowerCase()))
                 .map(w => w.toLowerCase());
+
+            // Log for debugging (only if not found or low score initially) or just once per batch
+            // console.log(`🔎 Matching for: "${normalizedInvoiceName}" (Clean: "${cleanName}") - Candidates: ${allPossibleItems.length}`);
 
             let bestMatch = null;
             let bestScore = 0;
@@ -405,6 +618,9 @@ const KDSInventoryScreen = ({ onExit }) => {
                 } else if (normalizedInvoiceName.includes(catalogName)) {
                     // Check if catalog name is contained in invoice name
                     itemScore = (catalogName.length / normalizedInvoiceName.length) * 80;
+                } else if (catalogName.includes(normalizedInvoiceName)) {
+                    // Check if invoice name is contained in catalog name (e.g. "Mango" inside "Frozen Mango 1kg")
+                    itemScore = (normalizedInvoiceName.length / catalogName.length) * 80;
                 } else {
                     // Tokenize catalog name
                     const catalogTokens = catalogName.split(/[\s,.-]+/)
@@ -420,7 +636,20 @@ const KDSInventoryScreen = ({ onExit }) => {
                     });
 
                     if (catalogTokens.length > 0 && matchingTokens > 0) {
-                        itemScore = (matchingTokens / catalogTokens.length) * 70;
+                        // Base score on percentage of catalog tokens matched
+                        const catalogCoverage = matchingTokens / catalogTokens.length;
+                        // ALSO check percentage of invoice tokens matched (Crucial for "Mango" -> "Storage - Mango")
+                        const invoiceCoverage = matchingTokens / invoiceTokens.length;
+
+                        // Use the better coverage to help match
+                        const bestCoverage = Math.max(catalogCoverage, invoiceCoverage);
+
+                        itemScore = bestCoverage * 75;
+
+                        // Boost if ALL invoice tokens are found in catalog (Strong indicator)
+                        if (invoiceCoverage >= 1.0) {
+                            itemScore += 20;
+                        }
                     }
                 }
 
@@ -455,7 +684,15 @@ const KDSInventoryScreen = ({ onExit }) => {
             const unitPrice = parseFloat(ocrItem.price || ocrItem.cost_per_unit || 0);
 
             // Try to match with catalog using fuzzy matching
-            const matchedItem = findBestCatalogMatch(name);
+            const matchedItem = findBestCatalogMatch(name); // Returns item object (Inventory or Global)
+
+            // ROBUST DETECTION: Check if it's really an inventory item
+            // Inventory IDs are Integers (e.g. 118574), Global IDs are UUIDs (e.g. "a0e...")
+            const isRealInventoryItem = matchedItem && (
+                matchedItem.inInventory === true ||
+                Number.isInteger(matchedItem.id) ||
+                (typeof matchedItem.id === 'string' && /^\d+$/.test(matchedItem.id))
+            );
 
             // Try to match with order items
             const matchedOrderItem = orderItems.find(oi =>
@@ -465,8 +702,12 @@ const KDSInventoryScreen = ({ onExit }) => {
                 name.includes(oi.name)
             );
 
-            const inventoryItemId = matchedItem?.inInventory ? matchedItem.id : (matchedOrderItem?.inventory_item_id || matchedItem?.inventory_item_id || null);
-            const catalogItemId = matchedItem?.inInventory ? matchedItem.catalog_item_id : (matchedItem?.id || matchedOrderItem?.catalog_item_id || null);
+            const inventoryItemId = isRealInventoryItem ? matchedItem.id : (matchedOrderItem?.inventory_item_id || matchedItem?.inventory_item_id || null);
+
+            // ALWAYS prefer catalog_item_id (UUID)
+            // If it's an inventory item, use its catalog_item_id field.
+            // If it's a global catalog item (isRealInventoryItem = false), then ITS OWN id is the catalog_item_id.
+            const catalogItemId = matchedItem?.catalog_item_id || (!isRealInventoryItem ? matchedItem?.id : null) || matchedOrderItem?.catalog_item_id || null;
 
             return {
                 id: ocrItem.id || `temp-${Date.now()}-${Math.random()}`,
@@ -481,8 +722,8 @@ const KDSInventoryScreen = ({ onExit }) => {
                 catalogItemId,
                 catalogItemName: matchedItem?.name || matchedOrderItem?.name || null,
                 isNew: !inventoryItemId && !catalogItemId,
-                orderedQty: matchedOrderItem?.qty || 0,
-                matchType: matchedItem ? (matchedItem.inInventory ? 'inventory' : 'catalog') : 'none'
+                orderedQty: orderId ? (matchedOrderItem?.qty || 0) : null,
+                matchType: matchedItem ? (isRealInventoryItem ? 'inventory' : 'catalog') : 'none'
             };
         });
 
@@ -560,10 +801,20 @@ const KDSInventoryScreen = ({ onExit }) => {
             }
         }
 
+        const finalSupplierId = supplierId || order?.supplier_id || supplier?.id;
+        console.log('🏪 Supplier assignment:', {
+            paramSupplierId: supplierId,
+            orderSupplierId: order?.supplier_id,
+            matchedSupplierId: supplier?.id,
+            matchedSupplierName: supplier?.name,
+            finalSupplierId,
+            ocrSupplierName: ocrData.supplier_name
+        });
+
         setReceivingSession({
             items: finalItems,
             orderId,
-            supplierId: supplierId || order?.supplier_id || supplier?.id,
+            supplierId: finalSupplierId,
             supplierName: supplier?.name || ocrData.supplier_name || order?.supplier_name || 'ספק לא מזוהה',
             supplierPhone: supplier?.phone || null,
             documentType,
@@ -630,15 +881,149 @@ const KDSInventoryScreen = ({ onExit }) => {
 
         setIsConfirmingReceipt(true);
         try {
-            const rpcItems = receivingSession.items
-                .filter(item => item.inventoryItemId || item.catalogItemId)
-                .map(item => ({
-                    inventory_item_id: item.inventoryItemId,
-                    catalog_item_id: item.catalogItemId,
-                    actual_qty: item.actualQty,
-                    invoiced_qty: item.invoicedQty,
-                    unit_price: item.unitPrice
+            // 1. 🧬 AUTO-CREATE: If items are matched to catalog (have catalogItemId) but not in inventory yet, create them!
+            const workingItems = [...receivingSession.items]; // Clone to modify locally
+
+            // DEBUG LOGGING - Stringified for visibility
+            console.log('🧐 DEBUG ITEMS BEFORE SAVE:', JSON.stringify(workingItems.map(i => ({
+                name: i.name,
+                invId: i.inventoryItemId,
+                catId: i.catalogItemId,
+                catName: i.catalogItemName,
+                isNew: i.isNew
+            })), null, 2));
+
+            // 0. 🚑 ID RECOVERY: If inventoryItemId is missing but we have a catalogItemName that matches a real inventory item, recover the ID!
+            workingItems.forEach(item => {
+                if (!item.inventoryItemId && !item.isNew) {
+                    // Method A: Try by catalogItemName (Standard link)
+                    let foundInInventory = null;
+                    if (item.catalogItemName) {
+                        foundInInventory = items.find(i => i.name === item.catalogItemName);
+                    }
+
+                    // Method B: Try by original item name (Often "200..." matches exactly what's in DB)
+                    if (!foundInInventory && item.name) {
+                        foundInInventory = items.find(i => i.name === item.name);
+                    }
+
+                    // Method C: Ultra-Fuzzy Name Match (Strip all garbage)
+                    if (!foundInInventory && item.name) {
+                        const normalizeForIdRecovery = (str) => (str || '').replace(/[\s\-\*\"\'\(\)\[\]]/g, '').toLowerCase();
+                        const searchNorm = normalizeForIdRecovery(item.name);
+
+                        foundInInventory = items.find(i =>
+                            normalizeForIdRecovery(i.name) === searchNorm ||
+                            normalizeForIdRecovery(i.supplier_product_name) === searchNorm
+                        );
+                    }
+
+                    if (foundInInventory) {
+                        console.log(`🚑 Recovered Inventory ID for "${item.name}": ${foundInInventory.id}`);
+                        item.inventoryItemId = foundInInventory.id;
+                        item.isNew = false;
+                    }
+                }
+            });
+
+            const itemsToCreate = workingItems.filter(item => item.catalogItemId && !item.inventoryItemId);
+
+            if (itemsToCreate.length > 0) {
+                console.log(`🔨 Creating ${itemsToCreate.length} missing inventory items from catalog matches...`);
+
+                // Create them one by one (or Promise.all)
+                await Promise.all(itemsToCreate.map(async (item) => {
+                    try {
+                        let validCatalogId = item.catalogItemId;
+
+                        // DATA SANITIZATION: Validate UUID format
+                        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                        if (!uuidRegex.test(validCatalogId)) {
+                            console.warn(`⚠️ Invalid UUID for creation: ${validCatalogId}. Trying to find real UUID from global catalog...`);
+                            // Try to find correct UUID from globalCatalog cache
+                            let realCatalogItem = globalCatalog.find(gc => gc.name === item.catalogItemName || gc.name === item.name);
+
+                            // If not in cache, try fetching from DB directly!
+                            if (!realCatalogItem) {
+                                console.log(`🕵️ Not in cache, searching DB for catalog item: "${item.catalogItemName || item.name}"...`);
+                                const { data: dbItem } = await supabase
+                                    .from('catalog_items')
+                                    .select('id')
+                                    .or(`name.eq."${item.catalogItemName}",name.eq."${item.name}"`)
+                                    .maybeSingle(); // Use maybeSingle to avoid error if not found
+
+                                if (dbItem) realCatalogItem = dbItem;
+                            }
+
+                            if (realCatalogItem && realCatalogItem.id) {
+                                validCatalogId = realCatalogItem.id;
+                                console.log(`✅ Found valid UUID locally/remotely for ${item.name}: ${validCatalogId}`);
+                            } else {
+                                console.error(`❌ Could not find valid UUID for ${item.name} in global catalog. Skipping creation.`);
+                                return; // Skip this one to avoid error
+                            }
+                        }
+
+                        // FINAL CHECK: If still not a valid UUID, DO NOT CALL RPC
+                        if (!validCatalogId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(validCatalogId)) {
+                            console.error(`⛔ Aborting creation for ${item.name} - Invalid UUID: ${validCatalogId}`);
+                            return;
+                        }
+
+                        // Use RPC to bypass RLS restrictions
+                        const { data: newItemId, error } = await supabase
+                            .rpc('create_missing_inventory_item', {
+                                p_business_id: currentUser.business_id,
+                                p_catalog_item_id: validCatalogId,
+                                p_name: item.catalogItemName || item.name,
+                                p_unit: item.unit || 'יח׳',
+                                p_cost_per_unit: item.catalogPrice || 0,
+                                p_supplier_id: receivingSession.supplierId || null
+                            });
+
+                        if (error) throw error;
+
+                        if (newItemId) {
+                            console.log(`✅ Created inventory item for "${item.name}" -> ID: ${newItemId}`);
+                            item.inventoryItemId = newItemId;
+                            item.isNew = false; // It's now an existing item
+                        }
+                    } catch (err) {
+                        console.error(`❌ Failed to create inventory item for ${item.name}:`, err);
+                    }
                 }));
+            }
+
+            // 2. Filter valid items (Must have inventoryItemId now)
+            // Still skip truly unknown items (no catalog match AND no inventory match)
+            const validItems = workingItems.filter(item => item.inventoryItemId);
+            const skippedItems = workingItems.filter(item => !item.inventoryItemId);
+
+            console.log('🔍 Processing Summary:', {
+                total: workingItems.length,
+                created: itemsToCreate.length,
+                valid: validItems.length,
+                skipped: skippedItems.length
+            });
+
+            if (skippedItems.length > 0) {
+                console.warn(`⚠️ Skipping ${skippedItems.length} unrecognized items (no catalog match):`, skippedItems.map(i => i.name));
+            }
+
+            if (validItems.length === 0) {
+                alert('⚠️ לא נמצאו פריטים מזוהים לעדכון. המערכת לא הצליחה לזהות או ליצור פריטי מלאי.');
+                setIsConfirmingReceipt(false);
+                return;
+            }
+
+            // Build RPC items list
+            const rpcItems = validItems.map(item => ({
+                inventory_item_id: item.inventoryItemId,
+                catalog_item_id: item.catalogItemId,
+                actual_qty: item.actualQty,
+                invoiced_qty: item.invoicedQty,
+                unit_price: item.unitPrice
+            }));
 
             const { data, error } = await supabase.rpc('receive_inventory_shipment', {
                 p_items: rpcItems,
@@ -685,14 +1070,34 @@ const KDSInventoryScreen = ({ onExit }) => {
                 console.log(`💾 Saved ${mappingsToSave.length} item mappings for future matching`);
             }
 
+            // 🧠 NEW: Learn supplier names for existing items (Direct Inventory Match)
+            // 🧠 NEW: Learn supplier names for ALL processed items (Direct Inventory Match)
+            // Use 'validItems' which includes newly created items with their IDs
+            const existingItemsToLearn = validItems.filter(item => item.inventoryItemId && item.name);
+
+            if (existingItemsToLearn.length > 0) {
+                console.log(`🧠 Learning ${existingItemsToLearn.length} supplier product names for existing items...`);
+                for (const item of existingItemsToLearn) {
+                    await supabase.from('inventory_items')
+                        .update({ supplier_product_name: item.name })
+                        .eq('id', item.inventoryItemId);
+                }
+            }
+
             if (data?.success) {
+                const skippedCount = skippedItems.length;
                 setReceivingSession(null);
                 setShowScannerModal(false);
                 setScannerStep('choose');
                 resetOCR();
                 await fetchData();
                 await fetchIncomingOrders();
-                alert(`✅ קבלה אושרה! ${data.items_processed} פריטים עודכנו`);
+
+                // Show Success Modal instead of alert
+                setSuccessMessage({
+                    title: 'הקבלה נקלטה בהצלחה!',
+                    message: `${data.items_processed} פריטים עודכנו במלאי.${skippedCount > 0 ? ` (${skippedCount} לא זוהו)` : ''}`
+                });
             } else {
                 throw new Error(data?.error || 'Unknown error');
             }
@@ -743,6 +1148,9 @@ const KDSInventoryScreen = ({ onExit }) => {
 
     const supplierGroups = useMemo(() => {
         const groups = {};
+        // Build a Set of valid supplier IDs for quick lookup
+        const validSupplierIds = new Set(suppliers.map(s => s.id));
+
         suppliers.forEach(s => {
             groups[s.id] = {
                 id: s.id,
@@ -755,9 +1163,17 @@ const KDSInventoryScreen = ({ onExit }) => {
         groups['uncategorized'] = { id: 'uncategorized', name: 'כללי / ללא ספק', supplier: { id: 'uncategorized', name: 'כללי / ללא ספק' }, count: 0, isToday: false };
 
         items.forEach(item => {
-            const supId = item.supplier_id || 'uncategorized';
+            let supId = item.supplier_id || 'uncategorized';
+
+            // CRITICAL FIX: If supplier_id exists but is NOT in our valid suppliers list,
+            // treat it as uncategorized to prevent phantom supplier groups
+            if (supId !== 'uncategorized' && !validSupplierIds.has(supId)) {
+                console.warn(`⚠️ [KDS] Item "${item.name}" (id=${item.id}) has invalid supplier_id=${supId}. Moving to uncategorized.`);
+                supId = 'uncategorized';
+            }
+
             if (groups[supId]) groups[supId].count++;
-            else if (groups['uncategorized']) groups['uncategorized'].count++;
+            else groups['uncategorized'].count++;
         });
 
         return Object.values(groups)
@@ -771,19 +1187,61 @@ const KDSInventoryScreen = ({ onExit }) => {
 
     const filteredItems = useMemo(() => {
         if (!selectedSupplierId) return [];
-        return items.filter(i => (i.supplier_id || 'uncategorized') === selectedSupplierId)
-            .filter(i => !search || i.name.toLowerCase().includes(search.toLowerCase()));
-    }, [items, selectedSupplierId, search]);
+
+        // Build valid supplier IDs set (same logic as supplierGroups)
+        const validSupplierIds = new Set(suppliers.map(s => s.id));
+
+        return items.filter(i => {
+            let itemSupId = i.supplier_id || 'uncategorized';
+            // If supplier_id is invalid, treat as uncategorized
+            if (itemSupId !== 'uncategorized' && !validSupplierIds.has(itemSupId)) {
+                itemSupId = 'uncategorized';
+            }
+            return itemSupId === selectedSupplierId;
+        }).filter(i => !search || i.name.toLowerCase().includes(search.toLowerCase()));
+    }, [items, selectedSupplierId, search, suppliers]);
 
 
-    // Handle Local Stock Change
+    // Handle Local Stock Change with Smart Rounding
+    // First step snaps to the nearest grid multiple, then continues in even steps
     const handleStockChange = (itemId, change) => {
+        const item = items.find(i => i.id === itemId);
+        if (!item) return;
+
+        const step = Math.abs(change); // The step size (e.g., 500 for grams)
+        const isIncrement = change > 0;
+
         setStockUpdates(prev => {
             const currentVal = prev[itemId] !== undefined
                 ? prev[itemId]
-                : (items.find(i => i.id === itemId)?.current_stock || 0);
+                : (item.current_stock || 0);
 
-            const newVal = Math.max(0, currentVal + change);
+            let newVal;
+
+            // Check if current value is already on a step multiple
+            const epsilon = 0.001; // For floating point comparison
+            const isOnGrid = Math.abs(currentVal % step) < epsilon || Math.abs((currentVal % step) - step) < epsilon;
+
+            if (isOnGrid) {
+                // Already on grid, just add/subtract the step
+                newVal = currentVal + change;
+            } else {
+                // Not on grid - snap to nearest grid point in the direction of change
+                if (isIncrement) {
+                    // Snap UP to next grid point
+                    newVal = Math.ceil(currentVal / step) * step;
+                } else {
+                    // Snap DOWN to previous grid point
+                    newVal = Math.floor(currentVal / step) * step;
+                }
+            }
+
+            // Ensure we don't go below 0
+            newVal = Math.max(0, newVal);
+
+            // Round to 2 decimal places to avoid floating point issues
+            newVal = Math.round(newVal * 100) / 100;
+
             return { ...prev, [itemId]: newVal };
         });
     };
@@ -882,37 +1340,78 @@ const KDSInventoryScreen = ({ onExit }) => {
                     {filteredItems.map(item => {
                         const currentStock = stockUpdates[item.id] !== undefined ? stockUpdates[item.id] : item.current_stock;
                         const isChanged = stockUpdates[item.id] !== undefined && stockUpdates[item.id] !== item.current_stock;
-                        const price = item.cost_per_unit > 0 ? `₪${item.cost_per_unit}` : null;
+
+                        // Get package size from weight_per_unit (e.g., 1000 for 1kg/1L items)
+                        const packageSize = item.weight_per_unit || 1000; // Default 1000 (1 kg or 1 liter)
+                        // Determine Step Size
+                        // 1. Use explicit DB step if defined
+                        // 2. If 'single unit' (packageSize=1), step by 1
+                        // 3. Otherwise (weight/volume), step by half package (0.5)
+                        let countStep;
+                        if (item.count_step && item.count_step > 0) {
+                            countStep = item.count_step;
+                        } else if (packageSize === 1) {
+                            countStep = 1;
+                        } else {
+                            countStep = packageSize * 0.5;
+                        }
+
+                        // Smart Price Display - show per package (per kg/per liter)
+                        let priceDisplay = null;
+                        if (item.cost_per_unit > 0) {
+                            if (item.unit === 'גרם' || item.unit === 'מ״ל') {
+                                // Price per package (kg or liter)
+                                const pricePerPackage = (item.cost_per_unit * packageSize).toFixed(2);
+                                const unitLabel = item.unit === 'גרם' ? 'ק״ג' : 'ליטר';
+                                priceDisplay = `₪${pricePerPackage}/${unitLabel}`;
+                            } else {
+                                priceDisplay = `₪${item.cost_per_unit}`;
+                            }
+                        }
+
+                        // Convert to package units for display
+                        const stockInPackageUnits = currentStock / packageSize;
+
+                        // Worker display: Round to nearest 0.5
+                        const roundToHalf = (num) => Math.round(num * 2) / 2;
+                        const displayStock = roundToHalf(stockInPackageUnits);
+
+                        // Determine display unit label
+                        let displayUnit = item.unit;
+                        if (item.unit === 'גרם') displayUnit = 'ק״ג';
+                        else if (item.unit === 'מ״ל') displayUnit = 'ליטר';
 
                         return (
                             <div key={item.id} className="bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between hover:border-blue-300 transition-colors group">
                                 <div className="flex items-center gap-4 flex-1">
                                     <div className="flex flex-col">
                                         <h4 className="font-bold text-slate-800 text-sm leading-tight">{item.name}</h4>
-                                        <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
-                                            <span>{item.unit}</span>
-                                            {price && <span className="text-green-600 bg-green-50 px-1.5 rounded font-bold">{price}</span>}
-                                        </div>
+                                        {item.location && (
+                                            <div className="flex items-center gap-1 text-xs text-amber-600 mt-0.5">
+                                                <span>📍</span>
+                                                <span>{item.location}</span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
                                 <div className="flex items-center gap-3">
                                     <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
                                         <button
-                                            onClick={() => handleStockChange(item.id, -1)}
+                                            onClick={() => handleStockChange(item.id, -countStep)}
                                             className="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-500 hover:text-red-500 hover:bg-red-50 transition active:scale-95"
                                         >
                                             <span className="text-xl font-bold leading-none mb-1">-</span>
                                         </button>
 
-                                        <div className="w-12 text-center">
-                                            <span className={`font-mono text-xl font-black ${isChanged ? 'text-blue-600' : 'text-slate-700'}`}>
-                                                {currentStock}
+                                        <div className="w-16 text-center">
+                                            <span className={`font-mono text-lg font-black ${isChanged ? 'text-blue-600' : 'text-slate-700'}`}>
+                                                {displayStock}
                                             </span>
                                         </div>
 
                                         <button
-                                            onClick={() => handleStockChange(item.id, 1)}
+                                            onClick={() => handleStockChange(item.id, countStep)}
                                             className="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-500 hover:text-green-600 hover:bg-green-50 transition active:scale-95"
                                         >
                                             <Plus size={16} strokeWidth={3} />
@@ -936,10 +1435,12 @@ const KDSInventoryScreen = ({ onExit }) => {
                             </div>
                         );
                     })}
+
                     {filteredItems.length === 0 && (
                         <div className="col-span-2 text-center py-20 text-gray-400">
                             <p>לא נמצאו פריטים</p>
                         </div>
+
                     )}
                 </div>
             )}
@@ -949,52 +1450,47 @@ const KDSInventoryScreen = ({ onExit }) => {
     return (
         <div className="h-full flex flex-col bg-slate-50 font-heebo" dir="rtl">
             {/* Header & Tabs - Single Line Layout */}
-            <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-3 flex items-center justify-between border-b border-gray-200 gap-6">
+            <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-3 flex items-center border-b border-gray-200 gap-6">
 
-                {/* Right Side: Home | Search */}
-                <div className="flex items-center gap-3">
+                {/* Right Side: Home + Tabs */}
+                <div className="flex items-center gap-3 flex-1">
                     {/* Home button - rightmost in RTL */}
                     {onExit && (
                         <button
                             onClick={onExit}
-                            className="p-2 -mr-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
                             title="יציאה למסך הראשי"
                         >
                             <House size={22} />
                         </button>
                     )}
 
-                    {/* Search Bar - Compact */}
-                    <div className="relative w-64">
-                        <Search className="absolute top-1/2 -translate-y-1/2 right-3 text-gray-400 w-4 h-4" />
-                        <input
-                            type="text"
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="חיפוש..."
-                            className="w-full pl-4 pr-10 py-2 rounded-xl bg-gray-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm transition-all shadow-sm"
-                        />
+                    {/* Tabs */}
+                    <div className="flex bg-gray-100 p-1 rounded-xl shrink-0">
+                        <button onClick={() => setActiveTab('counts')} className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${activeTab === 'counts' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                            <Package size={18} /> ספירה ודיווח
+                        </button>
+                        <button onClick={() => setActiveTab('incoming')} className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${activeTab === 'incoming' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                            <Truck size={18} /> משלוחים בדרך
+                            {incomingOrders.length > 0 && <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-xs">{incomingOrders.length}</span>}
+                        </button>
+                        <button onClick={fetchData} className="px-3 text-gray-400 hover:text-blue-500 transition ml-1" title="רענן נתונים">
+                            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+                        </button>
                     </div>
                 </div>
 
-                {/* Center: Connection Status */}
-                <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
-                    <MiniMusicPlayer />
+                {/* Center - Clock & Connection */}
+                <div className="flex items-center gap-3 px-4">
+                    <div className="text-lg font-black text-slate-700">
+                        {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
                     <ConnectionStatusBar isIntegrated={true} />
                 </div>
 
-                {/* Left Side: Tabs / Actions */}
-                <div className="flex bg-gray-100 p-1 rounded-xl shrink-0">
-                    <button onClick={() => setActiveTab('counts')} className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${activeTab === 'counts' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                        <Package size={18} /> ספירה ודיווח
-                    </button>
-                    <button onClick={() => setActiveTab('incoming')} className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${activeTab === 'incoming' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                        <Truck size={18} /> משלוחים בדרך
-                        {incomingOrders.length > 0 && <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-xs">{incomingOrders.length}</span>}
-                    </button>
-                    <button onClick={fetchData} className="px-3 text-gray-400 hover:text-blue-500 transition ml-1" title="רענן נתונים">
-                        <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-                    </button>
+                {/* Left Side (RTL = far left): Music */}
+                <div className="flex items-center gap-2 flex-1 justify-end">
+                    <MiniMusicPlayer />
                 </div>
             </div>
 
@@ -1177,19 +1673,21 @@ const KDSInventoryScreen = ({ onExit }) => {
                             {/* Center Column: Triple-Check OR Order Details */}
                             <div className="w-2/3 h-full bg-slate-50/50 p-4 overflow-hidden flex flex-col">
                                 {/* Scanning State */}
-                                {isScanning && (
-                                    <div className="h-full flex flex-col items-center justify-center">
-                                        <div className="relative mb-6">
-                                            <div className="w-24 h-24 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
-                                            <div className="absolute inset-0 flex items-center justify-center"><ScanLine size={32} className="text-purple-600" /></div>
-                                        </div>
-                                        <h3 className="text-xl font-black text-slate-800">סורק חשבונית...</h3>
-                                        <p className="text-sm text-gray-400 mt-2">AI מזהה פריטים ומחירים</p>
-                                    </div>
+                                {uiScanning && (
+                                    <ScanningAnimation
+                                        isDataReady={!isScanning && (!!ocrResult || !!scanError)}
+                                        onComplete={() => {
+                                            setUiScanning(false);
+                                            // Skip identified screen and go straight to session
+                                            if (ocrResult && !receivingSession && !scanError) {
+                                                initializeReceivingSession(ocrResult, selectedOrderId, null, imagePreview);
+                                            }
+                                        }}
+                                    />
                                 )}
 
                                 {/* Triple-Check Active */}
-                                {!isScanning && receivingSession && (
+                                {!uiScanning && receivingSession && (
                                     <div className="h-full flex flex-col">
                                         {/* Header */}
                                         <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm mb-4 shrink-0">
@@ -1238,23 +1736,32 @@ const KDSInventoryScreen = ({ onExit }) => {
                                         {/* Footer - Total & Actions */}
                                         <div className="shrink-0 space-y-4 pt-4 border-t border-gray-200 bg-white -mx-4 px-4 sticky bottom-0">
                                             {/* Compact Summary Grid aligned with Cards */}
-                                            <div className="grid grid-cols-[3fr_80px_80px_130px_1fr] gap-3 items-start px-3 py-2 bg-slate-50 rounded-xl border border-slate-200">
+                                            <div className={`grid ${receivingSession.orderId ? 'grid-cols-[3fr_80px_80px_130px_1fr]' : 'grid-cols-[3fr_80px_130px_1fr]'} gap-3 items-start px-3 py-2 bg-slate-50 rounded-xl border border-slate-200`}>
                                                 {/* Col 1: Counts */}
                                                 <div className="text-right">
-                                                    <span className="text-[10px] font-bold text-slate-400 uppercase block">שורות</span>
-                                                    <span className="font-black text-sm text-slate-700">{receivingSession.items.length} פריטים</span>
+                                                    <span className="font-black text-sm text-slate-700 block">
+                                                        {receivingSession.items.length} שורות
+                                                    </span>
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase">
+                                                        {(() => {
+                                                            const totalUnits = receivingSession.items.reduce((sum, i) => sum + (Math.round((i.actualQty || 0) / (i.countStep || 1) * 100) / 100), 0);
+                                                            return totalUnits % 1 === 0 ? totalUnits : totalUnits.toFixed(1);
+                                                        })()} יחידות
+                                                    </span>
                                                 </div>
 
                                                 {/* Col 2: Ordered Total */}
-                                                <div className="text-center">
-                                                    <span className="text-[10px] font-bold text-slate-400 uppercase block">הוזמן</span>
-                                                    <span className="font-black text-sm text-slate-600">
-                                                        {(() => {
-                                                            const total = receivingSession.items.reduce((sum, i) => sum + (i.orderedQty || 0), 0);
-                                                            return total % 1 === 0 ? total : total.toFixed(1);
-                                                        })()}
-                                                    </span>
-                                                </div>
+                                                {receivingSession.orderId && (
+                                                    <div className="text-center">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase block">הוזמן</span>
+                                                        <span className="font-black text-sm text-slate-600">
+                                                            {(() => {
+                                                                const total = receivingSession.items.reduce((sum, i) => sum + (i.orderedQty || 0), 0);
+                                                                return total % 1 === 0 ? total : total.toFixed(1);
+                                                            })()}
+                                                        </span>
+                                                    </div>
+                                                )}
 
                                                 {/* Col 3: Invoice Total Qty */}
                                                 <div className="text-center">
@@ -1288,15 +1795,6 @@ const KDSInventoryScreen = ({ onExit }) => {
                                                                 return total % 1 === 0 ? total : total.toFixed(2);
                                                             })()}
                                                         </span>
-                                                        {(() => {
-                                                            const calculatedSum = receivingSession.items.reduce((sum, i) => sum + (i.invoicedQty * i.unitPrice), 0);
-                                                            const hasVariance = receivingSession.totalInvoiced && Math.abs(receivingSession.totalInvoiced - calculatedSum) > 0.1;
-                                                            return hasVariance ? (
-                                                                <span className="text-[8px] text-amber-600 font-bold mt-0.5" title="סכום שורות מחושב">
-                                                                    (שורות: ₪{calculatedSum % 1 === 0 ? calculatedSum : calculatedSum.toFixed(2)})
-                                                                </span>
-                                                            ) : null;
-                                                        })()}
                                                     </div>
                                                 </div>
                                             </div>
@@ -1341,22 +1839,6 @@ const KDSInventoryScreen = ({ onExit }) => {
                                     </div>
                                 )}
 
-                                {!isScanning && !receivingSession && ocrResult && !scanError && (
-                                    <div className="h-full flex flex-col items-center justify-center">
-                                        <div className="w-20 h-20 mx-auto bg-green-100 rounded-2xl flex items-center justify-center mb-6">
-                                            <Check size={40} className="text-green-600" />
-                                        </div>
-                                        <h3 className="text-3xl font-black text-slate-800 mb-3">סריקה הושלמה!</h3>
-                                        <p className="text-gray-500 mb-6">זוהו {ocrResult?.items?.length || 0} פריטים</p>
-                                        <button
-                                            onClick={() => initializeReceivingSession(ocrResult, selectedOrderId, null, imagePreview)}
-                                            className="px-8 py-4 bg-purple-600 text-white rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-purple-700 shadow-lg transition-all"
-                                        >
-                                            <Package size={24} />
-                                            התחל אימות קבלה
-                                        </button>
-                                    </div>
-                                )}
 
                                 {/* Default: Show order details OR empty state */}
                                 {!isScanning && !receivingSession && !ocrResult && (
@@ -1541,6 +2023,38 @@ const KDSInventoryScreen = ({ onExit }) => {
                                 className="absolute top-4 right-4 p-3 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
                             >
                                 <X size={24} className="text-slate-800" />
+                            </button>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Success Modal */}
+            <AnimatePresence>
+                {successMessage && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.9, y: 20 }}
+                            className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center relative overflow-hidden"
+                        >
+                            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-green-400 to-emerald-500" />
+                            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600 shadow-inner">
+                                <Check size={40} strokeWidth={3} />
+                            </div>
+                            <h2 className="text-2xl font-black text-slate-800 mb-2">{successMessage.title}</h2>
+                            <p className="text-gray-500 mb-6 font-medium leading-relaxed">{successMessage.message}</p>
+                            <button
+                                onClick={() => setSuccessMessage(null)}
+                                className="w-full py-3.5 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-700 transition-all shadow-lg shadow-slate-200 active:scale-95"
+                            >
+                                מעולה, תודה!
                             </button>
                         </motion.div>
                     </motion.div>

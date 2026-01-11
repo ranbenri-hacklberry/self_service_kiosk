@@ -24,7 +24,8 @@ export function DraggableOrderCard({
     onEditOrder,
     onMarkSeen,
     onReadyItems, // 🆕 For packing toggle
-    onSmsClick
+    onSmsClick,
+    isDriverView = false // 🆕
 }) {
     const {
         attributes,
@@ -41,7 +42,6 @@ export function DraggableOrderCard({
     const handleStatusUpdate = async (id, currentStatus) => {
         let targetStatus = currentStatus;
 
-        // Transition logic specifically for Kanban flow
         // Transition logic specifically for Kanban flow - Unified names
         if (currentStatus === 'pending') targetStatus = 'new';
         else if (currentStatus === 'new') targetStatus = 'in_progress';
@@ -79,6 +79,8 @@ export function DraggableOrderCard({
         }
 
         console.log('🖱️ [DraggableOrderCard] Card background clicked', { id: order.id, status: order.order_status });
+
+        // 1. Mark as seen if needed
         if (isUnseen && onMarkSeen) {
             onMarkSeen(order.id);
         }
@@ -104,14 +106,14 @@ export function DraggableOrderCard({
 
             <OrderCard
                 order={order}
-                isReady={order.order_status === 'ready'}
-                isHistory={order.order_status === 'delivered'}
-                isKanban={true} // 🆕 Enable specialized Kanban/Packing UI
-                onOrderStatusUpdate={handleStatusUpdate}
+                isKanban={true}
+                glowClass={isDragging ? 'shadow-lg' : ''}
+                onOrderStatusUpdate={onOrderStatusUpdate}
                 onPaymentCollected={onPaymentCollected}
                 onEditOrder={onEditOrder}
-                onReadyItems={onReadyItems} // 🆕 Enable packing toggle
+                onReadyItems={onReadyItems}
                 onSmsClick={onSmsClick}
+                isDriverView={isDriverView}
             />
         </div>
     );

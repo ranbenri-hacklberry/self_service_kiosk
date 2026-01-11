@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './SplashScreen.css';
 import { supabase } from '../lib/supabase';
+import { initialLoad } from '../services/syncService';
 
 const SplashScreen = ({ onFinish }) => {
     const [minTimePassed, setMinTimePassed] = useState(false);
     const [authChecked, setAuthChecked] = useState(false);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [imageLoaded, setImageLoaded] = useState(false);
+    const [syncComplete, setSyncComplete] = useState(false);
+    const [statusText, setStatusText] = useState('');
 
     // Track if we've already triggered finish to prevent double calls
     const finishTriggered = useRef(false);
@@ -19,30 +22,69 @@ const SplashScreen = ({ onFinish }) => {
             setMinTimePassed(true);
         }, 2000);
 
-        // 2. Check Authentication
-        const checkAuth = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            console.log('👤 Auth check result:', user ? 'Logged In' : 'Guest');
-            if (user) setIsAuthenticated(true);
-            setAuthChecked(true);
+        // 2. Check Authentication & Perform Daily Sync
+        const checkAuthAndSync = async () => {
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                console.log('👤 Auth check result:', user ? 'Logged In' : 'Guest');
+
+                if (user) {
+                    setIsAuthenticated(true);
+                    setStatusText('מזהה משתמש...');
+
+                    // Attempt to get business_id
+                    let businessId = user.user_metadata?.business_id;
+                    if (!businessId) {
+                        try {
+                            const { data: emp } = await supabase.from('employees')
+                                .select('business_id')
+                                .eq('auth_user_id', user.id)
+                                .maybeSingle();
+                            if (emp) businessId = emp.business_id;
+                        } catch (e) {
+                            console.warn('Failed to fetch employee record:', e);
+                        }
+                    }
+
+                    if (businessId) {
+                        setStatusText('מבצע סנכרון יומי...');
+                        try {
+                            // Perform Sync
+                            await initialLoad(businessId, (table, count, percent) => {
+                                setStatusText(`מסנכרן ${table} (${percent}%)...`);
+                            });
+                            setStatusText('הסנכרון הושלם בהצלחה!');
+                        } catch (syncErr) {
+                            console.error('Initial sync failed:', syncErr);
+                            setStatusText('שגיאה בסנכרון (ממשיך...)');
+                        }
+                    } else {
+                        setStatusText('לא נמצא עסק מקושר');
+                    }
+                }
+            } catch (err) {
+                console.error('Auth check error:', err);
+            } finally {
+                setAuthChecked(true);
+                setSyncComplete(true);
+            }
         };
-        checkAuth();
+
+        checkAuthAndSync();
 
         return () => clearTimeout(timer);
     }, []);
 
-    // 3. Coordinate Finish (Auto-redirect for EVERYONE)
+    // 3. Coordinate Finish (Auto-redirect)
     useEffect(() => {
-        if (minTimePassed && authChecked && !finishTriggered.current) {
+        if (minTimePassed && authChecked && syncComplete && !finishTriggered.current) {
             finishTriggered.current = true;
             // Short delay for visual polish (let the cup animation settle)
             setTimeout(() => {
                 onFinish();
             }, 500);
         }
-    }, [minTimePassed, authChecked, onFinish]);
-
-    const showButton = false; // Button is now permanently removed
+    }, [minTimePassed, authChecked, syncComplete, onFinish]);
 
     return (
         <div className="splash-container">
@@ -78,8 +120,13 @@ const SplashScreen = ({ onFinish }) => {
                 <div style={{ marginTop: '50px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60px' }}>
 
                     {/* Always show Loading Bar until transition */}
-                    <div className="loading-bar">
-                        <div className="progress"></div>
+                    <div className="flex flex-col items-center gap-2 w-full">
+                        <div className="loading-bar">
+                            <div className="progress"></div>
+                        </div>
+                        {statusText && (
+                            <p className="text-white/80 text-xs font-mono animate-pulse">{statusText}</p>
+                        )}
                     </div>
                 </div>
             </div>

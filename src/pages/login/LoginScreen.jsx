@@ -60,7 +60,12 @@ const LoginScreen = () => {
                 console.log('Auto clock-in optional:', e)
             );
 
-            navigate('/mode-selection');
+            // SPECIAL ROUTING FOR SUPER ADMIN
+            if (employee.is_super_admin) {
+                navigate('/super-admin');
+            } else {
+                navigate('/mode-selection');
+            }
 
         } catch (err) {
             console.error('Login error:', err);

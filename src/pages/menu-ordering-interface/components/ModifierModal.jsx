@@ -85,6 +85,7 @@ const getIconForValue = (valueName, groupName) => {
 
 // Milk Card Component (Hero Section)
 const MilkCard = ({ label, Icon, price, isSelected, onClick }) => {
+  const numericPrice = Number(price || 0);
   return (
     <button
       onClick={onClick}
@@ -103,9 +104,9 @@ const MilkCard = ({ label, Icon, price, isSelected, onClick }) => {
         className={`transition-transform duration-200 ${isSelected ? "scale-110" : ""}`}
       />
       <span className="text-sm">{label}</span>
-      {price > 0 && (
+      {numericPrice > 0 && (
         <span className={`text-xs font-medium ${isSelected ? "text-orange-500" : "text-slate-400"}`}>
-          +₪{price}
+          +₪{numericPrice}
         </span>
       )}
     </button>
@@ -114,6 +115,7 @@ const MilkCard = ({ label, Icon, price, isSelected, onClick }) => {
 
 // Modifier Pill Button
 const ModifierPill = ({ label, Icon, isSelected, onClick, variant = "default", price }) => {
+  const numericPrice = Number(price || 0);
   const selectedStyles =
     variant === "purple"
       ? "bg-purple-600 text-white shadow-lg shadow-purple-200"
@@ -133,9 +135,9 @@ const ModifierPill = ({ label, Icon, isSelected, onClick, variant = "default", p
     >
       <Icon size={18} strokeWidth={isSelected ? 2.5 : 2} />
       <span className="text-sm">{label}</span>
-      {price !== undefined && price > 0 && (
+      {numericPrice > 0 && (
         <span className={`text-xs ${isSelected ? "text-white/80" : "text-slate-400"}`}>
-          +₪{price}
+          +₪{numericPrice}
         </span>
       )}
     </button>
@@ -300,7 +302,8 @@ const ModifierModal = (props) => {
           .map(v => ({
             ...v,
             name: v.name || v.value_name,
-            priceAdjustment: v.priceAdjustment || v.price_adjustment || 0,
+            // Ensure numeric price, check all possible keys
+            priceAdjustment: Number(v.price_adjustment !== undefined ? v.price_adjustment : (v.priceAdjustment !== undefined ? v.priceAdjustment : 0)),
           }))
           .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
       }));
@@ -415,7 +418,8 @@ const ModifierModal = (props) => {
               .map(v => ({
                 ...v,
                 name: v.name || v.value_name || 'Unk',
-                priceAdjustment: v.price_adjustment || 0
+                // Fallback Mapping
+                priceAdjustment: Number(v.price_adjustment !== undefined ? v.price_adjustment : (v.priceAdjustment !== undefined ? v.priceAdjustment : 0))
               }))
               .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
           }));
@@ -433,7 +437,8 @@ const ModifierModal = (props) => {
             .map(v => ({
               ...v,
               name: v.name || v.value_name || 'Unk',
-              priceAdjustment: v.price_adjustment || 0
+              // Bypass Mapping
+              priceAdjustment: Number(v.price_adjustment !== undefined ? v.price_adjustment : (v.priceAdjustment !== undefined ? v.priceAdjustment : 0))
             }))
             .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
         }));
@@ -457,7 +462,8 @@ const ModifierModal = (props) => {
   const optionGroups = useMemo(() => {
     const raw = dexieOptions || remoteData || [];
     const fromProps = props.extraGroups || [];
-    const combined = [...raw, ...fromProps];
+    // Put KDS prep decision (extraGroups) FIRST so it appears at the top
+    const combined = [...fromProps, ...raw];
 
     const uniqueMap = new Map();
     combined.forEach(g => {
@@ -489,7 +495,14 @@ const ModifierModal = (props) => {
       }
     });
 
-    return Array.from(uniqueMap.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    // Sort: Keep KDS prep decision at top, then alphabetical
+    return Array.from(uniqueMap.values()).sort((a, b) => {
+      const aIsKds = String(a.id).startsWith('kds_');
+      const bIsKds = String(b.id).startsWith('kds_');
+      if (aIsKds && !bIsKds) return -1;
+      if (!aIsKds && bIsKds) return 1;
+      return (a.name || '').localeCompare(b.name || '');
+    });
   }, [dexieOptions, remoteData, props.extraGroups]);
 
   const isLoadingOptions = (dexieOptions === undefined) || (!optionGroups.length && isRemoteLoading);
@@ -608,6 +621,7 @@ const ModifierModal = (props) => {
       };
     }
 
+    // Helper functions
     const normalize = (str) => (str || '').toLowerCase();
     const hasValue = (group, keyword) => {
       return group.values?.some(v => {
@@ -615,67 +629,85 @@ const ModifierModal = (props) => {
         return valName.includes(keyword);
       });
     };
-
-    // Helper to check group name/title/category
     const checkGroup = (group, keywords, category) => {
       const title = normalize(group.title || group.name);
       return keywords.some(k => title.includes(k));
     };
 
+    // Pool of available groups
+    let candidates = [...optionGroups];
+
+    // Helper to find and extract a group
+    const extractGroup = (predicate) => {
+      const index = candidates.findIndex(predicate);
+      if (index !== -1) {
+        const group = candidates[index];
+        candidates.splice(index, 1); // Remove from pool
+        return group;
+      }
+      return null;
+    };
+
     // 1. Milk
-    const milk = optionGroups.find(g => {
+    const milk = extractGroup(g => {
       if (checkGroup(g, ['חלב', 'milk'], 'milk')) return true;
       return hasValue(g, 'סויה') || hasValue(g, 'שיבולת') || hasValue(g, 'שקדים');
     });
 
     // 2. Foam
-    const foam = optionGroups.find(g => checkGroup(g, ['קצף', 'foam'], 'texture') || hasValue(g, 'קצף'));
+    const foam = extractGroup(g => checkGroup(g, ['קצף', 'foam'], 'texture') || hasValue(g, 'קצף'));
 
     // 3. Temp
-    const temp = optionGroups.find(g =>
+    const temp = extractGroup(g =>
       checkGroup(g, ['טמפרטורה', 'חום', 'temp'], 'temperature') || hasValue(g, 'רותח') || hasValue(g, 'פושר')
     );
 
-    // 4. Base
-    let base = optionGroups.find(g =>
-      checkGroup(g, ['בסיס', 'base', 'water'], 'base') || hasValue(g, 'בסיס') || hasValue(g, 'מים')
-    );
-
-    // Filter base group logic for coffee (keep existing logic)
+    // 4. Base (with logic for Coffee items)
     const isCoffeeItem = selectedItem?.name?.includes('קפה') ||
       selectedItem?.name?.includes('הפוך') ||
       selectedItem?.name?.includes('אספרסו') ||
       selectedItem?.name?.includes('נס') ||
       selectedItem?.name?.includes('מקיאטו');
 
-    if (base && isCoffeeItem) {
-      const hasWaterOrMilkBase = base.values.some(v =>
-        v?.name?.includes('מים') || v?.name?.includes('חלב') || v?.name?.includes('סודה')
-      );
-      if (!hasWaterOrMilkBase) base = null;
-    }
+    const base = extractGroup(g => {
+      const matchesBase = checkGroup(g, ['בסיס', 'base', 'water'], 'base') || hasValue(g, 'בסיס') || hasValue(g, 'מים');
+      if (!matchesBase) return false;
+
+      // Special check for coffee items to be stricter
+      if (isCoffeeItem) {
+        const hasWaterOrMilkBase = g.values.some(v =>
+          v?.name?.includes('מים') || v?.name?.includes('חלב') || v?.name?.includes('סודה')
+        );
+        if (!hasWaterOrMilkBase) return false;
+      }
+      return true;
+    });
 
     // 5. Strength
-    const strength = optionGroups.find(g =>
+    const strength = extractGroup(g =>
       checkGroup(g, ['חוזק', 'strength'], 'strength') || hasValue(g, 'חזק') || hasValue(g, 'חלש')
     );
 
-    // Find optionsGroup for exclusion
-    const optionsGroup = optionGroups.find(g =>
+    // 6. Exclude "optionsGroup" if it exists (but treat as 'other' if needed, here logic was to exclude it from 'others' but not assign it?)
+    // The original code excluded `optionsGroup` (matching 'אפשרויות'/'תוספות מיוחדות') from 'others' but didn't assign it anywhere visible?
+    // If the user wants it visible, it should be in 'others'.
+    // If it was meant to be hidden, we should check why.
+    // Looking at original code: `const optionsGroup = ...` then `exclusions` included it.
+    // So distinct special 'options' group was hidden from 'others'.
+    // We will replicate that behavior: extract it but don't assign to `otherGroups`.
+    const specialHidden = extractGroup(g =>
       g.name?.includes('אפשרויות') || g.name?.includes('תוספות מיוחדות')
     );
 
-    // Filter others: Exclude categorized groups and optionsGroup by ID
-    const others = optionGroups.filter(g => {
-      const exclusions = [
-        milk?.id, foam?.id, temp?.id, base?.id, strength?.id, optionsGroup?.id
-      ].filter(Boolean); // Remove nulls
-      return !exclusions.includes(g.id);
-    });
+    // Remaining groups are 'others'
+    const others = [specialHidden, ...candidates].filter(Boolean).filter(g => g !== specialHidden); // Re-add if we want, or keep hidden?
+    // Original logic: `return !exclusions.includes(g.id);` where `optionsGroup?.id` was an exclusion.
+    // So it was truly hidden.
+    // We will leave `specialHidden` out of `others`.
 
     return {
       milkGroup: milk, foamGroup: foam, tempGroup: temp,
-      baseGroup: base, strengthGroup: strength, otherGroups: others
+      baseGroup: base, strengthGroup: strength, otherGroups: candidates // candidates now only holds the rest
     };
   }, [optionGroups, selectedItem]);
 
@@ -1059,7 +1091,7 @@ const ModifierModal = (props) => {
                           isSelected = String(optionSelections[group.id]) === valueIdStr;
                         }
 
-                        const effectivePrice = value.priceAdjustment || 0;
+                        const effectivePrice = Number(value.priceAdjustment || 0);
                         if (effectivePrice > 0) console.log(`🍕 Option price: ${value.name} (Group: ${group.name}) = ${effectivePrice}`);
 
                         return (

@@ -222,10 +222,11 @@ const SmartCart = ({
     // מצב שבו אין שינוי במחיר בעריכה
     const isNoPriceChange = isEditMode && priceDifference === 0;
 
-    // אפשר לחיצה אם זה זיכוי, אם זה ביטול, או אם יש שינוי כלשהו (גם אם המחיר לא השתנה אבל יש היסטוריה)
+    // אפשר לחיצה אם זה זיכוי, אם זה ביטול, או אם יש שינוי כלשהו
+    // עבור הזמנה שלא שולמה (PAYMENT PENDING), תמיד נאפשר לחיצה כדי להגיע לתשלום (אלא אם ריקה)
     const isDisabled = disabled ||
         (cartItems.length === 0 && !isRefund && !isCancelOrder) ||
-        (isEditMode && isNoPriceChange && !hasChanges);
+        (isEditMode && originalIsPaid && isNoPriceChange && !hasChanges);
 
     // DEBUG: Log status decision values
     console.log('🎯 SmartCart Status Decision:', {
@@ -275,6 +276,16 @@ const SmartCart = ({
             color: 'bg-blue-50 border-blue-100',
             buttonColor: 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200',
             amount: priceDifference,
+            icon: CreditCard
+        };
+
+        // New: Unpaid Order Edit - ALWAYS allow payment
+        if (isEditMode && !originalIsPaid) return {
+            text: 'לתשלום',
+            subtext: 'השלמת הזמנה',
+            color: 'bg-white',
+            buttonColor: 'bg-orange-500 hover:bg-orange-600 text-white shadow-orange-200',
+            amount: effectiveTotal,
             icon: CreditCard
         };
 
@@ -357,6 +368,13 @@ const SmartCart = ({
                                 {/* Case: No valid customer (or anonymous) - Show buttons */}
                                 {showAddButtons ? (
                                     <>
+                                        {/* If we have a valid name but no phone, show name - RIGHTMOST */}
+                                        {!isAnonymous && (
+                                            <h2 className="text-xl font-black text-gray-800 tracking-tight flex-shrink-0 ml-2">
+                                                {customerName}
+                                            </h2>
+                                        )}
+
                                         {/* Phone Button */}
                                         {onAddCustomerDetails && (
                                             <button
@@ -388,13 +406,6 @@ const SmartCart = ({
                                                 <Truck size={16} />
                                                 <span>משלוח</span>
                                             </button>
-                                        )}
-
-                                        {/* If we have a valid name but no phone, show name */}
-                                        {!isAnonymous && (
-                                            <h2 className="text-xl font-black text-gray-800 tracking-tight flex-shrink-0 mr-2">
-                                                {customerName}
-                                            </h2>
                                         )}
                                     </>
                                 ) : (

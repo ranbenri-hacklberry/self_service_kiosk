@@ -51,24 +51,25 @@ const TripleCheckCard = ({
     };
 
     // Helper to format quantities with units (1000g -> 1kg) - with safe parsing
-    const formatQtyWithUnit = (qty, unitStr) => {
+    const formatQtyWithUnit = (qty, unitStr, showUnit = true) => {
         if (qty === null || qty === undefined) return '-';
         const num = parseFloat(qty);
         if (isNaN(num)) return '-';
 
         const lowerUnit = (unitStr || '').toLowerCase().trim();
+        const isGram = lowerUnit === 'גרם' || lowerUnit === 'g' || lowerUnit === 'gram';
 
-        // 1000g -> 1kg
-        if ((lowerUnit === 'גרם' || lowerUnit === 'g' || lowerUnit === 'gram') && num >= 1000) {
+        if (isGram) {
             const kg = num / 1000;
-            return `${formatValue(kg)} ק״ג`;
+            // Always divide by 1000 for weight-based items to show KG
+            return showUnit ? `${formatValue(kg)} ק״ג` : formatValue(kg);
         }
 
         // Hide units for "יח׳" or similar generic units and trailing apostrophes
         const isGeneric = ['יח׳', 'יחידה', 'יח', 'units', 'unit', 'pcs', 'pc'].some(u => lowerUnit.includes(u)) ||
             !unitStr ||
             ['\'', '׳'].includes(lowerUnit);
-        if (isGeneric) {
+        if (isGeneric || !showUnit) {
             return formatValue(num);
         }
 
@@ -80,6 +81,11 @@ const TripleCheckCard = ({
     // Check if name is long (>4 words) for multi-line display
     const nameParts = item.name.split(' ');
     const isLongName = nameParts.length > 4;
+
+    const hasOrderValue = orderedQty !== null;
+    const gridCols = hasOrderValue
+        ? "grid-cols-[3fr_80px_80px_130px_1fr]"
+        : "grid-cols-[3fr_80px_130px_1fr]";
 
     // Get top 10 closest matching items from catalog (uses debounced query for performance)
     const suggestedItems = useMemo(() => {
@@ -156,7 +162,7 @@ const TripleCheckCard = ({
             dir="rtl"
         >
             {/* Grid Layout with Headers */}
-            <div className="grid grid-cols-[3fr_80px_80px_130px_1fr] gap-3 items-center">
+            <div className={`grid ${gridCols} gap-3 items-center`}>
 
                 {/* Column 1: Item Name - Two lines: Invoice name, then system name */}
                 <div className="flex flex-col min-w-0">
@@ -261,27 +267,20 @@ const TripleCheckCard = ({
                 </div>
 
                 {/* Column 2: Ordered */}
-                {orderedQty !== null ? (
+                {hasOrderValue && (
                     <div className="flex flex-col items-center">
                         <span className="text-[10px] text-slate-400 mb-1">הוזמן</span>
                         <span className="font-bold text-sm text-slate-600">{formatQtyWithUnit(orderedQty, item.unit)}</span>
                     </div>
-                ) : (
-                    <div className="w-[80px]"></div>
                 )}
 
                 {/* Column 3: Invoiced (or placeholder if no invoice) */}
-                {invoicedQty !== null ? (
-                    <div className="flex flex-col items-center">
-                        <span className="text-[10px] text-blue-500 mb-1">חשבונית</span>
-                        <span className="font-bold text-sm text-blue-700">{formatQtyWithUnit(invoicedQty, item.unit)}</span>
-                    </div>
-                ) : (
-                    <div className="flex flex-col items-center">
-                        <span className="text-[10px] text-orange-400 mb-1">ללא חשבונית</span>
-                        <span className="font-bold text-sm text-orange-400">—</span>
-                    </div>
-                )}
+                <div className="flex flex-col items-center">
+                    <span className="text-[10px] text-blue-500 mb-1">חשבונית</span>
+                    <span className="font-bold text-sm text-blue-700">
+                        {invoicedQty !== null ? formatQtyWithUnit(invoicedQty, item.unit) : '—'}
+                    </span>
+                </div>
 
                 {/* Column 4: Actual with mini stepper */}
                 <div className="flex flex-col items-center">
@@ -312,7 +311,7 @@ const TripleCheckCard = ({
                         </button>
 
                         <span className="font-black text-sm text-slate-800 min-w-[35px] text-center">
-                            {formatQtyWithUnit(actualQty, item.unit)}
+                            {formatQtyWithUnit(actualQty, item.unit, false)}
                         </span>
 
                         <button
@@ -336,19 +335,14 @@ const TripleCheckCard = ({
 
                 {/* Column 5: Unit Price + Line Total */}
                 <div className="flex flex-col items-end min-w-0">
-                    {unitPrice > 0 && (
-                        <>
-                            <div className="flex flex-col items-end shrink-0">
-                                <span className="text-[10px] text-slate-400 mb-0.5">מחיר</span>
-                                <span className="text-[11px] text-slate-500 font-medium">₪{formatValue(unitPrice)}</span>
-                                <span className="font-bold text-sm text-slate-800 whitespace-nowrap mt-0.5">₪{totalValue}</span>
-                            </div>
-                            {hasPriceVariance && (
-                                <span className="text-[8px] text-orange-600 font-bold" title={`מחיר קטלוגי: ₪${catalogPrice}`}>
-                                    (קטלוג: ₪{formatValue(catalogPrice)})
-                                </span>
-                            )}
-                        </>
+                    <div className="flex flex-col items-end shrink-0">
+                        <span className="text-[10px] text-slate-400 mb-0.5">סה״כ</span>
+                        <span className="font-bold text-sm text-slate-800 whitespace-nowrap">₪{totalValue}</span>
+                    </div>
+                    {hasPriceVariance && (
+                        <span className="text-[8px] text-orange-600 font-bold" title={`מחיר קטלוגי: ₪${catalogPrice}`}>
+                            (₪{formatValue((item.unit || '').toLowerCase().includes('גרם') ? catalogPrice * 1000 : catalogPrice)} קודם)
+                        </span>
                     )}
                     {(hasActualVariance || hasPriceVariance) && (
                         <AlertTriangle size={12} className="text-orange-500 mt-1" />

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Phone, User, Check, Loader2, UserCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import NumericKeypad from '@/pages/customer-phone-input-screen/components/NumericKeypad';
+import NumericKeypad from './NumericKeypad';
 
 /**
  * CustomerInfoModal - Unified modal for collecting/editing customer phone and name
@@ -243,6 +243,24 @@ const CustomerInfoModal = ({
         try {
             const cleanPhone = phoneNumber.replace(/\D/g, '');
             let customerId = currentCustomer?.id;
+
+            // FIX: If no phone and no ID, treat as transient guest (Name Only)
+            // This allows adding a name to an order without creating a persistent customer record
+            if (!cleanPhone && !customerId) {
+                console.log('👤 Transient customer (Name only) - skipping DB creation');
+                const transientCustomer = {
+                    id: null,
+                    phone: null,
+                    name: customerName.trim(),
+                    loyalty_coffee_count: 0
+                };
+
+                if (orderId) await updateOrderCustomer(orderId, transientCustomer);
+                onCustomerUpdate?.(transientCustomer);
+                onClose();
+                setIsLoading(false);
+                return;
+            }
 
             // OFFLINE MODE: Save customer locally in Dexie
             if (!navigator.onLine) {

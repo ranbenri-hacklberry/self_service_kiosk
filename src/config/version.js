@@ -1,3 +1,3 @@
-export const APP_VERSION = 'β 0.9.0';
-export const VERSION_DATE = '2025-11-25';
-export const VERSION_NOTES = 'Fixed modifier prices (soy/oat milk)';
+export const APP_VERSION = '3.3.0';
+export const VERSION_DATE = '2026-01-05';
+export const VERSION_NOTES = 'Package unit display with 0.5 rounding, OCR kg/ml conversion, animated scanning';

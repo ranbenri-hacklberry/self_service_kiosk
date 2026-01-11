@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 
 const MenuEditModal = lazy(() => import('./MenuEditModal'));
+const CategoryManager = lazy(() => import('./CategoryManager'));
 
 // Category icons mapping
 const CATEGORY_ICONS = {
@@ -24,6 +25,7 @@ const CATEGORY_ICONS = {
   'יין': Wine, 'wine': Wine, 'בירה': Beer, 'beer': Beer,
   'מנות עיקריות': Flame, 'main': Flame,
   'ארוחות בוקר': Sparkles, 'breakfast': Sparkles,
+  'קפה ומאפה': Coffee, 'Coffee': Coffee,
   'אחר': Package
 };
 
@@ -42,6 +44,7 @@ const getCategoryIcon = (category) => {
 const MenuDisplay = () => {
   const { currentUser } = useAuth();
   const [items, setItems] = useState([]);
+  const [categories, setCategories] = useState([]); // Real categories from DB
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState(null);
   const [activeCategory, setActiveCategory] = useState(null);
@@ -49,6 +52,7 @@ const MenuDisplay = () => {
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [isAnimating, setIsAnimating] = useState(false);
+  const [showCategoryManager, setShowCategoryManager] = useState(false); // Category Manager Modal
 
   const fetchItems = async () => {
     if (!currentUser?.business_id) {
@@ -62,6 +66,7 @@ const MenuDisplay = () => {
         .from('menu_items')
         .select('*')
         .eq('business_id', currentUser.business_id)
+        .or('is_deleted.is.null,is_deleted.eq.false') // Filter out deleted items
         .order('category')
         .order('name');
       if (error) throw error;
@@ -73,7 +78,29 @@ const MenuDisplay = () => {
     }
   };
 
-  useEffect(() => { fetchItems(); }, [currentUser?.business_id]);
+  // Fetch real categories from item_category table
+  const fetchCategories = async () => {
+    if (!currentUser?.business_id) return;
+    try {
+      const { data, error } = await supabase
+        .from('item_category')
+        .select('id, name, name_he, icon, position, prep_areas')
+        .eq('business_id', currentUser.business_id)
+        .or('is_deleted.is.null,is_deleted.eq.false')
+        .order('position', { ascending: true });
+
+      if (error) throw error;
+      console.log('📁 MenuDisplay: Loaded', data?.length, 'categories from DB');
+      setCategories(data || []);
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchItems();
+    fetchCategories();
+  }, [currentUser?.business_id]);
 
   // Sync selectedItem with fresh data when items update
   useEffect(() => {
@@ -143,25 +170,30 @@ const MenuDisplay = () => {
     }, {});
   }, [items]);
 
-  // Merge empty categories from localStorage
+  // Use REAL categories from item_category table (with Hebrew names)
+  // This ensures all categories show, even empty ones
   const categoriesList = useMemo(() => {
-    const fromItems = Object.keys(groupedCategories);
-    const storeKey = `empty_categories_${currentUser?.business_id}`;
-    const emptyCategories = JSON.parse(localStorage.getItem(storeKey) || '[]');
+    // Start with DB categories (item_category table)
+    const dbCategories = categories.map(c => ({
+      id: c.id,
+      name: c.name_he || c.name, // Prefer Hebrew name
+      icon: c.icon,
+      prep_areas: c.prep_areas
+    }));
 
-    // Filter out empty categories that now have items
-    const stillEmpty = emptyCategories.filter(cat => !fromItems.includes(cat));
-
-    // Update localStorage to remove categories that now have items
-    if (stillEmpty.length !== emptyCategories.length) {
-      localStorage.setItem(storeKey, JSON.stringify(stillEmpty));
+    // If no DB categories yet, fall back to extracting from menu_items
+    if (dbCategories.length === 0) {
+      const fromItems = Object.keys(groupedCategories);
+      return fromItems.map(name => ({ id: null, name, icon: null, prep_areas: [] }));
     }
 
-    return [...fromItems, ...stillEmpty];
-  }, [groupedCategories, currentUser?.business_id]);
+    return dbCategories;
+  }, [categories, groupedCategories]);
 
   const displayItems = useMemo(() => {
     let relevantItems = activeCategory ? groupedCategories[activeCategory] || [] : items;
+    // Safety filter for deleted items
+    relevantItems = relevantItems.filter(item => !item.is_deleted);
     if (searchTerm.trim()) {
       relevantItems = relevantItems.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
     }
@@ -219,10 +251,11 @@ const MenuDisplay = () => {
 
           {/* Add Action Button */}
           <button
-            onClick={() => activeCategory ? handleAddItem() : setIsAddingCategory(true)}
+            onClick={() => activeCategory ? handleAddItem() : setShowCategoryManager(true)}
             className="bg-blue-600 text-white p-3.5 rounded-2xl shadow-lg shadow-blue-500/25 hover:bg-blue-700 hover:shadow-blue-600/30 active:scale-95 transition-all border border-blue-500"
+            title={activeCategory ? "הוסף פריט" : "ניהול קטגוריות"}
           >
-            <Plus size={24} strokeWidth={3} />
+            {activeCategory ? <Plus size={24} strokeWidth={3} /> : <span className="text-sm font-black px-1">עריכה</span>}
           </button>
         </div>
       </div>
@@ -244,13 +277,18 @@ const MenuDisplay = () => {
               ${isAnimating ? 'opacity-0 translate-y-4' : 'opacity-100 translate-y-0'}`}
           >
             {categoriesList.map(cat => {
-              const CatIcon = getCategoryIcon(cat);
-              const count = groupedCategories[cat]?.length || 0;
+              const CatIcon = getCategoryIcon(cat.name);
+              // Count items by matching category name or category_id
+              const count = items.filter(item =>
+                item.category === cat.name ||
+                item.category_id === cat.id ||
+                item.category === cat.name?.replace('קפה ומאפה', 'Coffee') // Handle legacy mappings
+              ).length;
 
               return (
                 <button
-                  key={cat}
-                  onClick={() => handleSelectCategory(cat)}
+                  key={cat.id || cat.name}
+                  onClick={() => handleSelectCategory(cat.name)}
                   className="bg-white rounded-xl shadow-sm border border-gray-100 p-2 pr-2 flex items-center gap-3 text-right transition-all cursor-pointer group hover:shadow-md hover:border-blue-200 hover:bg-blue-50/50 active:scale-[0.98]"
                 >
                   {/* Icon - Same size as image in MenuManagerCard */}
@@ -261,7 +299,7 @@ const MenuDisplay = () => {
                   {/* Content - Same layout as MenuManagerCard */}
                   <div className="flex-1 flex flex-col justify-center min-w-0 py-1">
                     <h3 className="font-bold text-gray-800 text-sm leading-tight truncate pr-1">
-                      {cat}
+                      {cat.name}
                     </h3>
                     <span className="text-xs text-blue-600 font-bold mt-0.5">
                       {count} פריטים
@@ -351,6 +389,24 @@ const MenuDisplay = () => {
           </Suspense>
         )}
       </AnimatePresence>
+
+      {/* Category Manager Modal */}
+      {showCategoryManager && (
+        <Suspense fallback={null}>
+          <CategoryManager
+            isOpen={showCategoryManager}
+            onClose={() => {
+              setShowCategoryManager(false);
+              // Refresh categories when closing (in case order changed)
+              fetchCategories();
+            }}
+            onCategoryCreated={() => {
+              // Refresh categories when a new one is created
+              fetchCategories();
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

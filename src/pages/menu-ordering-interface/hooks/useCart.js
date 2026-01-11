@@ -114,7 +114,7 @@ export const useCart = (initialItems = []) => {
 
     // Toggle delay status for item
     const toggleItemDelay = useCallback((itemId, itemSignature, tempId) => {
-        setCartItems(prevItems => {
+        updateCartWithHistory(prevItems => {
             return prevItems.map(item => {
                 const isMatch = tempId
                     ? item.tempId === tempId
@@ -126,7 +126,7 @@ export const useCart = (initialItems = []) => {
                 return item;
             });
         });
-    }, [getCartItemSignature]);
+    }, [updateCartWithHistory, getCartItemSignature]);
 
     // Update item in cart (after editing)
     const updateItem = useCallback((originalItem, updatedItem) => {

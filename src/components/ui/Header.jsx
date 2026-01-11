@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Icon from '../AppIcon';
 import { recordTimeClockEvent, getEmployeeClockStatus } from '../../services/timeClockService';
 import { safeJsonParse } from '../../utils';
+import { APP_VERSION } from '../../config/version';
 
 const Header = memo(({
   primaryAction = null,
@@ -95,8 +96,7 @@ const Header = memo(({
     navigate('/employee-login-screen');
   }, [navigate]);
 
-  // Get app version from context
-  const { appVersion } = useAuth();
+
 
   return (
     <motion.header
@@ -199,7 +199,7 @@ const Header = memo(({
         <div className="flex items-center space-x-4">
           {/* Version Display (Requested Feature) */}
           <div className="hidden md:block text-xs text-white/40 font-mono tracking-widest">
-            v{appVersion}
+            {APP_VERSION}
           </div>
 
           {/* Time Display */}

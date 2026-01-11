@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 /**
@@ -39,11 +39,23 @@ export const ConnectionProvider = ({ children }) => {
             return;
         }
 
-        // Check Cloud (Remote) - use the main supabase client
+        // Check Cloud (Remote) - use the main supabase client with strict timeout
         try {
-            const { error } = await supabase.from('menu_items').select('id').limit(1).maybeSingle();
+            // Create a short timeout so we fail fast if network hangs
+            const abortController = new AbortController();
+            const timeoutId = setTimeout(() => abortController.abort(), 3000); // 3s timeout
+
+            const { error } = await supabase
+                .from('menu_items')
+                .select('id')
+                .limit(1)
+                .maybeSingle()
+                .abortSignal(abortController.signal);
+
+            clearTimeout(timeoutId);
             cloudOk = !error;
-        } catch {
+        } catch (err) {
+            console.log('📡 [ConnectionContext] Cloud check failed:', err.message);
             cloudOk = false;
         }
 
@@ -71,12 +83,19 @@ export const ConnectionProvider = ({ children }) => {
             lastCloudAvailable: cloudOk ? now : prev.lastCloudAvailable
         }));
 
-    }, []);
+        // Trigger offline popup if transition to offline (and not already shown)
+        if (status === 'offline' && !showOfflinePopup && navigator.onLine) {
+            // navigator.onLine is true but ping failed -> Real internet issue
+            setShowOnlinePopup(false);
+            setShowOfflinePopup(true);
+        }
 
-    // Check on mount and periodically
+    }, [showOfflinePopup]);
+
+    // Check on mount and periodically - INCREASED FREQUENCY
     useEffect(() => {
         checkConnectivity();
-        const interval = setInterval(checkConnectivity, 30000); // Every 30 seconds
+        const interval = setInterval(checkConnectivity, 5000); // Check every 5 seconds (was 30)
         return () => clearInterval(interval);
     }, [checkConnectivity]);
 
@@ -84,12 +103,14 @@ export const ConnectionProvider = ({ children }) => {
     useEffect(() => {
         const handleOnline = () => {
             console.log('🌐 Device is now ONLINE');
+            setShowOfflinePopup(false); // Close offline popup first
             setShowOnlinePopup(true);
             // NOTE: No auto-dismiss - user must click button
             checkConnectivity();
         };
         const handleOffline = () => {
             console.log('📴 Device is now OFFLINE');
+            setShowOnlinePopup(false); // <--- FIX: Close Online popup if open
             setShowOfflinePopup(true);
             // NOTE: No auto-dismiss - user must click button
             setState(prev => ({ ...prev, status: 'offline', cloudAvailable: false }));
@@ -102,6 +123,30 @@ export const ConnectionProvider = ({ children }) => {
             window.removeEventListener('offline', handleOffline);
         };
     }, [checkConnectivity]);
+
+    // 🔄 AUTO-SYNC TRIGGER: When status becomes online, trigger the offline queue sync
+    const prevStatusRef = useRef('checking');
+
+    useEffect(() => {
+        const currentStatus = state.status;
+        const prevStatus = prevStatusRef.current;
+
+        // If we transitioned TO online FROM something else (offline/checking/local-only)
+        if (currentStatus === 'online' && prevStatus !== 'online') {
+            console.log('🔄 [ConnectionContext] Connection restored! Triggering syncQueue...');
+
+            // Dynamic import to avoid circular deps or heavy load on init
+            import('../services/offlineQueue').then(({ syncQueue }) => {
+                syncQueue().then(result => {
+                    if (result.synced > 0) {
+                        console.log(`✅ [ConnectionContext] Auto-sync complete: ${result.synced} items pushed.`);
+                    }
+                }).catch(err => console.error('❌ [ConnectionContext] Auto-sync failed:', err));
+            });
+        }
+
+        prevStatusRef.current = currentStatus;
+    }, [state.status]);
 
     return (
         <ConnectionContext.Provider value={{ ...state, refresh: checkConnectivity }}>

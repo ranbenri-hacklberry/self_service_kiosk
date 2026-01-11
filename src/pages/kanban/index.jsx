@@ -9,9 +9,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useOrders } from '../../hooks/useOrders';
 import { useOrderAlerts } from '../../hooks/useOrderAlerts';
 import { KanbanBoard } from '../../components/kanban';
-import SMSModal from '../../components/kanban/SMSModal';
+import ShipmentModal from '../../components/kanban/ShipmentModal';
 import KDSPaymentModal from '../../pages/kds/components/KDSPaymentModal';
-import OrderPackingSidebar from '../../components/kanban/OrderPackingSidebar';
 import { sendSms } from '../../services/smsService';
 import { supabase } from '../../lib/supabase';
 import {
@@ -19,16 +18,15 @@ import {
     LayoutGrid, Truck
 } from 'lucide-react';
 
-// Columns to show
-const STAFF_COLUMNS = ['new', 'in_prep', 'ready', 'shipped', 'delivered'];
+// Columns to show (removed 'pending' as per user request)
+const STAFF_COLUMNS = ['new', 'in_prep', 'ready', 'shipped'];
 
 export default function KanbanPage() {
     const navigate = useNavigate();
     const { currentUser } = useAuth();
     const [alertsEnabled, setAlertsEnabled] = useState(true);
     const [paymentModal, setPaymentModal] = useState({ show: false, order: null });
-    const [smsModal, setSmsModal] = useState({ show: false, order: null });
-    const [packingOrder, setPackingOrder] = useState(null);
+    const [shipmentModal, setShipmentModal] = useState({ show: false, order: null });
     const user = currentUser;
 
     // Get orders
@@ -37,6 +35,7 @@ export default function KanbanPage() {
         pendingAlertOrders,
         isLoading,
         updateStatus,
+        updateOrderFields, // 🆕 For updating generic fields like driver
         markOrderSeen,
         markItemsReady,
         setItemsStatus, // 🆕 New function for Status Toggle
@@ -55,6 +54,26 @@ export default function KanbanPage() {
     const businessType = user?.business_type || 'cafe';
 
     const handleStatusUpdate = async (orderId, newStatus) => {
+        // Intercept move to 'shipped' to show modal first
+        if (newStatus === 'shipped') {
+            // Find the order object to pass to modal
+            let orderFound = null;
+            Object.values(ordersByStatus).forEach(list => {
+                const found = list.find(o => o.id === orderId);
+                if (found) orderFound = found;
+            });
+
+            if (orderFound) {
+                // Only show modal if NO driver is assigned yet (or if explicitly triggered by button to change driver - handled elsewhere)
+                // But for drag/drop status change, if driver exists, just ship it.
+                if (!orderFound.driver_id) {
+                    setShipmentModal({ show: true, order: orderFound });
+                    return; // Stop here, modal will handle rest
+                }
+                // If driver exists, fall through to updateStatus below
+            }
+        }
+
         await updateStatus(orderId, newStatus);
     };
 
@@ -68,88 +87,23 @@ export default function KanbanPage() {
         refresh();
     };
 
-    const handleCardClick = (order) => {
-        // Only open packing sidebar for 'new' or 'in_progress' or 'pending'
-        if (['new', 'in_progress', 'pending'].includes(order.order_status)) {
-            setPackingOrder(order);
-        }
+    const handleShipmentConfirmed = async (orderId) => {
+        // Modal handles actual data update via RPC/DB
+        // Here we just maximize the UI state update
+        await updateStatus(orderId, 'shipped');
+        setShipmentModal({ show: false, order: null });
+        refresh();
     };
 
-    const handleMarkItemReady = async (orderId, itemIds) => {
-        // Legacy wrapper (still used by DraggableOrderCard if needed directly, but Sidebar handles its own)
-        await markItemsReady(orderId, itemIds);
+    const handlePackingClick = (orderId) => {
+        let orderFound = null;
+        Object.values(ordersByStatus).forEach(list => {
+            const found = list.find(o => o.id === orderId);
+            if (found) orderFound = found;
+        });
 
-        // If order is 'new'/'pending', move to 'in_progress'
-        const order = ordersByStatus.new?.find(o => o.id === orderId) ||
-            ordersByStatus.pending?.find(o => o.id === orderId);
-
-        if (order && (order.order_status === 'new' || order.order_status === 'pending')) {
-            await updateStatus(orderId, 'in_progress');
-        }
-    };
-
-    const handleFinishPacking = async (orderId, driver) => {
-        console.log(`📦 [KanbanPage] Finished packing ${orderId} assigned to driver ${driver.name}`);
-
-        // Find full order details for SMS
-        let order = null;
-        for (const status of Object.keys(ordersByStatus)) {
-            const found = ordersByStatus[status]?.find(o => o.id === orderId);
-            if (found) {
-                order = found;
-                break;
-            }
-        }
-
-        try {
-            // 1. Assign Driver in Database immediately
-            const { error: updateError } = await supabase
-                .from('orders')
-                .update({
-                    courier_id: driver.id
-                })
-                .eq('id', orderId);
-
-            if (updateError) {
-                console.error("Failed to assign driver:", updateError);
-            }
-
-            // 2. Update status to 'ready'
-            await updateStatus(orderId, 'ready');
-
-            // 3. Send SMS to driver
-            if (driver && driver.phone && order) {
-                const message = `היי ${driver.name}, חבילה חדשה מוכנה לאיסוף! 📦\nלקוח: ${order.customerName}\nהזמנה: #${order.orderNumber}\nכתובת: ${order.deliveryAddress || 'איסוף עצמי'}\nבהצלחה!`;
-
-                try {
-                    await sendSms(driver.phone, message);
-                    console.log('✅ SMS sent to driver');
-                } catch (err) {
-                    console.error('❌ Failed to send SMS to driver:', err);
-                }
-            }
-
-        } catch (err) {
-            console.error("❌ Error in finish packing flow:", err);
-        }
-
-        // Close sidebar
-        setPackingOrder(null);
-    };
-
-    // Wrapper for Item Toggle to also handle Order Status progression
-    const handleItemStatusChange = async (orderId, itemIds, newStatus) => {
-        // Update item status
-        await setItemsStatus(orderId, itemIds, newStatus);
-
-        // If checking (status === 'ready'), make sure Order moves to in_progress if it was new
-        if (newStatus === 'ready') {
-            const order = ordersByStatus.new?.find(o => o.id === orderId) ||
-                ordersByStatus.pending?.find(o => o.id === orderId);
-
-            if (order && (order.order_status === 'new' || order.order_status === 'pending')) {
-                await updateStatus(orderId, 'in_progress');
-            }
+        if (orderFound) {
+            setShipmentModal({ show: true, order: orderFound });
         }
     };
 
@@ -181,7 +135,7 @@ export default function KanbanPage() {
                 <div className="flex items-center gap-3">
                     {/* 🆕 New Order Button (Kanban Only) */}
                     <button
-                        onClick={() => navigate('/manager')}
+                        onClick={() => navigate('/')}
                         className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-2xl font-black shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all active:scale-95 border border-slate-700"
                     >
                         <LayoutGrid size={18} />
@@ -238,31 +192,21 @@ export default function KanbanPage() {
                         onOrderStatusUpdate={handleStatusUpdate}
                         onPaymentCollected={handlePaymentCollected}
                         onMarkSeen={markOrderSeen}
-                        onReadyItems={markItemsReady}
-                        onSmsClick={(order) => setSmsModal({ show: true, order })}
-                        onRefresh={refresh}
-                        onEditOrder={handleCardClick}
+                        onReadyItems={handlePackingClick} // 🆕 Open modal instead of direct toggle
+                        onSmsClick={(order) => setShipmentModal({ show: true, order })} // Reuse same modal for SMS/Truck icon
                     />
                 )}
             </main>
 
-            {/* Packing Sidebar */}
-            <OrderPackingSidebar
-                order={packingOrder}
-                businessId={user?.business_id}
-                onClose={() => setPackingOrder(null)}
-                // Pass the new logic that supports toggle
-                onItemStatusChange={handleItemStatusChange}
-                // Legacy fallback if sidebar specifically calls it (it shouldn't if change prop is present)
-                onMarkItemReady={handleMarkItemReady}
-                onFinishPacking={handleFinishPacking}
-            />
-
-            {/* Modals */}
-            {smsModal.show && (
-                <SMSModal
-                    order={smsModal.order}
-                    onClose={() => setSmsModal({ show: false, order: null })}
+            {/* Shipment/Packing Modal */}
+            {shipmentModal.show && (
+                <ShipmentModal
+                    isOpen={true}
+                    order={shipmentModal.order}
+                    onClose={() => setShipmentModal({ show: false, order: null })}
+                    onUpdateStatus={handleStatusUpdate}
+                    onUpdateOrder={updateOrderFields} // 🆕
+                    onToggleItemPacked={markItemsReady}
                 />
             )}
 

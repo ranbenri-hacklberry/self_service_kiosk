@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
-import { Clock, CheckCircle, RotateCcw, AlertTriangle, LayoutGrid, Check, Plus, Edit, Flame } from 'lucide-react';
+import { Clock, CheckCircle, RotateCcw, AlertTriangle, LayoutGrid, Check, Plus, Edit, Flame, CreditCard, X, Image, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import KDSPaymentModal from '../../pages/kds/components/KDSPaymentModal';
 
@@ -124,7 +125,7 @@ const ManagerOrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPayme
     const hasFood = foodItems.length > 0;
 
     const renderItemRow = (item, idx) => (
-        <div key={idx} className="flex items-start gap-2 py-0.5 border-b border-dashed border-gray-100 last:border-0 w-full">
+        <div key={idx} className="flex flex-row-reverse items-start gap-2 py-0.5 border-b border-dashed border-gray-100 last:border-0 w-full">
             <span className={`flex items-center justify-center w-6 h-6 rounded-lg font-black text-sm shrink-0 mt-0 ${item.quantity > 1 ? 'bg-orange-600 text-white ring-2 ring-orange-200' : (isDelayedCard ? 'bg-gray-300 text-gray-600' : 'bg-slate-900 text-white')}`}>
                 {item.quantity}
             </span>
@@ -165,7 +166,7 @@ const ManagerOrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPayme
     };
 
     return (
-        <div className={`flex-shrink-0 rounded-2xl p-3 flex flex-col h-full font-heebo ${isDelayedCard ? 'bg-gray-50' : 'bg-white'} ${getStatusStyles(order.orderStatus)} border-x border-b border-gray-100`}>
+        <div dir="rtl" className={`flex-shrink-0 rounded-2xl p-3 flex flex-col h-full font-heebo ${isDelayedCard ? 'bg-gray-50' : 'bg-white'} ${getStatusStyles(order.orderStatus)} border-x border-b border-gray-100`}>
             {/* Header */}
             <div className="flex justify-between items-start mb-2 border-b border-gray-50 pb-1.5">
                 <div className="flex flex-col overflow-hidden w-full">
@@ -250,18 +251,14 @@ const ManagerOrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPayme
                         <span>{isUpdating ? '...' : `לתשלום (₪${order.totalAmount?.toFixed(0)})`}</span>
                     </button>
                 ) : (
-                    <div className="flex items-stretch gap-2 h-12 w-full">
-                        {!order.isPaid && (
-                            <button
-                                onClick={async () => { if (onPaymentCollected) { setIsUpdating(true); await onPaymentCollected(order); setIsUpdating(false); } }}
-                                className="w-12 bg-white border-2 border-amber-400 rounded-xl shadow-sm flex flex-col items-center justify-center hover:bg-amber-50 shrink-0 relative overflow-hidden"
-                            >
-                                <span className="text-amber-600 font-bold text-xs absolute top-1">₪</span>
-                                <span className="text-[10px] font-bold text-red-600 absolute bottom-1">
-                                    {order.totalAmount?.toFixed(0)}
-                                </span>
-                            </button>
-                        )}
+                    <div className="flex flex-row-reverse items-stretch gap-2 h-12 w-full">
+                        <button
+                            disabled={isUpdating}
+                            onClick={handleStatusClick}
+                            className={`flex-1 rounded-xl font-black text-lg shadow active:scale-[0.98] transition-all flex items-center justify-center ${actionBtnColor} ${isUpdating ? 'opacity-50' : ''}`}
+                        >
+                            {isUpdating ? '...' : nextStatusLabel}
+                        </button>
 
                         {isReady && (
                             <button
@@ -278,13 +275,17 @@ const ManagerOrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPayme
                             </button>
                         )}
 
-                        <button
-                            disabled={isUpdating}
-                            onClick={handleStatusClick}
-                            className={`flex-1 rounded-xl font-black text-lg shadow active:scale-[0.98] transition-all flex items-center justify-center ${actionBtnColor} ${isUpdating ? 'opacity-50' : ''}`}
-                        >
-                            {isUpdating ? '...' : nextStatusLabel}
-                        </button>
+                        {!order.isPaid && (
+                            <button
+                                onClick={async () => { if (onPaymentCollected) { setIsUpdating(true); await onPaymentCollected(order); setIsUpdating(false); } }}
+                                className="w-12 bg-white border-2 border-amber-400 rounded-xl shadow-sm flex flex-col items-center justify-center hover:bg-amber-50 shrink-0 relative overflow-hidden"
+                            >
+                                <span className="text-amber-600 font-bold text-xs absolute top-1">₪</span>
+                                <span className="text-[10px] font-bold text-red-600 absolute bottom-1">
+                                    {order.totalAmount?.toFixed(0)}
+                                </span>
+                            </button>
+                        )}
                     </div>
                 )}
             </div>
@@ -294,11 +295,17 @@ const ManagerOrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPayme
 
 // --- Main ManagerKDS Component ---
 const ManagerKDS = () => {
-    const { currentUser } = useAuth();
+    const navigate = useNavigate();
+    const { currentUser, appVersion } = useAuth();
     const [orders, setOrders] = useState([]);
     const [statusTab, setStatusTab] = useState('prep');
     const [loading, setLoading] = useState(false);
     const [paymentModalData, setPaymentModalData] = useState({ isOpen: false, order: null });
+    const [pendingPayments, setPendingPayments] = useState([]);
+    const [verifyingPayment, setVerifyingPayment] = useState(null);
+
+    // Get business name
+    const businessName = currentUser?.impersonating_business_name || currentUser?.business_name || null;
 
     // Reuse RPC update logic from original KDS for consistency
     const handleStatusUpdate = async (orderId, currentStatus) => {
@@ -336,7 +343,9 @@ const ManagerKDS = () => {
 
             // CHANGED: Use secure RPC 'get_kds_orders' instead of direct table select.
             // This ensures consistent filtering logic across User KDS and Manager KDS.
+            // IMPORTANT: Supabase RPC expects parameters in order (p_business_id, p_date)
             const { data: ordersData, error } = await supabase.rpc('get_kds_orders', {
+                p_business_id: currentUser?.business_id || null,
                 p_date: yesterday.toISOString()
             });
 
@@ -347,7 +356,8 @@ const ManagerKDS = () => {
             // We need to map it to the structure ManagerKDS expects.
 
             const processed = (ordersData || []).map(order => {
-                const rawItems = (order.order_items || []).filter(item =>
+                // RPC returns items_detail, not order_items
+                const rawItems = (order.items_detail || []).filter(item =>
                     item.item_status !== 'cancelled' && item.menu_items
                 );
 
@@ -451,6 +461,68 @@ const ManagerKDS = () => {
         return () => clearInterval(interval);
     }, []);
 
+    const fetchPendingPayments = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('orders')
+                .select('id, order_number, customer_name, customer_phone, total_amount, payment_method, created_at')
+                .eq('order_status', 'awaiting_payment_verification')
+                .eq('business_id', currentUser?.business_id)
+                .order('created_at', { ascending: true });
+
+            if (error) throw error;
+            setPendingPayments(data || []);
+        } catch (err) {
+            console.error('Error fetching pending payments:', err);
+        }
+    };
+
+    useEffect(() => {
+        if (statusTab === 'payments') {
+            fetchPendingPayments();
+        }
+    }, [statusTab]);
+
+    const handleApprovePayment = async (orderId) => {
+        setVerifyingPayment(orderId);
+        try {
+            const { error } = await supabase
+                .from('orders')
+                .update({
+                    order_status: 'pending',
+                    payment_verified: true,
+                    is_paid: true
+                })
+                .eq('id', orderId);
+
+            if (error) throw error;
+            fetchPendingPayments();
+            fetchKDS();
+        } catch (err) {
+            alert('שגיאה באישור התשלום: ' + err.message);
+        } finally {
+            setVerifyingPayment(null);
+        }
+    };
+
+    const handleRejectPayment = async (orderId) => {
+        if (!confirm('האם לדחות את התשלום ולבטל את ההזמנה?')) return;
+        setVerifyingPayment(orderId);
+        try {
+            const { error } = await supabase
+                .from('orders')
+                .update({ order_status: 'cancelled', payment_verified: false })
+                .eq('id', orderId);
+
+            if (error) throw error;
+            fetchPendingPayments();
+        } catch (err) {
+            alert('שגיאה בדחיית התשלום: ' + err.message);
+        } finally {
+            setVerifyingPayment(null);
+        }
+    };
+
     const displayedOrders = orders.filter(o => {
         if (statusTab === 'prep') return o.statusGroup === 'prep';
         if (statusTab === 'ready') return o.statusGroup === 'ready' || (o.orderStatus === 'completed' && !o.isPaid);
@@ -458,30 +530,136 @@ const ManagerKDS = () => {
     });
 
     return (
-        <div className="h-full flex flex-col bg-gray-100">
+        <div className="h-full flex flex-col bg-gray-100" dir="rtl">
+            {/* Header with Back Button */}
+            <div className="bg-slate-900 px-4 py-3 flex items-center justify-between shrink-0">
+                <button
+                    onClick={() => navigate('/mode-selection')}
+                    className="flex items-center gap-1 text-white/80 hover:text-white transition-colors"
+                >
+                    <ChevronRight size={20} />
+                    <span className="text-sm font-bold">חזרה</span>
+                </button>
+                <h1 className="text-white font-black text-lg">צפייה בהזמנות</h1>
+                <div className="w-16" /> {/* Spacer for centering */}
+            </div>
+
+            {/* Business Info Bar */}
+            <div className="bg-slate-800 px-4 py-1.5 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_4px_rgba(34,197,94,0.6)]" />
+                    <span className="text-[10px] font-bold text-green-400">{businessName || 'לא מחובר'}</span>
+                </div>
+                <span className="text-[10px] text-slate-500 font-mono">{appVersion || 'v1.0'}</span>
+            </div>
+
             {/* Tab Switcher - Modern Mobile Design */}
             <div className="p-3 sticky top-0 z-20 bg-gray-100/90 backdrop-blur-sm">
                 <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-gray-200">
                     <button
                         onClick={() => setStatusTab('prep')}
-                        className={`flex-1 py-3 text-sm font-black rounded-xl transition-all flex items-center justify-center gap-2 ${statusTab === 'prep' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}
+                        className={`flex-1 py-3 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 ${statusTab === 'prep' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}
                     >
-                        <LayoutGrid size={18} strokeWidth={2.5} />
-                        <span>בהכנה ({orders.filter(o => o.statusGroup === 'prep').length})</span>
+                        <LayoutGrid size={16} strokeWidth={2.5} />
+                        <span>הכנה ({orders.filter(o => o.statusGroup === 'prep').length})</span>
                     </button>
                     <button
                         onClick={() => setStatusTab('ready')}
-                        className={`flex-1 py-3 text-sm font-black rounded-xl transition-all flex items-center justify-center gap-2 ${statusTab === 'ready' ? 'bg-green-600 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}
+                        className={`flex-1 py-3 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 ${statusTab === 'ready' ? 'bg-green-600 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}
                     >
-                        <CheckCircle size={18} strokeWidth={2.5} />
-                        <span>מוכנים ({orders.filter(o => o.statusGroup === 'ready' || (o.orderStatus === 'completed' && !o.isPaid)).length})</span>
+                        <CheckCircle size={16} strokeWidth={2.5} />
+                        <span>מוכן ({orders.filter(o => o.statusGroup === 'ready' || (o.orderStatus === 'completed' && !o.isPaid)).length})</span>
+                    </button>
+                    <button
+                        onClick={() => { setStatusTab('payments'); fetchPendingPayments(); }}
+                        className={`flex-1 py-3 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 ${statusTab === 'payments' ? 'bg-amber-500 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}
+                    >
+                        <CreditCard size={16} strokeWidth={2.5} />
+                        <span>תשלום ({pendingPayments.length})</span>
                     </button>
                 </div>
             </div>
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                {loading && orders.length === 0 ? (
+                {statusTab === 'payments' ? (
+                    // Payment Verification Tab
+                    pendingPayments.length === 0 ? (
+                        <div className="text-center py-10 text-gray-400 flex flex-col items-center gap-2">
+                            <CreditCard size={40} className="opacity-20" />
+                            <span>אין העברות ממתינות לאישור</span>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 gap-3 pb-20">
+                            {pendingPayments.map(payment => (
+                                <motion.div
+                                    key={payment.id}
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="bg-white rounded-2xl p-4 border-2 border-amber-400 shadow-md"
+                                >
+                                    {/* Header */}
+                                    <div className="flex justify-between items-start mb-3">
+                                        <div>
+                                            <div className="text-lg font-black text-slate-900">{payment.customer_name}</div>
+                                            <div className="text-xs text-gray-400">#{payment.order_number} • {payment.customer_phone}</div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-xl font-black text-amber-600">₪{payment.total_amount}</div>
+                                            <div className="text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full mt-1">
+                                                {payment.payment_method === 'bit' ? 'ביט' : 'פייבוקס'}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Items Summary */}
+                                    {payment.items && (
+                                        <div className="text-xs text-gray-500 mb-3 border-t pt-2">
+                                            {Array.isArray(payment.items)
+                                                ? payment.items.map(i => `${i.quantity}x ${i.name}`).join(', ')
+                                                : 'פריטים לא זמינים'}
+                                        </div>
+                                    )}
+
+                                    {/* Payment Screenshot */}
+                                    {payment.payment_screenshot_url && (
+                                        <div className="mb-3">
+                                            <a
+                                                href={payment.payment_screenshot_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
+                                            >
+                                                <Image size={16} />
+                                                צפייה בצילום מסך
+                                            </a>
+                                        </div>
+                                    )}
+
+                                    {/* Actions */}
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => handleRejectPayment(payment.id)}
+                                            disabled={verifyingPayment === payment.id}
+                                            className="flex-1 py-3 bg-red-100 text-red-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-200 transition-colors disabled:opacity-50"
+                                        >
+                                            <X size={18} />
+                                            <span>דחה</span>
+                                        </button>
+                                        <button
+                                            onClick={() => handleApprovePayment(payment.id)}
+                                            disabled={verifyingPayment === payment.id}
+                                            className="flex-[2] py-3 bg-green-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-700 transition-colors disabled:opacity-50"
+                                        >
+                                            <Check size={18} />
+                                            <span>{verifyingPayment === payment.id ? '...' : 'אשר תשלום'}</span>
+                                        </button>
+                                    </div>
+                                </motion.div>
+                            ))}
+                        </div>
+                    )
+                ) : loading && orders.length === 0 ? (
                     <div className="text-center py-10 text-gray-400">טוען...</div>
                 ) : displayedOrders.length === 0 ? (
                     <div className="text-center py-10 text-gray-400 flex flex-col items-center gap-2">

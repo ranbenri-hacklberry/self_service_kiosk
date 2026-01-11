@@ -146,37 +146,109 @@ const DexieAdminPanel = () => {
             const tablesWithBusinessId = ['customers', 'menu_items', 'orders', 'loyalty_cards', 'loyalty_transactions'];
 
             const status = { syncing: false };
+            let calculatedCloudOrderItems = 0; // Validated from fetched orders
             for (const table of tables) {
                 let local = 0;
+                let localError = null;
                 try {
-                    // Check if we can filter by business_id locally
-                    if (tablesWithBusinessId.includes(table) && db[table]?.where) {
-                        local = await db[table].where('business_id').equals(businessId).count();
+                    // FORCE JS Filter for ALL tables with business_id as indexes seem flaky
+                    // This is less efficient but guarantees accuracy for small-medium datasets
+                    if (tablesWithBusinessId.includes(table)) {
+                        const allRecords = await db[table].toArray();
+                        local = allRecords.filter(r => r.business_id === businessId).length;
+                    }
+                    // Try to use index for others
+                    else if (tablesWithBusinessId.includes(table) && db[table]?.where) {
+                        try {
+                            local = await db[table].where('business_id').equals(businessId).count();
+                        } catch (indexError) {
+                            console.warn(`Index lookup failed for ${table}, falling back to filter`, indexError);
+                            // Fallback to JS filter if index is missing/broken
+                            const allRecords = await db[table].toArray();
+                            local = allRecords.filter(r => r.business_id === businessId).length;
+                        }
+                    } else if (table === 'order_items') {
+                        // Count all order items (assuming cleanup works)
+                        local = await db[table]?.count() || 0;
                     } else {
-                        // Fallback to total count for tables without the index (e.g. order_items)
                         local = await db[table]?.count() || 0;
                     }
                 } catch (e) {
                     console.warn(`Local count error for ${table}:`, e);
+                    localError = e.message;
                 }
 
                 let cloud = 0;
+                let cloudError = null;
                 try {
-                    // For cloud, only filter by business_id if it likely exists. 
-                    // process.order_items usually doesn't have business_id on Supabase either without join.
-                    // We'll skip business_id filter for order_items on cloud too to avoid error, 
-                    // or just not show cloud count for it if it's too complex.
-                    // Ideally we'd join, but for a simple dashboard, raw count is okay-ish or just skip.
-                    let query = supabase.from(table).select('*', { count: 'exact', head: true });
+                    // 1. Determine Fetch Strategy
+                    if (table === 'orders') {
+                        // Strategy: RPC for Orders History (Bypasses RLS logic for count)
+                        const fromDate = new Date();
+                        fromDate.setDate(fromDate.getDate() - 30);
+                        const { data, error } = await supabase.rpc('get_orders_history', {
+                            p_business_id: businessId,
+                            p_from_date: fromDate.toISOString(),
+                            p_to_date: new Date().toISOString()
+                        });
 
-                    if (tablesWithBusinessId.includes(table)) {
-                        query = query.eq('business_id', businessId);
+                        if (error) {
+                            cloudError = error.message;
+                        } else {
+                            cloud = data?.length || 0;
+                            // Calculate items count from the fetched orders for the next iteration
+                            if (data) {
+                                calculatedCloudOrderItems = data.reduce((sum, order) => {
+                                    // items might be in order_items or items_detail depending on RPC version
+                                    const items = order.order_items || order.items_detail || [];
+                                    return sum + items.length;
+                                }, 0);
+                            }
+                        }
+                    } else if (table === 'loyalty_cards') {
+                        // Strategy: RPC for Loyalty Cards
+                        const { data, error } = await supabase.rpc('get_loyalty_cards_for_sync', { p_business_id: businessId });
+                        if (error) {
+                            cloudError = error.message;
+                        } else {
+                            cloud = data?.length || 0;
+                        }
+                    } else if (table === 'loyalty_transactions') {
+                        // Strategy: RPC for Loyalty Transactions
+                        const { data, error } = await supabase.rpc('get_loyalty_transactions_for_sync', { p_business_id: businessId });
+                        if (error) {
+                            cloudError = error.message;
+                        } else {
+                            cloud = data?.length || 0;
+                        }
+                    } else if (table === 'order_items') {
+                        // Strategy: Use pre-calculated count if available, otherwise skip
+                        cloud = calculatedCloudOrderItems > 0 ? calculatedCloudOrderItems : -1;
+                    } else {
+                        // Strategy: Standard Query
+                        let query = supabase.from(table).select('*', { count: 'exact', head: true });
+                        if (tablesWithBusinessId.includes(table)) {
+                            query = query.eq('business_id', businessId);
+                        }
+                        const { count, error } = await query;
+                        if (error) {
+                            cloudError = error.message;
+                            console.warn(`Cloud count error for ${table}:`, error);
+                        } else {
+                            cloud = count || 0;
+                        }
                     }
-
-                    const { count, error } = await query;
-                    if (!error) cloud = count || 0;
-                } catch (e) { }
-                status[table] = { count: local, cloudCount: cloud };
+                } catch (e) {
+                    cloudError = e.message;
+                }
+                status[table] = {
+                    count: local,
+                    cloudCount: cloud, // Keep raw value (-1) for logic checks
+                    localError,
+                    cloudError,
+                    // Relaxed needsSync check due to timing diffs
+                    needsSync: local === 0 && cloud > 0
+                };
             }
             setSyncStatus(status);
 
@@ -225,17 +297,28 @@ const DexieAdminPanel = () => {
         { id: 'sync', label: 'סנכרון', icon: 'Database' },
     ];
 
+
+
     return (
         <div className="min-h-screen bg-[#F8FAFC] font-heebo" dir="rtl">
             {/* Header Redesign: Tabs Moved to Header */}
             <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
                 <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between gap-8">
+                    {/* Right Side: Back Button + Title */}
                     <div className="flex items-center gap-4">
-                        <button onClick={() => navigate('/mode-selection')} className="p-3 bg-slate-100 hover:bg-slate-200 rounded-2xl transition-all text-slate-600">
-                            <Icon name="Home" size={20} />
+                        <button onClick={() => navigate('/mode-selection')} className="p-3 bg-slate-100 hover:bg-slate-200 rounded-2xl transition-all text-slate-600 flex items-center gap-2">
+                            <Icon name="ArrowRight" size={20} />
+                            <span className="text-sm font-bold hidden sm:inline">חזרה</span>
+                        </button>
+                        <button
+                            onClick={loadData}
+                            className="p-3 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-2xl transition-all"
+                            title="רענן נתונים"
+                        >
+                            <Icon name="RefreshCw" size={20} className={loading ? 'animate-spin' : ''} />
                         </button>
                         <div className="px-4 py-2 bg-orange-50 rounded-xl">
-                            <p className="text-xs font-black text-orange-500 uppercase tracking-widest leading-none mb-1">ניהול נתונים</p>
+                            <p className="text-xs font-black text-orange-500 uppercase tracking-widest leading-none mb-1">צפייה בבסיס נתונים</p>
                             <p className="text-sm font-bold text-slate-800 leading-none">{currentUser?.business_name}</p>
                         </div>
                     </div>
@@ -390,9 +473,9 @@ const DexieAdminPanel = () => {
                                                     <td className="px-6 py-4 text-sm text-slate-500 font-mono" dir="ltr">{relatedCustomer.phone || relatedCustomer.phone_number || '---'}</td>
                                                     <td className="px-6 py-4">
                                                         <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase ${(tx.transaction_type === 'purchase' && (tx.change_amount || 0) >= 0) ? 'bg-blue-50 text-blue-600' :
-                                                                (tx.transaction_type === 'refund' || tx.transaction_type === 'cancellation' || (tx.transaction_type === 'purchase' && tx.change_amount < 0)) ? 'bg-red-50 text-red-600' :
-                                                                    tx.transaction_type === 'redemption' ? 'bg-green-50 text-green-600' :
-                                                                        'bg-purple-50 text-purple-600'
+                                                            (tx.transaction_type === 'refund' || tx.transaction_type === 'cancellation' || (tx.transaction_type === 'purchase' && tx.change_amount < 0)) ? 'bg-red-50 text-red-600' :
+                                                                tx.transaction_type === 'redemption' ? 'bg-green-50 text-green-600' :
+                                                                    'bg-purple-50 text-purple-600'
                                                             }`}>
                                                             {(tx.transaction_type === 'purchase' && (tx.change_amount || 0) >= 0) ? 'רכישה' :
                                                                 (tx.transaction_type === 'refund' || tx.transaction_type === 'cancellation' || (tx.transaction_type === 'purchase' && tx.change_amount < 0)) ? 'ביטול/החזר' :
@@ -587,6 +670,53 @@ const DexieAdminPanel = () => {
                                                 >
                                                     {syncStatus.syncing ? 'מסנכרן...' : 'הפעל סנכרון מלא'}
                                                 </button>
+
+                                                {/* Clear & Reset Button */}
+                                                <button
+                                                    disabled={syncStatus.syncing}
+                                                    onClick={async () => {
+                                                        if (!window.confirm('האם אתה בטוח? פעולה זו תמחק את כל הנתונים המקומיים ותסנכרן מחדש מהענן.')) return;
+                                                        setSyncStatus(prev => ({ ...prev, syncing: true }));
+                                                        setSyncResult(null);
+                                                        try {
+                                                            // Import clearAllData from database
+                                                            const { clearAllData, db } = await import('../../db/database');
+                                                            await clearAllData();
+                                                            // FORCE clear order_items explicitly just in case
+                                                            await db.order_items.clear();
+
+                                                            setSyncResult('נתונים מקומיים נמחקו. מתחיל סנכרון...');
+
+                                                            // Now sync fresh
+                                                            const res = await syncService.initialLoad(currentUser.business_id);
+
+                                                            // Force reload of data to UI
+                                                            await loadData();
+
+                                                            // DIAGNOSTIC: Check loyalty cards
+                                                            const cards = await db.loyalty_cards.toArray();
+                                                            if (cards.length > 0) {
+                                                                console.log('🔍 [Diagnostic] Loyalty Card sample:', cards[0]);
+                                                                console.log('🔍 [Diagnostic] Current Business ID:', currentUser.business_id);
+                                                                console.log('🔍 [Diagnostic] Match?', cards[0].business_id === currentUser.business_id);
+                                                            }
+
+                                                            if (res?.success) {
+                                                                const changes = Object.entries(res.results).filter(([_, r]) => r.count > 0).map(([t, r]) => `${t}: ${r.count}`).join(', ');
+                                                                setSyncResult(`🔄 אתחול הושלם! (${res.duration}s). ${changes ? 'נטענו: ' + changes : 'הכל מעודכן.'}`);
+                                                            } else {
+                                                                setSyncResult('⚠️ אתחול חלקי - יש לבדוק חיבור');
+                                                            }
+                                                        } catch (err) {
+                                                            setSyncResult('❌ שגיאה: ' + err.message);
+                                                        } finally {
+                                                            setSyncStatus(prev => ({ ...prev, syncing: false }));
+                                                        }
+                                                    }}
+                                                    className="px-6 py-4 bg-red-600/80 hover:bg-red-500 rounded-2xl font-black transition-all shadow-xl shadow-red-600/20 disabled:opacity-50 border border-red-400/30"
+                                                >
+                                                    🗑️ ניקוי ואתחול
+                                                </button>
                                             </div>
                                         </div>
 
@@ -611,15 +741,26 @@ const DexieAdminPanel = () => {
                                     <Icon name="Database" size={160} className="absolute -left-10 -bottom-10 text-white/5" />
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {Object.entries(syncStatus).filter(([k]) => k !== 'syncing').map(([table, data]) => (
-                                        <div key={table} className="bg-white rounded-2xl p-6 border border-slate-100 flex justify-between items-center">
-                                            <div>
-                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-2">{table}</p>
-                                                <p className="text-xl font-black text-slate-800">{data.count} <span className="text-slate-200">/</span> {data.cloudCount}</p>
+                                    {Object.entries(syncStatus).filter(([k]) => k !== 'syncing').map(([table, data]) => {
+                                        return (
+                                            <div key={table} className="bg-white rounded-2xl p-6 border border-slate-100 flex justify-between items-center">
+                                                <div>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-2">{table}</p>
+                                                    <div className="flex flex-col text-sm font-bold gap-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                                                            <span>מקומי: {data.count}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 text-slate-400">
+                                                            <span className="w-2 h-2 rounded-full bg-slate-200"></span>
+                                                            <span>ענן: {data.cloudCount === -1 ? '?' : data.cloudCount}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                {(data.count === data.cloudCount || data.cloudCount === -1) ? <Icon name="CheckCircle" className="text-green-500" /> : <Icon name="AlertCircle" className="text-red-500" />}
                                             </div>
-                                            {data.count === data.cloudCount ? <Icon name="CheckCircle" className="text-green-500" /> : <Icon name="AlertCircle" className="text-red-500" />}
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}

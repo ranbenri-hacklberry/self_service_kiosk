@@ -39,7 +39,7 @@ export const STATUS_LABELS = {
 };
 
 export function useOrders({ businessId, filters = {} } = {}) {
-    console.log('🔍 [useOrders-V2] Hook initialized with businessId:', businessId);
+    // console.log('🔍 [useOrders-V2] Hook initialized with businessId:', businessId);
     const [orders, setOrders] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -109,24 +109,54 @@ export function useOrders({ businessId, filters = {} } = {}) {
             return [];
         }
 
-        console.log('🔍 [useOrders-V2] Fetching from Dexie for businessId:', businessId);
+        // console.log('🔍 [useOrders-V2] Fetching from Dexie for businessId:', businessId);
         try {
             const cutoff = new Date();
-            cutoff.setHours(cutoff.getHours() - 12);
+            cutoff.setHours(cutoff.getHours() - 24); // Extended to 24h
             const cutoffISO = cutoff.toISOString();
 
             let allOrders;
             const rawOrders = await db.orders.where('business_id').equals(businessId).toArray();
-            console.log(`🔍 [useOrders-V2] Found ${rawOrders.length} raw orders in Dexie`);
 
+            // IMPROVED FILTER: Keep ALL active orders, plus recent inactive ones
+            const activeStatuses = ['new', 'pending', 'in_progress', 'ready', 'shipped'];
+
+            console.log(`🔍 [useOrders Debug] Processing ${rawOrders.length} raw orders.`, {
+                first: rawOrders[0],
+                sampleStatus: rawOrders[0]?.order_status
+            });
+
+            allOrders = rawOrders.filter(o => {
+                const isActive = activeStatuses.includes(o.order_status);
+                const isRecent = (o.created_at || o.updated_at) >= cutoffISO;
+
+                // Debug specific order #2389
+                if (String(o.orderNumber) === '2389') {
+                    console.log(`🕵️‍♂️ Checking Order #2389: Status=${o.order_status}, Active=${isActive}, Recent=${isRecent}`);
+                }
+
+                // Active orders ALWAYS show. Inactive (delivered/cancelled) show only if recent.
+                if (isActive) return true;
+                return isRecent;
+            });
+            console.log(`🔍 [useOrders Debug] Post-filter count: ${allOrders.length}`);
+
+            // Apply external filters if any
             if (filters.statuses && filters.statuses.length > 0) {
-                allOrders = rawOrders.filter(o => filters.statuses.includes(o.order_status) && (o.created_at || o.updated_at) >= cutoffISO);
-            } else {
-                allOrders = rawOrders.filter(o => (o.created_at || o.updated_at) >= cutoffISO);
+                allOrders = allOrders.filter(o => filters.statuses.includes(o.order_status));
             }
 
             if (filters.orderType) {
                 allOrders = allOrders.filter(o => o.order_type === filters.orderType);
+            }
+
+            // 🆕 Filter by Driver (ID or Name)
+            if (filters.driverId) {
+                allOrders = allOrders.filter(o => {
+                    const idMatch = o.driver_id === filters.driverId;
+                    const nameMatch = filters.driverName && o.driver_name === filters.driverName;
+                    return idMatch || nameMatch;
+                });
             }
 
             // Fetch order items and use cached menu items
@@ -158,6 +188,12 @@ export function useOrders({ businessId, filters = {} } = {}) {
                     deliveryFee: order.delivery_fee,
                     deliveryNotes: order.delivery_notes,
 
+                    // Delivery driver info
+                    driver_id: order.driver_id,
+                    driver_name: order.driver_name,
+                    driver_phone: order.driver_phone,
+                    courier_name: order.courier_name,
+
                     // Timestamps
                     timestamp: order.created_at ? new Date(order.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '',
                     created_at: order.created_at,
@@ -184,7 +220,7 @@ export function useOrders({ businessId, filters = {} } = {}) {
                 };
             });
 
-            console.log('📋 [useOrders-V2] Hydrated Orders:', finalOrders.length);
+            // console.log('📋 [useOrders-V2] Hydrated Orders:', finalOrders.length);
             return finalOrders;
         } catch (err) {
             console.error('[useOrders-V2] fetchFromDexie error:', err);
@@ -219,7 +255,7 @@ export function useOrders({ businessId, filters = {} } = {}) {
                             const serverTime = new Date(order.updated_at || 0).getTime();
                             const localTime = new Date(local.updated_at || 0).getTime();
                             if (serverTime <= localTime) {
-                                console.log(`🛡️ [useOrders-V2] Protecting local pending state for ${order.id.slice(0, 8)}`);
+                                // console.log(`🛡️ [useOrders-V2] Protecting local pending state for ${order.id.slice(0, 8)}`);
                                 continue;
                             }
                         }
@@ -339,6 +375,44 @@ export function useOrders({ businessId, filters = {} } = {}) {
         }
     }, [businessId, fetchFromDexie]);
 
+    // 🆕 Generic Update Function for arbitrary fields (Driver, Notes, etc.)
+    const updateOrderFields = useCallback(async (orderId, fields) => {
+        console.log('🔄 [useOrders-V2] updateOrderFields:', { orderId, fields });
+        try {
+            const updates = {
+                ...fields,
+                updated_at: new Date().toISOString(),
+                pending_sync: true
+            };
+
+            const isLocal = String(orderId).startsWith('L');
+
+            // 1. Optimistic Update (Dexie + State)
+            await db.orders.update(orderId, updates);
+            setOrders(prev => prev.map(o => String(o.id) === String(orderId) ? { ...o, ...updates } : o));
+
+            // 2. Push to Supabase
+            if (!isLocal) {
+                const { error } = await supabase
+                    .from('orders')
+                    .update(fields) // Send original fields without local flags
+                    .eq('id', orderId);
+
+                if (error) throw error;
+            }
+
+            // 3. Success - Clear pending flag
+            await db.orders.update(orderId, { pending_sync: false });
+            setOrders(prev => prev.map(o => String(o.id) === String(orderId) ? { ...o, pending_sync: false } : o));
+
+            return true;
+        } catch (err) {
+            console.error('[useOrders-V2] updateOrderFields error:', err);
+            // Revert would be complex here, assuming simple fields usually succeed or user retries
+            return false;
+        }
+    }, []);
+
     // Mark order as seen (stops alert)
     // ✅ FIXED: Now passes p_seen_at parameter for efficiency (Maya's 10/10 fix)
     const markOrderSeen = useCallback(async (orderId) => {
@@ -433,11 +507,29 @@ export function useOrders({ businessId, filters = {} } = {}) {
                         // 🆕 MAYA FIX V2: Improved fallback for items
                         let finalItems = orderItems;
                         if (!finalItems || finalItems.length === 0) {
-                            // נסה למשוך מ-DB שוב אם ריק
+                            // 1. Try local DB again
                             finalItems = await db.order_items.where('order_id').equals(order.id).toArray();
+
+                            // 2. If still empty, try Existing State
                             if (!finalItems.length) {
                                 const existing = ordersRef.current.find(o => o.id === order.id);
                                 finalItems = existing?.items || [];
+                            }
+
+                            // 3. 🆕 REALTIME SYNC FIX: If absolutely no items, fetch from Supabase immediately
+                            // This handles the race condition where Order arrives before Items sync
+                            if (finalItems.length === 0) {
+                                console.log(`📥 [useOrders-V2] Order ${order.id.slice(0, 8)} has no local items. Fetching from Supabase...`);
+                                const { data: remoteItems } = await supabase
+                                    .from('order_items')
+                                    .select('*')
+                                    .eq('order_id', order.id);
+
+                                if (remoteItems && remoteItems.length > 0) {
+                                    console.log(`📥 [useOrders-V2] Fetched ${remoteItems.length} items from server. Saving to Dexie.`);
+                                    await db.order_items.bulkPut(remoteItems);
+                                    finalItems = remoteItems;
+                                }
                             }
                         }
 
@@ -456,6 +548,10 @@ export function useOrders({ businessId, filters = {} } = {}) {
                             orderType: order.order_type,
                             deliveryFee: order.delivery_fee,
                             deliveryNotes: order.delivery_notes,
+                            driver_id: order.driver_id,
+                            driver_name: order.driver_name,
+                            driver_phone: order.driver_phone,
+                            courier_name: order.courier_name,
                             timestamp: order.created_at ? new Date(order.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '', // 🆕 MAYA FIX V2
                             created_at: order.created_at,
                             updated_at: order.updated_at,
@@ -609,6 +705,19 @@ export function useOrders({ businessId, filters = {} } = {}) {
         return setItemsStatus(orderId, itemIds, 'ready');
     }, [setItemsStatus]);
 
+    // POLL INTERVAL: Fallback if Realtime fails (Every 30s) - START
+    useEffect(() => {
+        if (!businessId) return;
+
+        const pollInterval = setInterval(() => {
+            console.log('⏰ [useOrders-V2] Polling updates...');
+            refresh();
+        }, 30000); // 30 seconds
+
+        return () => clearInterval(pollInterval);
+    }, [businessId, refresh]);
+    // POLL INTERVAL - END
+
     // Initial load
     useEffect(() => {
         if (!businessId) {
@@ -646,6 +755,7 @@ export function useOrders({ businessId, filters = {} } = {}) {
         isLoading,
         error,
         updateStatus,
+        updateOrderFields, // 🆕 Generic update for arbitrary fields
         markOrderSeen,
         markItemsReady, // 🆕 Export for packing
         refresh

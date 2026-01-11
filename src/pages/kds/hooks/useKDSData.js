@@ -37,6 +37,9 @@ export const useKDSData = () => {
     // This prevents polling/realtime from overwriting optimistic state before animation completes
     const skipFetchUntilRef = useRef(0);
 
+    // ANTI-FLICKER: Track recent local updates to override stale server data
+    const recentLocalUpdatesRef = useRef(new Map());
+
     // 🟢 PRODUCTION LOGGING HELPERS
     const DEBUG = true; // Enabled for diagnostic purposes
     const log = (...args) => console.log(...args);
@@ -84,7 +87,7 @@ export const useKDSData = () => {
                     let correctStatus = order.order_status;
 
                     // Logic 1: If ANY item is active, order MUST be in an active status
-                    const hasActive = orderItems.some(i => ['in_progress', 'new', 'pending'].includes(i.item_status));
+                    const hasActive = orderItems.some(i => ['in_progress', 'new', 'pending', 'held'].includes(i.item_status));
                     if (hasActive && !['in_progress', 'pending', 'new'].includes(order.order_status)) {
                         correctStatus = 'in_progress';
                     }
@@ -799,9 +802,29 @@ export const useKDSData = () => {
 
             const processedOrders = [];
 
+            // Map for fast lookup of updates
+            const recentUpdates = recentLocalUpdatesRef.current;
+            const now = Date.now();
+
             log('🚀 [START-PROCESSING] About to process ' + (ordersData?.length || 0) + ' orders');
 
             (ordersData || []).forEach((order, idx) => {
+                // ANTI-FLICKER: Check for recent local override
+                const recentUpdate = recentUpdates.get(order.id) || recentUpdates.get(order.serverOrderId);
+                if (recentUpdate && now - recentUpdate.timestamp < 5000) {
+                    if (order.order_status !== recentUpdate.status) {
+                        console.log(`🛡️ [ANTI-FLICKER] Overriding ${order.order_status} -> ${recentUpdate.status} for ${order.order_number}`);
+                        order.order_status = recentUpdate.status;
+
+                        // If moving to completed/ready, implicitly complete items to prevent zombies
+                        if (['completed', 'ready'].includes(recentUpdate.status)) {
+                            if (order.order_items) {
+                                order.order_items.forEach(i => i.item_status = recentUpdate.status);
+                            }
+                        }
+                    }
+                }
+
                 // CRITICAL: Map various source names to order_items
                 // - RPC returns items_detail
                 // - Offline mode uses 'items'
@@ -818,7 +841,8 @@ export const useKDSData = () => {
                     item.item_status === 'in_progress' ||
                     item.item_status === 'new' ||
                     item.item_status === 'pending' ||
-                    item.item_status === 'ready'
+                    item.item_status === 'ready' ||
+                    item.item_status === 'held'
                 );
 
                 // Only skip to history if order is completed AND has no active items
@@ -883,7 +907,7 @@ export const useKDSData = () => {
                         } else if (Array.isArray(mods)) { if (mods.includes('__KDS_OVERRIDE__')) hasOverride = true; }
                         else if (typeof mods === 'object' && mods?.kds_override) { hasOverride = true; }
 
-                        if (kdsLogic === 'GRAB_AND_GO' && !hasOverride) return false;
+                        if ((kdsLogic === 'GRAB_AND_GO' || kdsLogic === 'CONDITIONAL') && !hasOverride) return false;
 
                         return true;
                     })
@@ -951,7 +975,8 @@ export const useKDSData = () => {
                             name: itemName,
                             modifiers: structuredModifiers,
                             quantity: item.quantity,
-                            status: visualStatus, // ✅ Using the visual override status
+                            status: visualStatus,
+                            item_status: item.item_status, // 🆕 CRITICAL: Keep raw status for grouping logic
                             price: itemPrice,
                             category: category,
                             modsKey: modsKey,
@@ -1015,100 +1040,61 @@ export const useKDSData = () => {
                 // Skip orders with no items after filtering
                 if (!rawItems || rawItems.length === 0) return;
 
-                // Group items by Course Stage
-                const itemsByStage = rawItems.reduce((acc, item) => {
-                    const stage = item.course_stage || 1;
-                    if (!acc[stage]) acc[stage] = [];
-                    acc[stage].push(item);
+                // NEW GROUPING LOGIC: Group items by "Display Status"
+                // This allows one order to have multiple cards (e.g., one 'new' card and one 'in_progress' card)
+                // and they will automatically MERGE when the 'new' card is moved to 'in_progress'.
+                const itemsByGroup = rawItems.reduce((acc, item) => {
+                    let groupKey;
+                    if (item.item_status === 'held') {
+                        groupKey = 'delayed';
+                    } else if (item.item_status === 'new' || item.item_status === 'pending') {
+                        groupKey = 'new';
+                    } else {
+                        groupKey = 'active'; // in_progress, ready, etc.
+                    }
+
+                    if (!acc[groupKey]) acc[groupKey] = [];
+                    acc[groupKey].push(item);
                     return acc;
                 }, {});
 
-                // Process each stage
-                Object.entries(itemsByStage).forEach(([stageStr, stageItems]) => {
-                    const stage = Number(stageStr);
-                    const cardId = stage === 1 ? order.id : `${order.id}-stage-${stage}`;
-
-                    const hasHeldItems = stageItems.some(i => i.status === 'held');
-                    const hasActiveItems = stageItems.some(i => i.status === 'in_progress' || i.status === 'new' || i.status === 'pending');
-                    // Treat 'completed' items as ready for KDS display purposes (so they appear in the bottom section)
-                    const allReady = stageItems.every(i => i.status === 'ready' || i.status === 'completed' || i.status === 'cancelled');
-                    // Note: If all are cancelled, it might also be 'ready' (done), or filtered out earlier. Assuming mixed cancelled/ready is ready.
+                // Process each group
+                Object.entries(itemsByGroup).forEach(([groupKey, groupItems]) => {
+                    const cardId = groupKey === 'active' ? order.id : `${order.id}-${groupKey}`;
 
                     let cardType, cardStatus;
+                    const allReady = groupItems.every(i => ['ready', 'completed', 'cancelled'].includes(i.item_status));
 
-                    // 🛠️ SOURCE OF TRUTH: If order_status says 'ready' or 'completed', FORCE it.
-                    // Do not let item status override the main order status.
-                    // This fixes the bug where "Maya" (ready) shows as in_progress because of one item.
-                    const isOrderReadyOrCompleted = order.order_status === 'ready' || order.order_status === 'completed';
-                    // FIX: Also check if explicitly in_progress to prevent "jump to ready" if items are ready but order isn't
-                    const isExplicitlyInProgress = order.order_status === 'in_progress';
-
-                    // NEW: Handle 'pending' order status first (e.g., delivery awaiting acknowledgment)
-                    const isOrderPending = order.order_status === 'pending';
-
-                    if (isOrderPending) {
-                        // Pending orders stay as pending - they need acknowledgment first
-                        cardType = 'active';
-                        cardStatus = 'pending';
-                    } else if (order.order_status === 'new') {
-                        // 'New' acknowledged orders - distinct from 'In Progress'
+                    if (groupKey === 'new') {
                         cardType = 'active';
                         cardStatus = 'new';
-                    } else if (hasActiveItems) {
-                        cardType = 'active';
-                        cardStatus = 'in_progress';
-                    } else if (isOrderReadyOrCompleted) {
-                        cardType = 'ready';
-                        cardStatus = 'ready';
-                    } else if (allReady && !isExplicitlyInProgress) {
-                        cardType = 'ready';
-                        cardStatus = 'ready';
-                    } else if (hasHeldItems && !hasActiveItems) {
+                    } else if (groupKey === 'delayed') {
                         cardType = 'delayed';
                         cardStatus = 'pending';
                     } else {
-                        cardType = 'active';
-                        cardStatus = 'in_progress';
+                        // active group (in_progress / ready)
+                        const isOrderReadyOrCompleted = order.order_status === 'ready' || order.order_status === 'completed';
+                        if (isOrderReadyOrCompleted || allReady) {
+                            cardType = 'ready';
+                            cardStatus = 'ready';
+                        } else {
+                            cardType = 'active';
+                            cardStatus = 'in_progress';
+                        }
                     }
 
-                    // LOG 1: Process Check
-                    if (order.id === 'd264b6c9-3dcd-4b0f-adb3-8d50f355906f' || String(order.order_number) === '1790') {
-                        console.log(`🎯 [PROCESS] Card ${order.order_number}:`, {
-                            orderId: String(order.id).slice(0, 8),
-                            orderStatus: order.order_status,
-                            _useLocalStatus: order._useLocalStatus,
-                            pending_sync: order.pending_sync,
-                            isExplicitlyInProgress: order.order_status === 'in_progress',
-                            hasInProgress: order.order_items?.some(i => i.item_status === 'in_progress' || i.item_status === 'new' || i.item_status === 'pending'),
-                            allReady: order.order_items?.every(i => ['ready', 'completed', 'cancelled'].includes(i.item_status)),
-                            finalCardType: cardType,
-                            finalCardStatus: cardStatus
-                        });
-                    }
-
-                    const groupedItems = groupOrderItems(stageItems);
-
-                    // STABILITY: Show all items, but use sortItems to keep active ones at top
+                    const groupedItems = groupOrderItems(groupItems);
                     const displayItems = sortItems(groupedItems);
-
-                    // Check if there are other stages/cards for this order (e.g., delayed Course 2)
-                    const otherStagesExist = Object.keys(itemsByStage).length > 1;
-                    // hasPendingItems is true ONLY if: this order had completed items BEFORE (continuation order)
-                    // Check if there are completed items in OTHER stages (not the current one)
-                    const hasCompletedItemsInOtherStages = Object.entries(itemsByStage)
-                        .filter(([s]) => parseInt(s) !== stage)
-                        .some(([, items]) => items.some(i => i.status === 'completed'));
-                    const hasPending = hasCompletedItemsInOtherStages;
 
                     processedOrders.push({
                         ...baseOrder,
-                        id: cardId, // STABLE ID: No suffix to prevent React key changes during status shifts
+                        id: cardId,
                         originalOrderId: order.id,
-                        courseStage: stage,
-                        created_at: order.created_at, // CRITICAL: Preserve original order time for queue sorting
-                        fired_at: stageItems[0]?.item_fired_at || order.created_at,
-                        isSecondCourse: stage === 2,
-                        hasPendingItems: hasPending, // Shows "+המשך" badge
+                        courseStage: groupItems[0]?.course_stage || 1,
+                        created_at: order.created_at,
+                        fired_at: groupItems[0]?.item_fired_at || order.created_at,
+                        isSecondCourse: groupItems.some(i => i.course_stage === 2),
+                        hasPendingItems: rawItems.some(i => i.item_status === 'completed'),
                         items: displayItems,
                         type: cardType,
                         orderStatus: cardStatus
@@ -1116,33 +1102,40 @@ export const useKDSData = () => {
                 });
             });
 
-            // Separate by type for display columns
-            // SORT BY created_at ASC for stable FIFO order in preparation column
+            // Separate and Sort
             const current = processedOrders
                 .filter(o => (o.type === 'active' || o.type === 'delayed'))
                 .sort((a, b) => {
-                    const aTime = new Date(a.created_at || 0).getTime();
-                    const bTime = new Date(b.created_at || 0).getTime();
+                    // 1. Force 'delayed' (Second Course) to the end (Left side in RTL -> Max Value)
+                    const aDelayed = a.type === 'delayed';
+                    const bDelayed = b.type === 'delayed';
+                    if (aDelayed && !bDelayed) return 1;
+                    if (!aDelayed && bDelayed) return -1;
+
+                    // 2. Sort by Fired At (Priority: Oldest Fired -> Right side for RTL KDS)
+                    // This ensures freshly fired items appear as "new" tasks chronologically
+                    const aTime = new Date(a.fired_at || a.created_at || 0).getTime();
+                    const bTime = new Date(b.fired_at || b.created_at || 0).getTime();
                     return aTime - bTime;
                 });
 
-            // NO CLIENT-SIDE SORTING!
-            // The database returns orders in stable order (ORDER BY created_at ASC).
-            // Client-side sorting causes cards to 'jump' when timestamps differ by milliseconds.
-
-            // Completed/Ready Section
+            // LOG 4: Final Summary
             // SORT BY ready_at ASC so newest ready = end of array = left side in RTL
             // STABILITY: Never use updated_at for sorting as it changes on every item edit/sync
             const completed = processedOrders.filter(o =>
                 (o.type === 'ready' || o.type === 'active_ready_split' || o.type === 'unpaid_delivered')
             ).sort((a, b) => {
-                // Secondary fallback to created_at if ready_at missing
+                // 1. Priority: Unpaid comes FIRST (Index 0 = Right side in RTL reversed??)
+                // verified hypothesis: Index 0 is Right-most. User wants Unpaid Right-most.
+                if (a.isPaid !== b.isPaid) {
+                    return a.isPaid ? 1 : -1; // Unpaid (false) comes before Paid (true)
+                }
+
+                // 2. Priority: Newest time comes FIRST
                 const aTime = new Date(a.ready_at || a.created_at || 0).getTime();
                 const bTime = new Date(b.ready_at || b.created_at || 0).getTime();
-                if (aTime !== bTime) return aTime - bTime;
 
-                // Tertiary sort by order number if times match exactly (extremely rare)
-                return Number(a.orderNumber) - Number(b.orderNumber);
+                return bTime - aTime; // Descending Sort (Newest First)
             });
 
             // LOG 4: Final Summary
@@ -1261,6 +1254,12 @@ export const useKDSData = () => {
         log('🎯 Calculated nextStatus:', nextStatus);
 
         const smartOrderId = getSmartId(orderId);
+
+        // ANTI-FLICKER: Record update immediately
+        recentLocalUpdatesRef.current.set(smartOrderId, { status: nextStatus, timestamp: Date.now() });
+        if (orderId !== smartOrderId) {
+            recentLocalUpdatesRef.current.set(orderId, { status: nextStatus, timestamp: Date.now() });
+        }
 
         // Helper to check if ID is likely a valid UUID
         const isUUID = (id) => typeof id === 'string' && id.length > 20 && id.includes('-');
@@ -1648,9 +1647,15 @@ export const useKDSData = () => {
             setIsLoading(true);
             const itemIds = itemsToFire.map(i => i.id);
 
+            // FIX: Extract clean UUID if it's a composite ID (e.g. "uuid-delayed")
+            // This prevents "invalid input syntax for type uuid" error in RPC
+            const cleanOrderId = (typeof orderId === 'string' && orderId.length > 36)
+                ? orderId.replace('-delayed', '').replace('-stage-1', '').replace('-stage-2', '')
+                : orderId;
+
             // CHANGED: Use supabase directly
             const { error } = await supabase.rpc('fire_items_v2', {
-                p_order_id: orderId,
+                p_order_id: cleanOrderId,
                 p_item_ids: itemIds
             });
 
@@ -2457,10 +2462,22 @@ export const useKDSData = () => {
 
             // B. Completed / Ready Orders
             // Show ONLY ready or completed
-            const completed = processedHistory.filter(o =>
-                o.type === 'ready' ||
-                (o.orderStatus === 'completed' && o.type !== 'active' && o.type !== 'delayed')
-            ).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+            // B. Completed / Ready Orders
+            // Sort: Paid First (Left), Unpaid Last (Right).
+            // Secondary Sort: Oldest First (Left), Newest Last (Right).
+            // Result in flex-row-reverse RTL: left [Oldest Paid ... Newest Paid ... Oldest Unpaid ... Newest Unpaid] right
+            const completed = processedHistory.filter(o => o.type === 'ready' || o.orderStatus === 'ready' || o.orderStatus === 'completed').sort((a, b) => {
+                // 1. Priority: Unpaid comes LAST (1) so it is at the end (Right side)
+                if (a.isPaid !== b.isPaid) {
+                    return a.isPaid ? -1 : 1; // Paid (-1) comes before Unpaid (1)
+                }
+
+                // 2. Priority: Newest time comes LAST (Right side)
+                const timeA = new Date(a.ready_at || a.updated_at || a.created_at).getTime();
+                const timeB = new Date(b.ready_at || b.updated_at || b.created_at).getTime();
+
+                return timeA - timeB; // Ascending Sort (Oldest -> Newest)
+            });
 
             // LOG 3: Final Lists
             console.log(`📊 [FINAL] Lists:`, {
