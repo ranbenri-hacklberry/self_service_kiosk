@@ -2,8 +2,9 @@ import React from 'react';
 import Button from '../../../components/ui/Button';
 
 
-const MenuCategoryFilter = ({ activeCategory = 'hot-drinks', onCategoryChange }) => {
-  const categories = [
+const MenuCategoryFilter = ({ activeCategory = 'hot-drinks', onCategoryChange, categories: propCategories }) => {
+  // Fallback categories if none provided
+  const defaultCategories = [
     { id: 'hot-drinks', name: 'שתיה חמה', icon: 'Coffee' },
     { id: 'cold-drinks', name: 'שתיה קרה', icon: 'GlassWater' },
     { id: 'pastries', name: 'מאפים', icon: 'Croissant' },
@@ -11,6 +12,9 @@ const MenuCategoryFilter = ({ activeCategory = 'hot-drinks', onCategoryChange })
     { id: 'sandwiches', name: 'כריכים וטוסטים', icon: 'Sandwich' },
     { id: 'desserts', name: 'קינוחים', icon: 'IceCream' }
   ];
+
+  // Use provided categories or fallback
+  const categories = (propCategories && propCategories.length > 0) ? propCategories : defaultCategories;
 
   const handleCategorySelect = (categoryId) => {
     if (onCategoryChange) {
@@ -32,7 +36,7 @@ const MenuCategoryFilter = ({ activeCategory = 'hot-drinks', onCategoryChange })
                   key={category?.id}
                   onClick={() => handleCategorySelect(category?.id)}
                   className={`
-                    flex items-center gap-2 px-6 py-3 rounded-lg transition-all duration-200 text-base font-bold
+                    flex items-center gap-1.5 px-3 py-3 rounded-lg transition-all duration-200 text-[15px] font-bold whitespace-nowrap
                     ${isActive
                       ? 'bg-white text-slate-900 shadow-sm scale-[1.02]'
                       : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'

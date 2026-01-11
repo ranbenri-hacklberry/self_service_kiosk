@@ -166,34 +166,41 @@ const PrepPage = () => {
     return (
         <div className="flex flex-col h-screen bg-gray-50 overflow-hidden" dir="rtl">
             {/* Header */}
-            <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-4 flex justify-between items-center border-b border-gray-200 font-heebo">
-                <div className="flex items-center gap-4">
-                    {/* Home button - rightmost in RTL */}
-                    <button onClick={handleExit} className="p-2 -mr-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition">
-                        <House size={24} />
+            <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-3 flex items-center border-b border-gray-200 font-heebo">
+                {/* Right Side - Home Button + Tabs */}
+                <div className="flex items-center gap-3 flex-1">
+                    <button onClick={handleExit} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition">
+                        <House size={22} />
                     </button>
+
+                    {/* Sub-tabs */}
+                    <div className="flex bg-gray-100 p-1 rounded-xl">
+                        <button onClick={() => setTasksSubTab('opening')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${tasksSubTab === 'opening' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500'}`}>
+                            <Sunrise size={16} /> פתיחה
+                            <span className="bg-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full">{openingTasks.length}</span>
+                        </button>
+                        <button onClick={() => setTasksSubTab('prep')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${tasksSubTab === 'prep' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500'}`}>
+                            <Utensils size={16} /> הכנות
+                            <span className="bg-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full">{prepBatches.length}</span>
+                        </button>
+                        <button onClick={() => setTasksSubTab('closing')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${tasksSubTab === 'closing' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500'}`}>
+                            <Sunset size={16} /> סגירה
+                            <span className="bg-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full">{closingTasks.length}</span>
+                        </button>
+                    </div>
                 </div>
 
-                {/* Center: Connection status */}
-                <div className="flex items-center gap-3 bg-slate-50 p-1 px-2 rounded-2xl border border-slate-200">
-                    <MiniMusicPlayer />
+                {/* Center - Clock & Connection */}
+                <div className="flex items-center gap-3 px-4">
+                    <div className="text-lg font-black text-slate-700">
+                        {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
                     <ConnectionStatusBar isIntegrated={true} />
                 </div>
 
-                {/* Sub-tabs */}
-                <div className="flex bg-gray-100 p-1 rounded-xl">
-                    <button onClick={() => setTasksSubTab('opening')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${tasksSubTab === 'opening' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500'}`}>
-                        <Sunrise size={16} /> פתיחה
-                        <span className="bg-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full">{openingTasks.length}</span>
-                    </button>
-                    <button onClick={() => setTasksSubTab('prep')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${tasksSubTab === 'prep' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500'}`}>
-                        <Utensils size={16} /> הכנות
-                        <span className="bg-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full">{prepBatches.length}</span>
-                    </button>
-                    <button onClick={() => setTasksSubTab('closing')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${tasksSubTab === 'closing' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500'}`}>
-                        <Sunset size={16} /> סגירה
-                        <span className="bg-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full">{closingTasks.length}</span>
-                    </button>
+                {/* Left Side (RTL = far left) - Music */}
+                <div className="flex items-center gap-2 flex-1 justify-end">
+                    <MiniMusicPlayer />
                 </div>
             </div>
 

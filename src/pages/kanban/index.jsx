@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useOrders } from '../../hooks/useOrders';
 import { useOrderAlerts } from '../../hooks/useOrderAlerts';
 import { KanbanBoard } from '../../components/kanban';
-import SMSModal from '../../components/kanban/SMSModal';
+import ShipmentModal from '../../components/kanban/ShipmentModal';
 import KDSPaymentModal from '../../pages/kds/components/KDSPaymentModal';
 import {
     RefreshCw, ArrowRight, Bell, BellOff,
@@ -17,14 +17,14 @@ import {
 } from 'lucide-react';
 
 // Columns to show (removed 'pending' as per user request)
-const STAFF_COLUMNS = ['new', 'in_prep', 'ready', 'shipped', 'delivered'];
+const STAFF_COLUMNS = ['new', 'in_prep', 'ready', 'shipped'];
 
 export default function KanbanPage() {
     const navigate = useNavigate();
     const { currentUser } = useAuth();
     const [alertsEnabled, setAlertsEnabled] = useState(true);
     const [paymentModal, setPaymentModal] = useState({ show: false, order: null });
-    const [smsModal, setSmsModal] = useState({ show: false, order: null });
+    const [shipmentModal, setShipmentModal] = useState({ show: false, order: null });
     const user = currentUser;
 
     // Get orders
@@ -33,6 +33,7 @@ export default function KanbanPage() {
         pendingAlertOrders,
         isLoading,
         updateStatus,
+        updateOrderFields, // 🆕 For updating generic fields like driver
         markOrderSeen,
         markItemsReady, // 🆕 For packing
         refresh
@@ -50,6 +51,26 @@ export default function KanbanPage() {
     const businessType = user?.business_type || 'cafe';
 
     const handleStatusUpdate = async (orderId, newStatus) => {
+        // Intercept move to 'shipped' to show modal first
+        if (newStatus === 'shipped') {
+            // Find the order object to pass to modal
+            let orderFound = null;
+            Object.values(ordersByStatus).forEach(list => {
+                const found = list.find(o => o.id === orderId);
+                if (found) orderFound = found;
+            });
+
+            if (orderFound) {
+                // Only show modal if NO driver is assigned yet (or if explicitly triggered by button to change driver - handled elsewhere)
+                // But for drag/drop status change, if driver exists, just ship it.
+                if (!orderFound.driver_id) {
+                    setShipmentModal({ show: true, order: orderFound });
+                    return; // Stop here, modal will handle rest
+                }
+                // If driver exists, fall through to updateStatus below
+            }
+        }
+
         await updateStatus(orderId, newStatus);
     };
 
@@ -61,6 +82,26 @@ export default function KanbanPage() {
     const handlePaymentConfirmed = async (orderId, paymentMethod) => {
         setPaymentModal({ show: false, order: null });
         refresh();
+    };
+
+    const handleShipmentConfirmed = async (orderId) => {
+        // Modal handles actual data update via RPC/DB
+        // Here we just maximize the UI state update
+        await updateStatus(orderId, 'shipped');
+        setShipmentModal({ show: false, order: null });
+        refresh();
+    };
+
+    const handlePackingClick = (orderId) => {
+        let orderFound = null;
+        Object.values(ordersByStatus).forEach(list => {
+            const found = list.find(o => o.id === orderId);
+            if (found) orderFound = found;
+        });
+
+        if (orderFound) {
+            setShipmentModal({ show: true, order: orderFound });
+        }
     };
 
     return (
@@ -91,7 +132,7 @@ export default function KanbanPage() {
                 <div className="flex items-center gap-3">
                     {/* 🆕 New Order Button (Kanban Only) */}
                     <button
-                        onClick={() => navigate('/manager')}
+                        onClick={() => navigate('/')}
                         className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-2xl font-black shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all active:scale-95 border border-slate-700"
                     >
                         <LayoutGrid size={18} />
@@ -148,17 +189,21 @@ export default function KanbanPage() {
                         onOrderStatusUpdate={handleStatusUpdate}
                         onPaymentCollected={handlePaymentCollected}
                         onMarkSeen={markOrderSeen}
-                        onReadyItems={markItemsReady} // 🆕 Pass through
-                        onSmsClick={(order) => setSmsModal({ show: true, order })}
+                        onReadyItems={handlePackingClick} // 🆕 Open modal instead of direct toggle
+                        onSmsClick={(order) => setShipmentModal({ show: true, order })} // Reuse same modal for SMS/Truck icon
                     />
                 )}
             </main>
 
-            {/* Modals */}
-            {smsModal.show && (
-                <SMSModal
-                    order={smsModal.order}
-                    onClose={() => setSmsModal({ show: false, order: null })}
+            {/* Shipment/Packing Modal */}
+            {shipmentModal.show && (
+                <ShipmentModal
+                    isOpen={true}
+                    order={shipmentModal.order}
+                    onClose={() => setShipmentModal({ show: false, order: null })}
+                    onUpdateStatus={handleStatusUpdate}
+                    onUpdateOrder={updateOrderFields} // 🆕
+                    onToggleItemPacked={markItemsReady}
                 />
             )}
 

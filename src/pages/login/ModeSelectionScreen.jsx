@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Monitor, ChefHat, LogOut, BarChart3, Coffee, Users, Music, ShieldAlert, Package, List, LayoutGrid, Truck } from 'lucide-react';
+import { Monitor, ChefHat, LogOut, BarChart3, Coffee, Users, Music, ShieldAlert, Package, List, LayoutGrid, Truck, ShoppingCart } from 'lucide-react';
 
 const ModeSelectionScreen = () => {
     const navigate = useNavigate();
@@ -37,6 +37,8 @@ const ModeSelectionScreen = () => {
             navigate('/data-manager-interface');
         } else if (mode === 'dexie-admin') {
             navigate('/dexie-admin');
+        } else if (mode === 'db-explorer') {
+            navigate('/super-admin/db');
         } else if (mode === 'kanban') {
             navigate('/kanban');
         } else if (mode === 'driver') {
@@ -45,21 +47,28 @@ const ModeSelectionScreen = () => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-900 flex items-center justify-center p-3 font-heebo" dir="rtl">
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 pt-16 font-heebo" dir="rtl">
             <div className="max-w-5xl w-full">
-                <div className="text-center mb-6">
+                <div className="text-center mb-8">
                     <h1 className="text-2xl font-black text-white mb-2">
                         שלום, {currentUser?.name || 'עובד'} 👋
                     </h1>
-                    <p className="text-base text-slate-300">
+                    <p className="text-base text-slate-300 mb-3">
                         בחר את מצב העבודה
                     </p>
+                    {/* Business Name Badge */}
+                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/20 border border-green-500/30 rounded-full">
+                        <span className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" />
+                        <span className="text-sm font-bold text-green-400">
+                            {currentUser?.impersonating_business_name || currentUser?.business_name || 'עסק'}
+                        </span>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 max-w-5xl mx-auto">
 
-                    {/* 0. Super Admin - Only for Super Admin */}
-                    {currentUser?.is_super_admin && (
+                    {/* 0. Super Admin - Only for Super Admin AND NOT Impersonating */}
+                    {currentUser?.is_super_admin && !currentUser?.is_impersonating && (
                         <button
                             onClick={() => navigate('/super-admin')}
                             className="group relative bg-slate-900 rounded-2xl p-5 hover:bg-slate-800 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-slate-700"
@@ -208,23 +217,23 @@ const ModeSelectionScreen = () => {
                     </button>
 
                     {/* 4b. Driver Screen - Mobile only, for drivers */}
-                    {isDriver && (
-                        <button
-                            onClick={() => handleModeSelect('driver')}
-                            className="md:hidden group relative bg-gray-800 rounded-2xl p-5 hover:bg-gray-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-500"
-                        >
-                            <div className="absolute top-0 left-0 w-20 h-20 bg-purple-900/50 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
-                            <div className="relative z-10">
-                                <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
-                                    <Truck size={20} strokeWidth={2.5} />
-                                </div>
-                                <h2 className="text-xl font-black text-white mb-1">מסך נהג</h2>
-                                <p className="text-slate-400 text-sm leading-relaxed font-medium">
-                                    משלוחים מוכנים לאיסוף
-                                </p>
+                    {/* {isDriver && ( */}
+                    <button
+                        onClick={() => handleModeSelect('driver')}
+                        className="md:hidden group relative bg-gray-800 rounded-2xl p-5 hover:bg-gray-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-500"
+                    >
+                        <div className="absolute top-0 left-0 w-20 h-20 bg-purple-900/50 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
+                        <div className="relative z-10">
+                            <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
+                                <Truck size={20} strokeWidth={2.5} />
                             </div>
-                        </button>
-                    )}
+                            <h2 className="text-xl font-black text-white mb-1">מסך נהג</h2>
+                            <p className="text-slate-400 text-sm leading-relaxed font-medium">
+                                משלוחים מוכנים לאיסוף
+                            </p>
+                        </div>
+                    </button>
+                    {/* )} */}
 
                     {/* 5. Advanced Data - Hidden on Mobile */}
                     <button
@@ -241,20 +250,65 @@ const ModeSelectionScreen = () => {
                             </div>
                             <h2 className="text-xl font-black text-slate-900 mb-1">מידע מתקדם</h2>
                             <p className="text-slate-500 text-sm leading-relaxed font-medium">
-                                לקוחות, תפריט וסנכרון. המסך עדיין בעבודה ולא להבהל מהבלאגן או שזה מתרסק לפעמים.
+                                לקוחות, תפריט וסנכרון
                             </p>
                         </div>
                     </button>
 
+                    {/* 6. Database Explorer - Admin Only */}
+                    {(currentUser?.is_super_admin || currentUser?.role === 'admin') && (
+                        <button
+                            onClick={() => handleModeSelect('db-explorer')}
+                            className="hidden md:block group relative bg-slate-800 rounded-2xl p-5 hover:bg-slate-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-500"
+                        >
+                            <div className="absolute top-3 left-3 bg-purple-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                Admin
+                            </div>
+                            <div className="absolute top-0 left-0 w-20 h-20 bg-purple-900/50 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
+                            <div className="relative z-10">
+                                <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
+                                    <BarChart3 size={20} strokeWidth={2.5} />
+                                </div>
+                                <h2 className="text-xl font-black text-white mb-1">בסיס נתונים</h2>
+                                <p className="text-slate-400 text-sm leading-relaxed font-medium">
+                                    צפייה בטבלאות ו-SQL
+                                </p>
+                            </div>
+                        </button>
+                    )}
+
+                    {/* 7. E-commerce Link - Testing */}
+                    <button
+                        onClick={() => window.open('http://localhost:3000', '_blank')}
+                        className="group relative bg-white rounded-2xl p-5 hover:bg-pink-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-pink-100"
+                    >
+                        <div className="absolute top-3 left-3 bg-pink-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                            חדש! 🚀
+                        </div>
+                        <div className="absolute top-0 left-0 w-20 h-20 bg-pink-100 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
+                        <div className="relative z-10">
+                            <div className="w-10 h-10 bg-pink-600 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
+                                <ShoppingCart size={20} strokeWidth={2.5} />
+                            </div>
+                            <h2 className="text-xl font-black text-slate-900 mb-1">חנות אונליין</h2>
+                            <p className="text-slate-500 text-sm leading-relaxed font-medium">
+                                חווית ההזמנה הדיגיטלית החדשה
+                                <br />
+                                <span className="text-xs font-bold text-pink-600 mt-1 block bg-pink-50 rounded p-1 inline-block border border-pink-100">
+                                    כניסה מהירה: 0500000000 | 123456
+                                </span>
+                            </p>
+                        </div>
+                    </button>
                 </div>
 
                 <div className="mt-6 text-center flex flex-col items-center gap-2">
                     <button
-                        onClick={logout}
+                        onClick={currentUser?.is_impersonating ? logout : logout}
                         className="inline-flex items-center gap-2 text-slate-400 hover:text-white transition-colors px-4 py-2 rounded-lg hover:bg-white/10 text-sm"
                     >
                         <LogOut size={16} />
-                        <span>יציאה</span>
+                        <span>{currentUser?.is_impersonating ? 'חזרה לפורטל הראשי' : 'יציאה'}</span>
                     </button>
                     <div className="text-[10px] text-slate-500 font-mono opacity-50">
                         v{appVersion}

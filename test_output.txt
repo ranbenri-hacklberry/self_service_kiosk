@@ -1,0 +1,8 @@
+
+> self-service-kiosk@2.0.0 test:run
+> vitest run src/test/auto/Music.test.jsx
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vitejs.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[46m RUN [49m[22m [36mv4.0.16 [39m[90m/Users/user/.gemini/antigravity/scratch/my_app/frontend_source[39m
+

@@ -1,0 +1,30 @@
+import React from "react";
+import { BrowserRouter, RouterRoutes, Route, useNavigate, useLocation, Navigate } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
+import ScrollToTop from "@/components/ScrollToTop";
+import ErrorBoundary from "@/components/ErrorBoundary";
+import NotFound from "@/pages/NotFound";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { MusicProvider } from "@/context/MusicContext";
+import SyncStatusModal from "@/components/SyncStatusModal";
+import MiniMusicBar from './components/music/MiniMusicBar';
+
+// Pages
+import LoginScreen from "@/pages/login/LoginScreen";
+import ModeSelectionScreen from "@/pages/login/ModeSelectionScreen";
+import MenuOrderingInterface from './pages/menu-ordering-interface';
+import KdsScreen from './pages/kds';
+import DataManagerInterface from './pages/data-manager-interface';
+import SuperAdminDashboard from './pages/super-admin';
+import DatabaseExplorer from './pages/super-admin/DatabaseExplorer';
+import ManagerKDS from './components/manager/ManagerKDS';
+import InventoryPage from './pages/inventory';
+import PrepPage from './pages/prep';
+import MusicPage from './pages/music';
+import DexieAdminPanel from './pages/dexie-admin';
+import MayaAssistant from './pages/maya';
+import SpotifyCallback from './pages/callback/spotify';
+import DexieTestPage from './pages/DexieTestPage';
+import KanbanPage from './pages/kanban';
+import DriverPage from './pages/driver';
+import OrderTrackingPage from './pages/order-tracking';

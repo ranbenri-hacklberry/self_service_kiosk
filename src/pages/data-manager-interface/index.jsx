@@ -12,6 +12,7 @@ import ConnectionStatusBar from '../../components/ConnectionStatusBar';
 import MiniMusicPlayer from '../../components/music/MiniMusicPlayer';
 import { useAuth } from '@/context/AuthContext';
 import ManagerHeader from '@/components/manager/ManagerHeader';
+import BusinessInfoBar from '@/components/BusinessInfoBar';
 import { LogOut } from 'lucide-react';
 
 const ManagerDashboard = () => {

@@ -12,7 +12,7 @@
  */
 
 import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
-import { Clock, Edit, RotateCcw, Flame, Truck, Phone, MapPin } from 'lucide-react';
+import { Clock, Edit, RotateCcw, Flame, Truck, Phone, MapPin, Package, CheckCircle } from 'lucide-react';
 import { sortItems } from '../../../utils/kdsUtils';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
@@ -39,17 +39,14 @@ const PrepTimer = memo(({ order, isHistory, isReady }) => {
 
   useEffect(() => {
     const calculate = () => {
-      // ספירה מרגע ההזמנה המקורי (Created At) ועד למוכן (Ready At)
       const startStr = order.created_at;
       const endStr = order.ready_at;
-
       const start = new Date(startStr).getTime();
       let end;
 
       if (endStr) {
         end = new Date(endStr).getTime();
       } else if (isReady || isHistory) {
-        // Fallback to updated_at for completed orders if ready_at is missing
         end = order.updated_at ? new Date(order.updated_at).getTime() : null;
       } else {
         end = Date.now();
@@ -66,7 +63,6 @@ const PrepTimer = memo(({ order, isHistory, isReady }) => {
     };
 
     calculate();
-    // For active orders, update every minute
     let interval;
     if (!isReady && !isHistory) {
       interval = setInterval(calculate, 60000);
@@ -87,15 +83,13 @@ const OrderCard = memo(({
   order,
   isReady = false,
   isHistory = false,
-  isKanban = false, // 🆕 Kanban specific prop
+  isDriverView = false,
   glowClass = '',
   onOrderStatusUpdate,
   onPaymentCollected,
   onFireItems,
   onReadyItems,
-  onToggleEarlyDelivered,
   onEditOrder,
-  onCancelOrder,
   onRefresh
 }) => {
   const [isUpdating, setIsUpdating] = useState(false);
@@ -107,19 +101,15 @@ const OrderCard = memo(({
     const isDelayedCard = order.type === 'delayed';
     const isUnpaidDelivered = order.type === 'unpaid_delivered';
 
-    // 1. Highest Priority: Unpaid orders logic
     if (isUnpaid && !isHistory) {
-      // Bold red border always for unpaid, but ONLY pulse if it's already Ready
       if (statusLower === 'ready') return 'border-t-[6px] border-red-600 shadow-md ring-2 ring-red-100 animate-pulse';
       return 'border-t-[6px] border-red-500 shadow-sm';
     }
     if (isHistory && isUnpaid) return 'border-t-[6px] border-amber-500 shadow-sm';
 
-    // 2. Special Card Types
     if (isDelayedCard) return 'border-t-[6px] border-slate-400 shadow-inner bg-slate-100 opacity-90 grayscale-[0.3]';
     if (isUnpaidDelivered) return 'border-t-[6px] border-blue-500 shadow-md animate-strong-pulse bg-blue-50/30';
 
-    // 3. Status Based Colors
     if (statusLower === 'pending') return 'border-t-[6px] border-amber-500 shadow-md animate-pulse bg-amber-50/30';
     if (statusLower === 'new') return 'border-t-[6px] border-green-500 shadow-md';
     if (statusLower === 'in_progress' || statusLower === 'in_prep') return 'border-t-[6px] border-yellow-500 shadow-lg ring-1 ring-yellow-100';
@@ -127,7 +117,6 @@ const OrderCard = memo(({
     return 'border-gray-200 shadow-sm';
   }, [order.type, order.orderStatus, isHistory, order.isPaid]);
 
-  // Memoize unified items and split logic
   const { isLargeOrder, rightColItems, leftColItems, unifiedItems } = useMemo(() => {
     const items = sortItems(order.items || []);
 
@@ -138,8 +127,7 @@ const OrderCard = memo(({
     };
 
     const totalRows = items.reduce((acc, item) => acc + getItemRows(item), 0);
-    // 🆕 In Kanban, we prefer single column unless it's REALLY huge
-    const splitNeeded = !isKanban && !isHistory && totalRows > 5;
+    const splitNeeded = totalRows > 5 && !isHistory;
 
     const rCol = [];
     const lCol = [];
@@ -163,11 +151,9 @@ const OrderCard = memo(({
       rightColItems: rCol,
       leftColItems: lCol
     };
-  }, [order.items, isHistory, isKanban]);
+  }, [order.items, isHistory]);
 
   const orderStatusLower = (order.orderStatus || '').toLowerCase();
-
-  // Pending orders get special "ראיתי" button, others get normal flow
   const isPending = orderStatusLower === 'pending';
   const nextStatusLabel = isPending
     ? 'ראיתי'
@@ -183,156 +169,126 @@ const OrderCard = memo(({
 
   const cardWidthClass = isHistory
     ? (isLargeOrder ? 'w-[294px]' : 'w-[200px]')
-    : (isKanban ? 'w-full' : (isLargeOrder ? 'w-[420px]' : 'w-[280px]'));
+    : (isDriverView ? 'w-full' : (isLargeOrder ? 'w-[420px]' : 'w-[280px]'));
+
+  const deliveryInfo = useMemo(() => {
+    if (!order.delivery_info) return {};
+    return typeof order.delivery_info === 'string' ? JSON.parse(order.delivery_info) : order.delivery_info;
+  }, [order.delivery_info]);
 
   const renderItemRow = useCallback((item, idx, isLarge) => {
-    const isEarlyDelivered = !isReady && !isHistory && (item.is_early_delivered || item.item_status === 'ready' || item.item_status === 'shipped');
+    // FIX: Decouple from Kanban (is_packed) and use KDS specific field
+    const isEarlyDelivered = !isReady && !isHistory && (item.is_early_delivered === true);
     const nameSizeClass = isHistory ? 'text-sm' : 'text-base';
     const badgeSizeClass = isHistory ? 'w-5 h-5 text-xs' : 'w-6 h-6 text-base';
     const modSizeClass = isHistory ? 'text-[10px]' : 'text-xs';
 
     return (
-      <div key={`${item.menuItemId}-${item.modsKey || item.id || idx}`} className={`flex flex-col ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered ? 'opacity-40' : ''}`}>
+      <div key={`${item.menuItemId}-${item.modsKey || item.id || idx}`} className={`flex flex-col transition-colors duration-300 ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered ? '-mx-1 px-1 rounded-md mb-1' : ''}`}>
         <div className="flex items-start gap-[5px] relative">
-          {/* Packing Strike-through (same as KDS early delivery) */}
           {isEarlyDelivered && (
             <div className="absolute top-[13px] right-7 left-1 flex items-center pointer-events-none z-10">
-              <div className="w-full h-[3px] bg-slate-500/60 rounded-full" />
+              <div className="w-full h-[3px] bg-green-600/30 rounded-full" />
             </div>
           )}
 
-          <div className="flex items-start gap-[5px] flex-1 min-w-0">
-            <span className={`flex items-center justify-center rounded-lg font-black shadow-sm shrink-0 mt-0 ${badgeSizeClass} ${item.quantity > 1 ? 'bg-orange-600 text-white ring-2 ring-orange-200' : (order.type === 'delayed' ? 'bg-gray-300 text-gray-600' : 'bg-slate-900 text-white')
-              }`}>
+          <div
+            className="flex items-start gap-[5px] flex-1 min-w-0 tracking-tight cursor-pointer active:scale-[0.98] transition-all p-1 -m-1 rounded-lg hover:bg-black/5"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onReadyItems && !isReady && !isHistory) {
+                onReadyItems(order.id, [item]);
+              }
+            }}
+          >
+            <span className={`flex items-center justify-center rounded-lg font-black shadow-sm shrink-0 mt-0 ${badgeSizeClass} ${item.quantity > 1 ? 'bg-orange-600 text-white ring-2 ring-orange-200' : (order.type === 'delayed' ? 'bg-gray-300 text-gray-600' : 'bg-slate-900 text-white')}`}>
               {item.quantity}
             </span>
 
             <div className="flex-1 pt-0 min-w-0 pr-0">
-              {(() => {
-                if (!item.modifiers || item.modifiers.length === 0) {
-                  return (
-                    <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
-                      <span className={`font-bold ${item.quantity > 1 ? 'text-orange-700' : 'text-gray-900'} ${nameSizeClass}`}>
-                        {item.name}
-                      </span>
-                    </div>
-                  );
-                }
-
-                const visibleMods = item.modifiers
-                  .map(mod => ({ ...mod, shortName: getShortName(mod.text || mod.valueName || mod) }))
-                  .filter(mod => mod.shortName !== null);
-
-                if (visibleMods.length === 0) {
-                  return (
-                    <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
-                      <span className={`font-bold ${item.quantity > 1 ? 'text-orange-700' : 'text-gray-900'} ${nameSizeClass}`}>
-                        {item.name}
-                      </span>
-                    </div>
-                  );
-                }
-
-                const renderModLabel = (mod, i) => (
-                  <span key={i} className={`mod-label ${getModColorClass(mod.text || mod.valueName || mod, mod.shortName)} ${modSizeClass}`}>
-                    {mod.shortName}
+              <div className="flex flex-col">
+                <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
+                  <span className={`font-bold ${isEarlyDelivered ? 'text-gray-400' : (item.quantity > 1 ? 'text-orange-700' : 'text-gray-900')} ${nameSizeClass}`}>
+                    {item.name}
                   </span>
-                );
-
-                const row1Mods = visibleMods.slice(0, 2);
-                const remainingMods = visibleMods.slice(2);
-
-                return (
-                  <div className="flex flex-col">
-                    <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
-                      <span className={`font-bold ${item.quantity > 1 ? 'text-orange-700' : 'text-gray-900'} ${nameSizeClass}`}>
-                        {item.name}
+                  {item.modifiers?.map((mod, i) => {
+                    const shortName = getShortName(mod.text || mod.valueName || mod);
+                    if (shortName === null) return null;
+                    return (
+                      <span key={i} className={`mod-label ${getModColorClass(mod.text || mod.valueName || mod, shortName)} ${modSizeClass}`}>
+                        {shortName}
                       </span>
-                      {row1Mods.map((mod, i) => renderModLabel(mod, i))}
-                    </div>
-                    {remainingMods.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1 text-right leading-snug mt-0.5 ml-0">
-                        {remainingMods.map((mod, i) => renderModLabel(mod, i + 2))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div >
+      </div>
     );
-  }, [isHistory, order.type, onReadyItems, order.id, order.originalOrderId]);
+  }, [isHistory, isReady, order.type, onReadyItems, order.id]);
+
+  // Detect item addition (merge) for flash effect
+  const prevItemsLength = React.useRef(order.items?.length || 0);
+  const [shouldFlash, setShouldFlash] = useState(false);
+
+  useEffect(() => {
+    if (order.items?.length > prevItemsLength.current) {
+      // Items added -> Merge detected
+      setShouldFlash(true);
+      const timer = setTimeout(() => setShouldFlash(false), 1500); // Flash for 1.5s
+      return () => clearTimeout(timer);
+    }
+    prevItemsLength.current = order.items?.length;
+  }, [order.items?.length]);
 
   return (
-    <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl px-[5px] pt-1.5 pb-2.5 ${isHistory ? 'mx-[2px]' : 'mx-2'} flex flex-col h-full font-heebo ${order.type === 'delayed' ? 'bg-gray-50' : 'bg-white'} ${statusStyles} border-x border-b border-gray-100 ${glowClass}`}>
-      <div className="flex justify-between items-start mb-0.5 border-b border-gray-50 pb-0.5">
+    <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl px-[5px] pt-1.5 pb-2.5 ${isHistory ? 'mx-[2px]' : 'mx-2'} flex flex-col h-full font-heebo ${(order.type === 'delayed' || orderStatusLower === 'new') ? 'bg-gray-100' : 'bg-white'} ${statusStyles} border-x border-b border-gray-100 ${glowClass} ${shouldFlash ? 'animate-pulse ring-4 ring-orange-400 z-20' : ''} relative overflow-hidden`}>
+
+      {/* Header */}
+      <div className="z-0 flex justify-between items-start mb-0.5 border-b border-gray-50 pb-0.5">
         <div className="flex flex-col overflow-hidden flex-1">
           <div className="flex flex-col w-full">
             <div className="flex items-center gap-2 w-full">
-              {order.customerName && !['אורח', 'אורח אנונימי'].includes(order.customerName) ? (
-                <div className={`${isHistory ? 'text-lg' : 'text-2xl'} font-black text-slate-900 leading-none tracking-tight truncate`}>
-                  {order.customerName}
-                </div>
-              ) : (
-                <div className={`${isHistory ? 'text-lg' : 'text-2xl'} font-black text-slate-900 leading-none tracking-tight truncate`}>
-                  #{order.orderNumber}
-                </div>
-              )}
+              <div className={`${isHistory ? 'text-lg' : 'text-2xl'} font-black text-slate-900 leading-none tracking-tight truncate`}>
+                {order.customerName && !['אורח', 'אורח אנונימי'].includes(order.customerName) ? order.customerName : `#${order.orderNumber}`}
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {order.isSecondCourse && (
-                <span className="bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-purple-200">
-                  מנה שניה
-                </span>
-              )}
-              {order.orderType === 'delivery' && (
-                <span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-blue-200 flex items-center gap-1">
-                  <Truck size={10} />
-                  משלוח
-                </span>
-              )}
-              {order.hasPendingItems && order.type !== 'delayed' && (
-                <span className="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1 border border-amber-200">
-                  <Clock size={10} />
-                  +המשך
-                </span>
-              )}
-              {order.type === 'delayed' && (
-                <span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold border border-slate-300 flex items-center gap-1">
-                  <Clock size={10} />
-                  ממתין ל-'אש'
-                </span>
-              )}
-            </div>
+            {isDriverView && (
+              <div className="flex flex-col gap-1 mt-2 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                {order.customerPhone && (
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Phone size={14} className="text-slate-400" />
+                    <span className="font-mono font-bold text-sm" dir="ltr">{order.customerPhone}</span>
+                  </div>
+                )}
+                {(order.deliveryAddress || deliveryInfo.address) && (
+                  <div className="flex items-start gap-2 text-slate-800">
+                    <MapPin size={14} className="mt-1 shrink-0 text-purple-500" />
+                    <span className="font-bold text-sm leading-tight">{order.deliveryAddress || deliveryInfo.address}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
-
+            {/* TAGS REMOVED AS REQUESTED BY USER */}
           </div>
         </div>
 
-
         <div className="text-left flex flex-col items-end shrink-0 ml-2 gap-1.5">
           <div className="flex items-center gap-2">
-            {!isHistory && !isKanban && ( // 🆕 Hide edit button in Kanban
+            {!isHistory && onEditOrder && (
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (onEditOrder) onEditOrder(order);
-                }}
-                className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 rounded-lg font-bold text-xs transition-all flex items-center gap-1 border border-blue-100 hover:border-blue-200 h-6"
+                onClick={(e) => { e.stopPropagation(); onEditOrder(order); }}
+                className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-bold text-xs transition-all flex items-center gap-1 border border-blue-100 h-6"
               >
                 <Edit size={12} strokeWidth={2.5} />
-                {order.customerName && !['אורח', 'אורח אנונימי'].includes(order.customerName) ? (
-                  <span className="font-mono">#{order.orderNumber}</span>
-                ) : (
-                  <span>עריכה</span>
-                )}
+                <span className="font-mono">#{order.orderNumber}</span>
               </button>
             )}
-
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-bold h-6 shadow-sm transition-colors bg-gray-50 border-gray-200 text-gray-500">
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-bold h-6 transition-colors bg-gray-50 border-gray-200 text-gray-500">
               <Clock size={12} />
               <span className="font-mono dir-ltr text-[10px]">{order.timestamp}</span>
             </div>
@@ -340,7 +296,8 @@ const OrderCard = memo(({
         </div>
       </div>
 
-      <div className={`flex-1 overflow-x-hidden overflow-y-auto custom-scrollbar pr-1 mr-1 mb-2`}>
+      {/* Items Area */}
+      <div className="z-0 flex-1 overflow-x-hidden overflow-y-auto custom-scrollbar pr-1 mr-1 mb-2">
         {isLargeOrder ? (
           <div className="flex h-full gap-2">
             <div className="flex-1 flex flex-col space-y-1 border-l border-gray-100 pl-2">
@@ -357,22 +314,19 @@ const OrderCard = memo(({
         )}
       </div>
 
-      <div className="mt-auto flex flex-col gap-2 relative">
+      <div className={`mt-auto flex flex-col gap-2 relative ${orderStatusLower === 'new' ? 'z-[10]' : 'z-0'}`}>
         {order.type === 'delayed' ? (
           <button
             disabled={isUpdating}
             onClick={async (e) => {
-              e.stopPropagation();
-              setIsUpdating(true);
+              e.stopPropagation(); setIsUpdating(true);
               try {
                 const flatIds = order.items.flatMap(i => i.ids || [i.id]);
                 const itemsPayload = flatIds.map(id => ({ id }));
                 if (onFireItems) await onFireItems(order.id || order.originalOrderId, itemsPayload);
-              } finally {
-                setIsUpdating(false);
-              }
+              } finally { setIsUpdating(false); }
             }}
-            className={`w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-xl font-black text-lg shadow-lg shadow-orange-200 border-b-4 border-orange-700 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center gap-2 hover:brightness-110 ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''} outline-none`}
+            className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-xl font-black text-lg shadow-lg active:translate-y-1 transition-all flex items-center justify-center gap-2"
           >
             <Flame size={18} className="fill-white animate-pulse" />
             <span>{isUpdating ? 'שולח...' : 'הכן עכשיו!'}</span>
@@ -388,41 +342,79 @@ const OrderCard = memo(({
                   </div>
                   <PrepTimer order={order} isHistory={true} isReady={true} />
                 </div>
+              </div>
+            )}
 
+            {isHistory && (
+              <div className="mt-auto pt-2 border-t border-gray-100/50">
                 <div className="flex flex-col gap-1.5">
                   <div className={`flex items-center gap-2 p-1 border rounded-xl transition-colors ${order.isPaid ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
-                    <div className={`flex-1 flex items-center justify-center py-1 px-1.5 rounded-lg border shadow-sm ${order.isPaid ? (PAYMENT_STYLES[order.payment_method] || 'bg-white border-green-200 text-green-700') : 'bg-white border-red-200 text-red-600 animate-pulse'}`}>
-                      <span className="text-[11px] font-black truncate">
-                        {order.isPaid ? `שולם ב-${PAYMENT_LABELS[order.payment_method] || order.payment_method}` : 'טרם שולם'}
-                      </span>
-                    </div>
+                    <div className={`flex-1 flex items-center justify-between text-xs ${order.isPaid ? 'text-gray-500 bg-gray-50/80 border-gray-100' : 'text-amber-700 bg-amber-50 border-amber-200 shadow-sm -translate-y-0.5 cursor-pointer hover:bg-amber-100 transition-colors'} p-1.5 rounded-lg border`}>
 
-                    <div className="flex items-center gap-1 shrink-0 px-1">
-                      <span className="text-sm font-black text-slate-800 tracking-tight">
-                        ₪{(order.totalOriginalAmount || order.fullTotalAmount || order.totalAmount)?.toLocaleString()}
-                      </span>
+                      {!order.isPaid ? (
+                        <div
+                          className="flex items-center justify-between w-full"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onPaymentCollected) onPaymentCollected(order);
+                          }}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-5 h-5 bg-white rounded-full flex items-center justify-center shadow-sm border border-amber-100">
+                              <img
+                                src="https://gxzsxvbercpkgxraiaex.supabase.co/storage/v1/object/public/Photos/cashregister.jpg"
+                                alt="קופה"
+                                className="w-3.5 h-3.5 object-contain"
+                              />
+                            </div>
+                            <span className="font-bold">לתשלום</span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0 px-1">
+                            <span className="text-sm font-black text-amber-800 tracking-tight">
+                              ₪{(order.totalOriginalAmount || order.fullTotalAmount || order.totalAmount)?.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <CheckCircle size={14} className="text-green-500 shrink-0" />
+                            <div className="flex flex-col">
+                              <span className="truncate font-bold">
+                                {PAYMENT_LABELS[order.payment_method] || order.payment_method || 'שולם'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0 px-1">
+                            <span className="text-sm font-black text-slate-800 tracking-tight">
+                              ₪{(order.totalOriginalAmount || order.fullTotalAmount || order.totalAmount)?.toLocaleString()}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  {order.is_refund && (
-                    <div className="flex items-center gap-2 p-1 bg-orange-50 border border-orange-100 rounded-xl">
-                      <div className={`flex-1 flex items-center justify-center py-1 px-1.5 rounded-lg border shadow-sm ${PAYMENT_STYLES[order.refund_method] || 'bg-white border-orange-200 text-orange-700'}`}>
-                        <span className="text-[11px] font-black truncate">
-                          זוכה ב-{PAYMENT_LABELS[order.refund_method] || order.refund_method}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0 px-1">
-                        <span className="text-sm font-black text-orange-700 tracking-tight">-₪{Number(order.refund_amount).toLocaleString()}</span>
-                      </div>
-                    </div>
+                  {onEditOrder && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEditOrder(order);
+                      }}
+                      className="w-full py-1.5 bg-slate-100/80 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors border border-slate-200"
+                    >
+                      <Edit size={12} />
+                      עריכת הזמנה
+                    </button>
                   )}
                 </div>
               </div>
             )}
 
+
             {!isHistory && (
-              <div className="flex items-stretch gap-2 mt-auto h-11 w-full text-sm">
-                {isReady && !isKanban && ( // 🆕 Hide undo in Kanban (can just drag back)
+              <div className="flex items-stretch gap-2 mt-auto h-11 w-full text-sm relative">
+                {isReady && (
                   <button
                     disabled={isUpdating}
                     onClick={async (e) => {
@@ -430,31 +422,26 @@ const OrderCard = memo(({
                       try { await onOrderStatusUpdate(order.id, 'undo_ready'); }
                       finally { setIsUpdating(false); }
                     }}
-                    className="w-11 h-11 bg-gray-200 border-2 border-gray-300 rounded-xl shadow-sm flex items-center justify-center text-gray-700 hover:text-gray-900 hover:bg-gray-300 shrink-0 active:scale-95 transition-all outline-none"
+                    className="w-11 h-11 bg-gray-200 border-2 border-gray-300 rounded-xl shadow-sm flex items-center justify-center text-gray-700 shrink-0 active:scale-95 transition-all outline-none"
                   >
                     <RotateCcw size={20} />
                   </button>
                 )}
 
-                {/* 🆕 ONLY SHOW ACTION BUTTON IF IT IS PENDING OR NOT KANBAN */}
-                {(isPending || !isKanban) && (
-                  <button
-                    disabled={isUpdating}
-                    onClick={async (e) => {
-                      console.log('🔘 [OrderCard] Action button clicked!', { id: order.id, status: order.orderStatus, label: nextStatusLabel });
-                      e.stopPropagation();
-                      setIsUpdating(true);
-                      try { await onOrderStatusUpdate(order.id, order.orderStatus); }
-                      catch (err) { console.error('❌ [OrderCard] Update error:', err); }
-                      finally { setIsUpdating(false); }
-                    }}
-                    className={`flex-1 rounded-xl font-black text-lg shadow-sm active:scale-[0.98] transition-all flex items-center justify-center ${actionBtnColor} ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''} outline-none`}
-                  >
-                    {isUpdating ? 'מעדכן...' : nextStatusLabel}
-                  </button>
-                )}
+                <button
+                  disabled={isUpdating}
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    setIsUpdating(true);
+                    try { await onOrderStatusUpdate(order.id, order.orderStatus); }
+                    finally { setIsUpdating(false); }
+                  }}
+                  className={`flex-1 rounded-xl font-black text-lg shadow-sm active:scale-[0.98] transition-all flex items-center justify-center ${actionBtnColor} ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''} outline-none`}
+                >
+                  {isUpdating ? 'מעדכן...' : nextStatusLabel}
+                </button>
 
-                {!order.isPaid && !isKanban && ( // 🆕 Hide payment button in Kanban
+                {!order.isPaid && (
                   <button
                     disabled={isUpdating}
                     onClick={async (e) => {
@@ -463,7 +450,7 @@ const OrderCard = memo(({
                         setIsUpdating(true); await onPaymentCollected(order); setIsUpdating(false);
                       }
                     }}
-                    className="w-11 h-11 bg-white border-2 border-amber-400 rounded-xl shadow-sm flex items-center justify-center hover:bg-amber-50 shrink-0 relative overflow-visible active:scale-95 transition-all outline-none"
+                    className="w-11 h-11 bg-white border-2 border-amber-400 rounded-xl shadow-sm flex items-center justify-center hover:bg-amber-50 shrink-0 relative active:scale-95 transition-all outline-none"
                   >
                     <img
                       src="https://gxzsxvbercpkgxraiaex.supabase.co/storage/v1/object/public/Photos/cashregister.jpg"
@@ -480,11 +467,9 @@ const OrderCard = memo(({
           </>
         )}
       </div>
-    </div >
+    </div>
   );
 }, (prevProps, nextProps) => {
-  // CUSTOM COMPARISON: Only re-render if essential order properties changed
-  // This is the BIGgest performance boost for low-end tablets
   return (
     prevProps.isReady === nextProps.isReady &&
     prevProps.isHistory === nextProps.isHistory &&
@@ -495,7 +480,6 @@ const OrderCard = memo(({
     prevProps.order.updated_at === nextProps.order.updated_at &&
     prevProps.order.type === nextProps.order.type &&
     prevProps.order.items?.length === nextProps.order.items?.length &&
-    // Check item statuses and early delivery flags to detect changes
     prevProps.order.items?.every((item, idx) => {
       const nextItem = nextProps.order.items[idx];
       return item.id === nextItem?.id &&
@@ -506,5 +490,4 @@ const OrderCard = memo(({
 });
 
 OrderCard.displayName = 'OrderCard';
-
 export default OrderCard;

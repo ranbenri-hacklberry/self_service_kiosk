@@ -73,7 +73,7 @@ const CheckoutButton = ({
     // --- Edit Mode States ---
     if (isRefund) return 'החזר כספי';
     if (isAdditionalCharge) return 'חיוב נוסף';
-    if (isFinalizingOrder) return 'השלם תשלום';
+    if (isFinalizingOrder) return 'לתשלום';
     if (isNoChangeUpdate) return 'עדכן הזמנה';
 
     return 'עדכן הזמנה'; // Default for edit mode if cartTotal > 0

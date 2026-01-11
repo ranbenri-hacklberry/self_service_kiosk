@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { X, Save, Check, Trash2, Image as ImageIcon, Plus, Power, GripHorizontal, PlusCircle, Loader2, DollarSign, ChevronDown, CheckCircle, ArrowRight, Package, Minus, Search, RotateCcw, Camera, Images } from 'lucide-react';
+import { X, Save, Check, Trash2, Image as ImageIcon, Plus, Power, GripHorizontal, PlusCircle, Loader2, DollarSign, ChevronDown, CheckCircle, ArrowRight, Package, Minus, Search, RotateCcw, Camera, Images, AlertTriangle, Bug } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
-import useDataAction from '../../hooks/useDataAction';
 import { fetchManagerItemOptions, clearOptionsCache } from '@/lib/managerApi';
+import CategoryManager from './CategoryManager';
 
 // Reusable animated accordion section to prevent layout jumps
 const AnimatedSection = ({ show, children }) => (
@@ -29,7 +29,7 @@ const AnimatedSection = ({ show, children }) => (
  */
 
 const MenuEditModal = ({ item, onClose, onSave }) => {
-    const [formData, setFormData] = useState({ name: '', price: '', description: '', category: '', image_url: '', is_in_stock: true, allow_notes: true });
+    const [formData, setFormData] = useState({ name: '', price: '', description: '', category: '', category_id: null, image_url: '', is_in_stock: true, allow_notes: true });
     const [availableCategories, setAvailableCategories] = useState([]);
     const [isNewCategory, setIsNewCategory] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -38,9 +38,31 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const [showModifiersSection, setShowModifiersSection] = useState(false);
     const [showPriceSection, setShowPriceSection] = useState(false);
     const [showSaleDates, setShowSaleDates] = useState(false);
+    const [showKdsSection, setShowKdsSection] = useState(false);
+    // KDS Visibility: 'MADE_TO_ORDER' (always), 'NEVER_SHOW' (never), 'CONDITIONAL' (cashier choice), null (use category default)
+    const [kdsVisibility, setKdsVisibility] = useState(item?.kds_routing_logic || null);
+    // Prep Areas: ['kitchen'], ['bar'], ['kitchen','bar'], or [] (use category default)
+    const [prepAreas, setPrepAreas] = useState(() => {
+        const val = item?.prep_areas;
+        if (Array.isArray(val)) return val;
+        return [];
+    });
     const [allOptionNames, setAllOptionNames] = useState([]);
     const [isCreatingGroup, setIsCreatingGroup] = useState(false);
     const [newGroupName, setNewGroupName] = useState('');
+    const [nameWarning, setNameWarning] = useState(null);
+
+    // Check duplicate group name
+    useEffect(() => {
+        const checkName = async () => {
+            if (!newGroupName || newGroupName.length < 2) { setNameWarning(null); return; }
+            const { data } = await supabase.from('optiongroups').select('id').eq('name', newGroupName).maybeSingle();
+            if (data) setNameWarning('שים לב: שם קבוצה זה כבר קיים במערכת');
+            else setNameWarning(null);
+        };
+        const timer = setTimeout(checkName, 500);
+        return () => clearTimeout(timer);
+    }, [newGroupName]);
     const [groupSuggestionsOpen, setGroupSuggestionsOpen] = useState(false);
     const [addingToGroupId, setAddingToGroupId] = useState(null);
     const [newOptionData, setNewOptionData] = useState({ name: '', price: '0', is_default: false });
@@ -62,6 +84,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const [inventoryOptions, setInventoryOptions] = useState([]); // For dropdowns
     const [deletedOptionIds, setDeletedOptionIds] = useState(new Set()); // Pending deletes for options
     const [saveBanner, setSaveBanner] = useState(null);
+    const [errorBanner, setErrorBanner] = useState(null); // Error notifications
+    const [currentItem, setCurrentItem] = useState(item); // Track current item with ID
     const searchRef = useRef(null);
     const nameInputRef = useRef(null);
 
@@ -88,6 +112,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const [isDirty, setIsDirty] = useState(false);
     const historyTimeoutRef = useRef(null);
     const initialFormDataRef = useRef(null); // Track initial form state for isDirty comparison
+    const initialKdsVisibilityRef = useRef(null);
+    const initialPrepAreasRef = useRef(null);
     const [showPinModal, setShowPinModal] = useState(false);
     const [showUnsavedModal, setShowUnsavedModal] = useState(false); // Unsaved changes confirmation
     const [pinInput, setPinInput] = useState('');
@@ -97,8 +123,10 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const [showKitchenLogic, setShowKitchenLogic] = useState(false);
     const [taskSchedule, setTaskSchedule] = useState({}); // { 0: { qty: 10, mode: 'fixed' }, ... }
     const [showImagePicker, setShowImagePicker] = useState(false); // Image source picker modal
+    const [showCategoryManager, setShowCategoryManager] = useState(false); // Category management modal
     const cameraInputRef = useRef(null);
     const galleryInputRef = useRef(null);
+    const [generalError, setGeneralError] = useState(null); // { title, message, canReport }
 
     const updateSchedule = (day, field, value) => {
         setTaskSchedule(prev => ({
@@ -126,12 +154,15 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         }
     }, [components, allGroups, loading]);
 
-    // Simple isDirty check - compare formData to initial state
+    // Simple isDirty check - compare formData + KDS settings to initial state
     useEffect(() => {
         if (!initialFormDataRef.current) return;
         const currentFormData = JSON.stringify(formData);
-        setIsDirty(currentFormData !== initialFormDataRef.current);
-    }, [formData]);
+        const formChanged = currentFormData !== initialFormDataRef.current;
+        const kdsVisibilityChanged = kdsVisibility !== initialKdsVisibilityRef.current;
+        const prepAreasChanged = JSON.stringify(prepAreas) !== initialPrepAreasRef.current;
+        setIsDirty(formChanged || kdsVisibilityChanged || prepAreasChanged);
+    }, [formData, kdsVisibility, prepAreas]);
 
     // History Tracker (for undo functionality)
     useEffect(() => {
@@ -176,6 +207,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 price: item.price || '',
                 description: item.description || '',
                 category: item.category || '',
+                category_id: item.category_id || null,
                 image_url: item.image_url || '',
                 is_in_stock: item.is_in_stock ?? true,
                 sale_price: item.sale_price || '',
@@ -189,6 +221,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
 
             // Store initial state for isDirty comparison
             initialFormDataRef.current = JSON.stringify(initialData);
+            initialKdsVisibilityRef.current = item.kds_routing_logic || null;
+            initialPrepAreasRef.current = JSON.stringify(item.prep_areas || []);
             setIsDirty(false);
             setHistory([]); // Reset history
 
@@ -211,22 +245,42 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const fetchCategories = async () => {
         if (!user?.business_id) return;
         try {
-            const { data } = await supabase.from('menu_items')
+            // Try new item_category table first - include prep_areas for defaults
+            const { data, error } = await supabase.from('item_category')
+                .select('id, name, name_he, prep_areas')
+                .eq('business_id', user.business_id)
+                .or('is_deleted.is.null,is_deleted.eq.false')
+                .order('position', { ascending: true });
+
+            console.log('📁 Fetched categories:', data?.length, 'Error:', error);
+
+            if (data && data.length > 0) {
+                // Prefer name_he (Hebrew) if available
+                setAvailableCategories(data.map(c => ({ id: c.id, name: c.name_he || c.name, prep_areas: c.prep_areas })));
+                return;
+            }
+
+            // Fallback to legacy categories from menu_items
+            const { data: oldData } = await supabase.from('menu_items')
                 .select('category')
                 .eq('business_id', user.business_id)
                 .not('category', 'is', null);
-            if (data) setAvailableCategories([...new Set(data.map(i => i.category))].sort());
+            if (oldData) {
+                const unique = [...new Set(oldData.map(i => i.category))].sort();
+                setAvailableCategories(unique.map(name => ({ id: 'legacy_' + name, name })));
+            }
         } catch (e) { console.error(e); }
     };
 
-    const fetchModifiers = async () => {
-        console.log('🔍 fetchModifiers called for item:', item?.id);
+    const fetchModifiers = async (overrideItemId = null) => {
+        const itemId = overrideItemId || currentItem?.id || item?.id;
+        console.log('🔍 fetchModifiers called for item:', itemId);
         try {
             let relevantGroups = [];
             let linkedGroupIds = new Set();
 
             // Method 0: Check localStorage cache first (workaround for RLS)
-            if (item?.id) {
+            if (itemId) {
                 try {
                     // Check localStorage cache - DISABLED to force fresh fetch
                     /*
@@ -250,26 +304,27 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             }
 
             // Method 1: Try Supabase FIRST (fresh data, no caching issues)
-            if (item?.id) {
-                console.log('🔗 Fetching linked groups from Supabase for item:', item.id);
+            if (itemId) {
+                console.log('🔗 Fetching linked groups from Supabase for item:', itemId);
                 const { data: linked, error: linkError } = await supabase
                     .from('menuitemoptions')
                     .select('group_id')
-                    .eq('item_id', item.id);
+                    .eq('item_id', itemId);
 
                 if (linkError) {
                     console.error('❌ Error fetching menuitemoptions:', linkError);
+                } else {
+                    console.log('✅ menuitemoptions raw data:', linked);
                 }
 
                 linked?.forEach(l => linkedGroupIds.add(l.group_id));
                 console.log('📋 Found linked group IDs:', Array.from(linkedGroupIds));
 
                 if (linkedGroupIds.size > 0) {
-                    // Try optiongroups first
+                    // Fetch optiongroups linked via menuitemoptions
                     const { data: linkedGroups, error } = await supabase.from('optiongroups')
                         .select(`*, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
-                        .in('id', Array.from(linkedGroupIds))
-                        .eq('business_id', user?.business_id);
+                        .in('id', Array.from(linkedGroupIds));
 
                     if (error) {
                         console.error('❌ Error fetching linked groups:', error);
@@ -280,8 +335,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                         console.log('📋 Trying optionvalues directly...');
                         const { data: directValues, error: valuesError } = await supabase.from('optionvalues')
                             .select('*')
-                            .in('group_id', Array.from(linkedGroupIds))
-                            .eq('business_id', user?.business_id);
+                            .in('group_id', Array.from(linkedGroupIds));
 
                         if (valuesError) {
                             console.error('❌ Error fetching optionvalues:', valuesError);
@@ -308,7 +362,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 // Also fetch private groups
                 const { data: privateGroups } = await supabase.from('optiongroups')
                     .select(`*, optionvalues (id, value_name, price_adjustment, is_default, display_order, inventory_item_id, quantity, is_replacement)`)
-                    .eq('menu_item_id', item.id);
+                    .eq('menu_item_id', itemId);
 
                 if (privateGroups?.length) {
                     console.log('📋 Found private groups:', privateGroups.length);
@@ -318,10 +372,10 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             }
 
             // Method 2: If Supabase returned nothing, try external API as fallback
-            if (relevantGroups.length === 0 && item?.id) {
+            if (relevantGroups.length === 0 && itemId) {
                 try {
-                    console.log('🌐 Supabase returned 0 groups, trying external API:', item.id);
-                    const apiGroups = await fetchManagerItemOptions(item.id, user?.business_id);
+                    console.log('🌐 Supabase returned 0 groups, trying external API:', itemId);
+                    const apiGroups = await fetchManagerItemOptions(itemId, user?.business_id);
                     console.log('🌐 API returned:', apiGroups?.length, 'groups');
 
                     if (apiGroups && apiGroups.length > 0) {
@@ -508,25 +562,31 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     };
 
     const handleCreatePrivateGroup = async () => {
-        const name = newGroupName.trim();
-        if (!name) return;
+        let name = newGroupName.trim();
+        if (!name) name = `תוספות - ${formData.name || currentItem?.name || ''}`;
 
-        try {
-            // Create PRIVATE group (linked to menu_item_id)
-            const { data } = await supabase.from('optiongroups').insert({
-                name,
-                menu_item_id: item.id, // Private link
-                is_food: true, // Default
-                is_drink: false
-            }).select().single();
+        // Local creation only - using temp ID
+        const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+        console.log('➕ Creating local private group:', tempId, name);
 
-            // Also link in junction table for compatibility if needed, but the fetch logic handles menu_item_id
-            if (data) {
-                await supabase.from('menuitemoptions').insert({ item_id: item.id, group_id: data.id });
-                resetGroupCreation();
-                fetchModifiers();
-            }
-        } catch (e) { alert('שגיאה ביצירת קבוצה'); console.error(e); }
+        const newGroup = {
+            id: tempId,
+            name,
+            menu_item_id: currentItem?.id, // Will be linked on save
+            is_food: true,
+            is_drink: false,
+            optionvalues: [],
+            is_required: false,
+            is_multiple_select: false,
+            display_order: 0
+        };
+
+        setAllGroups(prev => [...prev, newGroup]);
+        setSelectedGroupIds(prev => new Set([...prev, tempId]));
+        setIsDirty(true);
+
+        resetGroupCreation();
+        // No need to fetchModifiers, just updated local state
     };
 
     const handleDeleteGroup = async (group) => {
@@ -555,13 +615,14 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 ov.id === optionId ? { ...ov, ...updates } : ov
             ) || []
         })));
+        setIsDirty(true);
     };
 
-    // Update group settings (min_select, max_select for required/multi-select)
     const handleUpdateGroup = (groupId, updates) => {
         setAllGroups(prev => prev.map(group =>
             group.id === groupId ? { ...group, ...updates } : group
         ));
+        setIsDirty(true);
     };
 
     const openPickerForGroup = (groupId) => {
@@ -594,75 +655,78 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     };
 
     const handlePickerSave = async () => {
-        try {
-            if (pickerMode === 'add_to_group' && pickerTargetGroupId) {
-                // Sync logic: Fetch current options to diff correctly (prevent duplicates/price reset)
-                const { data: currentOps } = await supabase.from('optionvalues').select('value_name').eq('group_id', pickerTargetGroupId);
-                const currentNames = new Set(currentOps?.map(o => o.value_name) || []);
+        console.log('💾 handlePickerSave (Local Only)');
+
+        if (pickerMode === 'add_to_group' && pickerTargetGroupId) {
+            setAllGroups(prev => prev.map(group => {
+                if (group.id !== pickerTargetGroupId) return group;
+
+                const currentOptions = group.optionvalues || [];
+                const currentNames = new Set(currentOptions.map(o => o.value_name));
                 const selectedNames = pickerSelectedNames;
 
-                // Identify Additions (New items)
-                const toAdd = Array.from(selectedNames).filter(n => !currentNames.has(n));
-                // Identify Removals (Unselected items)
-                const toRemove = Array.from(currentNames).filter(n => !selectedNames.has(n));
+                // Identify Additions
+                const toAddNames = Array.from(selectedNames).filter(n => !currentNames.has(n));
 
-                if (toAdd.length > 0) {
-                    await supabase.from('optionvalues').insert(toAdd.map(name => ({
-                        group_id: pickerTargetGroupId,
-                        value_name: name,
-                        price_adjustment: 0,
-                        is_default: false
-                    })));
+                // Identify Removals
+                const toRemoveOptions = currentOptions.filter(o => !selectedNames.has(o.value_name));
+
+                // Handle removals (track IDs for deletion, ignore temps)
+                const removedIds = toRemoveOptions.map(o => o.id).filter(id => typeof id === 'number');
+                if (removedIds.length > 0) {
+                    setDeletedOptionIds(prev => {
+                        const next = new Set(prev);
+                        removedIds.forEach(id => next.add(id));
+                        return next;
+                    });
                 }
 
-                if (toRemove.length > 0) {
-                    await supabase.from('optionvalues').delete()
-                        .eq('group_id', pickerTargetGroupId)
-                        .in('value_name', toRemove);
-                }
-            } else if (pickerMode === 'create_group') {
-                const groupName = pickerGroupName.trim() || 'קבוצה חדשה';
-                // 1. Create Group
-                const { data: group } = await supabase.from('optiongroups').insert({
-                    name: groupName,
-                    menu_item_id: item.id,
-                    is_food: true, // Default
-                    is_drink: false
-                }).select().single();
+                // Create new option objects
+                const newOptions = toAddNames.map(name => ({
+                    id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                    group_id: pickerTargetGroupId,
+                    value_name: name,
+                    price_adjustment: 0,
+                    is_default: false,
+                    display_order: currentOptions.length // append to end roughly
+                }));
 
-                if (group) {
-                    // 2. Add Options
-                    const inserts = Array.from(pickerSelectedNames).map(name => ({
-                        group_id: group.id,
-                        value_name: name,
-                        price_adjustment: 0,
-                        is_default: false
-                    }));
-                    if (inserts.length > 0) {
-                        await supabase.from('optionvalues').insert(inserts);
-                    }
-                    // 3. Select the new group
-                    setSelectedGroupIds(prev => new Set(prev).add(group.id));
-                }
-            }
+                // Merged options: Keep ones NOT removed, add NEW ones
+                const keptOptions = currentOptions.filter(o => selectedNames.has(o.value_name));
+                return {
+                    ...group,
+                    optionvalues: [...keptOptions, ...newOptions]
+                };
+            }));
+        } else if (pickerMode === 'create_group') {
+            const groupName = pickerGroupName.trim() || 'קבוצה חדשה';
+            const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
 
-            fetchModifiers();
-            setActiveView('main'); // Return to main view (or modifiers list if we prefer)
-        } catch (e) {
-            console.error(e);
-            if (e.code === '23505') { // Postgres unique violation code
-                alert('שגיאה: שם הקבוצה כבר קיים במערכת (אולי במנה אחרת). אנא בחר שם ייחודי.');
-            } else {
-                alert('שגיאה בשמירת התוספות: ' + (e.message || 'נסה שוב'));
-            }
+            const newGroup = {
+                id: tempId,
+                name: groupName,
+                menu_item_id: currentItem?.id,
+                is_food: true,
+                is_drink: false,
+                optionvalues: [],
+                is_required: false,
+                is_multiple_select: false,
+                display_order: 0
+            };
+
+            setAllGroups(prev => [...prev, newGroup]);
+            setSelectedGroupIds(prev => new Set([...prev, tempId]));
         }
+
+        setIsDirty(true);
+        setActiveView('main');
     };
 
 
 
-    const saveKitchenLogicToDB = async () => {
-        if (!item?.id || !currentUser?.business_id) return;
-        const savedId = item.id;
+    const saveKitchenLogicToDB = async (menuItemId) => {
+        const savedId = menuItemId || currentItem?.id || item?.id;
+        if (!savedId || !currentUser?.business_id) return;
         const bizId = currentUser.business_id;
         try {
             const hasSchedule = Object.values(taskSchedule).some(v => v.qty > 0 || v.mode === 'par_level');
@@ -776,7 +840,10 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     };
 
     const handleDeleteItemVerify = async () => {
-        if (!pinInput) { alert('נא להזין קוד אישי'); return; }
+        if (!pinInput) {
+            setGeneralError({ title: 'חסר קוד אישי', message: 'אנא הזן את הקוד האישי שלך כדי לאשר את המחיקה.' });
+            return;
+        }
 
         try {
             // Verify PIN against employees table
@@ -789,21 +856,27 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
 
             if (pinError || !employee) {
                 console.error('PIN verification failed:', pinError);
-                alert('קוד שגוי');
+                setGeneralError({ title: 'קוד שגוי', message: 'הקוד האישי שהזנת אינו תואם. נסה שנית.' });
                 return;
             }
 
-            // Delete Item (with business_id safety check)
-            if (item?.id) {
+            // Delete Item (Soft Delete)
+            const itemIdToDelete = currentItem?.id || item?.id;
+            if (itemIdToDelete) {
+                // Soft Delete: Mark as deleted instead of removing row
                 const { error: deleteError } = await supabase
                     .from('menu_items')
-                    .delete()
-                    .eq('id', item.id)
+                    .update({ is_deleted: true })
+                    .eq('id', itemIdToDelete)
                     .eq('business_id', user?.business_id);
 
                 if (deleteError) {
                     console.error('Delete error:', deleteError);
-                    alert('שגיאה במחיקת פריט: ' + deleteError.message);
+                    setGeneralError({
+                        title: 'שגיאה במחיקה',
+                        message: `מערכת לא הצליחה למחוק את הפריט. פרטים טכניים: ${deleteError.message}`,
+                        canReport: true
+                    });
                     return;
                 }
 
@@ -812,7 +885,11 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             }
         } catch (e) {
             console.error(e);
-            alert('שגיאה במחיקת פריט');
+            setGeneralError({
+                title: 'שגיאה לא צפויה',
+                message: 'אירעה שגיאה כללית במהלך המחיקה. אנא נסה שוב או פנה לתמיכה.',
+                canReport: true
+            });
         }
     };
 
@@ -860,11 +937,18 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         if (!quantity && quantity !== 0) return '--';
         const numQ = Number(quantity);
         const u = (unit || '').toLowerCase().trim();
+        const discreteUnits = ['pcs', 'unit', 'units', 'item', 'items', 'יח', 'יח\'', 'יחידה', 'יחידות', 'mna', 'mne'];
 
-        // Convert KG to grams for display
-        if (['kg', 'kilo', 'ק"ג'].includes(u)) {
+        // Convert KG/L to grams/ml for display (Default for anything non-discrete)
+        if (!discreteUnits.includes(u)) {
             const grams = Math.round(numQ * 1000);
-            return `${grams} גרם`;
+            const isLiq = ['l', 'liter', 'ליטר', 'liq'].includes(u);
+
+            if (grams >= 1000) {
+                const kgVal = Number(numQ.toFixed(3));
+                return `${kgVal} ${isLiq ? 'ליטר' : 'ק"ג'}`;
+            }
+            return `${grams} ${isLiq ? 'מ"ל' : 'גרם'}`;
         }
 
         // Format without unnecessary decimals
@@ -878,7 +962,9 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const getQuantityInGrams = (quantity, unit) => {
         const numQ = Number(quantity) || 0;
         const u = (unit || '').toLowerCase().trim();
-        if (['kg', 'kilo', 'ק"ג'].includes(u)) {
+        const discreteUnits = ['pcs', 'unit', 'units', 'item', 'items', 'יח', 'יח\'', 'יחידה', 'יחידות', 'mna', 'mne'];
+
+        if (!discreteUnits.includes(u)) {
             return Math.round(numQ * 1000);
         }
         return Math.round(numQ);
@@ -907,15 +993,31 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         } catch (e) { console.error('Sync error:', e); }
     };
 
-    const adjustComponentQuantity = (id, deltaGrams) => {
+    const adjustComponentQuantity = (id, deltaVal) => {
         setComponents(prev => prev.map(c => {
             if (c.id !== id) return c;
             const u = (c.unit || '').toLowerCase().trim();
-            const isKg = ['kg', 'kilo', 'ק"ג'].includes(u);
-            const delta = isKg ? deltaGrams / 1000 : deltaGrams;
+            const discreteUnits = ['pcs', 'unit', 'units', 'item', 'items', 'יח', 'יח\'', 'יחידה', 'יחידות', 'mna', 'mne'];
+            const isDiscrete = discreteUnits.includes(u);
+            const isKg = !isDiscrete;
+
+            let delta = deltaVal;
+            if (isKg) {
+                // Heuristic: If delta is small (< 1), assume it's already in Kg (e.g. 0.01 from DB).
+                // If delta is >= 1, assume it's in grams (e.g. 10 from UI default or DB integer).
+                if (Math.abs(deltaVal) < 1) {
+                    delta = deltaVal;
+                } else {
+                    delta = deltaVal / 1000;
+                }
+            }
+
             const next = Math.max(0, Number(c.quantity || 0) + delta);
-            const updated = { ...c, quantity: next, subtotal: (c.price && next) ? Number(c.price) * next : null };
-            syncComponentToDB(updated); // Auto-save
+            // Fix floating point
+            const cleanNext = Number(next.toFixed(4));
+
+            const updated = { ...c, quantity: cleanNext, subtotal: (c.price && cleanNext) ? Number(c.price) * cleanNext : null };
+            syncComponentToDB(updated);
             return updated;
         }));
     };
@@ -943,7 +1045,24 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             // 1. Ensure Recipe Exists
             let recipeId = selectedRecipeId;
             if (!recipeId) {
-                const { data: newRecipe } = await supabase.from('recipes').insert({ menu_item_id: item.id, name: item.name }).select().single();
+                const recipePayload = {
+                    menu_item_id: currentItem.id,
+                    // name: currentItem.name || formData.name, // removed: no such column
+                    business_id: user?.business_id,
+                    preparation_quantity: 1, // Required
+                    quantity_unit: 'items'   // Required (assumed)
+                };
+                console.log('🥣 Creating new recipe for item:', currentItem.id, 'Payload:', recipePayload);
+
+                const { data: newRecipe, error: recipeError } = await supabase.from('recipes').insert(recipePayload).select().single();
+
+                if (recipeError) {
+                    console.error('❌ Recipe creation error:', recipeError);
+                    alert('שגיאה ביצירת מתכון: ' + recipeError.message);
+                    setComponentsLoading(false);
+                    return;
+                }
+
                 if (newRecipe) {
                     recipeId = newRecipe.id;
                     setSelectedRecipeId(newRecipe.id);
@@ -957,8 +1076,12 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             const invItem = inventoryOptions.find(i => String(i.id) === String(inventory_item_id));
             const activeUnit = unit || invItem?.unit || 'kg';
             const cleanUnit = (activeUnit || '').toLowerCase().trim();
-            const isKg = ['kg', 'kilo', 'ק"ג'].includes(cleanUnit);
-            // Input is in grams for Kg items, convert to Kg for storage
+            // Inverted logic: Assume everything is Weight/Volume (needs /1000) UNLESS it's a discrete unit
+            const discreteUnits = ['pcs', 'unit', 'units', 'item', 'items', 'יח', 'יח\'', 'יחידה', 'יחידות', 'mna', 'mne'];
+            const isDiscrete = discreteUnits.includes(cleanUnit);
+            const isKg = !isDiscrete;
+
+            // Input is in grams/ml, convert to Kg/L for storage if not discrete
             const dbQuantity = (Number(quantity) || 0) / (isKg ? 1000 : 1);
 
             const { data: newRow } = await supabase.from('recipe_ingredients').insert({
@@ -1047,7 +1170,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     };
 
     const saveOptionsData = async (menuItemId) => {
-        console.log('💾 saveOptionsData called, allGroups:', allGroups.length);
+        console.log('💾 saveOptionsData called for item:', menuItemId);
+        console.log('📦 allGroups to save:', allGroups);
 
         // 1. Delete options marked for deletion
         const idsToDelete = Array.from(deletedOptionIds).filter(id => typeof id === 'number');
@@ -1065,7 +1189,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             if (typeof group.id === 'string' && group.id.startsWith('temp_')) {
                 const { data: newGroup, error: groupError } = await supabase.from('optiongroups').insert({
                     name: group.name,
-                    menu_item_id: group.menu_item_id,
+                    menu_item_id: menuItemId, // Link to the menu item
                     is_required: group.is_required || false,
                     is_multiple_select: group.is_multiple_select || false,
                     is_food: group.is_food,
@@ -1074,6 +1198,14 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 }).select().single();
                 if (groupError) { console.error('Error inserting new group:', groupError); continue; }
                 currentGroupId = newGroup.id;
+
+                // CRITICAL: Also add link in junction table (menuitemoptions)
+                const { error: linkError } = await supabase.from('menuitemoptions').insert({
+                    item_id: menuItemId,
+                    group_id: currentGroupId
+                });
+                if (linkError) console.error('❌ Error linking group to item:', linkError);
+                else console.log('✅ Linked new group to item via menuitemoptions');
             } else {
                 // Update existing group properties
                 const { error: updateError } = await supabase.from('optiongroups').update({
@@ -1096,7 +1228,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                     const { error } = await supabase.from('optionvalues').insert({
                         group_id: currentGroupId,
                         value_name: option.value_name,
-                        price_adjustment: Number(option.price_adjustment ?? option.priceAdjustment ?? option.price ?? 0),
+                        price_adjustment: Number(option.price_adjustment !== undefined ? option.price_adjustment : (option.priceAdjustment !== undefined ? option.priceAdjustment : 0)),
                         is_default: option.is_default,
                         display_order: option.display_order,
                         inventory_item_id: option.inventory_item_id,
@@ -1106,7 +1238,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                     else console.log('✅ Inserted new option');
                 } else if (!deletedOptionIds.has(option.id)) {
                     // Update/Upsert existing option
-                    const finalPrice = Number(option.price_adjustment ?? option.priceAdjustment ?? option.price ?? 0);
+                    const finalPrice = Number(option.price_adjustment !== undefined ? option.price_adjustment : (option.priceAdjustment !== undefined ? option.priceAdjustment : 0));
                     console.log(`💾 Upserting Option ${option.value_name} (ID: ${option.id}) with Price: ${finalPrice}`);
 
                     const { error } = await supabase.from('optionvalues').upsert({
@@ -1166,21 +1298,63 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
         }
     };
 
-
-    // Use the new Local-First hook
-    const { create, update: updateLocal, remove } = useDataAction();
-
     const saveInternal = async (silent = false) => {
-        console.log('🔄 saveInternal (Local-First) called, silent:', silent);
+        console.log('🔄 saveInternal (Direct Supabase) called, silent:', silent);
+        console.log('📝 formData:', formData);
+        console.log('💰 formData.price:', formData.price, 'type:', typeof formData.price);
         if (!silent) setLoading(true);
         else setIsSaving(true);
 
         try {
+            // Auto-create new category only if it doesn't exist
+            let finalCategoryId = formData.category_id;
+
+            if (formData.category && !finalCategoryId) {
+                // First check if it exists in current list (by name or hebrew name)
+                const existingCat = availableCategories.find(c =>
+                    (c.name && c.name.trim() === formData.category.trim()) ||
+                    (c.name_he && c.name_he.trim() === formData.category.trim())
+                );
+
+                if (existingCat) {
+                    console.log('✅ Found existing category by name:', existingCat.name);
+                    finalCategoryId = existingCat.id;
+                } else {
+                    console.log('📁 Creating new category:', formData.category);
+                    try {
+                        const { data: newCat, error: catError } = await supabase
+                            .from('item_category')
+                            .insert({
+                                name: formData.category,
+                                name_he: formData.category, // Best effort
+                                business_id: user?.business_id,
+                                position: availableCategories.length + 1
+                            })
+                            .select('id')
+                            .single();
+
+                        if (catError) {
+                            console.error('❌ Failed to create category:', catError);
+                        } else if (newCat) {
+                            console.log('✅ Created category with ID:', newCat.id);
+                            finalCategoryId = newCat.id;
+                            // Also update local form state for consistency
+                            setFormData(prev => ({ ...prev, category_id: newCat.id }));
+                            // Refresh categories list
+                            fetchCategories();
+                        }
+                    } catch (e) {
+                        console.error('❌ Category creation error:', e);
+                    }
+                }
+            }
+
             const payload = {
                 name: formData.name,
                 price: Number(formData.price),
                 description: formData.description || null,
                 category: formData.category,
+                category_id: finalCategoryId, // Use the resolved ID (new or existing)
                 image_url: formData.image_url || null,
                 is_in_stock: formData.is_in_stock,
                 allow_notes: formData.allow_notes,
@@ -1188,21 +1362,40 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 sale_start_date: formData.sale_start_date || null,
                 sale_end_date: formData.sale_end_date || null,
                 sale_start_time: formData.sale_start_time || null,
-                sale_end_time: formData.sale_end_time || null
+                sale_end_time: formData.sale_end_time || null,
+                kds_routing_logic: kdsVisibility || null
+                // NOTE: prep_areas not sent until column is added to menu_items table
             };
 
-            let savedId = item.id;
+            let savedId = currentItem?.id || item?.id;
 
             if (savedId) {
-                console.log('🔄 Updating existing item locally...');
-                await updateLocal('menu_items', savedId, payload);
+                // UPDATE existing item - Direct Supabase
+                console.log('🔄 Updating item in Supabase...');
+                const { error } = await supabase
+                    .from('menu_items')
+                    .update(payload)
+                    .eq('id', savedId);
+
+                if (error) {
+                    throw new Error('שגיאה בעדכון: ' + error.message);
+                }
+                console.log('✅ Item updated in Supabase');
             } else {
-                console.log('➕ Creating new item locally...');
-                // Add business_id for new items
+                // CREATE new item - Direct Supabase
+                console.log('➕ Creating item in Supabase...');
                 const insertPayload = { ...payload, business_id: user?.business_id };
-                const newRecord = await create('menu_items', insertPayload);
+                const { data: newRecord, error } = await supabase
+                    .from('menu_items')
+                    .insert(insertPayload)
+                    .select()
+                    .single();
+
+                if (error) {
+                    throw new Error('שגיאה ביצירה: ' + error.message);
+                }
                 savedId = newRecord.id;
-                console.log('✅ Created local item:', savedId);
+                console.log('✅ Item created in Supabase:', savedId);
             }
 
             // Note: Relations (menuitemoptions) and Recipes still using direct Supabase for now?
@@ -1219,7 +1412,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 if (navigator.onLine) {
                     await saveRecipeData(savedId);
                     await saveOptionsData(savedId);
-                    await saveKitchenLogicToDB(); // Prep tasks - manual save only
+                    await saveKitchenLogicToDB(savedId); // Prep tasks - manual save only
                 } else {
                     console.warn('⚠️ Offline - skipping relations save (Recipes/Options/Tasks) for now. TODO: Full Offline Support for relations.');
                 }
@@ -1240,14 +1433,22 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             // Update parent with new data
             onSave?.(updatedItem);
 
+            // CRITICAL: Update currentItem so modifiers can use the ID
+            setCurrentItem(updatedItem);
+
             initialFormDataRef.current = JSON.stringify(formData);
 
             if (!silent) {
                 setSaveBanner({ name: payload.name });
+                // Auto-hide after 2 seconds
+                setTimeout(() => setSaveBanner(null), 2000);
             }
         } catch (e) {
             console.error('Save failed:', e);
-            if (!silent) alert('שגיאה בשמירה מקומית');
+            if (!silent) {
+                setErrorBanner(e.message || 'שגיאה בשמירה');
+                setTimeout(() => setErrorBanner(null), 4000);
+            }
         } finally {
             setLoading(false);
             setIsSaving(false);
@@ -1567,15 +1768,92 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                         </div>
                                     </div>
 
-                                    <div className="flex-1" />
+                                    {/* KDS Visibility Mode (Single Button - Cycles on Click) */}
+                                    {(() => {
+                                        const modes = [
+                                            { value: null, label: 'קטגוריה', color: 'bg-gray-100 text-gray-600 border-gray-200' },
+                                            { value: 'MADE_TO_ORDER', label: 'תמיד', color: 'bg-green-100 text-green-700 border-green-300' },
+                                            { value: 'NEVER_SHOW', label: 'לעולם לא', color: 'bg-red-100 text-red-700 border-red-300' },
+                                            { value: 'CONDITIONAL', label: 'שאל קופאי', color: 'bg-purple-100 text-purple-700 border-purple-300' }
+                                        ];
+                                        const currentMode = modes.find(m => m.value === kdsVisibility) || modes[0];
+                                        const cycleMode = () => {
+                                            const currentIndex = modes.findIndex(m => m.value === kdsVisibility);
+                                            const nextIndex = (currentIndex + 1) % modes.length;
+                                            setKdsVisibility(modes[nextIndex].value);
+                                        };
+                                        return (
+                                            <button
+                                                type="button"
+                                                onClick={cycleMode}
+                                                className={`h-14 px-3 rounded-xl flex flex-col items-center justify-center font-bold transition-all shrink-0 border-2 ${currentMode.color}`}
+                                            >
+                                                <span className="text-xs leading-tight">KDS: {currentMode.label}</span>
+                                                <span className="text-[9px] opacity-60">(לחץ לשינוי)</span>
+                                            </button>
+                                        );
+                                    })()}
+
+                                    {/* Prep Areas Toggles (Kitchen / Bar) - Same height */}
+                                    {(() => {
+                                        // Get category's prep_areas as fallback
+                                        const currentCategory = availableCategories.find(c => c.id === formData.category_id);
+                                        const categoryPrepAreas = currentCategory?.prep_areas || [];
+                                        // Effective areas: item override > category > default ['kitchen']
+                                        const effectiveAreas = prepAreas.length > 0 ? prepAreas : (categoryPrepAreas.length > 0 ? categoryPrepAreas : ['kitchen']);
+                                        const isUsingCategoryDefault = prepAreas.length === 0;
+
+                                        return [
+                                            { value: 'kitchen', label: 'מטבח', emoji: '🍳' },
+                                            { value: 'bar', label: 'בר', emoji: '☕' }
+                                        ].map(area => {
+                                            const isActive = effectiveAreas.includes(area.value);
+                                            const isFromCategory = isUsingCategoryDefault && isActive;
+                                            return (
+                                                <button
+                                                    key={area.value}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        // When clicking, if we're using category default, first "take over" with explicit choice
+                                                        if (isUsingCategoryDefault) {
+                                                            // Toggle this one: if it was on from category, turn it off; else add it
+                                                            if (isActive) {
+                                                                // Remove from effective areas
+                                                                setPrepAreas(effectiveAreas.filter(a => a !== area.value));
+                                                            } else {
+                                                                setPrepAreas([...effectiveAreas, area.value]);
+                                                            }
+                                                        } else {
+                                                            // Normal toggle
+                                                            if (isActive) {
+                                                                setPrepAreas(prev => prev.filter(a => a !== area.value));
+                                                            } else {
+                                                                setPrepAreas(prev => [...prev, area.value]);
+                                                            }
+                                                        }
+                                                    }}
+                                                    className={`w-14 h-14 rounded-xl flex flex-col items-center justify-center gap-0.5 font-bold text-[10px] transition-all shrink-0 border-2 ${isActive
+                                                        ? isFromCategory
+                                                            ? 'bg-blue-50 text-blue-500 border-blue-200 border-dashed' // From category (dashed)
+                                                            : 'bg-blue-100 text-blue-700 border-blue-300' // Explicit override
+                                                        : 'bg-gray-50 text-gray-400 border-gray-200 hover:border-gray-300'
+                                                        }`}
+                                                    title={isFromCategory ? 'ברירת מחדל מהקטגוריה' : ''}
+                                                >
+                                                    <span className="text-base">{area.emoji}</span>
+                                                    <span>{area.label}</span>
+                                                </button>
+                                            );
+                                        });
+                                    })()}
 
                                     {/* Stock Toggle */}
                                     <button
                                         type="button"
                                         onClick={() => setFormData(p => ({ ...p, is_in_stock: !p.is_in_stock }))}
-                                        className={`w-16 h-16 rounded-xl flex flex-col items-center justify-center gap-1 font-bold text-xs transition-all shrink-0 ${formData.is_in_stock ? 'bg-green-100 text-green-700 hover:bg-green-200 border-2 border-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200 border-2 border-red-200'}`}
+                                        className={`w-14 h-14 rounded-xl flex flex-col items-center justify-center gap-0.5 font-bold text-[10px] transition-all shrink-0 border-2 ${formData.is_in_stock ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}
                                     >
-                                        <Power size={20} strokeWidth={2.5} />
+                                        <Power size={18} strokeWidth={2.5} />
                                         <span>{formData.is_in_stock ? 'במלאי' : 'חסר'}</span>
                                     </button>
                                 </div>
@@ -1583,34 +1861,50 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                 {/* Row 2: Name + Category */}
                                 <div className="grid grid-cols-2 gap-4 items-start">
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-500 mb-1.5 mr-1">שם המנה</label>
-                                        <input
-                                            type="text"
-                                            value={formData.name}
-                                            onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                            className="w-full text-lg font-bold px-4 py-3 bg-gray-50 border-2 border-transparent focus:bg-white focus:border-blue-500 rounded-xl outline-none transition-all placeholder-gray-300"
-                                            placeholder="לדוגמה: קפוצ'ינו..."
-                                            required
-                                        />
+                                        <div className="flex justify-between items-end mb-1.5 mr-1">
+                                            <label className="text-xs font-bold text-slate-500">שם המנה</label>
+                                            {/* Quick Save Removed as per user request */}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={formData.name}
+                                                onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                                className="w-full text-lg font-bold px-4 py-3 bg-gray-50 border-2 border-transparent focus:bg-white focus:border-blue-500 rounded-xl outline-none transition-all placeholder-gray-300"
+                                                placeholder="לדוגמה: קפוצ'ינו..."
+                                                required
+                                            />
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 mb-1.5 mr-1">קטגוריה</label>
-                                        {isNewCategory ? (
-                                            <div className="flex gap-2">
-                                                <input autoFocus value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} className="flex-1 px-4 py-3 bg-white border-2 border-blue-500 rounded-xl font-bold outline-none text-sm" placeholder="שם קטגוריה..." />
-                                                <button type="button" onClick={() => setIsNewCategory(false)} className="px-3 bg-gray-100 rounded-xl hover:bg-gray-200"><X size={18} /></button>
-                                            </div>
-                                        ) : (
-                                            <select
-                                                value={formData.category}
-                                                onChange={(e) => e.target.value === '__NEW__' ? setIsNewCategory(true) : setFormData({ ...formData, category: e.target.value })}
-                                                className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl font-bold text-slate-700 outline-none focus:border-blue-500 text-sm appearance-none"
-                                            >
-                                                <option value="">בחר...</option>
-                                                {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                                                <option value="__NEW__" className="font-black text-blue-600">+ קטגוריה חדשה</option>
-                                            </select>
-                                        )}
+                                        <select
+                                            value={formData.category_id || (formData.category ? (availableCategories.find(c => c.name === formData.category)?.id || '') : '')}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                if (val === '__NEW__') {
+                                                    setShowCategoryManager(true); // Open category manager
+                                                    return;
+                                                } else {
+                                                    const cat = availableCategories.find(c => c.id === val);
+                                                    if (cat) {
+                                                        const isLegacy = String(val).startsWith('legacy_');
+                                                        setFormData(prev => ({
+                                                            ...prev,
+                                                            category: cat.name,
+                                                            category_id: isLegacy ? null : cat.id
+                                                        }));
+                                                    } else {
+                                                        setFormData(prev => ({ ...prev, category: '', category_id: null }));
+                                                    }
+                                                }
+                                            }}
+                                            className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl font-bold text-slate-700 outline-none focus:border-blue-500 text-sm appearance-none"
+                                        >
+                                            <option value="">בחר...</option>
+                                            {availableCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                            <option value="__NEW__" className="font-black text-blue-600">⚙️ ניהול קטגוריות</option>
+                                        </select>
                                     </div>
                                 </div>
                             </div>
@@ -1814,6 +2108,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                     </div>
                                 );
                             })()}
+
 
                             {/* Modifiers Section - Expandable Card Design like InventoryItemCard */}
                             <div
@@ -2158,7 +2453,9 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                             {components.map(comp => {
                                                 if (deletedComponentIds.has(comp.id)) return null;
                                                 const isExpanded = expandedComponentId === comp.id;
-                                                const isKg = ['kg', 'kilo', 'ק"ג'].includes((comp.unit || '').toLowerCase().trim());
+                                                const u = (comp.unit || '').toLowerCase().trim();
+                                                const discreteUnits = ['pcs', 'unit', 'units', 'item', 'items', 'יח', 'יח\'', 'יחידה', 'יחידות', 'mna', 'mne'];
+                                                const isKg = !discreteUnits.includes(u);
                                                 const gramsValue = getQuantityInGrams(comp.quantity, comp.unit);
 
                                                 // Dynamic Step Logic - Use recipe_step for recipe ingredients
@@ -2210,7 +2507,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                                                 value={isKg ? gramsValue : comp.quantity}
                                                                                 onChange={(e) => isKg ? setQuantityFromGrams(comp.id, e.target.value, comp.unit) : handleComponentChange(comp.id, 'quantity', e.target.value)}
                                                                             />
-                                                                            <span className="absolute right-3 text-[10px] font-bold text-gray-400 pointer-events-none">{isKg ? 'גרם' : (comp.unit || 'יח׳')}</span>
+                                                                            {!isKg && <span className="absolute right-3 text-[10px] font-bold text-gray-400 pointer-events-none">{(comp.unit || 'יח׳')}</span>}
                                                                         </div>
                                                                         <button type="button" onClick={() => adjustComponentQuantity(comp.id, step)} className="w-12 h-12 bg-gray-50 hover:bg-gray-100 text-gray-500 font-bold border border-gray-200 rounded-xl active:bg-gray-200 text-lg flex items-center justify-center transition-colors">
                                                                             <Plus size={18} strokeWidth={2.5} />
@@ -2247,8 +2544,9 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                             {/* Sum Grams for Kg items */}
                                                             {Math.round(components.reduce((sum, c) => {
                                                                 if (deletedComponentIds.has(c.id)) return sum;
-                                                                const u = (c.unit || '').toLowerCase();
-                                                                if (['kg', 'kilo', 'ק"ג'].includes(u)) return sum + getQuantityInGrams(c.quantity, u);
+                                                                const u = (c.unit || '').toLowerCase().trim();
+                                                                const discreteUnits = ['pcs', 'unit', 'units', 'item', 'items', 'יח', 'יח\'', 'יחידה', 'יחידות', 'mna', 'mne'];
+                                                                if (!discreteUnits.includes(u)) return sum + getQuantityInGrams(c.quantity, c.unit);
                                                                 return sum;
                                                             }, 0))}
                                                         </span>
@@ -2258,8 +2556,9 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                             {/* Sum Units for Unit items */}
                                                             {components.reduce((sum, c) => {
                                                                 if (deletedComponentIds.has(c.id)) return sum;
-                                                                const u = (c.unit || '').toLowerCase();
-                                                                if (!['kg', 'kilo', 'ק"ג'].includes(u)) return sum + Number(c.quantity || 0);
+                                                                const u = (c.unit || '').toLowerCase().trim();
+                                                                const discreteUnits = ['pcs', 'unit', 'units', 'item', 'items', 'יח', 'יח\'', 'יחידה', 'יחידות', 'mna', 'mne'];
+                                                                if (discreteUnits.includes(u)) return sum + Number(c.quantity || 0);
                                                                 return sum;
                                                             }, 0)}
                                                         </span>
@@ -2646,7 +2945,10 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                 {!isCreatingGroup ? (
                                     <button
                                         type="button"
-                                        onClick={() => setIsCreatingGroup(true)}
+                                        onClick={() => {
+                                            setIsCreatingGroup(true);
+                                            setNewGroupName(`תוספות - ${formData.name || currentItem?.name || ''}`);
+                                        }}
                                         className="w-full py-6 border-2 border-dashed border-gray-300 rounded-2xl flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all group"
                                     >
                                         <PlusCircle size={32} strokeWidth={1.5} className="group-hover:scale-110 transition-transform" />
@@ -2656,14 +2958,21 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                     <div className="bg-white border-2 border-blue-500 rounded-2xl p-6 shadow-xl animate-in zoom-in-95">
                                         <h4 className="font-black text-gray-800 mb-4 text-center text-lg">יצירת קבוצה חדשה למנה זו</h4>
                                         <div className="flex gap-3">
-                                            <input
-                                                autoFocus
-                                                value={newGroupName}
-                                                onChange={e => setNewGroupName(e.target.value)}
-                                                onKeyDown={e => e.key === 'Enter' && handleCreatePrivateGroup()}
-                                                placeholder="שם הקבוצה (לדוגמה: תוספות לפיצה)"
-                                                className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 font-bold outline-none focus:ring-2 focus:ring-blue-100 text-lg"
-                                            />
+                                            <div className="flex-1 relative">
+                                                <input
+                                                    autoFocus
+                                                    value={newGroupName}
+                                                    onChange={e => setNewGroupName(e.target.value)}
+                                                    onKeyDown={e => e.key === 'Enter' && handleCreatePrivateGroup()}
+                                                    placeholder="שם הקבוצה (לדוגמה: תוספות לפיצה)"
+                                                    className={`w-full bg-gray-50 border ${nameWarning ? 'border-orange-300 focus:ring-orange-200' : 'border-gray-200 focus:ring-blue-100'} rounded-xl px-4 py-3 font-bold outline-none focus:ring-2 text-lg`}
+                                                />
+                                                {nameWarning && (
+                                                    <div className="absolute top-full right-0 mt-1 text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-md shadow-sm border border-orange-100 w-full animate-in fade-in slide-in-from-top-1 z-10">
+                                                        {nameWarning}
+                                                    </div>
+                                                )}
+                                            </div>
                                             <button type="button" onClick={handleCreatePrivateGroup} className="bg-blue-600 text-white px-8 rounded-xl font-black shadow-lg hover:bg-blue-700">שמור</button>
                                             <button type="button" onClick={resetGroupCreation} className="bg-gray-100 text-gray-500 px-6 rounded-xl font-bold hover:bg-gray-200">ביטול</button>
                                         </div>
@@ -2773,6 +3082,76 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                     </div>
                 )
             }
+
+            {/* Error Toast */}
+            {
+                errorBanner && (
+                    <div className="fixed top-24 left-1/2 -translate-x-1/2 bg-red-600/95 backdrop-blur-md text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 z-[60] animate-in slide-in-from-top-4 fade-in">
+                        <div className="bg-white rounded-full p-1"><X size={14} className="text-red-600" strokeWidth={3} /></div>
+                        <div className="font-bold">{errorBanner}</div>
+                    </div>
+                )
+            }
+
+            {/* General Error / Message Modal */}
+            {generalError && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col">
+                        <div className="bg-red-50 p-6 flex flex-col items-center gap-3 border-b border-red-100">
+                            <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center text-red-500 mb-1">
+                                <AlertTriangle size={32} strokeWidth={2.5} />
+                            </div>
+                            <h3 className="text-xl font-black text-red-900 text-center">{generalError.title || 'שגיאה'}</h3>
+                        </div>
+                        <div className="p-6 text-center">
+                            <p className="text-gray-600 font-medium leading-relaxed mb-6">
+                                {generalError.message}
+                            </p>
+
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={() => setGeneralError(null)}
+                                    className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition shadow-lg shadow-gray-200"
+                                >
+                                    הבנתי, סגור
+                                </button>
+
+                                {generalError.canReport && (
+                                    <button
+                                        onClick={() => {
+                                            // For now just simulate report
+                                            setGeneralError({
+                                                title: 'הדיווח נשלח',
+                                                message: 'תודה! הדיווח הועבר לצוות הטכני לבדיקה.',
+                                                canReport: false
+                                            });
+                                            setTimeout(() => setGeneralError(null), 2500);
+                                        }}
+                                        className="w-full py-3 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 transition flex items-center justify-center gap-2"
+                                    >
+                                        <Bug size={18} /> דווח על תקלה
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Category Manager Modal */}
+            <CategoryManager
+                isOpen={showCategoryManager}
+                onClose={() => setShowCategoryManager(false)}
+                onCategoryCreated={(newCat) => {
+                    // Refresh categories and auto-select the new one
+                    fetchCategories();
+                    setFormData(prev => ({
+                        ...prev,
+                        category: newCat.name,
+                        category_id: newCat.id
+                    }));
+                }}
+            />
         </div >
     );
 };

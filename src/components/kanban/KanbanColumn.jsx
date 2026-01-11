@@ -57,7 +57,8 @@ export function KanbanColumn({
     onEditOrder,
     onMarkSeen,
     onReadyItems, // 🆕 For packing toggle
-    onSmsClick
+    onSmsClick,
+    isDriverView = false // 🆕
 }) {
     const { setNodeRef, isOver } = useDroppable({ id: status });
 
@@ -67,7 +68,7 @@ export function KanbanColumn({
     return (
         <div
             ref={setNodeRef}
-            className={`flex flex-col min-w-[350px] max-w-[420px] w-full h-full rounded-2xl border-2 ${styles.border} ${styles.bg} ${isOver ? 'ring-2 ring-blue-400 ring-offset-2 shadow-xl' : 'shadow-sm'} transition-all`}
+            className={`flex flex-col flex-1 min-w-[260px] h-full rounded-2xl border-2 ${styles.border} ${styles.bg} ${isOver ? 'ring-2 ring-blue-400 ring-offset-2 shadow-xl' : 'shadow-sm'} transition-all`}
         >
             {/* Header */}
             <div className="p-4 border-b border-gray-200/50 flex items-center justify-between sticky top-0 z-10 bg-inherit rounded-t-2xl backdrop-blur-sm">
@@ -105,6 +106,7 @@ export function KanbanColumn({
                                 onMarkSeen={onMarkSeen}
                                 onReadyItems={onReadyItems} // 🆕 Pass through
                                 onSmsClick={onSmsClick}
+                                isDriverView={isDriverView} // 🆕
                             />
                         ))
                     )}

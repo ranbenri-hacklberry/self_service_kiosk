@@ -25,7 +25,9 @@ import {
     Edit2,
     Lock,
     Smartphone,
-    Mail
+    Mail,
+    Database,
+    ArrowRight
 } from 'lucide-react';
 
 const EmployeesView = ({ businessId }) => {
@@ -257,8 +259,8 @@ const EmployeesView = ({ businessId }) => {
 };
 
 const SuperAdminDashboard = () => {
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [pin, setPin] = useState('');
+    const { logout, switchBusinessContext, currentUser, isLoading: authLoading } = useAuth();
+    const navigate = useNavigate();
     const [businesses, setBusinesses] = useState([]);
     const [loading, setLoading] = useState(false);
     const [view, setView] = useState('list'); // 'list' | 'add' | 'settings'
@@ -270,39 +272,21 @@ const SuperAdminDashboard = () => {
     const [formData, setFormData] = useState({});
     const [settingsView, setSettingsView] = useState('menu'); // 'menu' | 'general' | 'login' | 'integrations' | 'loyalty'
 
-    const navigate = useNavigate();
-
-    // Mock Super Admin PIN
-    const SUPER_ADMIN_PIN = '9999';
-    const { currentUser, isLoading } = useAuth(); // Get current user to check permissions
-
     useEffect(() => {
         // Wait for auth to initialize
-        if (isLoading) return;
+        if (authLoading) return;
 
         // Security Check: Must be Super Admin
         if (!currentUser?.is_super_admin) {
-            navigate('/mode-selection'); // Kick out intruders (to mode selection, not phone screen)
+            navigate('/mode-selection');
             return;
         }
 
-        const isSessionActive = sessionStorage.getItem('super_admin_active');
-        if (isSessionActive === 'true') {
-            setIsAuthenticated(true);
-            fetchBusinesses();
-        }
-    }, [currentUser, isLoading, navigate]);
+        // Initial fetch
+        fetchBusinesses();
+    }, [currentUser, authLoading, navigate]);
 
-    const handleLogin = (e) => {
-        e.preventDefault();
-        if (pin === SUPER_ADMIN_PIN) {
-            setIsAuthenticated(true);
-            sessionStorage.setItem('super_admin_active', 'true');
-            fetchBusinesses();
-        } else {
-            alert('קוד שגוי');
-        }
-    };
+
 
     const [errorMsg, setErrorMsg] = useState(null);
 
@@ -373,49 +357,17 @@ const SuperAdminDashboard = () => {
     // Auto-refresh data when authenticated (Live Dashboard)
     useEffect(() => {
         let interval;
-        if (isAuthenticated) {
-            fetchBusinesses(); // Initial fetch on auth
+        if (currentUser?.is_super_admin) {
             interval = setInterval(fetchBusinesses, 10000); // Poll every 10 seconds
         }
         return () => clearInterval(interval);
-    }, [isAuthenticated]);
+    }, [currentUser]);
 
     const impersonateManager = async (business) => {
         try {
-            console.log('Impersonating manager for:', business.name);
-            const { data: employees, error } = await supabase
-                .from('employees')
-                .select('*')
-                .eq('business_id', business.id)
-                .or('access_level.eq.Manager,access_level.eq.Admin')
-                .limit(1);
-
-            if (error) throw error;
-
-            if (!employees || employees.length === 0) {
-                alert(`לא נמצא מנהל לעסק "${business.name}" שניתן להתחבר דרכו.`);
-                return;
-            }
-
-            const manager = employees[0];
-            // ... rest of logic
-            const sessionData = {
-                employeeId: manager.id,
-                employeeName: `SuperAdmin as ${manager.name}`,
-                accessLevel: manager.access_level,
-                email: manager.email,
-                loginTime: Date.now(),
-                isImpersonated: true
-            };
-
-            const encodeData = (data) => btoa(encodeURIComponent(JSON.stringify(data)));
-
-            localStorage.setItem('manager_auth_key', encodeData(sessionData));
-            localStorage.setItem('manager_auth_time', Date.now().toString());
-            localStorage.setItem('manager_employee_id', manager.id);
-
+            console.log('🚀 Impersonating business as Super Admin:', business.name);
+            switchBusinessContext(business.id, business.name);
             navigate('/data-manager-interface');
-
         } catch (err) {
             console.error('Impersonation error:', err);
             alert('שגיאה בהתחברות לעסק: ' + err.message);
@@ -534,29 +486,47 @@ const SuperAdminDashboard = () => {
 
                 <div className="relative z-10 max-w-2xl mx-auto">
                     <div className="flex justify-between items-start mb-8">
-                        <div>
-                            <p className="text-slate-400 text-sm font-bold mb-2 tracking-wide uppercase">מערכת ניהול</p>
-                            <h1 className="text-4xl font-black text-white tracking-tight leading-tight">
-                                Super <span className="text-blue-500">Admin</span>
-                            </h1>
+                        <div className="flex items-center gap-4">
+                            <button
+                                onClick={() => navigate('/super-admin')}
+                                className="p-3 bg-slate-800 rounded-2xl hover:bg-slate-700 text-slate-400 hover:text-white transition-all border border-slate-700 active:scale-95"
+                                title="חזור לפורטל"
+                            >
+                                <ArrowRight size={24} />
+                            </button>
+                            <div>
+                                <p className="text-slate-400 text-sm font-bold mb-1 tracking-wide uppercase">ניהול עסקים</p>
+                                <h1 className="text-3xl font-black text-white tracking-tight leading-tight">
+                                    Super <span className="text-blue-500">Admin</span>
+                                </h1>
+                            </div>
                         </div>
-                        <button
-                            onClick={() => {
-                                // Just exit to mode selection, don't clear session if we want to keep them logged in as user
-                                // But maybe clear super admin flag so they need PIN again?
-                                // User said: "admin also doesn't need another authentication"
-                                // If we navigate away, the component unmounts, so local 'isAuthenticated' resets anyway.
-                                // But 'super_admin_active' in sessionStorage remains.
-                                // If we want to require PIN again, we should clear sessionStorage.
-                                // If we want to avoid the "4 digit code screen" (which is likely the Local PIN screen here),
-                                // we should just navigate away.
-                                sessionStorage.removeItem('super_admin_active');
-                                navigate('/mode-selection');
-                            }}
-                            className="p-3 bg-slate-800 rounded-2xl hover:bg-red-500/10 hover:text-red-400 transition-all border border-slate-700 hover:border-red-500/30 active:scale-95"
-                        >
-                            <LogOut className="w-6 h-6" />
-                        </button>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => navigate('/super-admin/db')}
+                                className="p-3 bg-slate-800 rounded-2xl hover:bg-blue-500/10 hover:text-blue-400 transition-all border border-slate-700 hover:border-blue-500/30 active:scale-95"
+                                title="סייר מסד נתונים"
+                            >
+                                <Database className="w-6 h-6" />
+                            </button>
+                            <button
+                                onClick={() => {
+                                    // Just exit to mode selection, don't clear session if we want to keep them logged in as user
+                                    // But maybe clear super admin flag so they need PIN again?
+                                    // User said: "admin also doesn't need another authentication"
+                                    // If we navigate away, the component unmounts, so local 'isAuthenticated' resets anyway.
+                                    // But 'super_admin_active' in sessionStorage remains.
+                                    // If we want to require PIN again, we should clear sessionStorage.
+                                    // If we want to avoid the "4 digit code screen" (which is likely the Local PIN screen here),
+                                    // we should just navigate away.
+                                    sessionStorage.removeItem('super_admin_active');
+                                    navigate('/mode-selection');
+                                }}
+                                className="p-3 bg-slate-800 rounded-2xl hover:bg-red-500/10 hover:text-red-400 transition-all border border-slate-700 hover:border-red-500/30 active:scale-95"
+                            >
+                                <LogOut className="w-6 h-6" />
+                            </button>
+                        </div>
                     </div>
 
                     {/* Quick Stats Cards */}
@@ -697,11 +667,10 @@ const SuperAdminDashboard = () => {
                                                     <div className="flex items-center justify-between mb-1">
                                                         <div className="flex items-center gap-2">
                                                             <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                                                            <span className={`font-bold ${
-                                                                device.device_type === 'kds' ? 'text-orange-400' :
+                                                            <span className={`font-bold ${device.device_type === 'kds' ? 'text-orange-400' :
                                                                 device.device_type === 'kiosk' ? 'text-blue-400' :
-                                                                'text-purple-400'
-                                                            }`}>
+                                                                    'text-purple-400'
+                                                                }`}>
                                                                 {device.device_type?.toUpperCase()}
                                                             </span>
                                                             {device.user_name && (

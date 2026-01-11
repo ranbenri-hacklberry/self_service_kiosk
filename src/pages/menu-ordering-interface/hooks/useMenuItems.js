@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
 
-// Map database categories to frontend category IDs
+// Map database categories to frontend category IDs (legacy fallback)
 const CATEGORY_MAP = {
     'שתיה חמה': 'hot-drinks',
     'שתיה קרה': 'cold-drinks',
@@ -16,20 +16,47 @@ const CATEGORY_MAP = {
     'תוספות': 'additions'
 };
 
+// Fallback categories if DB is empty or unavailable
+const FALLBACK_CATEGORIES = [
+    { id: 'hot-drinks', name: 'שתיה חמה', icon: 'Coffee' },
+    { id: 'cold-drinks', name: 'שתיה קרה', icon: 'GlassWater' },
+    { id: 'pastries', name: 'מאפים', icon: 'Croissant' },
+    { id: 'salads', name: 'סלטים', icon: 'Leaf' },
+    { id: 'sandwiches', name: 'כריכים וטוסטים', icon: 'Sandwich' },
+    { id: 'desserts', name: 'קינוחים', icon: 'IceCream' }
+];
+
 /**
  * Custom hook for menu items management
  * Handles fetching, filtering, and categorizing menu items
  */
 export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) => {
     const [rawMenuData, setRawMenuData] = useState([]); // Raw data from DB
+    const [categories, setCategories] = useState(FALLBACK_CATEGORIES); // Categories from DB
     const [menuLoading, setMenuLoading] = useState(true);
     const [error, setError] = useState(null);
     const [activeCategory, setActiveCategory] = useState(defaultCategory);
 
-    // Helper: Map database category to frontend category ID
-    const getCategoryId = useCallback((dbCategory) => {
+    // Helper: Map database category name/id to frontend category ID
+    // Prioritize category_id (UUID) if available, then fallback to name matching
+    const getCategoryId = useCallback((dbCategory, categoryId) => {
+        // If we have a category_id UUID, check if it exists in our categories
+        if (categoryId) {
+            const foundById = categories.find(c => c.id === categoryId);
+            if (foundById) return foundById.id;
+        }
+
+        // Try to find in loaded categories (by name_he or name)
+        const found = categories.find(c =>
+            c.name === dbCategory ||
+            c.name_he === dbCategory ||
+            c.db_name === dbCategory
+        );
+        if (found) return found.id;
+
+        // Fallback to legacy map
         return CATEGORY_MAP[dbCategory] || 'other';
-    }, []);
+    }, [categories]);
 
     // Helper: Check if item is food (requires modal for notes)
     const isFoodItem = useCallback((item) => {
@@ -53,6 +80,47 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
 
         return false;
     }, []);
+
+    // Fetch categories from Supabase
+    const fetchCategories = useCallback(async () => {
+        if (!businessId) return;
+
+        try {
+            const { data, error: fetchError } = await supabase
+                .from('item_category')
+                .select('id, name, name_he, icon, position, is_hidden')
+                .eq('business_id', businessId)
+                .or('is_deleted.is.null,is_deleted.eq.false')
+                .or('is_hidden.is.null,is_hidden.eq.false') // Only show visible categories
+                .order('position', { ascending: true, nullsFirst: false })
+                .order('name_he', { ascending: true });
+
+            if (fetchError) {
+                console.warn('⚠️ Failed to fetch categories from DB, using fallback:', fetchError.message);
+                return;
+            }
+
+            if (data && data.length > 0) {
+                console.log('📁 Categories loaded from DB:', data.length);
+
+                // Transform DB categories to UI format
+                const dbCategories = data.map(cat => ({
+                    id: cat.id,
+                    name: cat.name_he || cat.name,
+                    name_he: cat.name_he,
+                    db_name: cat.name, // Keep original name for matching
+                    icon: cat.icon || 'Folder',
+                    position: cat.position
+                }));
+
+                setCategories(dbCategories);
+            } else {
+                console.log('📁 No categories in DB, using fallback');
+            }
+        } catch (e) {
+            console.error('Error fetching categories:', e);
+        }
+    }, [businessId]);
 
     // Fetch menu items from Supabase with Caching
     const fetchMenuItems = useCallback(async () => {
@@ -93,7 +161,7 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
 
             let query = supabase
                 .from('menu_items')
-                .select('id, name, price, sale_price, category, image_url, is_hot_drink, kds_routing_logic, allow_notes, is_in_stock, description')
+                .select('id, name, price, sale_price, category, category_id, image_url, is_hot_drink, kds_routing_logic, allow_notes, is_in_stock, description')
                 .eq('business_id', targetBusinessId)
                 .not('is_in_stock', 'eq', false)
                 .order('category', { ascending: true })
@@ -162,7 +230,7 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
                     name: item?.name,
                     price: isOnSale ? salePrice : regularPrice,
                     originalPrice: isOnSale ? regularPrice : null,
-                    category: getCategoryId(item?.category),
+                    category: getCategoryId(item?.category, item?.category_id),
                     image: item?.image_url || "https://images.unsplash.com/photo-1551024506-0bccd828d307",
                     imageAlt: `${item?.name} - פריט תפריט מבית הקפה`,
                     available: true,
@@ -178,10 +246,23 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
             });
     }, [rawMenuData, getCategoryId]);
 
-    // Load menu items on mount
+    // Load menu items and categories on mount
     useEffect(() => {
+        fetchCategories();
         fetchMenuItems();
-    }, [fetchMenuItems]);
+    }, [fetchCategories, fetchMenuItems]);
+
+    // When categories change (loaded from DB), ensure activeCategory is valid
+    useEffect(() => {
+        if (categories && categories.length > 0) {
+            const isValidCategory = categories.some(c => c.id === activeCategory);
+            if (!isValidCategory) {
+                // If current activeCategory is not in the loaded categories, switch to first
+                console.log('📁 Active category not found in DB categories, selecting first:', categories[0].id);
+                setActiveCategory(categories[0].id);
+            }
+        }
+    }, [categories]);
 
     // Filter items based on active category
     const filteredItems = useMemo(() => {
@@ -248,9 +329,11 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
         activeCategory,
         filteredItems,
         groupedItems,
+        categories, // Categories from DB (or fallback)
 
         // Actions
         fetchMenuItems,
+        fetchCategories,
         handleCategoryChange,
         setActiveCategory,
 

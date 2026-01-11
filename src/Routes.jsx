@@ -7,6 +7,7 @@ import NotFound from "@/pages/NotFound";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { MusicProvider } from "@/context/MusicContext";
 import SyncStatusModal from "@/components/SyncStatusModal";
+import MiniMusicBar from './components/music/MiniMusicBar';
 
 // Pages
 import LoginScreen from "@/pages/login/LoginScreen";
@@ -15,6 +16,8 @@ import MenuOrderingInterface from './pages/menu-ordering-interface';
 import KdsScreen from './pages/kds';
 import DataManagerInterface from './pages/data-manager-interface';
 import SuperAdminDashboard from './pages/super-admin';
+import SuperAdminPortal from './pages/super-admin/SuperAdminPortal';
+import DatabaseExplorer from './pages/super-admin/DatabaseExplorer';
 import ManagerKDS from './components/manager/ManagerKDS';
 import InventoryPage from './pages/inventory';
 import PrepPage from './pages/prep';
@@ -84,14 +87,27 @@ const ProtectedRoute = ({ children }) => {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
+  // SUPER ADMIN PATHS: Allow access without device mode
+  const isSuperAdminPath = location.pathname.startsWith('/super-admin');
+  if (isSuperAdminPath) {
+    // Super Admin routes don't need device mode
+    return <PageTransition>{children}</PageTransition>;
+  }
+
   // User is logged in - check mode
   if (!deviceMode) {
+    // Super Admin without device mode should go to their portal, not mode selection
+    if (currentUser?.is_super_admin && !currentUser?.is_impersonating) {
+      return <Navigate to="/super-admin" replace />;
+    }
+
     // If no mode selected and not already on selection screen, redirect there
     if (location.pathname !== '/mode-selection') {
       return <Navigate to="/mode-selection" replace />;
     }
     // If on mode selection, allow access
-    return <PageTransition>{children}</PageTransition>;
+    // FIX: Don't use PageTransition for mode-selection to avoid animation freezes
+    return children;
   }
 
   // Handle root path redirect based on mode
@@ -118,112 +134,126 @@ const AppRoutes = () => {
   const location = useLocation();
 
   return (
-    <AnimatePresence mode="wait">
-      <RouterRoutes location={location} key={location.pathname}>
-        {/* Public Routes */}
-        <Route path="/login" element={<PageTransition><LoginScreen /></PageTransition>} />
-        <Route path="/admin" element={<Navigate to="/login" replace />} />
-        <Route path="/manager" element={<Navigate to="/login" replace />} />
-        <Route path="/super-admin" element={<PageTransition><SuperAdminDashboard /></PageTransition>} />
 
-        {/* Protected Routes */}
-        <Route path="/mode-selection" element={
-          <ProtectedRoute>
-            <ModeSelectionScreen />
-          </ProtectedRoute>
-        } />
+    <RouterRoutes location={location} key={location.pathname}>
+      {/* Public Routes */}
+      <Route path="/login" element={<PageTransition><LoginScreen /></PageTransition>} />
+      <Route path="/admin" element={<Navigate to="/login" replace />} />
+      <Route path="/manager" element={<Navigate to="/login" replace />} />
+      <Route path="/super-admin" element={
+        <ProtectedRoute>
+          <SuperAdminPortal />
+        </ProtectedRoute>
+      } />
+      <Route path="/super-admin/businesses" element={
+        <ProtectedRoute>
+          <SuperAdminDashboard />
+        </ProtectedRoute>
+      } />
+      <Route path="/super-admin/db" element={
+        <ProtectedRoute>
+          <DatabaseExplorer />
+        </ProtectedRoute>
+      } />
 
-        <Route path="/" element={
-          <ProtectedRoute>
-            <MenuOrderingInterface />
-          </ProtectedRoute>
-        } />
+      {/* Protected Routes */}
+      <Route path="/mode-selection" element={
+        <ProtectedRoute>
+          <ModeSelectionScreen />
+        </ProtectedRoute>
+      } />
 
-        {/* Aliases for Menu Interface */}
-        <Route path="/menu-ordering-interface" element={<Navigate to="/" replace />} />
+      <Route path="/" element={
+        <ProtectedRoute>
+          <MenuOrderingInterface />
+        </ProtectedRoute>
+      } />
 
-        <Route path="/kds" element={
-          <ProtectedRoute>
-            <KdsScreen />
-          </ProtectedRoute>
-        } />
+      {/* Aliases for Menu Interface */}
+      <Route path="/menu-ordering-interface" element={<Navigate to="/" replace />} />
 
-        {/* Aliases for KDS */}
-        <Route path="/kitchen-display-system-interface" element={<Navigate to="/kds" replace />} />
+      <Route path="/kds" element={
+        <ProtectedRoute>
+          <KdsScreen />
+        </ProtectedRoute>
+      } />
 
-        <Route path="/mobile-kds" element={
-          <ProtectedRoute>
-            <ManagerKDS />
-          </ProtectedRoute>
-        } />
+      {/* Aliases for KDS */}
+      <Route path="/kitchen-display-system-interface" element={<Navigate to="/kds" replace />} />
 
-        <Route path="/inventory" element={
-          <ProtectedRoute>
-            <InventoryPage />
-          </ProtectedRoute>
-        } />
+      <Route path="/mobile-kds" element={
+        <ProtectedRoute>
+          <ManagerKDS />
+        </ProtectedRoute>
+      } />
 
-        <Route path="/prep" element={
-          <ProtectedRoute>
-            <PrepPage />
-          </ProtectedRoute>
-        } />
+      <Route path="/inventory" element={
+        <ProtectedRoute>
+          <InventoryPage />
+        </ProtectedRoute>
+      } />
 
-        <Route path="/music" element={
-          <ProtectedRoute>
-            <MusicPage />
-          </ProtectedRoute>
-        } />
+      <Route path="/prep" element={
+        <ProtectedRoute>
+          <PrepPage />
+        </ProtectedRoute>
+      } />
 
-        <Route path="/maya" element={
-          <ProtectedRoute>
-            <MayaAssistant />
-          </ProtectedRoute>
-        } />
+      <Route path="/music" element={
+        <ProtectedRoute>
+          <MusicPage />
+        </ProtectedRoute>
+      } />
 
-        <Route path="/data-manager-interface" element={
-          <ProtectedRoute>
-            <ErrorBoundary>
-              <DataManagerInterface />
-            </ErrorBoundary>
-          </ProtectedRoute>
-        } />
+      <Route path="/maya" element={
+        <ProtectedRoute>
+          <MayaAssistant />
+        </ProtectedRoute>
+      } />
 
-        {/* Spotify Callback Route - Public */}
-        <Route path="/callback/spotify" element={<SpotifyCallback />} />
+      <Route path="/data-manager-interface" element={
+        <ProtectedRoute>
+          <ErrorBoundary>
+            <DataManagerInterface />
+          </ErrorBoundary>
+        </ProtectedRoute>
+      } />
 
-        {/* Kanban Order System */}
-        <Route path="/kanban" element={
-          <ProtectedRoute>
-            <KanbanPage />
-          </ProtectedRoute>
-        } />
+      {/* Spotify Callback Route - Public */}
+      <Route path="/callback/spotify" element={<SpotifyCallback />} />
 
-        <Route path="/driver" element={
-          <ProtectedRoute>
-            <DriverPage />
-          </ProtectedRoute>
-        } />
+      {/* Kanban Order System */}
+      <Route path="/kanban" element={
+        <ProtectedRoute>
+          <KanbanPage />
+        </ProtectedRoute>
+      } />
 
-        {/* Order Tracking - Public (no auth required) */}
-        <Route path="/order-tracking/:id" element={<PageTransition><OrderTrackingPage /></PageTransition>} />
+      <Route path="/driver" element={
+        <ProtectedRoute>
+          <DriverPage />
+        </ProtectedRoute>
+      } />
 
-        {/* Debug/Internal Tools */}
-        <Route path="/dexie-test" element={
-          <ProtectedRoute>
-            <DexieTestPage />
-          </ProtectedRoute>
-        } />
+      {/* Order Tracking - Public (no auth required) */}
+      <Route path="/order-tracking/:id" element={<PageTransition><OrderTrackingPage /></PageTransition>} />
 
-        <Route path="/dexie-admin" element={
-          <ProtectedRoute>
-            <DexieAdminPanel />
-          </ProtectedRoute>
-        } />
+      {/* Debug/Internal Tools */}
+      <Route path="/dexie-test" element={
+        <ProtectedRoute>
+          <DexieTestPage />
+        </ProtectedRoute>
+      } />
 
-        <Route path="*" element={<NotFound />} />
-      </RouterRoutes>
-    </AnimatePresence>
+      <Route path="/dexie-admin" element={
+        <ProtectedRoute>
+          <DexieAdminPanel />
+        </ProtectedRoute>
+      } />
+
+      <Route path="*" element={<NotFound />} />
+    </RouterRoutes>
+
   );
 };
 
@@ -234,6 +264,7 @@ const Routes = () => {
         <AuthProvider>
           <SyncStatusModal />
           <MusicProvider>
+            {/* <MiniMusicBar /> */}
             <ScrollToTop />
             <AppRoutes />
           </MusicProvider>

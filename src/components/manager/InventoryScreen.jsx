@@ -56,7 +56,8 @@ const InventoryScreen = () => {
     count_step: 1,
     unit_weight_grams: 0,
     min_order: 1,
-    order_step: 1
+    order_step: 1,
+    case_quantity: 1
   });
 
   // Confirmation Modal State
@@ -177,12 +178,24 @@ const InventoryScreen = () => {
 
   const supplierGroups = useMemo(() => {
     const groups = {};
+    // Build a Set of valid supplier IDs for quick lookup
+    const validSupplierIds = new Set(suppliers.map(s => s.id));
+
     suppliers.forEach(s => { groups[s.id] = { supplier: s, count: 0, isToday: isDeliveryToday(s) }; });
     groups['uncategorized'] = { supplier: { id: 'uncategorized', name: 'כללי / ללא ספק' }, count: 0, isToday: false };
+
     items.forEach(item => {
-      const supId = item.supplier_id || 'uncategorized';
+      let supId = item.supplier_id || 'uncategorized';
+
+      // CRITICAL FIX: If supplier_id exists but is NOT in our valid suppliers list,
+      // treat it as uncategorized to prevent phantom supplier groups
+      if (supId !== 'uncategorized' && !validSupplierIds.has(supId)) {
+        console.warn(`⚠️ Item "${item.name}" (id=${item.id}) has invalid supplier_id=${supId}. Moving to uncategorized.`);
+        supId = 'uncategorized';
+      }
+
       if (groups[supId]) groups[supId].count++;
-      else if (groups['uncategorized']) groups['uncategorized'].count++;
+      else groups['uncategorized'].count++;
     });
 
     const groupsArray = Object.values(groups);
@@ -439,6 +452,7 @@ const InventoryScreen = () => {
         unitPrice,
         countStep: matchedItem?.count_step || 1,
         inventoryItemId: matchedItem?.id || null,
+        catalogItemId: matchedItem?.catalog_item_id || null,
         isNew: !matchedItem,
         matchedItem
       };
@@ -471,11 +485,12 @@ const InventoryScreen = () => {
 
     setIsConfirmingReceipt(true);
     try {
-      // Prepare items for RPC
+      // Prepare items for RPC - send ALL items, including new ones
       const rpcItems = receivingSession.items
-        .filter(item => item.inventoryItemId) // Only items that exist in inventory
+        .filter(item => item.actualQty > 0) // Only items with quantity
         .map(item => ({
-          inventory_item_id: item.inventoryItemId,
+          inventory_item_id: item.inventoryItemId || null,
+          catalog_item_id: item.catalogItemId || null,
           actual_qty: item.actualQty,
           invoiced_qty: item.invoicedQty,
           unit_price: item.unitPrice
@@ -485,7 +500,8 @@ const InventoryScreen = () => {
         p_items: rpcItems,
         p_order_id: receivingSession.orderId,
         p_supplier_id: receivingSession.supplierId,
-        p_notes: null
+        p_notes: null,
+        p_business_id: currentUser?.business_id
       });
 
       if (error) throw error;
@@ -534,6 +550,7 @@ const InventoryScreen = () => {
         unitPrice: orderItem.price || matchedItem?.cost_per_unit || 0,
         countStep: matchedItem?.count_step || 1,
         inventoryItemId: matchedItem?.id || null,
+        catalogItemId: matchedItem?.catalog_item_id || null,
         isNew: !matchedItem,
         matchedItem
       };
@@ -568,9 +585,19 @@ const InventoryScreen = () => {
 
   const itemsForSelectedSupplier = useMemo(() => {
     if (!selectedSupplier) return [];
-    return items.filter(i => (i.supplier_id || 'uncategorized') === selectedSupplier)
-      .filter(i => !search || i.name.toLowerCase().includes(search.toLowerCase()));
-  }, [items, selectedSupplier, search]);
+
+    // Build valid supplier IDs set (same logic as supplierGroups)
+    const validSupplierIds = new Set(suppliers.map(s => s.id));
+
+    return items.filter(i => {
+      let itemSupId = i.supplier_id || 'uncategorized';
+      // If supplier_id is invalid, treat as uncategorized
+      if (itemSupId !== 'uncategorized' && !validSupplierIds.has(itemSupId)) {
+        itemSupId = 'uncategorized';
+      }
+      return itemSupId === selectedSupplier;
+    }).filter(i => !search || i.name.toLowerCase().includes(search.toLowerCase()));
+  }, [items, selectedSupplier, search, suppliers]);
 
   const activeSupplierName = useMemo(() => {
     if (!selectedSupplier) return '';
@@ -608,7 +635,7 @@ const InventoryScreen = () => {
         current_stock: 0, // Default for new items
         count_step: newItemData.count_step,
         unit_weight_grams: newItemData.unit === 'יח׳' ? newItemData.unit_weight_grams : null, // Only if type is unit
-        case_quantity: newItemData.case_quantity, // This field is not in newItemData state, but was in instruction. Keeping it for now.
+        case_quantity: newItemData.case_quantity || 1, // Ensure valid integer
         min_order: newItemData.min_order,
         order_step: newItemData.order_step,
         item_type: newItemData.unit === 'יח׳' ? 'unit' : 'weight' // 'unit' or 'weight'

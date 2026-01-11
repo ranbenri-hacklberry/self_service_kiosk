@@ -17,7 +17,7 @@ import {
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import KanbanColumn from './KanbanColumn';
-import OrderCard from '../../pages/kds/components/OrderCard';
+import KanbanOrderCard from './KanbanOrderCard';
 
 // Default column order - Unified with lifecycle: Incoming -> Acknowledged -> Prep -> Pick
 const DEFAULT_COLUMNS = ['pending', 'new', 'in_progress', 'ready', 'shipped', 'delivered'];
@@ -31,7 +31,8 @@ export function KanbanBoard({
     onEditOrder,
     onMarkSeen,
     onReadyItems, // 🆕 For packing toggle
-    onSmsClick
+    onSmsClick,
+    isDriverView = false // 🆕 Driver Mode
 }) {
     const [activeOrder, setActiveOrder] = useState(null);
     const [items, setItems] = useState(ordersByStatus);
@@ -153,6 +154,7 @@ export function KanbanBoard({
                         onMarkSeen={onMarkSeen}
                         onReadyItems={onReadyItems} // 🆕 Pass through
                         onSmsClick={onSmsClick}
+                        isDriverView={isDriverView} // 🆕
                     />
                 ))}
             </div>
@@ -173,10 +175,10 @@ export function KanbanBoard({
             >
                 {activeOrder ? (
                     <div className="opacity-95 rotate-[2deg] scale-105 shadow-2xl ring-2 ring-blue-500/20 rounded-2xl overflow-hidden pointer-events-none transition-transform">
-                        <OrderCard
+                        <KanbanOrderCard
                             order={activeOrder}
                             isReady={activeOrder.order_status === 'ready' || activeOrder.order_status === 'completed'}
-                            isKanban={true} // 🆕 Use Kanban mode for overlay too
+                            isDriverView={isDriverView}
                             onReadyItems={onReadyItems}
                         />
                     </div>

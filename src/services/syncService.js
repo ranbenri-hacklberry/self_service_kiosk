@@ -24,8 +24,9 @@ const SYNC_CONFIG = {
         { local: 'employees', remote: 'employees' },
         { local: 'discounts', remote: 'discounts' },
         { local: 'ingredients', remote: 'ingredients' },
-        { local: 'orders', remote: 'orders', filter: { column: 'created_at', op: 'gte', value: 'today' } },
-        { local: 'order_items', remote: 'order_items' },
+        // orders and order_items handled via specialized syncOrders RPC
+        // { local: 'orders', ... } - REMOVED from generic loop
+        // { local: 'order_items', ... } - REMOVED from generic loop
         // Option groups and values for modifiers (milk type, size, etc.)
         { local: 'optiongroups', remote: 'optiongroups' },
         { local: 'optionvalues', remote: 'optionvalues' },
@@ -68,8 +69,14 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
                 p_business_id: businessId
             });
 
-            if (!error && data) {
+            if (error) {
+                console.error(`❌ RPC error for customers:`, error.message);
+                // Don't fall through - return error
+                return { success: false, error: error.message };
+            }
+            if (data) {
                 await db[localTable].bulkPut(data);
+                console.log(`✅ Synced ${data.length} customers via RPC`);
                 return { success: true, count: data.length };
             }
         }
@@ -81,10 +88,16 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
                 p_business_id: businessId
             });
 
-            if (!error && data) {
+            if (error) {
+                console.error(`❌ RPC error for loyalty_cards:`, error.message);
+                return { success: false, error: error.message };
+            }
+            if (data) {
                 await db[localTable].bulkPut(data);
+                console.log(`✅ Synced ${data.length} loyalty_cards via RPC`);
                 return { success: true, count: data.length };
             }
+            return { success: true, count: 0 };
         }
 
         // Special handling for loyalty_transactions - use RPC
@@ -94,10 +107,55 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
                 p_business_id: businessId
             });
 
-            if (!error && data) {
+            if (error) {
+                console.error(`❌ RPC error for loyalty_transactions:`, error.message);
+                return { success: false, error: error.message };
+            }
+            if (data) {
                 await db[localTable].bulkPut(data);
+                console.log(`✅ Synced ${data.length} loyalty_transactions via RPC`);
                 return { success: true, count: data.length };
             }
+            return { success: true, count: 0 };
+        }
+
+        // Special handling for order_items - sync only items from this business's orders
+        if (remoteTable === 'order_items' && businessId) {
+            console.log(`🔄 Syncing order_items via orders join...`);
+            // First get the order IDs for this business
+            const { data: orderIds, error: orderError } = await supabase
+                .from('orders')
+                .select('id')
+                .eq('business_id', businessId);
+
+            if (orderError) {
+                console.error(`❌ Error getting orders for order_items:`, orderError.message);
+                return { success: false, error: orderError.message };
+            }
+
+            if (!orderIds || orderIds.length === 0) {
+                console.log(`📭 No orders found, skipping order_items`);
+                return { success: true, count: 0 };
+            }
+
+            const ids = orderIds.map(o => o.id);
+            // Fetch order_items for these orders (in batches if many)
+            const { data, error } = await supabase
+                .from('order_items')
+                .select('*')
+                .in('order_id', ids.slice(0, 100)) // Limit to first 100 orders for performance
+                .limit(SYNC_CONFIG.batchSize);
+
+            if (error) {
+                console.error(`❌ Error syncing order_items:`, error.message);
+                return { success: false, error: error.message };
+            }
+
+            if (data && data.length > 0) {
+                await db[localTable].bulkPut(data);
+                console.log(`✅ Synced ${data.length} order_items`);
+            }
+            return { success: true, count: data?.length || 0 };
         }
 
         // Build query
@@ -188,42 +246,7 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
     }
 };
 
-/**
- * Initial load - hydrate all tables from Supabase
- * Call this on app startup when iPad comes online
- * @param {string} businessId - The business ID to filter data
- */
-export const initialLoad = async (businessId, onProgress = null) => {
-    if (!isOnline()) {
-        console.log('⏸️ Device is offline - using cached data');
-        return { success: false, reason: 'offline' };
-    }
 
-    console.log('🚀 Starting initial data load...');
-    const startTime = Date.now();
-    const results = {};
-    const totalTables = SYNC_CONFIG.tables.length;
-
-    for (let i = 0; i < SYNC_CONFIG.tables.length; i++) {
-        const table = SYNC_CONFIG.tables[i];
-        const result = await syncTable(table.local, table.remote, table.filter, businessId);
-        results[table.local] = result;
-
-        // Calculate and report progress
-        const progress = Math.round(((i + 1) / totalTables) * 100);
-        console.log(`📊 Sync progress: ${progress}% (${i + 1}/${totalTables}) - ${table.local}`);
-
-        // Call progress callback if provided
-        if (onProgress) {
-            onProgress(table.local, result.count || 0, progress);
-        }
-    }
-
-    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`🎉 Initial load complete in ${duration}s`, results);
-
-    return { success: true, results, duration };
-};
 
 /**
  * Sync orders and order items (real-time sync for KDS)
@@ -338,6 +361,46 @@ export const syncOrders = async (businessId) => {
         console.error('❌ syncOrders exception:', err);
         return { success: false, error: err.message };
     }
+};
+
+/**
+ * Initial load - hydrate all tables from Supabase
+ * Uses standard sync for config tables and specialized RPC sync for orders
+ * @param {string} businessId - The business ID to filter data
+ */
+export const initialLoad = async (businessId, onProgress = null) => {
+    if (!isOnline()) {
+        console.log('⏸️ Device is offline - using cached data');
+        return { success: false, reason: 'offline' };
+    }
+
+    console.log('🚀 Starting initial data load...');
+    const startTime = Date.now();
+    const results = {};
+    const totalTables = SYNC_CONFIG.tables.length + 1; // +1 for Orders
+
+    // 1. Sync Standard Tables
+    for (let i = 0; i < SYNC_CONFIG.tables.length; i++) {
+        const table = SYNC_CONFIG.tables[i];
+        const result = await syncTable(table.local, table.remote, table.filter, businessId);
+        results[table.local] = result;
+
+        const progress = Math.round(((i + 1) / totalTables) * 100);
+        console.log(`📊 Sync progress: ${progress}% - ${table.local}`);
+        if (onProgress) onProgress(table.local, result.count || 0, progress);
+    }
+
+    // 2. Sync Orders (Specialized RPC for history + items)
+    console.log('📦 Syncing Orders via RPC...');
+    const ordersResult = await syncOrders(businessId);
+    results['orders'] = ordersResult;
+
+    if (onProgress) onProgress('orders', ordersResult.ordersCount || 0, 100);
+
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`🎉 Initial load complete in ${duration}s`, results);
+
+    return { success: true, results, duration };
 };
 
 /**

@@ -50,25 +50,33 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
     const isOnline = status === 'online' || status === 'local-only' || status === 'cloud-only';
     const isChecking = status === 'checking';
 
+    // Get business name from user or impersonation
+    const businessName = currentUser?.impersonating_business_name || currentUser?.business_name || null;
+
     return (
-        <div className={`flex flex-col items-start gap-0.5 min-w-[70px] ${isIntegrated ? '' : 'fixed top-3 left-3 z-[100] bg-white/80 backdrop-blur-md p-1.5 rounded-xl border shadow-sm'}`} dir="rtl">
-            <div className="flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full transition-all duration-500 shadow-sm ${isChecking ? 'bg-blue-400 animate-pulse' :
-                        isOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' :
-                            'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'
-                    }`} />
-                <span className="text-[10px] font-black text-slate-700 leading-none">
-                    {isChecking ? 'בודק...' : isOnline ? 'מחובר' : 'מנותק'}
-                </span>
-                {!isOnline && !isChecking && (
-                    <button onClick={refresh} className="text-slate-400 hover:text-slate-600 transition-colors">
-                        <RefreshCw size={8} />
+        <div className={`flex flex-col items-center gap-0.5 ${isIntegrated ? '' : 'fixed top-3 left-3 z-[100] bg-white/80 backdrop-blur-md p-1.5 rounded-xl border shadow-sm'}`} dir="rtl">
+            {/* Business Name Badge */}
+            {isOnline ? (
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-green-50 border border-green-200 rounded-full">
+                    <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]" />
+                    <span className="text-xs font-bold text-green-700 leading-none">
+                        {businessName || 'מחובר'}
+                    </span>
+                </div>
+            ) : isChecking ? (
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200 rounded-full">
+                    <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                    <span className="text-xs font-bold text-blue-600 leading-none">מתחבר...</span>
+                </div>
+            ) : (
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-red-50 border border-red-200 rounded-full">
+                    <span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]" />
+                    <span className="text-xs font-bold text-red-600 leading-none">לא מחובר</span>
+                    <button onClick={refresh} className="text-red-400 hover:text-red-600 transition-colors ml-1">
+                        <RefreshCw size={10} />
                     </button>
-                )}
-            </div>
-            <div className="text-[8px] font-medium text-slate-400 leading-tight whitespace-nowrap">
-                סונכרן: <span className="text-slate-500">{formatSyncTime(lastSyncTime)}</span>
-            </div>
+                </div>
+            )}
         </div>
     );
 };
