@@ -245,6 +245,34 @@ db.version(12).stores({
     delivery_settings: 'id, business_id'
 });
 
+// Version 13: Emergency Queue Reset - Fixes status reversion bug
+// Drops v2 queue (clearing stuck actions) and creates v3
+db.version(13).stores({
+    active_order_items: 'id, order_id, menu_item_id, item_status, created_at',
+    businesses: 'id, name',
+    catalog_items: 'id, name, category, created_at',
+    customers: 'id, phone_number, phone, name, business_id',
+    device_sessions: 'id, business_id, device_id, employee_id, last_seen_at',
+    discounts: 'id, name, business_id, is_active, discount_code',
+    employees: 'id, name, nfc_id, pin_code, business_id, auth_user_id, is_driver',
+    ingredients: 'id, name, supplier_id',
+    orders: 'id, order_number, order_status, order_type, order_origin, is_paid, customer_id, business_id, created_at, updated_at, seen_at, _processing, [business_id+created_at], [business_id+order_status]',
+    order_items: 'id, order_id, menu_item_id, item_status, course_stage, created_at',
+    menu_items: 'id, name, category, business_id, is_active, kds_routing_logic',
+    sync_meta: 'table_name, last_synced_at, record_count',
+    optiongroups: 'id, name, menu_item_id, business_id',
+    optionvalues: 'id, group_id, value_name, price_adjustment',
+    menuitemoptions: 'id, item_id, group_id',
+    loyalty_cards: 'id, customer_id, customer_phone, business_id, points_balance, created_at',
+    loyalty_transactions: 'id, card_id, order_id, business_id, transaction_type, created_at',
+    cached_images: 'url, cached_at',
+    offline_queue: null,
+    offline_queue_v2: null, // CLEAR POISONED QUEUE
+    offline_queue_v3: '++id, type, status, createdAt, table, recordId', // NEW CLEAN QUEUE
+    sync_status: 'id, table, recordId, status, updated_at',
+    delivery_settings: 'id, business_id'
+});
+
 // Export table references for easy access
 export const {
     active_order_items,

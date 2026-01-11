@@ -11,7 +11,7 @@ import { supabase } from '../lib/supabase';
 // Queue table definition - add to database.js version 2
 // For now, we'll use a simple IndexedDB pattern
 
-const QUEUE_STORE = 'offline_queue_v2';
+const QUEUE_STORE = 'offline_queue_v3';
 const MAX_RETRIES = 5; // Maximum retry attempts before marking as permanently failed
 
 // MUTEX: Prevent concurrent syncQueue executions
@@ -23,8 +23,8 @@ let isSyncing = false;
  */
 export const initializeQueue = async () => {
     // Check if queue table exists, if not we'll use localStorage as fallback
-    if (!db.offline_queue_v2) {
-        console.log('⚠️ offline_queue_v2 table not in Dexie, using localStorage fallback');
+    if (!db.offline_queue_v3) {
+        console.log('⚠️ offline_queue_v3 table not in Dexie, using localStorage fallback');
     }
 };
 
@@ -45,8 +45,8 @@ export const queueAction = async (type, payload) => {
 
     // Try Dexie first
     try {
-        if (db.offline_queue_v2) {
-            await db.offline_queue_v2.add(action);
+        if (db.offline_queue_v3) {
+            await db.offline_queue_v3.add(action);
             console.log(`📥 Queued ${type} action:`, action.id);
             return action;
         }
@@ -68,13 +68,13 @@ export const queueAction = async (type, payload) => {
  */
 export const getPendingActions = async () => {
     try {
-        if (db.offline_queue_v2) {
+        if (db.offline_queue_v3) {
             // DIAGNOSTIC: Log all queue entries
-            const allEntries = await db.offline_queue_v2.toArray();
+            const allEntries = await db.offline_queue_v3.toArray();
             console.log(`📋 [Queue] Total entries: ${allEntries.length}`,
                 allEntries.map(e => ({ id: e.id, type: e.type, status: e.status, orderId: e.payload?.localOrderId })));
 
-            return await db.offline_queue_v2.where('status').equals('pending').toArray();
+            return await db.offline_queue_v3.where('status').equals('pending').toArray();
         }
     } catch (e) {
         console.warn('Dexie queue read failed:', e);
@@ -91,8 +91,8 @@ export const getPendingActions = async () => {
  */
 export const markActionComplete = async (actionId) => {
     try {
-        if (db.offline_queue_v2) {
-            await db.offline_queue_v2.update(actionId, { status: 'completed' });
+        if (db.offline_queue_v3) {
+            await db.offline_queue_v3.update(actionId, { status: 'completed' });
             return;
         }
     } catch (e) { /* fallback */ }
@@ -110,9 +110,9 @@ export const markActionComplete = async (actionId) => {
  */
 export const markActionFailed = async (actionId, error) => {
     try {
-        if (db.offline_queue_v2) {
-            const action = await db.offline_queue_v2.get(actionId);
-            await db.offline_queue_v2.update(actionId, {
+        if (db.offline_queue_v3) {
+            const action = await db.offline_queue_v3.get(actionId);
+            await db.offline_queue_v3.update(actionId, {
                 status: 'failed',
                 error: error?.message || 'Unknown error',
                 retries: (action?.retries || 0) + 1
@@ -141,7 +141,7 @@ const handleSyncError = async (action, error) => {
 
     if ((action.retries || 0) < MAX_RETRIES) {
         // Schedule retry
-        await db.offline_queue_v2.update(action.id, {
+        await db.offline_queue_v3.update(action.id, {
             status: 'pending',
             retries: (action.retries || 0) + 1,
             // We don't have a 'nextRetry' field in schema yet so we just rely on order
@@ -152,7 +152,7 @@ const handleSyncError = async (action, error) => {
         // For now queue processor just picks it up again next loop.
     } else {
         // Mark as permanently failed
-        await db.offline_queue_v2.update(action.id, {
+        await db.offline_queue_v3.update(action.id, {
             status: 'failed',
             error: error.message
         });
@@ -409,7 +409,7 @@ const processAction = async (action) => {
                     // 4. Update any other pending actions in the queue for this local ID
                     // Note: Dexie doesn't support querying nested fields, so we filter manually
                     try {
-                        const allPendingActions = await db.offline_queue_v2
+                        const allPendingActions = await db.offline_queue_v3
                             .where('status')
                             .equals('pending')
                             .toArray();
@@ -429,7 +429,7 @@ const processAction = async (action) => {
                             if (updatedPayload.localOrderId === localOrderId) {
                                 updatedPayload.localOrderId = data.order_id;
                             }
-                            await db.offline_queue_v2.update(actionRecord.id, {
+                            await db.offline_queue_v3.update(actionRecord.id, {
                                 payload: updatedPayload
                             });
                             console.log(`✏️ Updated action ${actionRecord.type} with new orderId: ${data.order_id}`);
@@ -444,8 +444,9 @@ const processAction = async (action) => {
                     console.log(`✅ Order ${localOrderId} is now ${data.order_id}. Local record deleted.`);
 
                     // 6. SYNC STATUS: If local status was non-default, update Supabase immediately
+                    // FIX: Never force 'pending' status back to server (prevent reversion loop)
                     const currentStatus = localOrder?.order_status || 'in_progress';
-                    if (currentStatus !== 'in_progress') {
+                    if (currentStatus !== 'in_progress' && currentStatus !== 'pending') {
                         console.log('📤 Syncing local status change to Supabase:', currentStatus);
 
                         const updateFields = {
@@ -728,8 +729,8 @@ export const syncQueue = async () => {
  */
 export const clearCompleted = async () => {
     try {
-        if (db.offline_queue_v2) {
-            await db.offline_queue_v2.where('status').equals('completed').delete();
+        if (db.offline_queue_v3) {
+            await db.offline_queue_v3.where('status').equals('completed').delete();
             return;
         }
     } catch (e) { /* fallback */ }
@@ -746,10 +747,10 @@ export const getQueueStats = async () => {
     let pending = 0, failed = 0, completed = 0;
 
     try {
-        if (db.offline_queue_v2) {
-            pending = await db.offline_queue_v2.where('status').equals('pending').count();
-            failed = await db.offline_queue_v2.where('status').equals('failed').count();
-            completed = await db.offline_queue_v2.where('status').equals('completed').count();
+        if (db.offline_queue_v3) {
+            pending = await db.offline_queue_v3.where('status').equals('pending').count();
+            failed = await db.offline_queue_v3.where('status').equals('failed').count();
+            completed = await db.offline_queue_v3.where('status').equals('completed').count();
             return { pending, failed, completed };
         }
     } catch (e) { /* fallback */ }

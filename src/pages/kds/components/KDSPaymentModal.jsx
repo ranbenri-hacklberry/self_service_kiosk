@@ -149,7 +149,7 @@ const KDSPaymentModal = ({
         const config = PAYMENT_INSTRUCTIONS[selectedMethod];
         const IconComponent = config?.icon || CreditCard;
         return (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl" onClick={onClose}>
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10001] flex items-center justify-center p-4" dir="rtl" onClick={onClose}>
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
                     <div className="p-4 border-b border-slate-100 flex items-center gap-3">
                         <div className={`w-10 h-10 ${config?.iconBg} rounded-full flex items-center justify-center ${config?.iconColor}`}><IconComponent size={20} /></div>
@@ -179,7 +179,7 @@ const KDSPaymentModal = ({
     }
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl" onClick={onClose}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10001] flex items-center justify-center p-4" dir="rtl" onClick={onClose}>
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="p-4 border-b flex justify-between items-start">
                     <div className="flex items-center gap-3">

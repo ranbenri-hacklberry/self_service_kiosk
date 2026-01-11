@@ -12,25 +12,37 @@ const KanbanOrderCard = memo(({
   onReadyItems, // For packing toggle
   onEditOrder,
   onSmsClick,
-  isDriverView // 🆕
+  isDriverView, // 🆕
+  dragAttributes, // 🆕
+  dragListeners   // 🆕
 }) => {
   const [isUpdating, setIsUpdating] = useState(false);
 
+  // Normalize Data (Handle snake_case vs camelCase)
+  const status = order.order_status || order.orderStatus || '';
+  const statusLower = status.toLowerCase();
+  // isPaid: if is_paid is explicitly false, use it. If undefined, check isPaid.
+  const isPaid = order.is_paid !== undefined ? order.is_paid : order.isPaid;
+  const customerName = order.customer_name || order.customerName || '';
+  const customerPhone = order.customer_phone || order.customerPhone || '';
+  const deliveryAddress = order.delivery_address || order.deliveryAddress;
+  const orderType = order.order_type || order.orderType;
+
   // Status Styles - Specialized for Kanban
   const statusStyles = useMemo(() => {
-    const statusLower = (order.orderStatus || '').toLowerCase();
-    const isUnpaid = order.isPaid === false;
+    const isUnpaid = isPaid === false;
     const isDelayedCard = order.type === 'delayed';
 
     if (isUnpaid) return 'border-t-[6px] border-red-500 shadow-sm';
     if (isDelayedCard) return 'border-t-[6px] border-slate-400 shadow-inner bg-slate-100 opacity-90';
     if (statusLower === 'pending') return 'border-t-[6px] border-amber-500 shadow-md animate-pulse bg-amber-50/30';
     if (statusLower === 'new') return 'border-t-[6px] border-green-500 shadow-md';
-    if (statusLower === 'in_progress') return 'border-t-[6px] border-yellow-500 shadow-lg ring-1 ring-yellow-100';
+    if (statusLower === 'in_progress' || statusLower === 'in_prep') return 'border-t-[6px] border-yellow-500 shadow-lg ring-1 ring-yellow-100';
     if (statusLower === 'ready') return 'border-t-[6px] border-purple-500 shadow-md';
+    if (statusLower === 'shipped') return 'border-t-[6px] border-blue-500 shadow-md';
 
     return 'border-gray-200 shadow-sm';
-  }, [order.type, order.orderStatus, order.isPaid]);
+  }, [order.type, statusLower, isPaid]);
 
   const unifiedItems = useMemo(() => sortItems(order.items || []), [order.items]);
 
@@ -55,13 +67,7 @@ const KanbanOrderCard = memo(({
             </div>
           )}
 
-          <div
-            className="flex items-start gap-[5px] flex-1 min-w-0 tracking-tight cursor-pointer active:scale-[0.98] transition-all p-1 -m-1 rounded-lg hover:bg-black/5"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onReadyItems) onReadyItems(order.id, [item]);
-            }}
-          >
+          <div className="flex items-start gap-[5px] flex-1 min-w-0 tracking-tight p-1 -m-1 rounded-lg">
             <span className={`flex items-center justify-center rounded-lg font-black shadow-sm shrink-0 w-6 h-6 text-base ${item.quantity > 1 ? 'bg-orange-600 text-white' : (isPacked ? 'bg-green-500 text-white' : 'bg-slate-900 text-white')
               }`}>
               {item.quantity}
@@ -93,30 +99,34 @@ const KanbanOrderCard = memo(({
 
   return (
     <div className={`kds-card w-full flex-shrink-0 rounded-2xl px-[10px] pt-2 pb-3 flex flex-col h-full font-heebo ${order.type === 'delayed' ? 'bg-gray-50' : 'bg-white'} ${statusStyles} border-x border-b border-gray-100 ${glowClass}`}>
-      {/* Header */}
-      <div className="flex justify-between items-start mb-2 border-b border-gray-50 pb-1">
-        <div className="flex flex-col overflow-hidden flex-1">
+      {/* Header - DRAG HANDLE */}
+      <div
+        className="flex justify-between items-start mb-2 border-b border-gray-50 pb-1 cursor-grab active:cursor-grabbing hover:bg-gray-50/50 rounded-t-lg transition-colors p-1 -m-1"
+        {...dragAttributes}
+        {...dragListeners}
+      >
+        <div className="flex flex-col overflow-hidden flex-1 pointer-events-none">
           <div className="flex items-center gap-2 w-full">
             <div className="text-xl font-black text-slate-900 leading-none truncate">
-              {order.customerName && !['אורח', 'אורח אנונימי'].includes(order.customerName) ? order.customerName : `#${order.orderNumber}`}
+              {customerName && !['אורח', 'אורח אנונימי'].includes(customerName) ? customerName : `#${order.orderNumber}`}
             </div>
           </div>
 
           {/* Kanban Info Badges */}
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex items-center gap-1 ${order.items?.every(i => i.item_status === 'ready' || i.is_packed)
-                ? 'bg-green-100 text-green-700 border-green-200'
-                : (order.items?.some(i => i.item_status === 'ready' || i.is_packed) ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-500 border-slate-200')
+              ? 'bg-green-100 text-green-700 border-green-200'
+              : (order.items?.some(i => i.item_status === 'ready' || i.is_packed) ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-500 border-slate-200')
               }`}>
               <Package size={10} />
               {order.items?.filter(i => i.item_status === 'ready' || i.is_packed).length}/{order.items?.length} ארוז
             </span>
-            {order.orderType === 'delivery' && (
+            {orderType === 'delivery' && (
               <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-bold border border-blue-200 flex items-center gap-1">
                 <Truck size={10} /> משלוח
               </span>
             )}
-            {!order.isPaid && (
+            {!isPaid && (
               <span className="bg-red-100 text-red-700 text-[10px] px-2 py-0.5 rounded-full font-bold border border-red-200">לא שולם</span>
             )}
             {order.isSecondCourse && (
@@ -128,10 +138,14 @@ const KanbanOrderCard = memo(({
         <div className="flex flex-col items-end gap-1">
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-50 border border-gray-200 text-gray-500 text-[10px] font-mono">
             <Clock size={10} />
-            <span dir="ltr">{order.timestamp}</span>
+            <span dir="ltr">{order.timestamp || order.created_at?.slice(11, 16)}</span>
           </div>
           {onEditOrder && (
-            <button onClick={() => onEditOrder?.(order)} className="p-1 text-slate-400 hover:text-blue-500 transition-colors">
+            <button
+              onClick={(e) => { e.stopPropagation(); onEditOrder?.(order); }}
+              onPointerDown={(e) => e.stopPropagation()} // 🛑 Prevent drag
+              className="p-1 text-slate-400 hover:text-blue-500 transition-colors pointer-events-auto"
+            >
               <Edit size={14} />
             </button>
           )}
@@ -139,16 +153,16 @@ const KanbanOrderCard = memo(({
       </div>
 
       {/* Delivery Details */}
-      {(order.deliveryAddress || deliveryInfo.address) && (
+      {(deliveryAddress || deliveryInfo.address) && (
         <div className="mb-2 bg-slate-50 p-2 rounded-lg border border-slate-100 text-sm">
           <div className="flex items-start gap-2 text-slate-800 font-bold">
             <MapPin size={14} className="mt-0.5 shrink-0 text-purple-500" />
-            <span>{order.deliveryAddress || deliveryInfo.address}</span>
+            <span>{deliveryAddress || deliveryInfo.address}</span>
           </div>
-          {order.customerPhone && (
+          {customerPhone && (
             <div className="flex items-center gap-2 mt-1 text-slate-500 font-mono text-xs">
               <Phone size={12} />
-              <span dir="ltr">{order.customerPhone}</span>
+              <span dir="ltr">{customerPhone}</span>
             </div>
           )}
         </div>
@@ -163,50 +177,36 @@ const KanbanOrderCard = memo(({
 
       {/* Actions */}
       <div className="mt-auto pt-2 border-t border-gray-50 flex gap-2">
-        {order.orderStatus === 'ready' && (
+        {statusLower === 'ready' && (
           <button
             onClick={(e) => { e.stopPropagation(); onOrderStatusUpdate?.(order.id, 'shipped'); }}
-            className="flex-1 py-2 bg-purple-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-200"
+            onPointerDown={(e) => e.stopPropagation()} // 🛑 Prevent drag
+            className="flex-1 py-2 bg-purple-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-200 hover:bg-purple-700 active:scale-95 transition-all"
           >
             <Truck size={16} />
             <span>מסור לשליח</span>
           </button>
         )}
-        {onPaymentCollected && !order.isPaid && (
+        {onPaymentCollected && !isPaid && (
           <button
             onClick={(e) => { e.stopPropagation(); onPaymentCollected(order); }}
-            className="flex-1 py-2 bg-amber-500 text-white rounded-xl font-bold text-sm shadow-md"
+            onPointerDown={(e) => e.stopPropagation()} // 🛑 Prevent drag
+            className="flex-1 py-2 bg-amber-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-amber-600 active:scale-95 transition-all"
           >
-            ₪{order.totalAmount?.toFixed(0)} לתשלום
+            ₪{order.totalAmount?.toFixed(0) || order.total_amount?.toFixed(0)} לתשלום
           </button>
         )}
-        {order.orderStatus === 'shipped' && (
+        {statusLower === 'shipped' && (
           <button
             onClick={(e) => { e.stopPropagation(); onOrderStatusUpdate?.(order.id, 'delivered'); }}
-            className="flex-1 py-2 bg-green-600 text-white rounded-xl font-bold text-sm shadow-md"
+            onPointerDown={(e) => e.stopPropagation()} // 🛑 Prevent drag
+            className="flex-1 py-2 bg-green-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-green-700 active:scale-95 transition-all"
           >
             סמן כנמסר
           </button>
         )}
       </div>
     </div>
-  );
-}, (prevProps, nextProps) => {
-  return (
-    prevProps.isReady === nextProps.isReady &&
-    prevProps.order.orderStatus === nextProps.order.orderStatus &&
-    prevProps.order.isPaid === nextProps.order.isPaid &&
-    prevProps.order.customerName === nextProps.order.customerName &&
-    prevProps.order.customerPhone === nextProps.order.customerPhone &&
-    prevProps.order.updated_at === nextProps.order.updated_at &&
-    prevProps.order.type === nextProps.order.type &&
-    prevProps.order.items?.length === nextProps.order.items?.length &&
-    prevProps.order.items?.every((item, idx) => {
-      const nextItem = nextProps.order.items[idx];
-      return item.id === nextItem?.id &&
-        item.item_status === nextItem?.item_status &&
-        item.is_packed === nextItem?.is_packed;
-    })
   );
 });
 

@@ -78,7 +78,7 @@ export default function KanbanPage() {
     };
 
     const handlePaymentCollected = (order) => {
-        if (order.is_paid || order.isPaid) return;
+        console.log('💰 Opening Payment Modal for:', order.id);
         setPaymentModal({ show: true, order });
     };
 
@@ -208,14 +208,16 @@ export default function KanbanPage() {
                     onUpdateOrder={updateOrderFields} // 🆕
                     onToggleItemPacked={markItemsReady}
                     onShipmentConfirmed={handleShipmentConfirmed} // 🆕 Pass explicit confirm handler
+                    onPaymentClick={handlePaymentCollected} // 🆕 Pass payment handler
                 />
             )}
 
             {paymentModal.show && (
                 <KDSPaymentModal
+                    isOpen={true} // Add isOpen prop explicitly
                     order={paymentModal.order}
                     onClose={() => setPaymentModal({ show: false, order: null })}
-                    onConfirm={handlePaymentConfirmed}
+                    onConfirmPayment={handlePaymentConfirmed}
                 />
             )}
         </div>

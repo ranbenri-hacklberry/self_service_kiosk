@@ -23,9 +23,9 @@ export function DraggableOrderCard({
     onPaymentCollected,
     onEditOrder,
     onMarkSeen,
-    onReadyItems, // 🆕 For packing toggle
+    onReadyItems,
     onSmsClick,
-    isDriverView = false // 🆕
+    isDriverView = false
 }) {
     const {
         attributes,
@@ -65,7 +65,6 @@ export function DraggableOrderCard({
         transition: transition || 'transform 200ms cubic-bezier(0.2, 0, 0, 1)',
         zIndex: isDragging ? 200 : 'auto',
         opacity: isDragging ? 0.3 : 1, // Dim instead of hiding completely for better UX
-        touchAction: 'none' // 🛑 Prevent scrolling while dragging on touch devices
     };
 
     const isOnlineOrder = order.order_origin === 'online';
@@ -85,7 +84,10 @@ export function DraggableOrderCard({
             onMarkSeen(order.id);
         }
 
-        if (onEditOrder) {
+        // 2. Trigger Action (Priority: Packing Modal > Edit Order)
+        if (onReadyItems) {
+            onReadyItems(order.id);
+        } else if (onEditOrder) {
             onEditOrder(order);
         }
     };
@@ -94,10 +96,8 @@ export function DraggableOrderCard({
         <div
             ref={setNodeRef}
             style={style}
-            {...attributes}
-            {...listeners}
+            className={`group relative w-full cursor-pointer ${isUnseen ? 'ring-2 ring-blue-400 animate-pulse rounded-2xl' : ''}`}
             onClick={handleClick}
-            className={`group relative w-full ${isUnseen ? 'ring-2 ring-blue-400 animate-pulse rounded-2xl' : ''}`}
         >
             {/* Drag Handle Indicator (Visual Only) */}
             <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
@@ -113,6 +113,8 @@ export function DraggableOrderCard({
                 onReadyItems={onReadyItems}
                 onSmsClick={onSmsClick}
                 isDriverView={isDriverView}
+                dragAttributes={attributes} // 🆕 Pass listeners to child
+                dragListeners={listeners}   // 🆕 Pass listeners to child
             />
         </div>
     );

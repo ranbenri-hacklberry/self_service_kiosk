@@ -67,8 +67,8 @@ const ModeSelectionScreen = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 max-w-5xl mx-auto">
 
-                    {/* 0. Super Admin - Only for Super Admin AND NOT Impersonating */}
-                    {currentUser?.is_super_admin && !currentUser?.is_impersonating && (
+                    {/* 0. Super Admin - Always visible for Super Admin */}
+                    {currentUser?.is_super_admin && (
                         <button
                             onClick={() => navigate('/super-admin')}
                             className="group relative bg-slate-900 rounded-2xl p-5 hover:bg-slate-800 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-slate-700"
@@ -90,7 +90,7 @@ const ModeSelectionScreen = () => {
                     {isManager && (
                         <button
                             onClick={() => handleModeSelect('manager')}
-                            className="lg:hidden 2xl:block group relative bg-white rounded-2xl p-5 hover:bg-purple-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-100"
+                            className="group relative bg-white rounded-2xl p-5 hover:bg-purple-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-100"
                         >
                             <div className="absolute top-0 left-0 w-20 h-20 bg-purple-100 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
                             <div className="relative z-10">
@@ -216,11 +216,10 @@ const ModeSelectionScreen = () => {
                         </div>
                     </button>
 
-                    {/* 4b. Driver Screen - Mobile only, for drivers */}
-                    {/* {isDriver && ( */}
+                    {/* 4b. Driver Screen - For drivers (Visible on all devices for now) */}
                     <button
                         onClick={() => handleModeSelect('driver')}
-                        className="md:hidden group relative bg-gray-800 rounded-2xl p-5 hover:bg-gray-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-500"
+                        className="group relative bg-gray-800 rounded-2xl p-5 hover:bg-gray-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-500"
                     >
                         <div className="absolute top-0 left-0 w-20 h-20 bg-purple-900/50 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
                         <div className="relative z-10">
@@ -233,7 +232,6 @@ const ModeSelectionScreen = () => {
                             </p>
                         </div>
                     </button>
-                    {/* )} */}
 
                     {/* 5. Advanced Data - Hidden on Mobile */}
                     <button

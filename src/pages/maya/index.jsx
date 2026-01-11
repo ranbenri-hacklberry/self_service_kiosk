@@ -4,11 +4,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Icon from '../../components/AppIcon';
 import ManagerHeader from '../../components/manager/ManagerHeader';
 import { supabase } from '@/lib/supabase';
+import { db } from '../../db/database';
 import { useAuth } from '@/context/AuthContext';
-import { Send, Mic, MicOff, Coffee, TrendingUp, Users, Settings, RefreshCw, Loader2, BookOpen, Calendar, Package, ClipboardList, Copy as CopyIcon, Edit2, Check, X } from 'lucide-react';
+import { Send, Mic, MicOff, Coffee, TrendingUp, Users, Settings, RefreshCw, Loader2, BookOpen, Calendar, Package, ClipboardList, Copy as CopyIcon, Edit2, Check, X, Terminal } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { searchCode, formatCodeContext } from '@/services/codeSearchService';
+import { askMaya } from '../../services/aiService';
 
 const MAYA_VERSION = "v2.0 - RAG Code Expert Mode";
 
@@ -86,6 +88,9 @@ const MayaAssistant = () => {
     };
 
     // Context Loader - Full Business Intelligence
+    const [showDebug, setShowDebug] = useState(false);
+    const [debugLogs, setDebugLogs] = useState([]);
+
     const loadContext = useCallback(async () => {
         if (!currentUser?.business_id) return;
         setIsContextLoading(true);
@@ -96,14 +101,48 @@ const MayaAssistant = () => {
         const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
         const yesterdayStr = yesterdayDate.toLocaleDateString('en-CA');
 
-        // 1. Sales Intelligence (RPC)
+        // 1. Sales Intelligence (Local Dexie)
         try {
-            const { data: salesRaw, error: salesError } = await supabase.rpc('get_sales_data', {
-                p_start_date: lastWeek.toISOString(),
-                p_end_date: new Date().toISOString()
-            });
+            const lastWeek = new Date();
+            lastWeek.setDate(lastWeek.getDate() - 7);
+            const sevenDaysAgo = lastWeek.toISOString();
 
-            if (salesError) throw salesError;
+            console.log('🔄 Maya: Fetching sales from Dexie DB...');
+            const salesRaw = await db.orders
+                .where('created_at')
+                .above(sevenDaysAgo)
+                .filter(o => o.business_id === currentUser.business_id && o.order_status !== 'cancelled')
+                .toArray();
+
+            console.log('📊 Dexie returned:', salesRaw.length, 'orders');
+
+            // Fetch related items manually since Dexie relations aren't auto-joined like Supabase
+            // Optimization: We could fetch items, but for "Total Sales" revenue, we just need the orders.
+            // For "Top Items", we need the items.
+            // Let's do a quick map of order_items from the JSON if stored, or fetch if needed.
+            // Checking schema: orders usually stores items in 'order_items' table.
+
+            // NOTE: Dexie 'orders' table might NOT have 'order_items' nested if it's a direct table clone.
+            // Let's check if we can live with just Revenue first.
+            // To get items, we'd need: await db.order_items.where('order_id').anyOf(salesRaw.map(o => o.id)).toArray();
+
+            // Let's try to get items for the 'Top Items' feature:
+            const orderIds = salesRaw.map(o => o.id);
+            const allOrderItems = await db.order_items.where('order_id').anyOf(orderIds).toArray();
+
+            // We also need menu_item names.
+            const menuItemIds = [...new Set(allOrderItems.map(i => i.menu_item_id))];
+            const menuItems = await db.menu_items.where('id').anyOf(menuItemIds).toArray();
+            const menuMap = {};
+            menuItems.forEach(mi => menuMap[mi.id] = mi.name);
+
+            // Attach items to orders for processing loop below
+            salesRaw.forEach(o => {
+                o.order_items = allOrderItems.filter(i => i.order_id === o.id).map(i => ({
+                    ...i,
+                    menu_items: { name: menuMap[i.menu_item_id] || 'Unknown' }
+                }));
+            });
 
             const dailyMap = {};
             const totalMap = {};
@@ -115,11 +154,11 @@ const MayaAssistant = () => {
 
             if (Array.isArray(salesRaw)) {
                 salesRaw.forEach(order => {
-                    const date = order.created_at ? order.created_at.split('T')[0] : 'unknown';
+                    const date = order.created_at ? new Date(order.created_at).toLocaleDateString('en-CA') : 'unknown';
                     if (!dailyMap[date]) dailyMap[date] = { items: {}, revenue: 0, count: 0 };
 
                     // Revenue
-                    const orderTotal = parseFloat(order.total) || 0;
+                    const orderTotal = parseFloat(order.total_amount) || 0;
                     dailyMap[date].revenue += orderTotal;
                     dailyMap[date].count += 1;
                     weeklyRevenue += orderTotal;
@@ -146,7 +185,7 @@ const MayaAssistant = () => {
 
                     // Items
                     (order.order_items || []).forEach(item => {
-                        const name = item.menu_items?.name || item.name || 'פריט לא מזוהה';
+                        const name = item.menu_items?.name || 'פריט לא מזוהה';
                         const qty = parseFloat(item.quantity) || 1;
                         dailyMap[date].items[name] = (dailyMap[date].items[name] || 0) + qty;
                         totalMap[name] = (totalMap[name] || 0) + qty;
@@ -158,7 +197,7 @@ const MayaAssistant = () => {
 
             const formatDay = (dateStr, label) => {
                 const dayData = dailyMap[dateStr];
-                if (!dayData) return `${label} (${dateStr}): אין נתונים.`;
+                if (!dayData) return `${label} (${dateStr}): ₪0 (0 הזמנות).`;
 
                 const topItems = Object.entries(dayData.items).sort((a, b) => b[1] - a[1]).slice(0, 5);
                 const itemStr = topItems.map(([n, q]) => `${n} (${q})`).join(', ');
@@ -191,14 +230,23 @@ ${last7Days.join('\n')}
 ⏱️ זמן הכנה ממוצע: ${avgPrepTime} דקות
 👥 לקוחות בולטים:
 ${topCustomers}
-
-=== נתוני לקוחות מלאים (JSON) ===
-${JSON.stringify(customerMap)}
+${topCustomers}
 `;
+
+            // DETAILED TRANSACTION LOG (CSV) for Low-Cost/High-Context Analysis
+            // Format: Date,Time,Amount,Items
+            const detailedLog = salesRaw.slice(0, 50).map(o => { // Limit to 50 recent orders to fit standard context
+                const dateObj = new Date(o.created_at);
+                const date = dateObj.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' });
+                const time = dateObj.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                const items = (o.order_items || []).map(i => i.menu_items?.name).join('+');
+                return `${date} ${time}, ₪${o.total_amount}, [${items}]`;
+            }).join('\n');
 
             setContextData(prev => ({
                 ...prev,
                 salesSummary: finalSummary,
+                salesLog: detailedLog,
                 status: { ...prev.status, sales: 'success' },
                 debugInfo: `${totalOrders} הזמנות (₪${weeklyRevenue.toFixed(0)})`,
                 lastUpdate: new Date().toLocaleTimeString()
@@ -250,14 +298,122 @@ ${JSON.stringify(customerMap)}
             setContextData(prev => ({ ...prev, status: { ...prev.status, inventory: 'error' } }));
         }
 
-        // 3. Menu context
-        supabase.from('menu_items').select('name').eq('business_id', currentUser.business_id).limit(100)
-            .then(({ data }) => setContextData(p => ({ ...p, menu: data?.map(i => i.name).join(', ') || '', status: { ...p.status, menu: 'success' } })));
+        // 3a. Tasks Intelligence (Recurring & One-time)
+        try {
+            const today = new Date().toLocaleDateString('en-CA');
+            const { data: tasks, error: tasksError } = await supabase
+                .from('recurring_tasks')
+                .select('*')
+                .eq('business_id', currentUser.business_id)
+                .eq('is_active', true);
+
+            const { data: completions, error: compsError } = await supabase
+                .from('task_completions')
+                .select('*')
+                .eq('business_id', currentUser.business_id)
+                .eq('completion_date', today);
+
+            if (tasksError) console.error('Tasks fetch error:', tasksError);
+
+            const taskMap = {};
+            tasks?.forEach(t => taskMap[t.id] = { ...t, completed: false });
+            completions?.forEach(c => {
+                if (taskMap[c.recurring_task_id]) {
+                    taskMap[c.recurring_task_id].completed = true;
+                    taskMap[c.recurring_task_id].completed_by = c.completed_by_name || 'צוות';
+                    taskMap[c.recurring_task_id].time = new Date(c.completed_at).toLocaleTimeString('he-IL');
+                }
+            });
+
+            const pendingTasks = Object.values(taskMap).filter(t => !t.completed);
+            const completedTasks = Object.values(taskMap).filter(t => t.completed);
+
+            const tasksSummary = `
+❌ **משימות פתוחות להיום (${pendingTasks.length}):**
+${pendingTasks.map(t => `- ${t.name} (${t.category || 'כללי'})`).join('\n') || 'אין משימות פתוחות! 🎉'}
+
+✅ **משימות שהושלמו (${completedTasks.length}):**
+${completedTasks.map(t => `-V ${t.name} (ע"י ${t.completed_by} ב-${t.time})`).join('\n')}
+`;
+            setContextData(prev => ({ ...prev, tasksSummary, status: { ...prev.status, tasks: 'success' } }));
+
+        } catch (e) {
+            console.error('Tasks error:', e);
+            setContextData(prev => ({ ...prev, status: { ...prev.status, tasks: 'error' } }));
+        }
+
+        // 3. Menu context & Recipes
+        supabase.from('menu_items').select('name, price, category, is_prep_required').eq('business_id', currentUser.business_id).limit(200)
+            .then(({ data }) => {
+                const menuList = data?.map(i => `${i.name} (₪${i.price})`).join(', ') || '';
+                setContextData(p => ({ ...p, menu: menuList, status: { ...p.status, menu: 'success' } }));
+            });
+
 
         setIsContextLoading(false);
     }, [currentUser?.business_id]);
 
     useEffect(() => { loadContext(); }, [loadContext]);
+
+    // TTS Voice Loading
+    const [availableVoices, setAvailableVoices] = useState([]);
+    useEffect(() => {
+        const updateVoices = () => {
+            const voices = window.speechSynthesis.getVoices();
+            console.log('🗣️ Loaded voices:', voices.length);
+            setAvailableVoices(voices);
+        };
+
+        updateVoices();
+        window.speechSynthesis.onvoiceschanged = updateVoices;
+
+        return () => {
+            window.speechSynthesis.cancel(); // Stop speaking on unmount
+        };
+    }, []);
+
+    // Text-to-Speech Helper
+    const speakText = useCallback((text) => {
+        if (!text) return;
+
+        // Cleanup visuals (remove emojis/markdown for cleaner speech if needed, though browsers usually handle it)
+        // Only strip heavy markdown if it ruins speech, otherwise leave it.
+        const cleanText = text.replace(/[*#_]/g, '');
+
+        console.log('🗣️ Speaking:', cleanText.substring(0, 20) + '...');
+        window.speechSynthesis.cancel(); // Stop any previous speech
+
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+
+        // Language Detection: Check for Hebrew characters
+        const isHebrew = /[\u0590-\u05FF]/.test(cleanText);
+        utterance.lang = isHebrew ? 'he-IL' : 'en-US';
+
+        // Strict Voice Selection Strategy
+        const voices = window.speechSynthesis.getVoices();
+        let selectedVoice = null;
+
+        if (isHebrew) {
+            // Prioritize Hebrew voices
+            selectedVoice = voices.find(v => v.lang === 'he-IL' && v.name.includes('Google')) || // Chrome (Google Hebrew)
+                voices.find(v => v.lang === 'he-IL'); // Any Hebrew
+        } else {
+            // Prioritize English Female/Natural voices
+            selectedVoice = voices.find(v => v.lang === 'en-US' && v.name.includes('Google US English')) ||
+                voices.find(v => v.name.includes('Samantha')) || // Mac Standard
+                voices.find(v => v.lang === 'en-US');
+        }
+
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+            console.log('🎙️ Using voice:', selectedVoice.name);
+        }
+
+        utterance.rate = 1.0; // Natural speed
+        utterance.pitch = 1.0;
+
+        window.speechSynthesis.speak(utterance);
+    }, []);
 
     // Chat History Sync
     useEffect(() => {
@@ -267,21 +423,21 @@ ${JSON.stringify(customerMap)}
             .order('created_at', { ascending: false }).limit(50) // Get NEWEST 50
             .then(({ data }) => {
                 if (data && data.length > 0) {
-                    // Sorting locally to be absolutely sure: Oldest first (ascending)
-                    // If created_at is identical, use ID as tiebreaker (assuming serial or sortable in some way, or at least consistent)
-                    const sorted = data.sort((a, b) => {
-                        const timeA = new Date(a.created_at).getTime();
-                        const timeB = new Date(b.created_at).getTime();
-                        if (timeA !== timeB) return timeA - timeB; // Ascending time
-                        return a.role === 'user' ? -1 : 1; // User message always comes before assistant if same millisecond
-                    });
+                    const sorted = data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                     setMessages(sorted.map(m => ({ id: m.id, role: m.role, content: m.content, created_at: m.created_at })));
                 } else {
-                    setMessages([]); // Clear local state if DB is empty
+                    // AUTO WELCOME (If no history)
+                    const time = new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                    const welcomeMsg = {
+                        id: 'welcome',
+                        role: 'assistant',
+                        content: `היי, אני מאיה! 🌸 (${time})\nאני מחוברת למערכת.\n\nיש לי את הנתונים הבאים:\n📊 **מכירות:** פירוט מלא של השבוע וטבלת עסקאות היומית.\n📦 **מלאי:** כמויות ומעקב פריטים.\n✅ **משימות:** סטטוס ביצוע יומי.\n\nמה תרצה לבדוק? (נסה: "מה נמכר הכי הרבה היום?")`
+                    };
+                    setMessages([welcomeMsg]);
                 }
             })
             .finally(() => setHistoryLoading(false));
-    }, [currentUser?.id]);
+    }, [currentUser?.id]); // Removed implicit dependency on context loading to avoid loop, handled via logic
 
     const sendMessage = useCallback(async (textOverride = null) => {
         const textToSearch = (textOverride || inputText).trim();
@@ -311,24 +467,52 @@ ${formatCodeContext(codeResults)}
             }
 
             // Check API Key
+            // Check API Key
             const apiKey = import.meta.env.VITE_XAI_API_KEY;
             console.log('🔑 Maya API Key check:', apiKey ? `✅ Found (${apiKey.substring(0, 10)}...)` : '❌ MISSING!');
 
-            if (!apiKey) {
-                throw new Error('API Key לא נמצא! בדוק את קובץ .env.local');
-            }
+            // Construct Full Messages
+            console.log('📝 Prompt Debug - Sales Summary:', contextData.salesSummary);
 
-            console.log('📡 Maya: Sending request to xAI API...');
-            const response = await fetch('https://api.x.ai/v1/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                body: JSON.stringify({
-                    model: 'grok-3-fast',
-                    messages: [
-                        {
-                            role: 'system', content: `את מאיה, המנהלת הדיגיטלית והמפתחת הראשית של המערכת. 🌸
-                        
-=== 📊 מכירות והכנסות (פירוט יומי מלא) ===
+            // INJECT DATA INTO USER MESSAGE (To force attention)
+            const recentMessages = [...messages.slice(-6)]; // Keep last few messages for context
+
+            // Add current question with attached data context
+            const userQuestionWithData = {
+                role: 'user',
+                content: `${userInput}
+                
+(Internal Context - Real-time Database Data)
+${contextData.salesSummary}
+
+=== פירוט עסקאות אחרונות (CSV) ===
+${contextData.salesLog}
+
+---------------------
+
+הנחיה למודל: 
+1. את מאיה (Maya), מנהלת העסק.
+2. המידע למעלה הוא המידע האמיתי מהמערכת.
+3. השתמשי בטבלת העסקאות (CSV) כדי לענות על שאלות ספציפיות.
+4. אל תגידי "אין לי מידע" - המידע נמצא כאן!
+5. עני בעברית בלבד.`
+            };
+
+            const messagesPayload = [
+                { role: 'system', content: `את מאיה, העוזרת האישית של העסק. עני קצר ולעניין. השתמשי במידע המצורף.` },
+                ...recentMessages,
+                userQuestionWithData
+            ];
+
+            // Compatibility for existing code using messagesPayload
+            const _ignored_old_payload = [
+                {
+                    role: 'system', content: `את מאיה, המנהלת הדיגיטלית של העסק. 🌸
+חשוב מאוד: יש לך גישה מלאה לנתונים בזמן אמת. המידע הבא נשלף כעת מהמערכת ועליך להשתמש בו כדי לענות.
+אל תגידי שאין לך מידע – הוא מופיע כאן למטה! 👇
+
+🔥🔥🔥 נתוני אמת מהמערכת (Real-Time Data) 🔥🔥🔥
+=== 📊 מכירות והכנסות (Sales Data) ===
 ${contextData.salesSummary}
 
 === 📦 מצב מלאי נוכחי (Inventory) ===
@@ -339,6 +523,9 @@ ${contextData.recentLogs}
 
 === 📒 ספר לקוחות רשומים (Directory) ===
 ${contextData.customerDirectory}
+
+=== ✅ משימות צוות וניקיון (Tasks) ===
+${contextData.tasksSummary}
 
 ${codeContext}
 
@@ -390,24 +577,11 @@ ${codeContext}
 4. **אשרי שלמדת** - "תודה! עכשיו אני יודעת ש-X עובד ככה..."
 
 **חשוב:** אם שואלים אותך על קוד ספציפי שאין לך גישה אליו, **בקשי שידביקו אותו** - אל תמציאי!` },
-                        ...messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
-                        { role: 'user', content: userInput }
-                    ],
-                    temperature: 0.1
-                })
-            });
+                ...messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+                { role: 'user', content: userInput }
+            ];
 
-            console.log('📡 Maya: Response status:', response.status, response.statusText);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('❌ Maya API Error:', response.status, errorText);
-                throw new Error(`API Error ${response.status}: ${errorText}`);
-            }
-
-            const data = await response.json();
-            console.log('✅ Maya: Got response:', data);
-            const reply = data.choices?.[0]?.message?.content || 'מצטערת, משהו השתבש בתקשורת.';
+            const reply = await askMaya(messagesPayload, apiKey);
 
             // Insert into DB first
             if (currentUser?.id && currentUser?.business_id) {
@@ -434,12 +608,17 @@ ${codeContext}
                         setMessages(sorted.map(m => ({ id: m.id, role: m.role, content: m.content, created_at: m.created_at })));
                     }
                     setIsLoading(false);
+
+                    // 🗣️ Speak the response (DISABLED BY DEFAULT)
+                    // speakText(reply);
+
                     return; // Exit early as we've updated state from DB
                 }
             }
 
             // Fallback if DB insert fails or user not logged in fully
             setMessages(prev => [...prev, { id: Date.now().toString() + '-r', role: 'assistant', content: reply }]);
+            speakText(reply);
 
         } catch (e) {
             console.error('❌ Maya Error:', e);
@@ -555,12 +734,69 @@ ${codeContext}
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
+                        {/* Debug Toggle */}
+                        <button
+                            onClick={() => setShowDebug(!showDebug)}
+                            className={`p-1.5 rounded-full transition-all ${showDebug ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-white text-slate-400 hover:text-indigo-600'}`}
+                            title="Show Debug Logs"
+                        >
+                            <Terminal size={14} />
+                        </button>
+
                         {historyLoading && <Loader2 size={13} className="animate-spin text-slate-400" />}
                         <button onClick={loadContext} className="p-1.5 hover:bg-white rounded-full transition-all text-slate-400 hover:text-indigo-600">
                             <RefreshCw size={14} />
                         </button>
                     </div>
                 </div>
+
+                {/* VISIBLE DEBUG PANEL */}
+                {showDebug && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        className="mb-4 bg-slate-900 text-slate-300 p-4 rounded-xl text-[10px] font-mono overflow-auto max-h-60 border border-slate-700 shadow-2xl z-50 absolute top-16 left-4 right-4"
+                        dir="ltr"
+                    >
+                        <h3 className="text-white font-bold mb-2 flex justify-between">
+                            <span>🛠️ System Internals</span>
+                            <button onClick={() => setShowDebug(false)}><X size={12} /></button>
+                        </h3>
+
+                        <div className="space-y-4">
+                            <div>
+                                <strong className="text-emerald-400 block mb-1">Status Check:</strong>
+                                <pre>{JSON.stringify(contextData.status, null, 2)}</pre>
+                            </div>
+
+                            <div>
+                                <strong className="text-blue-400 block mb-1">Sales Data (Summary):</strong>
+                                <pre className="whitespace-pre-wrap text-slate-400">{contextData.salesSummary?.substring(0, 300) || 'N/A'}...</pre>
+                            </div>
+
+                            <div>
+                                <strong className="text-purple-400 block mb-1">Recent CSV Log (Last 5):</strong>
+                                <pre className="whitespace-pre-wrap text-slate-400">{contextData.salesLog?.split('\n').slice(0, 5).join('\n') || 'N/A'}...</pre>
+                            </div>
+
+                            <div>
+                                <strong className="text-amber-400 block mb-1">Tasks Data:</strong>
+                                <pre className="whitespace-pre-wrap text-slate-400">{contextData.tasksSummary || 'N/A'}</pre>
+                            </div>
+
+                            {debugLogs.length > 0 && (
+                                <div>
+                                    <strong className="text-pink-400 block mb-1">Recent Thoughts (DeepSeek):</strong>
+                                    {debugLogs.map((log, i) => (
+                                        <div key={i} className="mb-2 p-2 bg-black/30 rounded border-l-2 border-pink-500">
+                                            {log}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
+                )}
 
                 <div className="flex-1 overflow-y-auto space-y-4 mb-4 px-2 custom-scrollbar">
                     {/* Welcome View */}

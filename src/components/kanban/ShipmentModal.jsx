@@ -9,7 +9,8 @@ const ShipmentModal = ({
     onUpdateStatus, // Function to update order status
     onUpdateOrder, // 🆕 Function to update generic fields (e.g. driver)
     onToggleItemPacked, // Function to toggle item packing
-    onShipmentConfirmed // 🆕 Explicit handler for shipment confirmation
+    onShipmentConfirmed, // 🆕 Explicit handler for shipment confirmation
+    onPaymentClick // 🆕 Handler for payment
 }) => {
     const [step, setStep] = useState('packing'); // 'packing' | 'driver'
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -175,6 +176,7 @@ const ShipmentModal = ({
     if (!isOpen || !order) return null;
 
     const allItemsPacked = order.items?.every(i => packedItems.has(i.id));
+    const isPaid = order.is_paid !== undefined ? order.is_paid : order.isPaid;
 
     return (
         <div
@@ -349,17 +351,27 @@ const ShipmentModal = ({
                             </button>
                         </>
                     ) : (
-                        <button
-                            onClick={() => setStep('driver')}
-                            disabled={!allItemsPacked}
-                            className={`w-full py-4 rounded-xl font-bold text-base flex items-center justify-center gap-2 transition-all active:scale-95 ${!allItemsPacked
-                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                : 'bg-slate-900 text-white shadow-lg shadow-slate-200 hover:bg-slate-800'
-                                }`}
-                        >
-                            <span>המשך לבחירת שליח</span>
-                            <Truck size={20} />
-                        </button>
+                        <>
+                            {onPaymentClick && !isPaid && (
+                                <button
+                                    onClick={() => onPaymentClick(order)}
+                                    className="flex-1 py-4 bg-amber-500 text-white rounded-xl font-bold text-base shadow-lg shadow-amber-100 hover:bg-amber-600 active:scale-95 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <span>₪{(order.totalAmount || order.total_amount || 0).toFixed(0)} לתשלום</span>
+                                </button>
+                            )}
+                            <button
+                                onClick={() => setStep('driver')}
+                                disabled={!allItemsPacked}
+                                className={`flex-[2] py-4 rounded-xl font-bold text-base flex items-center justify-center gap-2 transition-all active:scale-95 ${!allItemsPacked
+                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    : 'bg-slate-900 text-white shadow-lg shadow-slate-200 hover:bg-slate-800'
+                                    }`}
+                            >
+                                <span>המשך לבחירת שליח</span>
+                                <Truck size={20} />
+                            </button>
+                        </>
                     )}
                 </div>
             </div>

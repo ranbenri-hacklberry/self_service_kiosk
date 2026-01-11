@@ -90,23 +90,17 @@ export function KanbanColumn({
                 )}
             </div>
 
-            {/* Cards Container with Pull to Refresh */}
+            {/* Cards Container - Removed pull-to-refresh to reduce event conflict */}
             <div className="flex-1 overflow-hidden relative">
+                {/* 
+                // Disabled Pull to Refresh visual to isolate Drag/Click event issues
                 <div className="absolute top-4 left-0 right-0 flex justify-center opacity-50 z-0">
                     <RefreshCw className="animate-spin text-blue-400" size={24} />
                 </div>
+                */}
 
-                <motion.div
-                    className="h-full overflow-y-auto p-3 space-y-4 flex flex-col items-center bg-inherit relative z-10"
-                    drag="y"
-                    dragConstraints={{ top: 0, bottom: 0 }}
-                    dragElastic={0.2}
-                    onDragEnd={(e, { offset }) => {
-                        if (offset.y > 100 && onRefresh) {
-                            console.log('🔄 Pull to refresh triggered!');
-                            onRefresh();
-                        }
-                    }}
+                <div
+                    className="h-full overflow-y-auto p-3 space-y-4 flex flex-col items-center bg-inherit relative z-10 custom-scrollbar"
                 >
                     <SortableContext items={orderIds} strategy={verticalListSortingStrategy}>
                         {orders.length === 0 ? (
@@ -130,7 +124,7 @@ export function KanbanColumn({
                             ))
                         )}
                     </SortableContext>
-                </motion.div>
+                </div>
             </div>
         </div>
     );
