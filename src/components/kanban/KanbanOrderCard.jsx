@@ -11,7 +11,8 @@ const KanbanOrderCard = memo(({
   onPaymentCollected,
   onReadyItems, // For packing toggle
   onEditOrder,
-  onSmsClick
+  onSmsClick,
+  isDriverView // 🆕
 }) => {
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -41,7 +42,8 @@ const KanbanOrderCard = memo(({
   }, [order.delivery_info]);
 
   const renderItemRow = useCallback((item, idx) => {
-    const isPacked = item.is_packed === true;
+    // 🆕 Updated logic: Ready = Packed
+    const isPacked = item.item_status === 'ready' || item.is_packed === true;
 
     return (
       <div key={`${item.menuItemId}-${item.modsKey || item.id || idx}`}
@@ -102,12 +104,12 @@ const KanbanOrderCard = memo(({
 
           {/* Kanban Info Badges */}
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex items-center gap-1 ${order.items?.every(i => i.is_packed)
-              ? 'bg-green-100 text-green-700 border-green-200'
-              : (order.items?.some(i => i.is_packed) ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-500 border-slate-200')
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex items-center gap-1 ${order.items?.every(i => i.item_status === 'ready' || i.is_packed)
+                ? 'bg-green-100 text-green-700 border-green-200'
+                : (order.items?.some(i => i.item_status === 'ready' || i.is_packed) ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-500 border-slate-200')
               }`}>
               <Package size={10} />
-              {order.items?.filter(i => i.is_packed).length}/{order.items?.length} ארוז
+              {order.items?.filter(i => i.item_status === 'ready' || i.is_packed).length}/{order.items?.length} ארוז
             </span>
             {order.orderType === 'delivery' && (
               <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-bold border border-blue-200 flex items-center gap-1">

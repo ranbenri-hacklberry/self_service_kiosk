@@ -6,7 +6,7 @@
 import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import OrderCard from '../../pages/kds/components/OrderCard';
+import KanbanOrderCard from './KanbanOrderCard';
 import { Coffee, Sprout, Globe, GripVertical } from 'lucide-react';
 
 // Map business types to icons (can be used for additional badges if needed)
@@ -104,9 +104,8 @@ export function DraggableOrderCard({
                 <GripVertical size={16} className="text-slate-400" />
             </div>
 
-            <OrderCard
+            <KanbanOrderCard
                 order={order}
-                isKanban={true}
                 glowClass={isDragging ? 'shadow-lg' : ''}
                 onOrderStatusUpdate={onOrderStatusUpdate}
                 onPaymentCollected={onPaymentCollected}
