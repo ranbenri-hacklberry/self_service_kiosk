@@ -16,10 +16,10 @@ const NumericKeypad = ({ onKeyPress }) => {
                     key={key}
                     onClick={() => onKeyPress(key)}
                     className={`h-16 rounded-2xl flex items-center justify-center text-2xl font-black transition-all active:scale-95 ${key === 'delete'
-                            ? 'bg-red-50 text-red-500 hover:bg-red-100'
-                            : key === '*'
-                                ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
-                                : 'bg-white border-2 border-gray-100 text-gray-800 hover:border-orange-200 hover:bg-orange-50/30'
+                        ? 'bg-red-50 text-red-500 hover:bg-red-100'
+                        : key === '*'
+                            ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
+                            : 'bg-white border-2 border-gray-100 text-gray-800 hover:border-orange-200 hover:bg-orange-50/30'
                         }`}
                 >
                     {key === 'delete' ? <Delete size={24} /> : key}

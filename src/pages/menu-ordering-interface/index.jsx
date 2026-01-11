@@ -2498,7 +2498,7 @@ const MenuOrderingInterface = () => {
                 is_required: true,
                 is_multiple_select: false,
                 values: [
-                  { id: 'ready', name: 'קיבל מוכן (מהמדף)', priceAdjustment: 0 },
+                  { id: 'ready', name: 'קיבל מוכן (מהמדף)', priceAdjustment: 0, is_default: true },
                   { id: 'prep', name: 'דורש הכנה (הכן עכשיו)', priceAdjustment: 0 }
                 ]
               }]

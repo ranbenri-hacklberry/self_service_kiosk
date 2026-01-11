@@ -37,6 +37,9 @@ export const useKDSData = () => {
     // This prevents polling/realtime from overwriting optimistic state before animation completes
     const skipFetchUntilRef = useRef(0);
 
+    // ANTI-FLICKER: Track recent local updates to override stale server data
+    const recentLocalUpdatesRef = useRef(new Map());
+
     // 🟢 PRODUCTION LOGGING HELPERS
     const DEBUG = true; // Enabled for diagnostic purposes
     const log = (...args) => console.log(...args);
@@ -799,9 +802,29 @@ export const useKDSData = () => {
 
             const processedOrders = [];
 
+            // Map for fast lookup of updates
+            const recentUpdates = recentLocalUpdatesRef.current;
+            const now = Date.now();
+
             log('🚀 [START-PROCESSING] About to process ' + (ordersData?.length || 0) + ' orders');
 
             (ordersData || []).forEach((order, idx) => {
+                // ANTI-FLICKER: Check for recent local override
+                const recentUpdate = recentUpdates.get(order.id) || recentUpdates.get(order.serverOrderId);
+                if (recentUpdate && now - recentUpdate.timestamp < 5000) {
+                    if (order.order_status !== recentUpdate.status) {
+                        console.log(`🛡️ [ANTI-FLICKER] Overriding ${order.order_status} -> ${recentUpdate.status} for ${order.order_number}`);
+                        order.order_status = recentUpdate.status;
+
+                        // If moving to completed/ready, implicitly complete items to prevent zombies
+                        if (['completed', 'ready'].includes(recentUpdate.status)) {
+                            if (order.order_items) {
+                                order.order_items.forEach(i => i.item_status = recentUpdate.status);
+                            }
+                        }
+                    }
+                }
+
                 // CRITICAL: Map various source names to order_items
                 // - RPC returns items_detail
                 // - Offline mode uses 'items'
@@ -1102,13 +1125,17 @@ export const useKDSData = () => {
             const completed = processedOrders.filter(o =>
                 (o.type === 'ready' || o.type === 'active_ready_split' || o.type === 'unpaid_delivered')
             ).sort((a, b) => {
-                // Secondary fallback to created_at if ready_at missing
+                // 1. Priority: Unpaid comes FIRST (Index 0 = Right side in RTL reversed??)
+                // verified hypothesis: Index 0 is Right-most. User wants Unpaid Right-most.
+                if (a.isPaid !== b.isPaid) {
+                    return a.isPaid ? 1 : -1; // Unpaid (false) comes before Paid (true)
+                }
+
+                // 2. Priority: Newest time comes FIRST
                 const aTime = new Date(a.ready_at || a.created_at || 0).getTime();
                 const bTime = new Date(b.ready_at || b.created_at || 0).getTime();
-                if (aTime !== bTime) return aTime - bTime;
 
-                // Tertiary sort by order number if times match exactly (extremely rare)
-                return Number(a.orderNumber) - Number(b.orderNumber);
+                return bTime - aTime; // Descending Sort (Newest First)
             });
 
             // LOG 4: Final Summary
@@ -1227,6 +1254,12 @@ export const useKDSData = () => {
         log('🎯 Calculated nextStatus:', nextStatus);
 
         const smartOrderId = getSmartId(orderId);
+
+        // ANTI-FLICKER: Record update immediately
+        recentLocalUpdatesRef.current.set(smartOrderId, { status: nextStatus, timestamp: Date.now() });
+        if (orderId !== smartOrderId) {
+            recentLocalUpdatesRef.current.set(orderId, { status: nextStatus, timestamp: Date.now() });
+        }
 
         // Helper to check if ID is likely a valid UUID
         const isUUID = (id) => typeof id === 'string' && id.length > 20 && id.includes('-');
@@ -2429,10 +2462,22 @@ export const useKDSData = () => {
 
             // B. Completed / Ready Orders
             // Show ONLY ready or completed
-            const completed = processedHistory.filter(o =>
-                o.type === 'ready' ||
-                (o.orderStatus === 'completed' && o.type !== 'active' && o.type !== 'delayed')
-            ).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+            // B. Completed / Ready Orders
+            // Sort: Paid First (Left), Unpaid Last (Right).
+            // Secondary Sort: Oldest First (Left), Newest Last (Right).
+            // Result in flex-row-reverse RTL: left [Oldest Paid ... Newest Paid ... Oldest Unpaid ... Newest Unpaid] right
+            const completed = processedHistory.filter(o => o.type === 'ready' || o.orderStatus === 'ready' || o.orderStatus === 'completed').sort((a, b) => {
+                // 1. Priority: Unpaid comes LAST (1) so it is at the end (Right side)
+                if (a.isPaid !== b.isPaid) {
+                    return a.isPaid ? -1 : 1; // Paid (-1) comes before Unpaid (1)
+                }
+
+                // 2. Priority: Newest time comes LAST (Right side)
+                const timeA = new Date(a.ready_at || a.updated_at || a.created_at).getTime();
+                const timeB = new Date(b.ready_at || b.updated_at || b.created_at).getTime();
+
+                return timeA - timeB; // Ascending Sort (Oldest -> Newest)
+            });
 
             // LOG 3: Final Lists
             console.log(`📊 [FINAL] Lists:`, {
