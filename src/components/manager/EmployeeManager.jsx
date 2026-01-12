@@ -97,7 +97,7 @@ const EmployeeManager = () => {
 
             // 3. Generate invite link (Handle localhost vs production)
             const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-            const prodUrl = 'https://icaffe.vercel.app';
+            const prodUrl = 'https://icaffe.vercel.com';
             const baseUrl = isLocal ? prodUrl : window.location.origin;
 
             const inviteLink = `${baseUrl}/complete-profile?id=${empId}`;
