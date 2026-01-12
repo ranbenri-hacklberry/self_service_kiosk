@@ -216,22 +216,24 @@ const ModeSelectionScreen = () => {
                         </div>
                     </button>
 
-                    {/* 4b. Driver Screen - For drivers (Visible on all devices for now) */}
-                    <button
-                        onClick={() => handleModeSelect('driver')}
-                        className="group relative bg-gray-800 rounded-2xl p-5 hover:bg-gray-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-500"
-                    >
-                        <div className="absolute top-0 left-0 w-20 h-20 bg-purple-900/50 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
-                        <div className="relative z-10">
-                            <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
-                                <Truck size={20} strokeWidth={2.5} />
+                    {/* 4b. Driver Screen - Only for drivers */}
+                    {isDriver && (
+                        <button
+                            onClick={() => handleModeSelect('driver')}
+                            className="group relative bg-gray-800 rounded-2xl p-5 hover:bg-gray-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-500"
+                        >
+                            <div className="absolute top-0 left-0 w-20 h-20 bg-purple-900/50 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
+                            <div className="relative z-10">
+                                <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
+                                    <Truck size={20} strokeWidth={2.5} />
+                                </div>
+                                <h2 className="text-xl font-black text-white mb-1">מסך נהג</h2>
+                                <p className="text-slate-400 text-sm leading-relaxed font-medium">
+                                    משלוחים מוכנים לאיסוף
+                                </p>
                             </div>
-                            <h2 className="text-xl font-black text-white mb-1">מסך נהג</h2>
-                            <p className="text-slate-400 text-sm leading-relaxed font-medium">
-                                משלוחים מוכנים לאיסוף
-                            </p>
-                        </div>
-                    </button>
+                        </button>
+                    )}
 
                     {/* 5. Advanced Data - Hidden on Mobile */}
                     <button
@@ -275,29 +277,6 @@ const ModeSelectionScreen = () => {
                         </button>
                     )}
 
-                    {/* 7. E-commerce Link - Testing */}
-                    <button
-                        onClick={() => window.open('http://localhost:3000', '_blank')}
-                        className="group relative bg-white rounded-2xl p-5 hover:bg-pink-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-pink-100"
-                    >
-                        <div className="absolute top-3 left-3 bg-pink-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
-                            חדש! 🚀
-                        </div>
-                        <div className="absolute top-0 left-0 w-20 h-20 bg-pink-100 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
-                        <div className="relative z-10">
-                            <div className="w-10 h-10 bg-pink-600 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
-                                <ShoppingCart size={20} strokeWidth={2.5} />
-                            </div>
-                            <h2 className="text-xl font-black text-slate-900 mb-1">חנות אונליין</h2>
-                            <p className="text-slate-500 text-sm leading-relaxed font-medium">
-                                חווית ההזמנה הדיגיטלית החדשה
-                                <br />
-                                <span className="text-xs font-bold text-pink-600 mt-1 block bg-pink-50 rounded p-1 inline-block border border-pink-100">
-                                    כניסה מהירה: 0500000000 | 123456
-                                </span>
-                            </p>
-                        </div>
-                    </button>
                 </div>
 
                 <div className="mt-6 text-center flex flex-col items-center gap-2">

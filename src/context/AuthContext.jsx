@@ -8,47 +8,15 @@ const API_URL = import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
     'http://localhost:8080';
 
-export const APP_VERSION = '3.0.5'; // FIX: שחרור כפתור הבית (Home Button Unlocked)
+export const APP_VERSION = '3.5'; // Employee Management & Mobile UI Updates
 export const AuthProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
     const [deviceMode, setDeviceMode] = useState(null); // 'kiosk', 'kds', 'manager', 'music'
     const [isLoading, setIsLoading] = useState(true);
 
-    // 🚀 AGGRESSIVE SESSION CLEAR & AUTO-UPDATE
+    // 🚀 Session version tracking is now handled in SplashScreen to prevent double-splash reloads
     useEffect(() => {
-        const checkVersion = () => {
-            const lastVersion = localStorage.getItem('app_version');
-            if (lastVersion && lastVersion !== APP_VERSION) {
-                console.warn(`🚨 VERSION MISMATCH (${lastVersion} -> ${APP_VERSION}). FORCING CLEAN SLATE...`);
-
-                // Clear simple storage
-                localStorage.clear();
-                sessionStorage.clear();
-
-                // Set the current version so we don't loop
-                localStorage.setItem('app_version', APP_VERSION);
-
-                // 🔥 Clear Dexie (The core fix for stale iPad data)
-                import('../db/database').then(({ db }) => {
-                    db.delete().then(() => {
-                        console.log('✅ Dexie deleted. Redirecting...');
-                        window.location.href = '/mode-selection';
-                    }).catch(() => {
-                        window.location.href = '/mode-selection';
-                    });
-                }).catch(() => {
-                    window.location.href = '/mode-selection';
-                });
-                return true;
-            }
-            localStorage.setItem('app_version', APP_VERSION);
-            return false;
-        };
-
-        if (checkVersion()) return;
-
-        const interval = setInterval(checkVersion, 10000); // Check every 10 seconds for ultra-fast updates
-        return () => clearInterval(interval);
+        localStorage.setItem('app_version', APP_VERSION);
     }, []);
 
     const [syncStatus, setSyncStatus] = useState({

@@ -15,15 +15,30 @@ const SplashScreen = ({ onFinish }) => {
     const finishTriggered = useRef(false);
 
     useEffect(() => {
-        console.log('🎨 SplashScreen v3 mounted');
+        console.log('🎨 SplashScreen v3.5 mounted');
 
-        // 1. Minimum display timer (2.0s)
-        const timer = setTimeout(() => {
-            setMinTimePassed(true);
-        }, 2000);
+        const initialize = async () => {
+            // A. Version Check & Cleanup
+            const { APP_VERSION } = await import('../context/AuthContext');
+            const lastVersion = localStorage.getItem('app_version');
 
-        // 2. Check Authentication & Perform Daily Sync
-        const checkAuthAndSync = async () => {
+            if (lastVersion && lastVersion !== APP_VERSION) {
+                console.warn(`🚨 VERSION MISMATCH (${lastVersion} -> ${APP_VERSION}). Performing silent cleanup...`);
+                localStorage.removeItem('kiosk_mode');
+                localStorage.removeItem('last_full_sync');
+                localStorage.removeItem('last_sync_time');
+
+                try {
+                    const { db } = await import('../db/database');
+                    await db.delete();
+                    console.log('✅ Dexie database cleared');
+                } catch (e) {
+                    console.error('Failed to clear Dexie:', e);
+                }
+            }
+            localStorage.setItem('app_version', APP_VERSION);
+
+            // B. Auth Check & Daily Sync
             try {
                 const { data: { user } } = await supabase.auth.getUser();
                 console.log('👤 Auth check result:', user ? 'Logged In' : 'Guest');
@@ -49,7 +64,6 @@ const SplashScreen = ({ onFinish }) => {
                     if (businessId) {
                         setStatusText('מבצע סנכרון יומי...');
                         try {
-                            // Perform Sync
                             await initialLoad(businessId, (table, count, percent) => {
                                 setStatusText(`מסנכרן ${table} (${percent}%)...`);
                             });
@@ -70,7 +84,13 @@ const SplashScreen = ({ onFinish }) => {
             }
         };
 
-        checkAuthAndSync();
+        // 1. Minimum display timer (2.0s)
+        const timer = setTimeout(() => {
+            setMinTimePassed(true);
+        }, 2000);
+
+        // 2. Start initialization
+        initialize();
 
         return () => clearTimeout(timer);
     }, []);
@@ -89,13 +109,8 @@ const SplashScreen = ({ onFinish }) => {
     return (
         <div className="splash-container">
             <div className="logo-wrapper">
-                {/* 
-                   Image Effect: 
-                   Start: Opacity 0, Blur 20px, Grayscale
-                   End: Opacity 1, No Blur, Color
-                */}
                 <img
-                    src="/rainbow_cup.png" // Removed query param to use cached version if available
+                    src="/rainbow_cup.png"
                     alt="iCaffeOS Logo"
                     className="brand-logo-img"
                     onLoad={() => setImageLoaded(true)}
@@ -118,8 +133,6 @@ const SplashScreen = ({ onFinish }) => {
                 </p>
 
                 <div style={{ marginTop: '50px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60px' }}>
-
-                    {/* Always show Loading Bar until transition */}
                     <div className="flex flex-col items-center gap-2 w-full">
                         <div className="loading-bar">
                             <div className="progress"></div>
