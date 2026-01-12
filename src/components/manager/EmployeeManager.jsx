@@ -100,8 +100,12 @@ const EmployeeManager = () => {
             const empId = createdEmployee.res_id || createdEmployee.id;
             const empName = createdEmployee.res_name || createdEmployee.name;
 
-            // 3. Generate invite link
-            const inviteLink = `${window.location.origin}/complete-profile?id=${empId}`;
+            // 3. Generate invite link (Handle localhost vs production)
+            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            const prodUrl = 'https://icaffe.hacklberryfinn.com'; // Use your production domain here
+            const baseUrl = isLocal ? prodUrl : window.location.origin;
+
+            const inviteLink = `${baseUrl}/complete-profile?id=${empId}`;
             const message = `שלום ${empName}, הוזמנת להצטרף לצוות של ${currentUser.business_name || 'העסק'}. להשלמת הגדרת החשבון שלך לחץ כאן: ${inviteLink}`;
 
             // 4. Send SMS
