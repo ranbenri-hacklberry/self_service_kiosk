@@ -76,8 +76,8 @@ const EmployeeManager = () => {
 
         setIsSaving(true);
         try {
-            // 1. Create employee record via secure RPC
-            const { data, error } = await supabase.rpc('invite_new_employee', {
+            // 1. Create staff via NEW v4 RPC
+            const { data, error } = await supabase.rpc('invite_staff_v4', {
                 p_name: form.name,
                 p_phone: form.phone,
                 p_access_level: form.access_level,
@@ -91,18 +91,13 @@ const EmployeeManager = () => {
                 throw new Error(error.message || 'שגיאה בשרת');
             }
 
-            if (!data || (Array.isArray(data) && data.length === 0)) {
-                throw new Error('לא התקבלו נתונים מהשרת');
-            }
-
-            // 2. Extract data (SQL returns res_id, res_name, etc. to avoid ambiguity)
-            const createdEmployee = Array.isArray(data) ? data[0] : data;
-            const empId = createdEmployee.res_id || createdEmployee.id;
-            const empName = createdEmployee.res_name || createdEmployee.name;
+            // data: { id, status }
+            const empId = data.id;
+            const empName = form.name; // Use from form directly to be safe
 
             // 3. Generate invite link (Handle localhost vs production)
             const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-            const prodUrl = 'https://icaffe.hacklberryfinn.com'; // Use your production domain here
+            const prodUrl = 'https://icaffe.vercel.app';
             const baseUrl = isLocal ? prodUrl : window.location.origin;
 
             const inviteLink = `${baseUrl}/complete-profile?id=${empId}`;
