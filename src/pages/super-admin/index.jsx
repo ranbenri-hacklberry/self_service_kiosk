@@ -29,6 +29,7 @@ import {
     Database,
     ArrowRight
 } from 'lucide-react';
+import SystemDiagnostics from '@/components/manager/SystemDiagnostics';
 
 const EmployeesView = ({ businessId }) => {
     const [employees, setEmployees] = useState([]);
@@ -271,6 +272,7 @@ const SuperAdminDashboard = () => {
     const [selectedBusinessId, setSelectedBusinessId] = useState(null);
     const [formData, setFormData] = useState({});
     const [settingsView, setSettingsView] = useState('menu'); // 'menu' | 'general' | 'login' | 'integrations' | 'loyalty'
+    const [diagnosticsBusiness, setDiagnosticsBusiness] = useState(null);
 
     useEffect(() => {
         // Wait for auth to initialize
@@ -714,6 +716,13 @@ const SuperAdminDashboard = () => {
                                         <Settings className="w-4 h-4 opacity-70" />
                                         הגדרות
                                     </button>
+                                    <button
+                                        onClick={() => setDiagnosticsBusiness(business)}
+                                        className="col-span-2 flex items-center justify-center gap-2 bg-indigo-900/30 text-indigo-300 py-2 rounded-xl font-bold text-xs hover:bg-indigo-600/20 hover:text-indigo-200 transition-all border border-indigo-500/30"
+                                    >
+                                        <Activity className="w-3 h-3" />
+                                        דיאגנוסטיקה וסימולציה
+                                    </button>
                                 </div>
                             </div>
                         ))
@@ -1087,6 +1096,30 @@ const SuperAdminDashboard = () => {
                                     </button>
                                 </div>
                             )}
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* DIAGNOSTICS MODAL */}
+            <AnimatePresence>
+                {diagnosticsBusiness && (
+                    <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-slate-900 border border-slate-700 w-full max-w-6xl h-[85vh] rounded-3xl overflow-hidden shadow-2xl relative"
+                        >
+                            <button
+                                onClick={() => setDiagnosticsBusiness(null)}
+                                className="absolute top-4 left-4 z-50 p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white hover:bg-slate-700 border border-slate-700"
+                            >
+                                <X size={24} />
+                            </button>
+                            <div className="h-full overflow-hidden">
+                                <SystemDiagnostics businessId={diagnosticsBusiness.id} />
+                            </div>
                         </motion.div>
                     </div>
                 )}

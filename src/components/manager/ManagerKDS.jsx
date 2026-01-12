@@ -125,13 +125,13 @@ const ManagerOrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPayme
     const hasFood = foodItems.length > 0;
 
     const renderItemRow = (item, idx) => (
-        <div key={idx} className="flex flex-row-reverse items-start gap-2 py-0.5 border-b border-dashed border-gray-100 last:border-0 w-full">
+        <div key={idx} className="flex items-start gap-2 py-0.5 border-b border-dashed border-gray-100 last:border-0 w-full">
             <span className={`flex items-center justify-center w-6 h-6 rounded-lg font-black text-sm shrink-0 mt-0 ${item.quantity > 1 ? 'bg-orange-600 text-white ring-2 ring-orange-200' : (isDelayedCard ? 'bg-gray-300 text-gray-600' : 'bg-slate-900 text-white')}`}>
                 {item.quantity}
             </span>
-            <div className="flex-1 min-w-0 pr-1">
-                <div className="text-right leading-snug break-words">
-                    <span className={`font-bold ml-2 text-sm ${item.quantity > 1 ? 'text-orange-700' : 'text-gray-900'}`}>
+            <div className="flex-1 min-w-0 pr-1 text-right">
+                <div className="leading-snug break-words">
+                    <span className={`font-bold text-sm ${item.quantity > 1 ? 'text-orange-700' : 'text-gray-900'}`}>
                         {item.name}
                     </span>
                     {item.modifiers && item.modifiers.length > 0 && (
@@ -337,29 +337,36 @@ const ManagerKDS = () => {
     const fetchKDS = async () => {
         setLoading(true);
         try {
-            // Calculate 24 hours ago to show relevant active orders, even if they crossed midnight
-            const yesterday = new Date();
-            yesterday.setHours(yesterday.getHours() - 24);
+            // Calculate start of today (00:00) to show only today's orders
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            // Removed: today.setDate(today.getDate() - 2); 
 
-            // CHANGED: Use secure RPC 'get_kds_orders' instead of direct table select.
-            // This ensures consistent filtering logic across User KDS and Manager KDS.
-            // IMPORTANT: Supabase RPC expects parameters in order (p_business_id, p_date)
             const { data: ordersData, error } = await supabase.rpc('get_kds_orders', {
                 p_business_id: currentUser?.business_id || null,
-                p_date: yesterday.toISOString()
+                p_date: today.toISOString()
             });
 
             if (error) throw error;
 
-            // Process RPC result format (which is slightly different but much richer)
-            // The RPC returns { id, order_items, ... } where order_items is already aggregated.
-            // We need to map it to the structure ManagerKDS expects.
-
             const processed = (ordersData || []).map(order => {
-                // RPC returns items_detail, not order_items
-                const rawItems = (order.items_detail || []).filter(item =>
-                    item.item_status !== 'cancelled' && item.menu_items
-                );
+                const rawItems = (order.items_detail || []).filter(item => {
+                    // 1. Basic filter (not cancelled)
+                    if (item.item_status === 'cancelled' || !item.menu_items) return false;
+
+                    // 2. KDS Routing Logic (1:1 with useKDSData.js)
+                    // If it's GRAB_AND_GO or CONDITIONAL (without manual override), we skip it in KDS view
+                    const kdsLogic = item.menu_items?.kds_routing_logic;
+                    let hasOverride = false;
+                    const mods = item.mods;
+                    if (typeof mods === 'string' && mods.includes('__KDS_OVER_RIDE__')) hasOverride = true; // Match common spelling
+                    else if (typeof mods === 'string' && mods.includes('__KDS_OVERRIDE__')) hasOverride = true;
+                    else if (Array.isArray(mods) && (mods.includes('__KDS_OVERRIDE__') || mods.includes('__KDS_OVER_RIDE__'))) hasOverride = true;
+
+                    if ((kdsLogic === 'GRAB_AND_GO' || kdsLogic === 'CONDITIONAL') && !hasOverride) return false;
+
+                    return true;
+                });
 
                 if (rawItems.length === 0) return null;
 
@@ -368,19 +375,17 @@ const ManagerKDS = () => {
 
                 let groupStatus = 'prep';
                 if (allReady && !isCompleted) groupStatus = 'ready';
-                if (isCompleted && !order.is_paid) groupStatus = 'ready'; // Unpaid delivered
-                else if (isCompleted && order.is_paid) return null; // Hide finished
+                if (isCompleted && !order.is_paid) groupStatus = 'ready';
+                else if (isCompleted && order.is_paid) return null;
 
-                // RPC returns order_items with embedded menu_items, so formatItem works if structure matches.
-                // We need to ensure formatItem handles the RPC structure.
                 const formattedItems = groupItems(rawItems.map(formatItem));
 
                 return formatOrder(
                     {
                         ...order,
-                        created_at: order.created_at, // RPC returns this
-                        order_number: order.order_number, // RPC returns this
-                        order_status: order.order_status // RPC returns this
+                        created_at: order.created_at,
+                        order_number: order.order_number,
+                        order_status: order.order_status
                     },
                     formattedItems,
                     groupStatus,
@@ -390,7 +395,6 @@ const ManagerKDS = () => {
             }).filter(Boolean);
 
             setOrders(processed);
-
         } catch (err) {
             console.error('Manager KDS Fetch Error:', err);
         } finally {
@@ -414,12 +418,14 @@ const ManagerKDS = () => {
             quantity: item.quantity,
             modifiers: modsArray.map(m => typeof m === 'object' ? m : { text: String(m) }),
             status: item.item_status,
-            is_hot_drink: item.menu_items?.is_hot_drink
+            is_hot_drink: item.menu_items?.is_hot_drink,
+            price: item.price
         };
     };
 
     const formatOrder = (order, items, statusGroup, isPaid, type = 'normal') => {
-        const totalAmount = (order.order_items || []).reduce((sum, i) => sum + (i.menu_items?.price || 0) * (i.quantity || 1), 0);
+        // items is already processed and includes quantity and menu_items data
+        const totalAmount = items.reduce((sum, i) => sum + (i.price || 0) * (i.quantity || 1), 0);
         return {
             id: order.id,
             orderNumber: order.order_number || order.id.slice(0, 4),
@@ -455,12 +461,6 @@ const ManagerKDS = () => {
         }
     };
 
-    useEffect(() => {
-        fetchKDS();
-        const interval = setInterval(fetchKDS, 5000);
-        return () => clearInterval(interval);
-    }, []);
-
     const fetchPendingPayments = async () => {
         try {
             const { data, error } = await supabase
@@ -476,6 +476,53 @@ const ManagerKDS = () => {
             console.error('Error fetching pending payments:', err);
         }
     };
+
+    useEffect(() => {
+        if (!currentUser?.business_id) return;
+
+        fetchKDS();
+        fetchPendingPayments();
+
+        console.log('📡 [ManagerKDS] Initializing real-time subscription for business:', currentUser.business_id);
+
+        // 🟢 Real-time Subscription 
+        const channel = supabase
+            .channel(`kds-manager-${currentUser.business_id}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'orders',
+                filter: `business_id=eq.${currentUser.business_id}`
+            }, (payload) => {
+                console.log('🔔 [Realtime] Order change detected:', payload.eventType, payload.new?.id);
+                fetchKDS();
+                fetchPendingPayments();
+            })
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'order_items'
+            }, () => {
+                // Since order_items doesn't have business_id, we refresh on any change.
+                // This is safe because fetchKDS uses the business-filtered RPC.
+                fetchKDS();
+            })
+            .subscribe((status) => {
+                console.log('📡 [Realtime] Subscription status:', status);
+            });
+
+        // 🕒 Polling Fallback (Fast 3s)
+        const interval = setInterval(() => {
+            fetchKDS();
+            fetchPendingPayments();
+        }, 3000);
+
+        return () => {
+            console.log('🚫 [ManagerKDS] Cleaning up subscription and interval');
+            supabase.removeChannel(channel);
+            clearInterval(interval);
+        };
+    }, [currentUser?.business_id]);
 
     useEffect(() => {
         if (statusTab === 'payments') {

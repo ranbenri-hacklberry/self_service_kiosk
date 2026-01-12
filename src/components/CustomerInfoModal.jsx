@@ -114,18 +114,22 @@ const CustomerInfoModal = ({
                 try {
                     const { db: dynamicDb } = await import('../db/database');
                     const allCustomers = await dynamicDb.customers.toArray();
-                    console.log(`📴 Dexie Lookup: Total customers in cache: ${allCustomers.length}`);
+                    const search9 = cleanPhone.slice(-9);
+
+                    console.log(`📴 Dexie Lookup: Searching for last 9 digits: ${search9}`);
 
                     const matchingCustomers = allCustomers.filter(c => {
                         const storedPhone = (c.phone_number || c.phone || '').toString().replace(/\D/g, '');
-                        const phoneMatch = storedPhone === cleanPhone;
+                        const stored9 = storedPhone.slice(-9);
+
+                        const phoneMatch = stored9 === search9 && stored9.length >= 9;
                         const businessMatch = !currentUser?.business_id || c.business_id === currentUser.business_id;
                         return phoneMatch && businessMatch;
                     });
 
                     if (matchingCustomers.length > 0) {
                         const customer = matchingCustomers[0];
-                        console.log(`✅ Found customer offline: ${customer.name}`);
+                        console.log(`✅ Found customer offline: ${customer.name} (ID: ${customer.id})`);
                         data = {
                             success: true,
                             isNewCustomer: false,
@@ -136,6 +140,7 @@ const CustomerInfoModal = ({
                             }
                         };
                     } else {
+                        console.log('❌ Customer not found in Dexie cache');
                         data = { success: true, isNewCustomer: true };
                     }
                 } catch (e) {
@@ -192,8 +197,24 @@ const CustomerInfoModal = ({
                 }
             }
         } catch (err) {
-            console.error('Phone lookup error:', err);
-            setError('שגיאה בחיפוש לקוח. אנא נסה שוב.');
+            console.error('⚠️ Phone lookup failure - falling back to new customer behavior:', err);
+
+            // 🔥 FAIL-SAFE: If the database is busy, offline, or the RPC is broken, 
+            // DO NOT block the user. Just proceed to name entry as a new customer.
+            if (mode === 'phone-then-name') {
+                setStep('name');
+                setTimeout(() => nameInputRef.current?.focus(), 100);
+            } else {
+                const fallbackCustomer = {
+                    id: currentCustomer?.id || null,
+                    phone: cleanPhone,
+                    name: currentCustomer?.name || 'אורח',
+                    loyalty_coffee_count: 0,
+                    isNew: true
+                };
+                onCustomerUpdate?.(fallbackCustomer);
+                onClose();
+            }
         } finally {
             setIsLoading(false);
         }

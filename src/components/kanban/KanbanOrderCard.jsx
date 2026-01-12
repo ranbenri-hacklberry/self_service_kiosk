@@ -1,5 +1,5 @@
 import React, { useState, useCallback, memo, useMemo } from 'react';
-import { Clock, Edit, MapPin, Package, Phone, Truck } from 'lucide-react';
+import { Clock, Edit, MapPin, Package, Phone, Truck, Eye, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import { sortItems } from '../../utils/kdsUtils';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
@@ -9,26 +9,26 @@ const KanbanOrderCard = memo(({
   glowClass = '',
   onOrderStatusUpdate,
   onPaymentCollected,
-  onReadyItems, // For packing toggle
+  onReadyItems,
   onEditOrder,
   onSmsClick,
-  isDriverView, // 🆕
-  dragAttributes, // 🆕
-  dragListeners   // 🆕
+  isDriverView,
+  dragAttributes,
+  dragListeners,
+  onPaymentProofAction // 🆕 Action for approve/reject
 }) => {
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Normalize Data (Handle snake_case vs camelCase)
+  // ... (rest of normalization) ...
   const status = order.order_status || order.orderStatus || '';
   const statusLower = status.toLowerCase();
-  // isPaid: if is_paid is explicitly false, use it. If undefined, check isPaid.
   const isPaid = order.is_paid !== undefined ? order.is_paid : order.isPaid;
   const customerName = order.customer_name || order.customerName || '';
   const customerPhone = order.customer_phone || order.customerPhone || '';
   const deliveryAddress = order.delivery_address || order.deliveryAddress;
   const orderType = order.order_type || order.orderType;
 
-  // Status Styles - Specialized for Kanban
+  // ... (Status Styles) ...
   const statusStyles = useMemo(() => {
     const isUnpaid = isPaid === false;
     const isDelayedCard = order.type === 'delayed';
@@ -46,6 +46,7 @@ const KanbanOrderCard = memo(({
 
   const unifiedItems = useMemo(() => sortItems(order.items || []), [order.items]);
 
+  // ... (Address & Delivery Info) ...
   const deliveryInfo = useMemo(() => {
     if (!order.delivery_info) return {};
     return typeof order.delivery_info === 'string'
@@ -53,8 +54,12 @@ const KanbanOrderCard = memo(({
       : order.delivery_info;
   }, [order.delivery_info]);
 
+  const displayAddress = useMemo(() => {
+    const addr = order.delivery_address || order.deliveryAddress || order.address || deliveryInfo.address;
+    return addr ? addr.toString() : null;
+  }, [order, deliveryInfo]);
+
   const renderItemRow = useCallback((item, idx) => {
-    // 🆕 Updated logic: Ready = Packed
     const isPacked = item.item_status === 'ready' || item.is_packed === true;
 
     return (
@@ -113,26 +118,22 @@ const KanbanOrderCard = memo(({
           </div>
 
           {/* Kanban Info Badges */}
-          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex items-center gap-1 ${order.items?.every(i => i.item_status === 'ready' || i.is_packed)
-              ? 'bg-green-100 text-green-700 border-green-200'
-              : (order.items?.some(i => i.item_status === 'ready' || i.is_packed) ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-500 border-slate-200')
-              }`}>
-              <Package size={10} />
-              {order.items?.filter(i => i.item_status === 'ready' || i.is_packed).length}/{order.items?.length} ארוז
+          {order.payment_screenshot_url && (
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex items-center gap-1 ${isPaid ? 'bg-green-100 text-green-700 border-green-200' : 'bg-orange-100 text-orange-700 border-orange-200'}`}>
+              <ImageIcon size={10} /> {isPaid ? 'תשלום אושר' : 'הועבר אישור'}
             </span>
-            {orderType === 'delivery' && (
-              <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-bold border border-blue-200 flex items-center gap-1">
-                <Truck size={10} /> משלוח
-              </span>
-            )}
-            {!isPaid && (
-              <span className="bg-red-100 text-red-700 text-[10px] px-2 py-0.5 rounded-full font-bold border border-red-200">לא שולם</span>
-            )}
-            {order.isSecondCourse && (
-              <span className="bg-purple-100 text-purple-700 text-[10px] px-2 py-0.5 rounded-full font-bold border border-purple-200">מנה שניה</span>
-            )}
-          </div>
+          )}
+          {orderType === 'delivery' && (
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex items-center gap-1 ${deliveryAddress?.includes('איסוף עצמי') ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
+              <Truck size={10} /> {deliveryAddress?.includes('איסוף עצמי') ? 'איסוף עצמי' : 'משלוח'}
+            </span>
+          )}
+          {!isPaid && !order.payment_screenshot_url && (
+            <span className="bg-red-100 text-red-700 text-[10px] px-2 py-0.5 rounded-full font-bold border border-red-200">לא שולם</span>
+          )}
+          {order.isSecondCourse && (
+            <span className="bg-purple-100 text-purple-700 text-[10px] px-2 py-0.5 rounded-full font-bold border border-purple-200">מנה שניה</span>
+          )}
         </div>
 
         <div className="flex flex-col items-end gap-1">
@@ -153,11 +154,11 @@ const KanbanOrderCard = memo(({
       </div>
 
       {/* Delivery Details */}
-      {(deliveryAddress || deliveryInfo.address) && (
-        <div className="mb-2 bg-slate-50 p-2 rounded-lg border border-slate-100 text-sm">
+      {displayAddress && (
+        <div className="mb-2 bg-slate-50 p-2 rounded-lg border border-slate-100 text-sm text-right" dir="rtl">
           <div className="flex items-start gap-2 text-slate-800 font-bold">
             <MapPin size={14} className="mt-0.5 shrink-0 text-purple-500" />
-            <span>{deliveryAddress || deliveryInfo.address}</span>
+            <span className="line-clamp-2">{displayAddress}</span>
           </div>
           {customerPhone && (
             <div className="flex items-center gap-2 mt-1 text-slate-500 font-mono text-xs">
@@ -176,35 +177,95 @@ const KanbanOrderCard = memo(({
       </div>
 
       {/* Actions */}
-      <div className="mt-auto pt-2 border-t border-gray-50 flex gap-2">
-        {statusLower === 'ready' && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onOrderStatusUpdate?.(order.id, 'shipped'); }}
-            onPointerDown={(e) => e.stopPropagation()} // 🛑 Prevent drag
-            className="flex-1 py-2 bg-purple-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-200 hover:bg-purple-700 active:scale-95 transition-all"
-          >
-            <Truck size={16} />
-            <span>מסור לשליח</span>
-          </button>
+      <div className="mt-auto pt-2 border-t border-gray-50 flex flex-col gap-2">
+
+        {/* Payment Proof Actions */}
+        {order.payment_screenshot_url && (
+          <div className={`flex flex-col gap-2 w-full p-2 rounded-lg border ${isPaid ? 'bg-green-50 border-green-100' : 'bg-orange-50 border-orange-100'}`}>
+            <div className="flex justify-between items-center">
+              <span className={`text-[10px] font-bold flex items-center gap-1 ${isPaid ? 'text-green-600' : 'text-orange-600'}`}>
+                {isPaid ? <Check size={12} /> : <AlertCircle size={12} />}
+                {isPaid ? 'התשלום אומת' : 'ממתין לאישור תשלום'}
+              </span>
+              <span className="text-[10px] text-gray-400 font-mono">{order.payment_method || 'העברה'}</span>
+            </div>
+
+            <div className="flex gap-2 items-center">
+              <div
+                onClick={(e) => { e.stopPropagation(); window.open(order.payment_screenshot_url, '_blank'); }}
+                className="w-12 h-12 rounded-lg border border-gray-200 overflow-hidden cursor-pointer hover:scale-105 transition-transform bg-white shrink-0"
+              >
+                <img src={order.payment_screenshot_url} alt="Proof" className="w-full h-full object-cover" />
+              </div>
+
+              {!isPaid && (
+                <div className="flex gap-1 flex-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onPaymentProofAction?.(order.id, 'approve'); }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="flex-1 py-1.5 bg-green-600 text-white font-bold text-[10px] rounded-lg hover:bg-green-700 shadow-sm flex items-center justify-center gap-1"
+                  >
+                    אשר
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onPaymentProofAction?.(order.id, 'reject'); }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="flex-1 py-1.5 bg-white text-red-600 border border-red-200 font-bold text-[10px] rounded-lg hover:bg-red-50 flex items-center justify-center gap-1"
+                  >
+                    דחה
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         )}
-        {onPaymentCollected && !isPaid && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onPaymentCollected(order); }}
-            onPointerDown={(e) => e.stopPropagation()} // 🛑 Prevent drag
-            className="flex-1 py-2 bg-amber-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-amber-600 active:scale-95 transition-all"
-          >
-            ₪{order.totalAmount?.toFixed(0) || order.total_amount?.toFixed(0)} לתשלום
-          </button>
-        )}
-        {statusLower === 'shipped' && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onOrderStatusUpdate?.(order.id, 'delivered'); }}
-            onPointerDown={(e) => e.stopPropagation()} // 🛑 Prevent drag
-            className="flex-1 py-2 bg-green-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-green-700 active:scale-95 transition-all"
-          >
-            סמן כנמסר
-          </button>
-        )}
+
+        <div className="flex gap-2">
+          {/* Saw It Button for Pending */}
+          {statusLower === 'pending' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onOrderStatusUpdate?.(order.id, 'new'); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="flex-1 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-blue-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <div className="flex items-center gap-2">
+                <Eye size={16} />
+                <span>ראיתי</span>
+              </div>
+            </button>
+          )}
+
+          {statusLower === 'ready' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onOrderStatusUpdate?.(order.id, 'shipped'); }}
+              onPointerDown={(e) => e.stopPropagation()} // 🛑 Prevent drag
+              className="flex-1 py-2 bg-purple-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-200 hover:bg-purple-700 active:scale-95 transition-all"
+            >
+              <Truck size={16} />
+              <span>מסור לשליח</span>
+            </button>
+          )}
+
+          {onPaymentCollected && !isPaid && !order.payment_screenshot_url && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onPaymentCollected(order); }}
+              onPointerDown={(e) => e.stopPropagation()} // 🛑 Prevent drag
+              className="flex-1 py-2 bg-amber-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-amber-600 active:scale-95 transition-all"
+            >
+              ₪{order.totalAmount?.toFixed(0) || order.total_amount?.toFixed(0)} לתשלום
+            </button>
+          )}
+
+          {statusLower === 'shipped' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onOrderStatusUpdate?.(order.id, 'delivered'); }}
+              onPointerDown={(e) => e.stopPropagation()} // 🛑 Prevent drag
+              className="flex-1 py-2 bg-green-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-green-700 active:scale-95 transition-all"
+            >
+              סמן כנמסר
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

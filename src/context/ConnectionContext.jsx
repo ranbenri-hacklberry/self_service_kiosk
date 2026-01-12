@@ -83,6 +83,11 @@ export const ConnectionProvider = ({ children }) => {
             lastCloudAvailable: cloudOk ? now : prev.lastCloudAvailable
         }));
 
+        // ✅ AUTO-DISMISS Offline Popup if active check determines online
+        if (status === 'online' || status === 'cloud-only') {
+            if (showOfflinePopup) setShowOfflinePopup(false);
+        }
+
         // Trigger offline popup if transition to offline (and not already shown)
         if (status === 'offline' && !showOfflinePopup && navigator.onLine) {
             // navigator.onLine is true but ping failed -> Real internet issue
@@ -105,8 +110,12 @@ export const ConnectionProvider = ({ children }) => {
             console.log('🌐 Device is now ONLINE');
             setShowOfflinePopup(false); // Close offline popup first
             setShowOnlinePopup(true);
-            // NOTE: No auto-dismiss - user must click button
             checkConnectivity();
+
+            // ✅ AUTO-DISMISS Online Popup after 3 seconds
+            setTimeout(() => {
+                setShowOnlinePopup(false);
+            }, 3000);
         };
         const handleOffline = () => {
             console.log('📴 Device is now OFFLINE');

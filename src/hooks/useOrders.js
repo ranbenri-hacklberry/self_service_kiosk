@@ -199,6 +199,11 @@ export function useOrders({ businessId, filters = {} } = {}) {
                     created_at: order.created_at,
                     updated_at: order.updated_at,
                     ready_at: order.ready_at,
+                    // 🆕 Explicit fields for Kanban Payment & Shipping
+                    payment_screenshot_url: order.payment_screenshot_url,
+                    payment_verified: order.payment_verified,
+                    payment_method: order.payment_method,
+                    seen_at: order.seen_at,
 
                     // Items with menu name hydration
                     items: allItems
@@ -385,11 +390,19 @@ export function useOrders({ businessId, filters = {} } = {}) {
                 pending_sync: true
             };
 
+            // Map some fields for UI consistency if they exist in updates
+            const uiUpdates = { ...updates };
+            if (fields.is_paid !== undefined) uiUpdates.isPaid = fields.is_paid;
+            if (fields.order_status !== undefined) uiUpdates.orderStatus = fields.order_status;
+            if (fields.customer_name !== undefined) uiUpdates.customerName = fields.customer_name;
+            if (fields.customer_phone !== undefined) uiUpdates.customerPhone = fields.customer_phone;
+            if (fields.total_amount !== undefined) uiUpdates.totalAmount = fields.total_amount;
+
             const isLocal = String(orderId).startsWith('L');
 
             // 1. Optimistic Update (Dexie + State)
             await db.orders.update(orderId, updates);
-            setOrders(prev => prev.map(o => String(o.id) === String(orderId) ? { ...o, ...updates } : o));
+            setOrders(prev => prev.map(o => String(o.id) === String(orderId) ? { ...o, ...uiUpdates } : o));
 
             // 2. Push to Supabase
             if (!isLocal) {
@@ -408,7 +421,6 @@ export function useOrders({ businessId, filters = {} } = {}) {
             return true;
         } catch (err) {
             console.error('[useOrders-V2] updateOrderFields error:', err);
-            // Revert would be complex here, assuming simple fields usually succeed or user retries
             return false;
         }
     }, []);
@@ -556,6 +568,11 @@ export function useOrders({ businessId, filters = {} } = {}) {
                             created_at: order.created_at,
                             updated_at: order.updated_at,
                             ready_at: order.ready_at,
+                            // 🆕 Explicit fields for Kanban Payment & Shipping
+                            payment_screenshot_url: order.payment_screenshot_url,
+                            payment_verified: order.payment_verified,
+                            payment_method: order.payment_method,
+                            seen_at: order.seen_at,
                             items: finalItems.map(item => {
                                 const menuItem = menuMap.get(item.menu_item_id);
                                 return {

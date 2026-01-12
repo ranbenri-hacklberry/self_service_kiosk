@@ -18,15 +18,17 @@ import {
     LayoutGrid, Truck
 } from 'lucide-react';
 
-// Columns to show (removed 'pending' as per user request)
+// Columns to show
 const STAFF_COLUMNS = ['new', 'in_prep', 'ready', 'shipped'];
 
 export default function KanbanPage() {
     const navigate = useNavigate();
-    const { currentUser } = useAuth();
-    const [alertsEnabled, setAlertsEnabled] = useState(true);
+    // ... (rest of imports/state)
+
     const [paymentModal, setPaymentModal] = useState({ show: false, order: null });
     const [shipmentModal, setShipmentModal] = useState({ show: false, order: null });
+    const [toast, setToast] = useState(null); // 🆕 Success Toast State
+    const { currentUser } = useAuth(); // Assuming currentUser is from useAuth
     const user = currentUser;
 
     // Get orders
@@ -44,11 +46,17 @@ export default function KanbanPage() {
         businessId: user?.business_id
     });
 
+    // Merge pending orders into the 'new' column
+    const combinedOrdersByStatus = {
+        ...ordersByStatus,
+        new: [
+            ...(ordersByStatus.pending || []),
+            ...(ordersByStatus.new || [])
+        ]
+    };
+
     // Setup alerts for pending online orders
-    useOrderAlerts({
-        pendingOrders: pendingAlertOrders,
-        enabled: alertsEnabled
-    });
+    const { alertsEnabled, setAlertsEnabled, playAlertSound, markAlertAsSeen } = useOrderAlerts(pendingAlertOrders);
 
     // Determine business type
     const businessType = user?.business_type || 'cafe';
@@ -83,8 +91,84 @@ export default function KanbanPage() {
     };
 
     const handlePaymentConfirmed = async (orderId, paymentMethod) => {
-        setPaymentModal({ show: false, order: null });
-        refresh();
+        try {
+            console.log(`💰 [Kanban] Processing payment for ${orderId} via ${paymentMethod}`);
+
+            // 1. Optimistic local update (Dexie + React State)
+            // We use updateOrderFields but we know it might try to push to 'orders' table.
+            // That's fine as a fallback, but the RPC is the designated 'correct' way.
+            await updateOrderFields(orderId, {
+                is_paid: true,
+                payment_method: paymentMethod,
+                payment_verified: true,
+                updated_at: new Date().toISOString()
+            });
+
+            // 2. Official server update via RPC (Handles paid_amount, OTH, etc.)
+            const { error: rpcError } = await supabase.rpc('confirm_order_payment', {
+                p_order_id: orderId,
+                p_payment_method: paymentMethod
+            });
+
+            if (rpcError) {
+                console.warn('⚠️ RPC update failed, but table update may have succeeded:', rpcError);
+            }
+
+            console.log('✅ Payment confirmed successfully');
+            setPaymentModal({ show: false, order: null });
+
+            // 🆕 Show Success Toast
+            setToast({ message: 'התשלום עודכן בהצלחה!', type: 'success' });
+            setTimeout(() => setToast(null), 3000);
+        } catch (error) {
+            console.error('❌ Error confirming payment:', error);
+            setToast({ message: 'שגיאה באישור התשלום', type: 'error' });
+            setTimeout(() => setToast(null), 3000);
+        }
+    };
+
+    const handlePaymentRejected = async (orderId) => {
+        try {
+            console.log(`❌ [Kanban] Rejecting payment proof for ${orderId}`);
+            const success = await updateOrderFields(orderId, {
+                payment_screenshot_url: null,
+                payment_verified: false,
+                is_paid: false,
+                updated_at: new Date().toISOString()
+            });
+
+            if (!success) throw new Error('Failed to reject payment proof');
+
+            setPaymentModal({ show: false, order: null });
+        } catch (error) {
+            console.error('Error rejecting payment:', error);
+            alert('שגיאה בביטול האישור');
+        }
+    };
+
+    const handlePaymentProofAction = async (orderId, action) => {
+        if (action === 'approve') {
+            try {
+                console.log(`✅ [Kanban] Approving payment proof for ${orderId}`);
+                await updateOrderFields(orderId, {
+                    is_paid: true,
+                    payment_verified: true,
+                    updated_at: new Date().toISOString()
+                });
+
+                // 🆕 Show Success Toast
+                setToast({ message: 'אישור התשלום אושר!', type: 'success' });
+                setTimeout(() => setToast(null), 3000);
+            } catch (err) {
+                console.error('Error approving payment proof:', err);
+                setToast({ message: 'שגיאה באישור התשלום', type: 'error' });
+                setTimeout(() => setToast(null), 3000);
+            }
+        } else if (action === 'reject') {
+            await handlePaymentRejected(orderId);
+            setToast({ message: 'אישור התשלום נדחה', type: 'info' });
+            setTimeout(() => setToast(null), 3000);
+        }
     };
 
     const handleShipmentConfirmed = async (orderId) => {
@@ -177,7 +261,7 @@ export default function KanbanPage() {
 
             {/* Main Kanban Board */}
             <main className="flex-1 overflow-hidden z-10 relative">
-                {isLoading && Object.keys(ordersByStatus).length === 0 ? (
+                {isLoading && Object.keys(combinedOrdersByStatus).length === 0 ? (
                     <div className="h-full flex items-center justify-center">
                         <div className="flex flex-col items-center gap-3 text-slate-400">
                             <RefreshCw size={40} className="animate-spin text-blue-500" />
@@ -186,14 +270,16 @@ export default function KanbanPage() {
                     </div>
                 ) : (
                     <KanbanBoard
-                        ordersByStatus={ordersByStatus}
+                        ordersByStatus={combinedOrdersByStatus}
                         columns={STAFF_COLUMNS}
                         businessType={businessType}
                         onOrderStatusUpdate={handleStatusUpdate}
                         onPaymentCollected={handlePaymentCollected}
                         onMarkSeen={markOrderSeen}
-                        onReadyItems={handlePackingClick} // 🆕 Open modal instead of direct toggle
-                        onSmsClick={(order) => setShipmentModal({ show: true, order })} // Reuse same modal for SMS/Truck icon
+                        onReadyItems={handlePackingClick}
+                        onSmsClick={(order) => setShipmentModal({ show: true, order })}
+                        onRefresh={refresh}
+                        onPaymentProofAction={handlePaymentProofAction}
                     />
                 )}
             </main>
@@ -214,11 +300,35 @@ export default function KanbanPage() {
 
             {paymentModal.show && (
                 <KDSPaymentModal
-                    isOpen={true} // Add isOpen prop explicitly
+                    isOpen={true}
                     order={paymentModal.order}
                     onClose={() => setPaymentModal({ show: false, order: null })}
                     onConfirmPayment={handlePaymentConfirmed}
+                    onRejectPayment={handlePaymentRejected}
+                    onMoveToHistory={async (orderId) => {
+                        try {
+                            await updateStatus(orderId, 'delivered');
+                            setPaymentModal({ show: false, order: null });
+                            setToast({ message: 'ההזמנה הועברה לארכיון', type: 'info' });
+                            setTimeout(() => setToast(null), 3000);
+                        } catch (err) {
+                            console.error('Failed to move to history:', err);
+                        }
+                    }}
                 />
+            )}
+
+            {/* 🆕 Success/Error Toast */}
+            {toast && (
+                <div className={`fixed top-24 left-1/2 transform -translate-x-1/2 z-[100] px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300 border ${toast.type === 'success' ? 'bg-green-600 text-white border-green-500' :
+                    toast.type === 'error' ? 'bg-red-600 text-white border-red-500' :
+                        'bg-slate-800 text-white border-slate-700'
+                    }`}>
+                    <div className="bg-white/20 p-1.5 rounded-full">
+                        {toast.type === 'success' ? <Truck size={24} /> : <RefreshCw size={24} />}
+                    </div>
+                    <span className="text-xl font-black">{toast.message}</span>
+                </div>
             )}
         </div>
     );

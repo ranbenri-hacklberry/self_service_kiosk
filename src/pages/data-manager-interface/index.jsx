@@ -8,6 +8,7 @@ import ItemDetails from '@/components/manager/ItemDetails';
 import InventoryScreen from '@/components/manager/InventoryScreen';
 import SalesDashboard from '@/components/manager/SalesDashboard';
 import TasksManager from '@/components/manager/TasksManager';
+import SystemDiagnostics from '@/components/manager/SystemDiagnostics';
 import ConnectionStatusBar from '../../components/ConnectionStatusBar';
 import MiniMusicPlayer from '../../components/music/MiniMusicPlayer';
 import { useAuth } from '@/context/AuthContext';
@@ -150,6 +151,7 @@ const ManagerDashboard = () => {
             {activeTab === 'menu' && <MenuDisplay />}
             {activeTab === 'inventory' && <InventoryScreen />}
             {activeTab === 'tasks' && <TasksManager />}
+            {activeTab === 'diagnostics' && <SystemDiagnostics />}
           </motion.div>
         </AnimatePresence>
       </main>

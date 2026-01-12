@@ -11,24 +11,52 @@ const KDSPaymentModal = ({
     order,
     onConfirmPayment,
     onMoveToHistory,
+    onRejectPayment, // 🆕
     isFromHistory = false
 }) => {
-    const [step, setStep] = useState('selection'); // 'selection' | 'instruction'
+    const [step, setStep] = useState('selection'); // 'selection' | 'instruction' | 'verification'
     const [selectedMethod, setSelectedMethod] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
-            setStep('selection');
+            // Check if we need verification
+            if (order?.payment_screenshot_url && !order.is_paid) {
+                setStep('verification');
+            } else {
+                setStep('selection');
+            }
             setSelectedMethod(null);
             setIsProcessing(false);
         }
-    }, [isOpen]);
+    }, [isOpen, order]);
 
     if (!isOpen || !order) return null;
 
-    const orderAmount = order.totalAmount || 0;
-    const customerName = order.customerName || 'לקוח';
+    const orderAmount = order.totalAmount || order.total_amount || 0;
+    const customerName = order.customerName || order.customer_name || 'לקוח';
+
+    // Verification Handlers
+    const handleVerifyApprove = async () => {
+        if (!onConfirmPayment) return;
+        setIsProcessing(true);
+        try {
+            await onConfirmPayment(order.id, order.payment_method || 'transfer');
+        } catch (err) {
+            alert('שגיאה: ' + err.message);
+        } finally { setIsProcessing(false); }
+    };
+
+    const handleVerifyReject = async () => {
+        if (!onRejectPayment) return;
+        if (!confirm('האם אתה בטוח שברצונך לדחות את אישור התשלום? הלקוח יצטרך להעלות מחדש.')) return;
+        setIsProcessing(true);
+        try {
+            await onRejectPayment(order.id);
+        } catch (err) {
+            alert('שגיאה: ' + err.message);
+        } finally { setIsProcessing(false); }
+    };
 
     const formatPrice = (price) => {
         const num = Number(price);
@@ -144,6 +172,50 @@ const KDSPaymentModal = ({
     };
 
     const handleBack = () => { setStep('selection'); setSelectedMethod(null); };
+
+    // New Verification UI
+    if (step === 'verification') {
+        const methodLabel = order.payment_method === 'bit' ? 'Bit' : order.payment_method === 'paybox' ? 'PayBox' : 'העברה'
+        return (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10001] flex items-center justify-center p-4" dir="rtl" onClick={onClose}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                    <div className="p-4 border-b bg-orange-50 flex items-center gap-3">
+                        <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center hover:scale-110 cursor-pointer transition-transform"
+                            onClick={() => window.open(order.payment_screenshot_url, '_blank')}
+                        >
+                            <Star size={20} />
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-black text-slate-800">אימות תשלום ({methodLabel})</h2>
+                            <p className="text-xs text-slate-500">יש לאמת את האסמכתא לפני אישור</p>
+                        </div>
+                    </div>
+                    <div className="p-4 overflow-y-auto">
+                        <div className="bg-slate-100 rounded-xl overflow-hidden mb-4 border border-slate-200">
+                            {/* Make image clickable to zoom */}
+                            <a href={order.payment_screenshot_url} target="_blank" rel="noreferrer" className="block relative group">
+                                <img src={order.payment_screenshot_url} alt="Proof" className="w-full h-auto object-contain max-h-[40vh]" />
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                                    <span className="opacity-0 group-hover:opacity-100 bg-black/70 text-white px-3 py-1 rounded-full text-xs font-bold pointer-events-none">לחץ להגדלה</span>
+                                </div>
+                            </a>
+                        </div>
+                        <div className="text-center mb-2">
+                            <p className="font-bold text-lg text-slate-800">סכום לתשלום: {formatPrice(orderAmount)}</p>
+                        </div>
+                    </div>
+                    <div className="p-4 border-t flex gap-3 bg-white">
+                        <button onClick={handleVerifyReject} disabled={isProcessing} className="flex-1 py-3 bg-red-50 text-red-600 border border-red-100 rounded-xl font-bold hover:bg-red-100 transition-colors">
+                            {isProcessing ? 'מעבד...' : 'דחה ושלח ללקוח'}
+                        </button>
+                        <button onClick={handleVerifyApprove} disabled={isProcessing} className="flex-[2] py-3 bg-green-600 text-white rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-colors">
+                            {isProcessing ? 'מאשר...' : '👍 אישור תשלום'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )
+    }
 
     if (step === 'instruction' && selectedMethod) {
         const config = PAYMENT_INSTRUCTIONS[selectedMethod];

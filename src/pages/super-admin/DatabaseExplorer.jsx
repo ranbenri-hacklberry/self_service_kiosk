@@ -238,8 +238,20 @@ const DatabaseExplorer = () => {
         setLoadingData(true);
         setTableData(null);
         try {
+            let orderBy = '';
+            // Try to find a date column to sort by (newest first)
+            if (tableDetails && tableDetails.name === tableName) {
+                const dateCol = tableDetails.columns.find(c =>
+                    ['created_at', 'timestamp', 'updated_at', 'date'].includes(c.column_name)
+                );
+
+                if (dateCol) {
+                    orderBy = `ORDER BY "${dateCol.column_name}" DESC`;
+                }
+            }
+
             const { data, error } = await supabase.rpc('run_sql', {
-                query_text: `SELECT * FROM "${tableName}" LIMIT ${limit}`
+                query_text: `SELECT * FROM "${tableName}" ${orderBy} LIMIT ${limit}`
             });
             if (error) throw error;
             setTableData({ tableName, rows: data || [], limit });

@@ -1874,6 +1874,10 @@ export const useKDSData = () => {
 
             if (error) throw error;
 
+            // 🆕 Show Success Toast
+            setSmsToast({ message: 'התשלום עודכן בהצלחה!', isError: false });
+            setTimeout(() => setSmsToast(null), 3000);
+
             await fetchOrders();
         } catch (err) {
             console.error('❌ Error confirming payment:', err);

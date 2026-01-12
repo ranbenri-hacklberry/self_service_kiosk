@@ -61,7 +61,8 @@ export function KanbanColumn({
     onReadyItems, // 🆕 For packing toggle
     onSmsClick,
     onRefresh, // 🆕
-    isDriverView = false // 🆕
+    isDriverView = false, // 🆕
+    onPaymentProofAction // 🆕
 }) {
     const { setNodeRef, isOver } = useDroppable({ id: status });
 
@@ -120,6 +121,7 @@ export function KanbanColumn({
                                     onReadyItems={onReadyItems} // 🆕 Pass through
                                     onSmsClick={onSmsClick}
                                     isDriverView={isDriverView} // 🆕
+                                    onPaymentProofAction={onPaymentProofAction} // 🆕
                                 />
                             ))
                         )}

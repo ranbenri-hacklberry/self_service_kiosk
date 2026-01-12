@@ -8,7 +8,7 @@ import {
     CheckSquare,
     Sparkles,
     LogOut,
-    Reply
+    Activity
 } from 'lucide-react';
 
 const ManagerHeader = ({ activeTab, onTabChange, currentUser, isImpersonating, onLogout }) => {
@@ -27,6 +27,16 @@ const ManagerHeader = ({ activeTab, onTabChange, currentUser, isImpersonating, o
             isAI: true
         },
     ];
+
+    // Add Diagnostics Tab for Admins
+    if (currentUser?.is_admin || currentUser?.access_level === 'admin' || isImpersonating) {
+        navItems.splice(4, 0, {
+            id: 'diagnostics',
+            label: 'דיאגנוסטיקה',
+            icon: <Activity size={18} />,
+            path: '/data-manager-interface'
+        });
+    }
 
     const handleNavClick = (item) => {
         if (item.id === activeTab && window.location.pathname === item.path) return;

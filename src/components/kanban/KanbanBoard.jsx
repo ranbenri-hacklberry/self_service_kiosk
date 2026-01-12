@@ -34,7 +34,8 @@ export function KanbanBoard({
     onReadyItems, // 🆕 For packing toggle
     onSmsClick,
     onRefresh, // 🆕
-    isDriverView = false // 🆕 Driver Mode
+    isDriverView = false, // 🆕 Driver Mode
+    onPaymentProofAction // 🆕
 }) {
     const [activeOrder, setActiveOrder] = useState(null);
     const [items, setItems] = useState(ordersByStatus);
@@ -166,6 +167,7 @@ export function KanbanBoard({
                         onSmsClick={onSmsClick}
                         onRefresh={onRefresh} // 🆕 Pass down
                         isDriverView={isDriverView} // 🆕
+                        onPaymentProofAction={onPaymentProofAction} // 🆕
                     />
                 ))}
             </div>

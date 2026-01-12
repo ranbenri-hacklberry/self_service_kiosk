@@ -101,48 +101,67 @@ const MayaAssistant = () => {
         const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
         const yesterdayStr = yesterdayDate.toLocaleDateString('en-CA');
 
-        // 1. Sales Intelligence (Local Dexie)
+        // 1. Sales Intelligence (Hybrid: Cloud First -> Dexie Fallback)
         try {
-            const lastWeek = new Date();
-            lastWeek.setDate(lastWeek.getDate() - 7);
-            const sevenDaysAgo = lastWeek.toISOString();
+            // Expanded to 30 days for better context (User request)
+            const historyStart = new Date();
+            historyStart.setDate(historyStart.getDate() - 30);
+            const startDateISO = historyStart.toISOString();
+            const endDateISO = new Date().toISOString();
 
-            console.log('🔄 Maya: Fetching sales from Dexie DB...');
-            const salesRaw = await db.orders
-                .where('created_at')
-                .above(sevenDaysAgo)
-                .filter(o => o.business_id === currentUser.business_id && o.order_status !== 'cancelled')
-                .toArray();
+            console.log('🔄 Maya: Fetching sales intelligence (Cloud Preferred)...');
+            let salesRaw = [];
+            let source = 'Local';
 
-            console.log('📊 Dexie returned:', salesRaw.length, 'orders');
-
-            // Fetch related items manually since Dexie relations aren't auto-joined like Supabase
-            // Optimization: We could fetch items, but for "Total Sales" revenue, we just need the orders.
-            // For "Top Items", we need the items.
-            // Let's do a quick map of order_items from the JSON if stored, or fetch if needed.
-            // Checking schema: orders usually stores items in 'order_items' table.
-
-            // NOTE: Dexie 'orders' table might NOT have 'order_items' nested if it's a direct table clone.
-            // Let's check if we can live with just Revenue first.
-            // To get items, we'd need: await db.order_items.where('order_id').anyOf(salesRaw.map(o => o.id)).toArray();
-
-            // Let's try to get items for the 'Top Items' feature:
-            const orderIds = salesRaw.map(o => o.id);
-            const allOrderItems = await db.order_items.where('order_id').anyOf(orderIds).toArray();
-
-            // We also need menu_item names.
-            const menuItemIds = [...new Set(allOrderItems.map(i => i.menu_item_id))];
-            const menuItems = await db.menu_items.where('id').anyOf(menuItemIds).toArray();
-            const menuMap = {};
-            menuItems.forEach(mi => menuMap[mi.id] = mi.name);
-
-            // Attach items to orders for processing loop below
-            salesRaw.forEach(o => {
-                o.order_items = allOrderItems.filter(i => i.order_id === o.id).map(i => ({
-                    ...i,
-                    menu_items: { name: menuMap[i.menu_item_id] || 'Unknown' }
-                }));
+            // ATTEMPT 1: Cloud RPC (Full History)
+            const { data: rpcData, error: rpcError } = await supabase.rpc('get_sales_data', {
+                p_business_id: currentUser.business_id,
+                p_start_date: startDateISO,
+                p_end_date: endDateISO
             });
+
+            if (!rpcError && rpcData) {
+                source = 'Cloud (Supabase)';
+                // Transform RPC result to internal structure
+                salesRaw = rpcData.map(o => ({
+                    id: 'cloud-' + Math.random(), // Virtual ID
+                    created_at: o.created_at,
+                    ready_at: o.ready_at,
+                    total_amount: o.total || 0,
+                    customer_name: o.customer_name,
+                    customer_phone: o.customer_phone,
+                    // RPC returns flattened structure, map to object format Maya expects
+                    order_items: (o.order_items || []).map(i => ({
+                        quantity: i.quantity,
+                        menu_items: { name: i.name }
+                    }))
+                }));
+                console.log(`☁️ Maya loaded ${salesRaw.length} orders from Cloud (30 Days).`);
+            } else {
+                console.warn('⚠️ Maya Cloud sync failed, falling back to local Dexie.', rpcError);
+                // ATTEMPT 2: Local Dexie (Limited by Sync Window, usually 48h)
+                salesRaw = await db.orders
+                    .where('created_at')
+                    .above(startDateISO)
+                    .filter(o => o.business_id === currentUser.business_id && o.order_status !== 'cancelled')
+                    .toArray();
+
+                // Hydrate items for local data
+                const orderIds = salesRaw.map(o => o.id);
+                const allOrderItems = await db.order_items.where('order_id').anyOf(orderIds).toArray();
+                const menuItemIds = [...new Set(allOrderItems.map(i => i.menu_item_id))];
+                const menuItems = await db.menu_items.where('id').anyOf(menuItemIds).toArray();
+                const menuMap = {};
+                menuItems.forEach(mi => menuMap[mi.id] = mi.name);
+
+                salesRaw.forEach(o => {
+                    o.order_items = allOrderItems.filter(i => i.order_id === o.id).map(i => ({
+                        ...i,
+                        menu_items: { name: menuMap[i.menu_item_id] || 'Unknown' }
+                    }));
+                });
+                console.log(`💾 Dexie returned: ${salesRaw.length} orders (Local Backup).`);
+            }
 
             const dailyMap = {};
             const totalMap = {};

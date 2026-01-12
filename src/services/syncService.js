@@ -261,9 +261,9 @@ export const syncOrders = async (businessId) => {
         return { success: false, reason: 'offline' };
     }
 
-    // Use date from 30 days ago to get full history
+    // Use date from 2 days ago (48h) to keep devices light & fast
     const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 30); // 30 days of history
+    fromDate.setDate(fromDate.getDate() - 2); // 48 hours of history
     const fromDateISO = fromDate.toISOString();
     const toDateISO = new Date().toISOString();
 
@@ -327,7 +327,17 @@ export const syncOrders = async (businessId) => {
                         delivery_notes: order.delivery_notes,
                         created_at: order.created_at,
                         updated_at: order.updated_at || new Date().toISOString(),
-                        pending_sync: false // Coming from server, so synced
+                        pending_sync: false, // Coming from server, so synced
+                        // 🆕 Mission Critical for Kanban
+                        payment_screenshot_url: order.payment_screenshot_url,
+                        payment_method: order.payment_method,
+                        payment_verified: order.payment_verified,
+                        seen_at: order.seen_at,
+                        // 🆕 Driver/Courier Info
+                        driver_id: order.driver_id,
+                        driver_name: order.driver_name,
+                        driver_phone: order.driver_phone,
+                        courier_name: order.courier_name
                     });
 
                     // Update items

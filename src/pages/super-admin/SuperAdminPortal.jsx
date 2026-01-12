@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Database, Building2, Shield, LogOut, LayoutDashboard, Search, ChevronRight, Activity } from 'lucide-react';
+import { Database, Building2, Shield, LogOut, LayoutDashboard, Search, ChevronRight, Activity, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import SystemDiagnostics from '@/components/manager/SystemDiagnostics';
 
 const SuperAdminPortal = () => {
     const navigate = useNavigate();
     const { switchBusinessContext, logout } = useAuth();
     const [businesses, setBusinesses] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [diagnosticsBusiness, setDiagnosticsBusiness] = useState(null);
 
     useEffect(() => {
         fetchBusinesses();
@@ -194,17 +196,51 @@ const SuperAdminPortal = () => {
                                         כניסה לממשק
                                         <ChevronRight size={12} className="group-hover:translate-x-[-2px] transition-transform" />
                                     </span>
-                                    {business.active_orders_count > 0 && (
-                                        <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full border border-slate-700">
-                                            {business.active_orders_count} הזמנות פעילות
-                                        </span>
-                                    )}
+
+                                    <div className="flex items-center gap-2">
+                                        {business.active_orders_count > 0 && (
+                                            <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full border border-slate-700">
+                                                {business.active_orders_count} פעילות
+                                            </span>
+                                        )}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setDiagnosticsBusiness(business);
+                                            }}
+                                            className="p-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg border border-indigo-500/20 transition-colors z-20 relative"
+                                            title="דיאגנוסטיקה"
+                                        >
+                                            <Activity size={14} />
+                                        </button>
+                                    </div>
                                 </div>
                             </motion.button>
                         ))}
                     </div>
                 )}
             </div>
+
+            {/* DIAGNOSTICS MODAL */}
+            {diagnosticsBusiness && (
+                <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <motion.div
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="bg-slate-900 border border-slate-700 w-full max-w-6xl h-[85vh] rounded-3xl overflow-hidden shadow-2xl relative"
+                    >
+                        <button
+                            onClick={() => setDiagnosticsBusiness(null)}
+                            className="absolute top-4 left-4 z-50 p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white hover:bg-slate-700 border border-slate-700"
+                        >
+                            <X size={24} />
+                        </button>
+                        <div className="h-full overflow-hidden">
+                            <SystemDiagnostics businessId={diagnosticsBusiness.id} />
+                        </div>
+                    </motion.div>
+                </div>
+            )}
         </div>
     );
 };

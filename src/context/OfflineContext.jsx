@@ -173,41 +173,28 @@ export const OfflineProvider = ({ children }) => {
 
     return (
         <OfflineContext.Provider value={value}>
-            {/* Offline Popup */}
+            {/* Offline TOAST (Non-blocking) */}
             {showOfflinePopup && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-3xl shadow-2xl p-8 mx-4 max-w-sm text-center transform animate-in zoom-in-95 duration-300">
-                        <div className="w-20 h-20 mx-auto mb-4 bg-white/20 rounded-full flex items-center justify-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636a9 9 0 010 12.728M5.636 18.364a9 9 0 010-12.728m2.121 9.9a6.002 6.002 0 008.486 0m-8.486-7.072a6 6 0 018.486 0" />
-                                <line x1="4" y1="4" x2="20" y2="20" strokeWidth={2.5} />
-                            </svg>
+                <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] animate-in slide-in-from-top-4 duration-300">
+                    <div className="bg-amber-600/90 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-3 border border-amber-400/30">
+                        <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                        <div>
+                            <span className="font-bold text-sm">אין חיבור לאינטרנט</span>
                         </div>
-                        <h2 className="text-2xl font-black mb-2">📴 מצב אופליין</h2>
-                        <p className="text-white/90 font-medium">
-                            אין חיבור לאינטרנט.
-                            <br />
-                            <span className="text-white/80 text-sm">המערכת תמשיך לעבוד ותסתנכרן כשתחזור</span>
-                        </p>
                     </div>
                 </div>
             )}
 
-            {/* Online Popup */}
+            {/* Online TOAST (Non-blocking, Green) */}
             {showOnlinePopup && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-gradient-to-br from-emerald-500 to-green-600 text-white rounded-3xl shadow-2xl p-8 mx-4 max-w-sm text-center transform animate-in zoom-in-95 duration-300">
-                        <div className="w-20 h-20 mx-auto mb-4 bg-white/20 rounded-full flex items-center justify-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071a11 11 0 0114.16 0M1.394 9.393a16 16 0 0121.212 0" />
-                            </svg>
+                <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] animate-in slide-in-from-top-4 duration-300">
+                    <div className="bg-emerald-600/90 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-3 border border-emerald-400/30">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <div>
+                            <span className="font-bold text-sm">החיבור חזר! מסנכרן...</span>
                         </div>
-                        <h2 className="text-2xl font-black mb-2">🌐 חזרנו אונליין!</h2>
-                        <p className="text-white/90 font-medium">
-                            החיבור חזר לפעול.
-                            <br />
-                            <span className="text-white/80 text-sm">מסנכרן שינויים...</span>
-                        </p>
                     </div>
                 </div>
             )}
