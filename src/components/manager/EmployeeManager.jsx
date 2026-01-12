@@ -13,6 +13,7 @@ import {
     X,
     Check,
     AlertCircle,
+    Trash2,
     User,
     Key,
     IdCard,
@@ -122,6 +123,23 @@ const EmployeeManager = () => {
             setIsSaving(false);
         }
     };
+    const handleDeleteEmployee = async (id, name) => {
+        if (!window.confirm(`האם אתה בטוח שברצונך למחוק את העסקת ${name}?`)) return;
+
+        try {
+            const { error } = await supabase
+                .from('employees')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+            showToast('העובד נמחק בהצלחה');
+            fetchEmployees();
+        } catch (err) {
+            console.error('Error deleting employee:', err);
+            showToast('שגיאה במחיקת עובד', 'error');
+        }
+    };
 
     const filteredEmployees = employees.filter(emp =>
         emp.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -227,9 +245,18 @@ const EmployeeManager = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <button className="p-2 text-slate-400 hover:bg-slate-50 rounded-lg transition-colors">
-                                            <MoreVertical size={18} />
-                                        </button>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={() => handleDeleteEmployee(emp.id, emp.name)}
+                                                className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors active:scale-95"
+                                                title="מחק עובד"
+                                            >
+                                                <Trash2 size={18} />
+                                            </button>
+                                            <button className="p-2 text-slate-400 hover:bg-slate-50 rounded-lg transition-colors">
+                                                <MoreVertical size={18} />
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div className="space-y-3 relative">
