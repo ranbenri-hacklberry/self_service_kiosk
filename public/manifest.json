@@ -1,6 +1,7 @@
 {
   "short_name": "iCaffeOS",
   "name": "iCaffeOS - CoffeeShops Operating System",
+  "description": "Premium Coffee Shop Management System",
   "icons": [
     {
       "src": "assets/images/icaffeos_icon.png",
@@ -9,8 +10,11 @@
       "purpose": "any maskable"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "theme_color": "#0f172a",
-  "background_color": "#0f172a"
+  "background_color": "#0f172a",
+  "prefer_related_applications": false
 }
