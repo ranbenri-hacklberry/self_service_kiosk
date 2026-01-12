@@ -29,6 +29,7 @@ import DexieTestPage from './pages/DexieTestPage';
 import KanbanPage from './pages/kanban';
 import DriverPage from './pages/driver';
 import OrderTrackingPage from './pages/order-tracking';
+import CompleteProfile from './pages/login/CompleteProfile';
 
 // DEPRECATED/UNUSED PAGES (kept comments for reference if needed, but removed imports to clean up)
 // import NewCustomerNameCollectionScreen from './pages/new-customer-name-collection-screen';
@@ -138,6 +139,7 @@ const AppRoutes = () => {
     <RouterRoutes location={location} key={location.pathname}>
       {/* Public Routes */}
       <Route path="/login" element={<PageTransition><LoginScreen /></PageTransition>} />
+      <Route path="/complete-profile" element={<CompleteProfile />} />
       <Route path="/admin" element={<Navigate to="/login" replace />} />
       <Route path="/manager" element={<Navigate to="/login" replace />} />
       <Route path="/super-admin" element={

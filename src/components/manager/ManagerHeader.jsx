@@ -8,7 +8,8 @@ import {
     CheckSquare,
     Sparkles,
     LogOut,
-    Activity
+    Activity,
+    Users
 } from 'lucide-react';
 
 const ManagerHeader = ({ activeTab, onTabChange, currentUser, isImpersonating, onLogout }) => {
@@ -19,24 +20,17 @@ const ManagerHeader = ({ activeTab, onTabChange, currentUser, isImpersonating, o
         { id: 'menu', label: 'תפריט', icon: <Utensils size={18} />, path: '/data-manager-interface' },
         { id: 'inventory', label: 'מלאי', icon: <Package size={18} />, path: '/data-manager-interface' },
         { id: 'tasks', label: 'משימות', icon: <CheckSquare size={18} />, path: '/data-manager-interface' },
+        { id: 'employees', label: 'עובדים', icon: <Users size={18} />, path: '/data-manager-interface' },
         {
             id: 'maya',
             label: 'מאיה AI',
             icon: <Sparkles size={18} />,
             path: '/maya',
             isAI: true
-        },
+        }
     ];
 
-    // Add Diagnostics Tab for Admins
-    if (currentUser?.is_admin || currentUser?.access_level === 'admin' || isImpersonating) {
-        navItems.splice(4, 0, {
-            id: 'diagnostics',
-            label: 'דיאגנוסטיקה',
-            icon: <Activity size={18} />,
-            path: '/data-manager-interface'
-        });
-    }
+
 
     const handleNavClick = (item) => {
         if (item.id === activeTab && window.location.pathname === item.path) return;
@@ -69,62 +63,68 @@ const ManagerHeader = ({ activeTab, onTabChange, currentUser, isImpersonating, o
                     </button>
                 </div>
 
-                {/* Navigation - Unified Equal Spacing */}
-                <nav className="flex items-center bg-slate-800/30 p-1 rounded-2xl border border-slate-700/30 shadow-inner">
-                    <div className="flex items-center gap-1">
-                        {navItems.map((item) => {
-                            const isActive = activeTab === item.id;
+                {/* Navigation - Unified Equal Spacing with Mobile Scroll Support */}
+                <div className="flex-1 lg:flex-none relative overflow-hidden flex justify-center">
+                    {/* Visual Fades for Scrolling */}
+                    <div className="absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-slate-900 to-transparent z-10 pointer-events-none lg:hidden" />
+                    <div className="absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-slate-900 to-transparent z-10 pointer-events-none lg:hidden" />
 
-                            return (
-                                <button
-                                    key={item.id}
-                                    onClick={() => handleNavClick(item)}
-                                    className={`
-                    relative flex flex-col items-center justify-center w-14 sm:w-20 md:w-24 h-12 rounded-xl transition-all duration-300 gap-1 overflow-hidden
-                    ${isActive && !item.isAI
-                                            ? 'bg-white text-slate-900 shadow-lg shadow-white/10 ring-1 ring-white/50'
-                                            : item.isAI && isActive
-                                                ? 'text-white'
-                                                : item.isAI
-                                                    ? 'text-slate-200 hover:text-white group'
-                                                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
-                                        }
-                  `}
-                                >
-                                    {/* Premium AI Glow for Maya */}
-                                    {item.isAI && (
-                                        <div className={`absolute inset-0 bg-gradient-to-br from-indigo-600/30 via-purple-600/30 to-pink-600/30 transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
-                                    )}
+                    <nav className="overflow-x-auto no-scrollbar scroll-smooth px-6 py-1">
+                        <div className="flex items-center bg-slate-800/30 p-1.5 rounded-2xl border border-slate-700/30 shadow-inner min-w-max gap-1.5">
+                            {navItems.map((item) => {
+                                const isActive = activeTab === item.id;
 
-                                    <div className={`
-                    z-10 transition-transform duration-300
-                    ${item.isAI ? 'text-purple-400 group-hover:scale-110 group-hover:drop-shadow-[0_0_8px_rgba(192,132,252,0.8)]' : ''}
-                    ${isActive && item.isAI ? 'scale-110 drop-shadow-[0_0_8px_rgba(192,132,252,0.8)]' : ''}
-                    ${isActive && !item.isAI ? 'scale-110' : ''}
-                  `}>
-                                        {item.icon}
-                                    </div>
+                                return (
+                                    <button
+                                        key={item.id}
+                                        onClick={() => handleNavClick(item)}
+                                        className={`
+                        relative flex flex-col items-center justify-center w-16 sm:w-20 md:w-24 h-12 rounded-xl transition-all duration-300 gap-1 overflow-hidden active:scale-95
+                        ${isActive && !item.isAI
+                                                ? 'bg-white text-slate-900 shadow-lg shadow-white/10'
+                                                : item.isAI && isActive
+                                                    ? 'text-white'
+                                                    : item.isAI
+                                                        ? 'text-slate-200 hover:text-white group'
+                                                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40'
+                                            }
+                      `}
+                                    >
+                                        {/* Premium AI Glow for Maya */}
+                                        {item.isAI && (
+                                            <div className={`absolute inset-0 bg-gradient-to-br from-indigo-600/30 via-purple-600/30 to-pink-600/30 transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
+                                        )}
 
-                                    <span className={`
-                    z-10 text-[10px] sm:text-xs font-bold leading-none tracking-tight
-                    ${item.isAI ? 'bg-gradient-to-l from-indigo-200 via-purple-200 to-pink-200 bg-clip-text text-transparent opacity-80 group-hover:opacity-100' : ''}
-                    ${isActive && item.isAI ? 'opacity-100 font-black' : ''}
-                  `}>
-                                        {item.label}
-                                    </span>
+                                        <div className={`
+                        z-10 transition-transform duration-300
+                        ${item.isAI ? 'text-purple-400 group-hover:scale-110 drop-shadow-[0_0_5px_rgba(192,132,252,0.4)]' : ''}
+                        ${isActive && item.isAI ? 'scale-110 drop-shadow-[0_0_8px_rgba(192,132,252,0.6)]' : ''}
+                        ${isActive && !item.isAI ? 'scale-105' : ''}
+                      `}>
+                                            {item.icon}
+                                        </div>
 
-                                    {/* Active Indicator for non-AI */}
-                                    {isActive && !item.isAI && (
-                                        <motion.div
-                                            layoutId="tab-active"
-                                            className="absolute bottom-1 w-1.5 h-1.5 bg-indigo-500 rounded-full"
-                                        />
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </nav>
+                                        <span className={`
+                        z-10 text-[10px] sm:text-xs font-bold leading-none tracking-tight
+                        ${item.isAI ? 'bg-gradient-to-l from-indigo-200 via-purple-200 to-pink-200 bg-clip-text text-transparent opacity-80 group-hover:opacity-100' : ''}
+                        ${isActive && item.isAI ? 'opacity-100 font-black' : ''}
+                      `}>
+                                            {item.label}
+                                        </span>
+
+                                        {/* Active Indicator for non-AI */}
+                                        {isActive && !item.isAI && (
+                                            <motion.div
+                                                layoutId="tab-active"
+                                                className="absolute bottom-1 w-1.5 h-1.5 bg-indigo-500 rounded-full"
+                                            />
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </nav>
+                </div>
 
                 {/* User Side Placeholder / Business Info */}
                 <div className="hidden lg:flex items-center justify-end w-48 gap-3 text-left">

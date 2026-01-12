@@ -847,7 +847,7 @@ export const useKDSData = () => {
 
                 // Only skip to history if order is completed AND has no active items
                 if (order.order_status === 'completed' && !hasActiveItems) {
-                    if (idx < 3) console.log(`⏭️ [DIAG] Skipping order ${order.order_number} - completed with no active items`);
+                    if (idx < 3) log(`⏭️ [DIAG] Skipping order ${order.order_number} - completed with no active items`);
                     return; // Skip entirely - belongs in History tab
                 }
 
@@ -1233,6 +1233,9 @@ export const useKDSData = () => {
 
         if (currentStatus === 'undo_ready') {
             nextStatus = 'in_progress';
+        } else if (statusLower === 'completed' || statusLower === 'shipped') {
+            // If already completed/shipped or explicitly told to move to these, keep it that way
+            nextStatus = statusLower;
         } else if (statusLower === 'pending') {
             // Pending orders (e.g. deliveries) go to 'new' first (acknowledgment)
             nextStatus = 'new';
@@ -1563,45 +1566,39 @@ export const useKDSData = () => {
 
             // 🌐 STEP 4: SUPABASE UPDATE
             try {
-                if (currentStatus === 'undo_ready' || nextStatus === 'in_progress') {
-                    await supabase.rpc('update_order_status_v3', {
-                        p_order_id: realOrderId,
-                        p_new_status: 'in_progress',
-                        p_item_status: 'in_progress',
-                        p_business_id: businessId
-                    });
-                } else if (nextStatus === 'ready') {
-                    const itemIds = orderToMove?.items?.flatMap(i => i.ids || [i.id]) || [];
-                    if (itemIds.length > 0) {
-                        await supabase.rpc('mark_items_ready_v2', { p_order_id: String(realOrderId).trim(), p_item_ids: itemIds });
-                    } else {
-                        await supabase.rpc('update_order_status_v3', {
-                            p_order_id: realOrderId,
-                            p_new_status: 'ready',
-                            p_business_id: businessId
-                        });
-                    }
-                    if (orderToMove?.customerPhone) {
-                        handleSendSms(orderId, orderToMove.customerName, orderToMove.customerPhone);
-                    }
-                    // Pending → New (acknowledgment)
-                    console.log('🌐 [SUPABASE] Acknowledging pending order via RPC:', realOrderId);
+                // Consolidate to use THE ONE TRUE RPC for all whole-card status updates
+                // This prevents "Ghost Items" (e.g. Grab & Go items) from being left behind
+                // because the RPC handles the item-status state machine on the server.
 
-                    const { data: rpcData, error: rpcError } = await supabase.rpc('update_order_status_v3', {
-                        p_order_id: realOrderId,
-                        p_new_status: 'new',
-                        p_item_status: 'new', // Also acknowledge all items
-                        p_business_id: businessId
-                    });
+                const rpcParams = {
+                    p_order_id: realOrderId,
+                    p_new_status: nextStatus,
+                    p_business_id: businessId
+                };
 
-                    if (rpcError) console.error('❌ [SUPABASE] Order acknowledgment error:', rpcError);
-                    else console.log('✅ [SUPABASE] Order acknowledged successfully:', rpcData);
-                } else if (nextStatus === 'completed') {
-                    const itemIds = orderToMove?.items?.flatMap(i => i.ids || [i.id]) || [];
-                    await supabase.rpc('complete_order_part_v2', { p_order_id: String(realOrderId).trim(), p_item_ids: itemIds, p_keep_order_open: false });
+                // Specific tweaks for certain transitions
+                if (nextStatus === 'new') {
+                    rpcParams.p_item_status = 'new';
+                } else if (currentStatus === 'undo_ready' || nextStatus === 'in_progress') {
+                    rpcParams.p_item_status = 'in_progress';
+                } else if (nextStatus === 'ready' || nextStatus === 'completed') {
+                    // Note: If p_item_status is NULL, update_order_status_v3 uses its internal
+                    // intelligent logic which is perfect for these transitions.
                 }
 
-                log('✅ [SERVER] Supabase update confirmed');
+                log('🌐 [SUPABASE] Calling update_order_status_v3', rpcParams);
+                const { data: rpcData, error: rpcError } = await supabase.rpc('update_order_status_v3', rpcParams);
+
+                if (rpcError) {
+                    console.error('❌ [SUPABASE] RPC Error:', rpcError);
+                    throw rpcError;
+                }
+
+                if (nextStatus === 'ready' && orderToMove?.customerPhone) {
+                    handleSendSms(orderId, orderToMove.customerName, orderToMove.customerPhone);
+                }
+
+                log('✅ [SERVER] Supabase update confirmed:', rpcData);
 
                 // ✅ Reset early delivered marks on Supabase if order moved to ready/completed
                 if (['ready', 'completed', 'shipped'].includes(nextStatus)) {

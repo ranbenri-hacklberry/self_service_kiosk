@@ -320,10 +320,11 @@ const ManagerKDS = () => {
             nextStatus = 'completed';
         }
 
-        // Direct RPC call as requested
-        const { error } = await supabase.rpc('update_order_status', {
+        // Use the new consolidated RPC V3 for robustness (handles item status sync)
+        const { error } = await supabase.rpc('update_order_status_v3', {
             p_order_id: orderId,
-            p_status: nextStatus
+            p_new_status: nextStatus,
+            p_business_id: currentUser?.business_id
         });
 
         if (error) {
