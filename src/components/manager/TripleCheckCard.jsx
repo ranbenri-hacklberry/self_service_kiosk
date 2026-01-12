@@ -14,10 +14,10 @@ import { Package, AlertTriangle, Sparkles, Minus, Plus, ChevronDown, Check, Sear
 const TripleCheckCard = ({
     item,
     orderedQty = null,
-    invoicedQty,
-    actualQty,
+    invoicedQty = 0,
+    actualQty = 0,
     onActualChange,
-    unitPrice,
+    unitPrice = 0,
     catalogPrice = 0,
     catalogItemName = null,
     catalogItemId = null,
@@ -161,30 +161,30 @@ const TripleCheckCard = ({
       `}
             dir="rtl"
         >
-            {/* Grid Layout with Headers */}
-            <div className={`grid ${gridCols} gap-3 items-center`}>
+            {/* Responsive Layout: Vertical on mobile, Grid on desktop */}
+            <div className={`flex flex-col md:grid md:${gridCols} gap-3 md:gap-4 items-stretch md:items-center`}>
 
-                {/* Column 1: Item Name - Two lines: Invoice name, then system name */}
-                <div className="flex flex-col min-w-0">
+                {/* Column 1: Item Name */}
+                <div className="flex flex-col min-w-0 mb-2 md:mb-0">
                     <span className="text-[10px] text-slate-400 mb-1">פריט</span>
                     <div className="flex items-start gap-2">
                         <Package size={14} className="text-slate-400 shrink-0 mt-0.5" />
                         <div className="flex flex-col min-w-0 flex-1">
                             {/* Line 1: Invoice name */}
-                            <span className={`font-bold text-sm text-slate-800 ${isLongName ? 'line-clamp-2' : 'truncate'}`}>
+                            <span className={`font-bold text-base md:text-sm text-slate-800 ${isLongName ? '' : 'truncate'}`}>
                                 {item.name}
                             </span>
 
-                            {/* Line 2: System/Catalog name OR Dropdown trigger */}
+                            {/* Line 2: System/Catalog name */}
                             {catalogItemName && catalogItemName !== item.name ? (
-                                <div className="flex items-center gap-1">
-                                    <span className="text-[11px] text-green-700 font-medium truncate">
+                                <div className="flex items-center gap-1 mt-0.5">
+                                    <span className="text-xs md:text-[11px] text-green-700 font-medium truncate">
                                         במערכת: {catalogItemName}
                                     </span>
                                     {onCatalogItemSelect && (
                                         <button
                                             onClick={() => setShowSuggestions(!showSuggestions)}
-                                            className="text-[10px] text-purple-600 hover:underline"
+                                            className="text-xs md:text-[10px] text-purple-600 font-bold hover:underline"
                                         >
                                             שנה
                                         </button>
@@ -193,11 +193,11 @@ const TripleCheckCard = ({
                             ) : isNew && onCatalogItemSelect ? (
                                 <button
                                     onClick={() => setShowSuggestions(!showSuggestions)}
-                                    className="flex items-center gap-1 text-[11px] text-purple-600 font-medium hover:text-purple-700"
+                                    className="flex items-center gap-1 mt-0.5 text-xs md:text-[11px] text-purple-600 font-medium hover:text-purple-700"
                                 >
-                                    <Search size={10} />
+                                    <Search size={12} />
                                     בחר פריט מהמערכת
-                                    <ChevronDown size={10} className={`transition-transform ${showSuggestions ? 'rotate-180' : ''}`} />
+                                    <ChevronDown size={12} className={`transition-transform ${showSuggestions ? 'rotate-180' : ''}`} />
                                 </button>
                             ) : null}
                         </div>
@@ -209,55 +209,49 @@ const TripleCheckCard = ({
                         )}
                     </div>
 
-                    {/* Suggestions Dropdown */}
+                    {/* Suggestions Dropdown (Floating on mobile) */}
                     {showSuggestions && onCatalogItemSelect && (
-                        <div className="mt-2 bg-white rounded-lg border border-gray-200 shadow-lg overflow-hidden max-h-[200px]">
-                            {/* Search input */}
+                        <div className="mt-2 bg-white rounded-lg border border-gray-200 shadow-xl overflow-hidden max-h-[300px] z-50">
                             <div className="p-2 border-b border-gray-100">
                                 <input
                                     type="text"
                                     placeholder="חפש פריט..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:border-purple-400"
+                                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-purple-400"
                                     autoFocus
                                 />
                             </div>
-                            {/* Suggestions list */}
-                            <div className="overflow-y-auto max-h-[140px]">
+                            <div className="overflow-y-auto max-h-[200px]">
                                 {suggestedItems.length > 0 ? (
                                     suggestedItems.map((sugItem) => (
                                         <button
                                             key={sugItem.id}
                                             onClick={() => handleSelectCatalogItem(sugItem)}
-                                            className={`w-full px-3 py-2 text-right text-sm hover:bg-purple-50 transition-colors flex items-center justify-between ${catalogItemId === sugItem.id ? 'bg-purple-100' : ''
-                                                }`}
+                                            className={`w-full px-4 py-3 text-right text-sm hover:bg-purple-50 transition-colors flex items-center justify-between border-b border-gray-50 last:border-0 ${catalogItemId === sugItem.id ? 'bg-purple-100' : ''}`}
                                         >
                                             <div className="flex flex-col items-start min-w-0">
-                                                <span className="truncate font-medium">{sugItem.name}</span>
-                                                <span className="text-[10px] text-gray-500">
+                                                <span className="truncate font-bold">{sugItem.name}</span>
+                                                <span className="text-[11px] text-gray-500">
                                                     {formatQtyWithUnit(sugItem.inventory_count_step || 1, sugItem.unit)}
                                                     {sugItem.category && ` • ${sugItem.category}`}
                                                 </span>
                                             </div>
                                             {catalogItemId === sugItem.id && (
-                                                <Check size={14} className="text-purple-600 shrink-0" />
+                                                <Check size={16} className="text-purple-600 shrink-0" />
                                             )}
                                         </button>
                                     ))
                                 ) : (
-                                    <div className="px-3 py-2 text-sm text-gray-400 text-center">
+                                    <div className="px-3 py-4 text-sm text-gray-400 text-center">
                                         לא נמצאו תוצאות
                                     </div>
                                 )}
                             </div>
-                            {/* Create new option */}
                             <div className="p-2 border-t border-gray-100 bg-gray-50">
                                 <button
-                                    onClick={() => {
-                                        handleSelectCatalogItem(null); // null = keep as new
-                                    }}
-                                    className="w-full px-2 py-1 text-sm text-purple-600 font-medium hover:bg-purple-100 rounded transition-colors"
+                                    onClick={() => handleSelectCatalogItem(null)}
+                                    className="w-full px-2 py-2 text-sm text-purple-600 font-bold hover:bg-purple-100 rounded-lg transition-colors"
                                 >
                                     השאר כפריט חדש
                                 </button>
@@ -266,75 +260,73 @@ const TripleCheckCard = ({
                     )}
                 </div>
 
-                {/* Column 2: Ordered */}
-                {hasOrderValue && (
-                    <div className="flex flex-col items-center">
-                        <span className="text-[10px] text-slate-400 mb-1">הוזמן</span>
-                        <span className="font-bold text-sm text-slate-600">{formatQtyWithUnit(orderedQty, item.unit)}</span>
-                    </div>
-                )}
+                {/* Mobile Row: Info Group (Ordered/Invoiced/Total) */}
+                <div className="flex items-center justify-between md:contents mb-3 md:mb-0 bg-slate-50 md:bg-transparent p-2 md:p-0 rounded-lg">
+                    {/* Ordered */}
+                    {hasOrderValue && (
+                        <div className="flex flex-col items-center flex-1">
+                            <span className="text-[10px] text-slate-400 md:mb-1">הוזמן</span>
+                            <span className="font-bold text-sm text-slate-600">{formatQtyWithUnit(orderedQty, item.unit)}</span>
+                        </div>
+                    )}
 
-                {/* Column 3: Invoiced (or placeholder if no invoice) */}
-                <div className="flex flex-col items-center">
-                    <span className="text-[10px] text-blue-500 mb-1">חשבונית</span>
-                    <span className="font-bold text-sm text-blue-700">
-                        {invoicedQty !== null ? formatQtyWithUnit(invoicedQty, item.unit) : '—'}
-                    </span>
+                    {/* Invoiced */}
+                    <div className="flex flex-col items-center flex-1 border-x border-gray-200 md:border-0">
+                        <span className="text-[10px] text-blue-500 md:mb-1">חשבונית</span>
+                        <span className="font-bold text-sm text-blue-700">
+                            {invoicedQty !== null ? formatQtyWithUnit(invoicedQty, item.unit) : '—'}
+                        </span>
+                    </div>
+
+                    {/* Price/Total - desktop only column 5 logic moved here for mobile */}
+                    <div className="flex flex-col items-end flex-1 md:hidden">
+                        <span className="text-[10px] text-slate-400">סה״כ</span>
+                        <span className="font-black text-sm text-slate-800">₪{totalValue}</span>
+                    </div>
                 </div>
 
-                {/* Column 4: Actual with mini stepper */}
-                <div className="flex flex-col items-center">
-                    <span className="text-[10px] text-green-600 mb-1">בפועל</span>
-                    <div className="flex items-center gap-1">
+                {/* Actual Column (Always prominent) */}
+                <div className="flex flex-col items-center bg-green-50/50 md:bg-transparent p-2 md:p-0 rounded-xl border border-green-100 md:border-0">
+                    <span className="text-[10px] text-green-600 mb-2 md:mb-1 font-bold md:font-normal">דיווח בפועל</span>
+                    <div className="flex items-center gap-3 md:gap-1">
                         <button
                             type="button"
                             disabled={actualQty <= 0}
                             onClick={() => {
-                                // Smart step down: snap to nearest step below
                                 const step = countStep || 1;
                                 const nearestBelow = Math.floor(actualQty / step) * step;
-                                // If already aligned, subtract step. If not aligned, snap down.
-                                const newVal = (Math.abs(actualQty - nearestBelow) < 0.001)
-                                    ? nearestBelow - step
-                                    : nearestBelow;
+                                const newVal = (Math.abs(actualQty - nearestBelow) < 0.001) ? nearestBelow - step : nearestBelow;
                                 onActualChange(Math.max(0, newVal));
                             }}
-                            className={`
-                                w-8 h-8 rounded-lg flex items-center justify-center transition-all
-                                ${actualQty <= 0
-                                    ? 'bg-slate-200 text-slate-400'
-                                    : 'bg-red-500 text-white hover:bg-red-600 active:scale-95'
-                                }
-                            `}
+                            className={`w-10 h-10 md:w-8 md:h-8 rounded-xl md:rounded-lg flex items-center justify-center transition-all ${actualQty <= 0 ? 'bg-slate-200 text-slate-400' : 'bg-red-500 text-white shadow-sm'}`}
                         >
-                            <Minus size={16} strokeWidth={3} />
+                            <Minus className="w-5 h-5 md:w-4 md:h-4" strokeWidth={3} />
                         </button>
 
-                        <span className="font-black text-sm text-slate-800 min-w-[35px] text-center">
-                            {formatQtyWithUnit(actualQty, item.unit, false)}
-                        </span>
+                        <div className="w-20 md:w-12 text-center">
+                            <span className="font-mono text-xl md:text-sm font-black text-slate-800">
+                                {formatQtyWithUnit(actualQty, item.unit, false)}
+                            </span>
+                            <div className="text-[9px] text-slate-400 font-bold md:hidden mt-0.5">{item.unit || 'יח׳'}</div>
+                        </div>
 
                         <button
                             type="button"
                             onClick={() => {
-                                // Smart step up: snap to nearest step above
                                 const step = countStep || 1;
                                 const nearestAbove = Math.ceil(actualQty / step) * step;
-                                // If already aligned, add step. If not aligned, snap up.
-                                const newVal = (Math.abs(actualQty - nearestAbove) < 0.001)
-                                    ? nearestAbove + step
-                                    : nearestAbove;
+                                const newVal = (Math.abs(actualQty - nearestAbove) < 0.001) ? nearestAbove + step : nearestAbove;
                                 onActualChange(newVal);
                             }}
-                            className="w-8 h-8 rounded-lg flex items-center justify-center bg-green-500 text-white hover:bg-green-600 active:scale-95 transition-all"
+                            className="w-10 h-10 md:w-8 md:h-8 rounded-xl md:rounded-lg flex items-center justify-center bg-green-500 text-white shadow-sm active:scale-95 transition-all"
                         >
-                            <Plus size={16} strokeWidth={3} />
+                            <Plus className="w-5 h-5 md:w-4 md:h-4" strokeWidth={3} />
                         </button>
                     </div>
                 </div>
 
-                {/* Column 5: Unit Price + Line Total */}
-                <div className="flex flex-col items-end min-w-0">
+                {/* Desktop-only Final Column */}
+                <div className="hidden md:flex flex-col items-end min-w-0">
                     <div className="flex flex-col items-end shrink-0">
                         <span className="text-[10px] text-slate-400 mb-0.5">סה״כ</span>
                         <span className="font-bold text-sm text-slate-800 whitespace-nowrap">₪{totalValue}</span>
@@ -374,15 +366,5 @@ TripleCheckCard.propTypes = {
     onCatalogItemSelect: PropTypes.func,
 };
 
-TripleCheckCard.defaultProps = {
-    orderedQty: null,
-    catalogPrice: 0,
-    catalogItemName: null,
-    catalogItemId: null,
-    isNew: false,
-    countStep: 1,
-    catalogItems: [],
-    onCatalogItemSelect: null,
-};
 
 export default React.memo(TripleCheckCard);

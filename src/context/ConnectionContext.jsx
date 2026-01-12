@@ -22,6 +22,8 @@ export const ConnectionProvider = ({ children }) => {
     });
     const [showOfflinePopup, setShowOfflinePopup] = useState(false);
     const [showOnlinePopup, setShowOnlinePopup] = useState(false);
+    const offlineTimeoutRef = useRef(null);
+    const GRACE_PERIOD_MS = 60000; // 60 seconds grace period (1 minute)
 
     const checkConnectivity = useCallback(async () => {
         let localOk = false;
@@ -90,9 +92,18 @@ export const ConnectionProvider = ({ children }) => {
 
         // Trigger offline popup if transition to offline (and not already shown)
         if (status === 'offline' && !showOfflinePopup && navigator.onLine) {
-            // navigator.onLine is true but ping failed -> Real internet issue
-            setShowOnlinePopup(false);
-            setShowOfflinePopup(true);
+            // Ping failed but browser says online - likely a filter or real internet issue
+            if (!offlineTimeoutRef.current) {
+                offlineTimeoutRef.current = setTimeout(() => {
+                    setShowOnlinePopup(false);
+                    setShowOfflinePopup(true);
+                }, GRACE_PERIOD_MS);
+            }
+        } else if (status === 'online' || status === 'cloud-only') {
+            if (offlineTimeoutRef.current) {
+                clearTimeout(offlineTimeoutRef.current);
+                offlineTimeoutRef.current = null;
+            }
         }
 
     }, [showOfflinePopup]);
@@ -108,6 +119,10 @@ export const ConnectionProvider = ({ children }) => {
     useEffect(() => {
         const handleOnline = () => {
             console.log('🌐 Device is now ONLINE');
+            if (offlineTimeoutRef.current) {
+                clearTimeout(offlineTimeoutRef.current);
+                offlineTimeoutRef.current = null;
+            }
             setShowOfflinePopup(false); // Close offline popup first
             setShowOnlinePopup(true);
             checkConnectivity();
@@ -118,10 +133,18 @@ export const ConnectionProvider = ({ children }) => {
             }, 3000);
         };
         const handleOffline = () => {
-            console.log('📴 Device is now OFFLINE');
-            setShowOnlinePopup(false); // <--- FIX: Close Online popup if open
-            setShowOfflinePopup(true);
-            // NOTE: No auto-dismiss - user must click button
+            console.log('📴 Device is now OFFLINE (starting grace period)');
+            setShowOnlinePopup(false);
+
+            // Only trigger popup after grace period
+            if (!offlineTimeoutRef.current) {
+                offlineTimeoutRef.current = setTimeout(() => {
+                    console.log('📴 Grace period ended - showing offline popup');
+                    setShowOfflinePopup(true);
+                    offlineTimeoutRef.current = null;
+                }, GRACE_PERIOD_MS);
+            }
+
             setState(prev => ({ ...prev, status: 'offline', cloudAvailable: false }));
         };
 

@@ -29,6 +29,7 @@ const InventoryScreen = () => {
 
   const [items, setItems] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [globalCatalog, setGlobalCatalog] = useState([]); // Master catalog_items
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -86,41 +87,72 @@ const InventoryScreen = () => {
 
 
   const fetchData = useCallback(async () => {
-    if (!currentUser?.business_id) return;
+    if (!currentUser?.business_id) {
+      console.warn('⚠️ No business_id for inventory fetch', currentUser);
+      return;
+    }
     setLoading(true);
     try {
+      console.log('📦 InventoryManager: Fetching data for business:', currentUser.business_id);
+
+      // 1. Fetch Suppliers
       const { data: suppliersData, error: supError } = await supabase
         .from('suppliers')
         .select('*')
         .eq('business_id', currentUser.business_id)
         .order('name');
-      if (supError) throw supError;
-      setSuppliers(suppliersData || []);
+      if (supError) {
+        console.error('Suppliers fetch error:', supError);
+      }
+      const finalSuppliers = suppliersData || [];
+      setSuppliers(finalSuppliers);
 
-      // Fetch employees for name mapping
-      const { data: employeesData } = await supabase
-        .from('employees')
-        .select('id, name')
-        .eq('business_id', currentUser.business_id);
+      // 2. Fetch Employees (Non-blocking)
       const employeeMap = {};
-      (employeesData || []).forEach(e => { employeeMap[e.id] = e.name; });
+      try {
+        const { data: employeesData } = await supabase
+          .from('employees')
+          .select('id, name')
+          .eq('business_id', currentUser.business_id);
+        if (employeesData) employeesData.forEach(e => { employeeMap[e.id] = e.name; });
+      } catch (e) { console.warn('Employees fetch failed', e); }
 
+      // 3. Fetch Inventory Items
       const { data: itemsData, error: itemError } = await supabase
         .from('inventory_items')
         .select(`*, supplier:suppliers(*)`)
         .eq('business_id', currentUser.business_id)
         .order('name')
         .range(0, 2000);
-      if (itemError) throw itemError;
 
-      // Map the counted_by name
-      const itemsWithNames = (itemsData || []).map(item => ({
+      if (itemError) {
+        console.error('Items fetch error:', itemError);
+      }
+
+      const finalItems = itemsData || [];
+
+      const itemsWithNames = finalItems.map(item => ({
         ...item,
         last_counted_by_name: item.last_counted_by ? employeeMap[item.last_counted_by] || null : null
       }));
       setItems(itemsWithNames);
+
+      // 4. Fetch Global Catalog
+      try {
+        const { data: catalogData, error: catalogError } = await supabase
+          .from('catalog_items')
+          .select('*')
+          .order('name');
+        if (!catalogError && catalogData) {
+          setGlobalCatalog(catalogData);
+        }
+      } catch (e) {
+        console.warn('Catalog fetch failed:', e);
+      }
+
+
     } catch (err) {
-      console.error('Error fetching inventory:', err);
+      console.error('❌ Error fetching manager inventory:', err);
     } finally {
       setLoading(false);
     }
@@ -184,31 +216,41 @@ const InventoryScreen = () => {
     suppliers.forEach(s => { groups[s.id] = { supplier: s, count: 0, isToday: isDeliveryToday(s) }; });
     groups['uncategorized'] = { supplier: { id: 'uncategorized', name: 'כללי / ללא ספק' }, count: 0, isToday: false };
 
+
     items.forEach(item => {
       let supId = item.supplier_id || 'uncategorized';
 
       // CRITICAL FIX: If supplier_id exists but is NOT in our valid suppliers list,
       // treat it as uncategorized to prevent phantom supplier groups
       if (supId !== 'uncategorized' && !validSupplierIds.has(supId)) {
-        console.warn(`⚠️ Item "${item.name}" (id=${item.id}) has invalid supplier_id=${supId}. Moving to uncategorized.`);
+        // console.warn(`⚠️ Item "${item.name}" has invalid supplier_id=${supId}`);
         supId = 'uncategorized';
       }
 
-      if (groups[supId]) groups[supId].count++;
-      else groups['uncategorized'].count++;
+      if (groups[supId]) {
+        groups[supId].count++;
+      } else {
+        groups['uncategorized'].count++;
+      }
     });
 
     const groupsArray = Object.values(groups);
-    // Filter matching search ONLY if searching for supplier name
-    // (Item search is handled inside the item view now, or we can filter groups if we want to search broadly)
-    // For now, let's keep it simple: Filter groups by supplier name OR if they have matching items.
 
+    // MANAGER MODE: Don't filter out suppliers with 0 items. 
+    // Otherwise, you can't click them to add the first item!
+    // Only filter if there is an active search query.
     return groupsArray
-      .filter(g => g.count > 0 || (search && g.supplier.name.toLowerCase().includes(search.toLowerCase())))
+      .filter(g => {
+        if (!search) return true; // Show everything when not searching
+        return g.supplier.name.toLowerCase().includes(search.toLowerCase()) || g.count > 0;
+      })
       .sort((a, b) => {
         if (a.isToday && !b.isToday) return -1;
         if (!a.isToday && b.isToday) return 1;
-        return a.supplier.name.localeCompare(b.supplier.name);
+        // Uncategorized always last
+        if (a.supplier.id === 'uncategorized') return 1;
+        if (b.supplier.id === 'uncategorized') return -1;
+        return (a.supplier.name || '').localeCompare(b.supplier.name || '');
       });
   }, [items, suppliers, search]);
 
@@ -301,7 +343,11 @@ const InventoryScreen = () => {
         `ספק: ${group.supplierName}\n` +
         `תאריך: ${new Date().toLocaleDateString('he-IL')}\n` +
         `----------------\n` +
-        group.items.map(i => `- ${i.itemName}: ${i.qty} ${i.unit}`).join('\n') +
+        group.items.map(i => {
+          // Rule: If unit is 'גרם', show as 'יחידות' in orders
+          const displayUnit = i.unit === 'גרם' ? 'יחידות' : i.unit;
+          return `- ${i.itemName}: ${i.qty} ${displayUnit}`;
+        }).join('\n') +
         `\n----------------\nתודה!`;
 
       // 4. Open Success Modal (to allow manual copy with user gesture)
@@ -757,8 +803,18 @@ const InventoryScreen = () => {
                 className="h-full overflow-y-auto p-4"
               >
                 <div className="flex flex-col gap-3 max-w-3xl mx-auto pb-20 pt-4 px-4">
-                  {/* Supplier List - Single Column, MenuManagerCard Style (Horizontal, h-[88px]) */}
-                  {supplierGroups.map(group => (
+                  {supplierGroups.length === 0 && !loading ? (
+                    <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                      <Truck size={48} className="mb-4 opacity-20" />
+                      <p className="font-bold">לא נמצאו ספקים</p>
+                      <button
+                        onClick={() => setShowSupplierModal(true)}
+                        className="mt-4 text-blue-600 font-bold hover:underline"
+                      >
+                        הוסף ספק חדש
+                      </button>
+                    </div>
+                  ) : supplierGroups.map(group => (
                     <div
                       key={group.supplier.id}
                       onClick={() => selectSupplier(group.supplier.id)}
@@ -867,7 +923,7 @@ const InventoryScreen = () => {
                               <span className="text-gray-800 font-medium">{item.itemName}</span>
                               <div className="flex items-center gap-3">
                                 <span className="font-mono bg-gray-100 px-2 rounded text-gray-600">
-                                  {item.qty} {item.unit}
+                                  {item.qty} {item.unit === 'גרם' ? 'יחידות' : item.unit}
                                 </span>
                                 <button onClick={() => handleOrderChange(item.itemId, 0)} className="text-red-400 hover:text-red-600">
                                   <X size={14} />

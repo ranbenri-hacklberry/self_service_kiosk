@@ -139,10 +139,10 @@ const ModeSelectionScreen = () => {
                         </div>
                     </button>
 
-                    {/* NEW: Inventory */}
+                    {/* NEW: Inventory - Visible on all devices now that it's responsive */}
                     <button
                         onClick={() => handleModeSelect('inventory')}
-                        className="hidden md:block group relative bg-white rounded-2xl p-5 hover:bg-blue-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-blue-100"
+                        className="group relative bg-white rounded-2xl p-5 hover:bg-blue-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-blue-100"
                     >
                         <div className="absolute top-3 left-3 bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
                             חדש

@@ -13,9 +13,12 @@ const COMMON_LOCATIONS = [
     'ארון אחסון',
 ];
 
-const InventoryItemCard = ({ item, onStockChange, onOrderChange, onLocationChange, draftOrderQty = 0 }) => {
+const InventoryItemCard = ({ item, onStockChange = null, onOrderChange = null, onLocationChange = null, draftOrderQty = 0 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
-    const [currentStock, setCurrentStock] = useState(Number(item.current_stock) || 0);
+    const [currentStock, setCurrentStock] = useState(() => {
+        const val = Number(item.current_stock);
+        return isNaN(val) ? 0 : val;
+    });
     const [orderQty, setOrderQty] = useState(draftOrderQty);
     const [hasStockChange, setHasStockChange] = useState(false);
     const [hasOrderChange, setHasOrderChange] = useState(false);
@@ -29,6 +32,28 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onLocationChang
 
     // Backup for restore on error
     const originalStock = useRef(Number(item.current_stock) || 0);
+
+    // The following code snippet appears to be misplaced. It contains logic related to fetching employees
+    // using 'supabase' and 'currentUser', which are not defined within this component (InventoryItemCard).
+    // Inserting it here would cause a syntax error and logical issues.
+    // It seems to belong in a parent component like 'InventoryScreen.jsx'.
+    // Therefore, I am skipping the insertion of this specific snippet to maintain a syntactically correct file.
+    /*
+      // Fetch employees for name mapping - wrap in nested try/catch to prevent blocking items fetch
+      const employeeMap = {};
+      try {
+        const { data: employeesData, error: empError } = await supabase
+          .from('employees')
+          .select('id, name')
+          .eq('business_id', currentUser.business_id);
+        
+        if (!empError && employeesData) {
+          employeesData.forEach(e => { employeeMap[e.id] = e.name; });
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not fetch employees for inventory mapping:', e);
+      }
+    */
 
     // Get step values with safe parsing
     const countStep = useMemo(() => {
@@ -73,23 +98,13 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onLocationChang
         setOrderQty(draftOrderQty);
     }, [draftOrderQty]);
 
-    // Smart step for stock - useCallback for performance
+    // Smart step for stock - Always use gram-based countStep
     const handleStockChange = useCallback((delta) => {
         const step = countStep;
-        const epsilon = 0.0001; // Threshold for floating point comparisons
-        let newVal;
 
-        if (delta > 0) {
-            // Snap to next Step multiple
-            // e.g. Current=2.89, Step=0.5 -> (2.89+0.0001)/0.5 = 5.78 -> ceil=6 -> 6*0.5 = 3.0
-            // e.g. Current=3.0, Step=0.5 -> (3.0+0.0001)/0.5 = 6.0002 -> ceil=7 -> 7*0.5 = 3.5
-            newVal = Math.ceil((currentStock + epsilon) / step) * step;
-        } else {
-            // Snap to previous Step multiple
-            newVal = Math.floor((currentStock - epsilon) / step) * step;
-        }
+        // Add/Subtract the step (which is in grams)
+        let newVal = currentStock + (delta * step);
 
-        // Handle floating point precision issues (e.g. 3.000000004)
         newVal = parseFloat(newVal.toFixed(4));
         newVal = Math.max(0, newVal);
 
@@ -154,13 +169,35 @@ const InventoryItemCard = ({ item, onStockChange, onOrderChange, onLocationChang
 
 
 
-    // Display convert logic
+    // Display convert logic: If weight_per_unit exists, show units, otherwise fallback to KG/G
     const { displayValue, displayUnit } = useMemo(() => {
-        if (item.unit === 'גרם' && currentStock >= 1000) {
-            return { value: (currentStock / 1000).toFixed(2), unit: 'ק״ג' };
+        const wpu = parseFloat(item.weight_per_unit) || 0;
+        const baseUnit = item.unit || '';
+
+        // CASE A: We have a package weight defined (e.g. 1000g per unit)
+        if (wpu > 1) {
+            const units = currentStock / wpu;
+            // If it's a whole number, show without decimals, otherwise 1 decimal
+            return {
+                displayValue: units % 1 === 0 ? units : units.toFixed(1),
+                displayUnit: 'יח׳'
+            };
         }
-        return { value: currentStock, unit: item.unit };
-    }, [currentStock, item.unit]);
+
+        // CASE B: Standard Grams to KG conversion
+        let val = currentStock;
+        let unit = baseUnit;
+
+        if (unit === 'גרם' && currentStock >= 1000) {
+            val = (currentStock / 1000).toFixed(1);
+            unit = 'ק״ג';
+        } else if (unit === 'מ״ל' && currentStock >= 1000) {
+            val = (currentStock / 1000).toFixed(1);
+            unit = 'ליטר';
+        }
+
+        return { displayValue: val, displayUnit: unit };
+    }, [currentStock, item.unit, item.weight_per_unit]);
 
     return (
         <div className={`bg-white rounded-xl border transition-all ${isExpanded ? 'border-blue-200 shadow-md' : 'border-gray-100 shadow-sm'}`}>
@@ -410,11 +447,5 @@ InventoryItemCard.propTypes = {
     draftOrderQty: PropTypes.number,
 };
 
-InventoryItemCard.defaultProps = {
-    draftOrderQty: 0,
-    onStockChange: null,
-    onOrderChange: null,
-    onLocationChange: null,
-};
 
 export default React.memo(InventoryItemCard);

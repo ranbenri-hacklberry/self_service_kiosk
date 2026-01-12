@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { Search, Truck, Plus, X, ArrowRight, Package, Save, Check, RefreshCw, ChevronLeft, Trash2, Edit2, AlertTriangle, ChevronDown, ChevronUp, Clock, House, Camera, Upload, ScanLine } from 'lucide-react';
+import { Search, Truck, Plus, X, ArrowRight, Package, Save, Check, RefreshCw, ChevronLeft, ChevronRight, Trash2, Edit2, AlertTriangle, ChevronDown, ChevronUp, Clock, House, Camera, Upload, ScanLine } from 'lucide-react';
 import ConfirmationModal from '../../../components/ui/ConfirmationModal';
 import ConnectionStatusBar from '../../../components/ConnectionStatusBar';
 import BusinessInfoBar from '../../../components/BusinessInfoBar';
@@ -205,6 +205,13 @@ const KDSInventoryScreen = ({ onExit }) => {
     const [suppliers, setSuppliers] = useState([]);
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
+    const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
+
+    useEffect(() => {
+        const handleResize = () => setIsDesktop(window.innerWidth >= 768);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     // Incoming Orders State
     const [incomingOrders, setIncomingOrders] = useState([]);
@@ -1335,7 +1342,7 @@ const KDSInventoryScreen = ({ onExit }) => {
                     <p>כדי לצפות ולעדכן פריטי מלאי</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-2 gap-2 auto-rows-max">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 auto-rows-max pb-24">
                     {/* Search Bar inside Grid area if needed, or stick to top */}
                     {filteredItems.map(item => {
                         const currentStock = stockUpdates[item.id] !== undefined ? stockUpdates[item.id] : item.current_stock;
@@ -1449,16 +1456,16 @@ const KDSInventoryScreen = ({ onExit }) => {
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-heebo" dir="rtl">
-            {/* Header & Tabs - Single Line Layout */}
-            <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-3 flex items-center border-b border-gray-200 gap-6">
+            {/* Header & Tabs - Responsive Layout */}
+            <div className="bg-white shadow-sm z-20 shrink-0 px-4 md:px-6 py-2 md:py-3 flex flex-col md:flex-row items-center border-b border-gray-200 gap-3 md:gap-6">
 
                 {/* Right Side: Home + Tabs */}
-                <div className="flex items-center gap-3 flex-1">
+                <div className="flex items-center gap-3 w-full md:flex-1">
                     {/* Home button - rightmost in RTL */}
                     {onExit && (
                         <button
                             onClick={onExit}
-                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors shrink-0"
                             title="יציאה למסך הראשי"
                         >
                             <House size={22} />
@@ -1466,30 +1473,30 @@ const KDSInventoryScreen = ({ onExit }) => {
                     )}
 
                     {/* Tabs */}
-                    <div className="flex bg-gray-100 p-1 rounded-xl shrink-0">
-                        <button onClick={() => setActiveTab('counts')} className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${activeTab === 'counts' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                            <Package size={18} /> ספירה ודיווח
+                    <div className="flex bg-gray-100 p-1 rounded-xl flex-1 md:flex-none overflow-x-auto no-scrollbar">
+                        <button onClick={() => { setActiveTab('counts'); setSelectedSupplierId(null); }} className={`px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-bold transition flex items-center gap-1.5 md:gap-2 whitespace-nowrap ${activeTab === 'counts' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                            <Package size={16} /> ספירה ודיווח
                         </button>
-                        <button onClick={() => setActiveTab('incoming')} className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${activeTab === 'incoming' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                            <Truck size={18} /> משלוחים בדרך
-                            {incomingOrders.length > 0 && <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-xs">{incomingOrders.length}</span>}
+                        <button onClick={() => { setActiveTab('incoming'); setSelectedOrderId(null); }} className={`px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-bold transition flex items-center gap-1.5 md:gap-2 whitespace-nowrap ${activeTab === 'incoming' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                            <Truck size={16} /> משלוחים בדרך
+                            {incomingOrders.length > 0 && <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px]">{incomingOrders.length}</span>}
                         </button>
-                        <button onClick={fetchData} className="px-3 text-gray-400 hover:text-blue-500 transition ml-1" title="רענן נתונים">
-                            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+                        <button onClick={fetchData} className="px-2 text-gray-400 hover:text-blue-500 transition" title="רענן נתונים">
+                            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                         </button>
                     </div>
                 </div>
 
-                {/* Center - Clock & Connection */}
-                <div className="flex items-center gap-3 px-4">
+                {/* Center - Clock & Connection (Hidden on very small screens if needed, or compact) */}
+                <div className="hidden md:flex items-center gap-3 px-4 border-l border-r border-gray-100">
                     <div className="text-lg font-black text-slate-700">
                         {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
                     </div>
                     <ConnectionStatusBar isIntegrated={true} />
                 </div>
 
-                {/* Left Side (RTL = far left): Music */}
-                <div className="flex items-center gap-2 flex-1 justify-end">
+                {/* Left Side (RTL = far left): Music - Hidden on mobile header to save space */}
+                <div className="hidden md:flex items-center gap-2 flex-1 justify-end">
                     <MiniMusicPlayer />
                 </div>
             </div>
@@ -1500,13 +1507,13 @@ const KDSInventoryScreen = ({ onExit }) => {
                     {activeTab === 'counts' && (
                         <motion.div
                             key="counts"
-                            className="h-full flex"
+                            className="h-full flex flex-col md:flex-row"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                         >
-                            {/* Right Column: Suppliers (1/3) */}
-                            <div className="w-1/3 border-l border-gray-200 bg-white h-full min-h-0 flex flex-col z-10 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">
+                            {/* Right Column: Suppliers (Full on mobile, 1/3 on desktop) */}
+                            <div className={`${(selectedSupplierId && !isDesktop) ? 'hidden' : 'w-full md:w-1/3'} border-l border-gray-200 bg-white h-full min-h-0 flex flex-col z-10 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]`}>
                                 <div className="p-4 bg-gray-50/50 border-b border-gray-100 shrink-0">
                                     <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">ספקים ({supplierGroups.length})</h3>
                                 </div>
@@ -1515,9 +1522,21 @@ const KDSInventoryScreen = ({ onExit }) => {
                                 </div>
                             </div>
 
-                            {/* Left/Center Column: Items (2/3) */}
-                            <div className="w-2/3 h-full min-h-0 bg-slate-50/50 p-4">
-                                {renderItemsGrid()}
+                            {/* Left/Center Column: Items (Full on mobile if entry selected, 2/3 on desktop) */}
+                            <div className={`${(!selectedSupplierId && !isDesktop) ? 'hidden' : 'w-full md:w-2/3'} h-full min-h-0 bg-slate-50/50 p-2 md:p-4 flex flex-col`}>
+                                {/* Mobile Back Button */}
+                                {!isDesktop && selectedSupplierId && (
+                                    <button
+                                        onClick={() => setSelectedSupplierId(null)}
+                                        className="mb-3 flex items-center gap-2 text-blue-600 font-bold bg-white p-3 rounded-xl shadow-sm border border-blue-100 active:scale-95 transition-all"
+                                    >
+                                        <ChevronRight size={20} />
+                                        <span>חזרה לרשימת ספקים</span>
+                                    </button>
+                                )}
+                                <div className="flex-1 min-h-0">
+                                    {renderItemsGrid()}
+                                </div>
                             </div>
                         </motion.div>
                     )}
@@ -1525,13 +1544,13 @@ const KDSInventoryScreen = ({ onExit }) => {
                     {activeTab === 'incoming' && (
                         <motion.div
                             key="incoming"
-                            className="h-full flex"
+                            className="h-full flex flex-col md:flex-row"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                         >
                             {/* Right Column: Orders List OR Supplier Info when session active */}
-                            <div className="w-1/3 border-l border-gray-200 bg-white h-full flex flex-col z-10 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">
+                            <div className={`${(receivingSession || selectedOrderId) && !isDesktop ? 'hidden' : 'w-full md:w-1/3'} border-l border-gray-200 bg-white h-full flex flex-col z-10 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]`}>
                                 {receivingSession ? (
                                     // Show supplier and document info when session is active
                                     <div className="h-full flex flex-col">
@@ -1671,7 +1690,34 @@ const KDSInventoryScreen = ({ onExit }) => {
                             </div>
 
                             {/* Center Column: Triple-Check OR Order Details */}
-                            <div className="w-2/3 h-full bg-slate-50/50 p-4 overflow-hidden flex flex-col">
+                            <div className={`${(!receivingSession && !selectedOrderId) && !isDesktop ? 'hidden' : 'w-full md:w-2/3'} h-full bg-slate-50/50 p-2 md:p-4 overflow-hidden flex flex-col`}>
+                                {/* Mobile Back Button */}
+                                {!isDesktop && (receivingSession || selectedOrderId) && (
+                                    <button
+                                        onClick={() => {
+                                            if (receivingSession) {
+                                                setConfirmModal({
+                                                    isOpen: true,
+                                                    title: 'ביטול קבלה',
+                                                    message: 'האם אתה בטוח שברצונך לצאת? הנתונים שנקלטו יישמרו כטיוטה.',
+                                                    variant: 'warning',
+                                                    confirmText: 'צא',
+                                                    onConfirm: () => {
+                                                        setReceivingSession(null);
+                                                        setSelectedOrderId(null);
+                                                        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                                    }
+                                                });
+                                            } else {
+                                                setSelectedOrderId(null);
+                                            }
+                                        }}
+                                        className="mb-3 flex items-center gap-2 text-blue-600 font-bold bg-white p-3 rounded-xl shadow-sm border border-blue-100 active:scale-95 transition-all shrink-0"
+                                    >
+                                        <ChevronRight size={20} />
+                                        <span>חזרה לרשימת משלוחים</span>
+                                    </button>
+                                )}
                                 {/* Scanning State */}
                                 {uiScanning && (
                                     <ScanningAnimation
@@ -1734,9 +1780,9 @@ const KDSInventoryScreen = ({ onExit }) => {
                                         </div>
 
                                         {/* Footer - Total & Actions */}
-                                        <div className="shrink-0 space-y-4 pt-4 border-t border-gray-200 bg-white -mx-4 px-4 sticky bottom-0">
+                                        <div className="shrink-0 space-y-4 pt-4 border-t border-gray-200 bg-white -mx-4 px-4 sticky bottom-0 z-30">
                                             {/* Compact Summary Grid aligned with Cards */}
-                                            <div className={`grid ${receivingSession.orderId ? 'grid-cols-[3fr_80px_80px_130px_1fr]' : 'grid-cols-[3fr_80px_130px_1fr]'} gap-3 items-start px-3 py-2 bg-slate-50 rounded-xl border border-slate-200`}>
+                                            <div className={`grid ${receivingSession.orderId ? 'grid-cols-3 md:grid-cols-[3fr_80px_80px_130px_1fr]' : 'grid-cols-3 md:grid-cols-[3fr_80px_130px_1fr]'} gap-3 items-start px-3 py-2 bg-slate-50 rounded-xl border border-slate-200 shadow-inner`}>
                                                 {/* Col 1: Counts */}
                                                 <div className="text-right">
                                                     <span className="font-black text-sm text-slate-700 block">
@@ -1804,22 +1850,26 @@ const KDSInventoryScreen = ({ onExit }) => {
                                                     onClick={() => {
                                                         setReceivingSession(null);
                                                         resetOCR();
+                                                        setSelectedOrderId(null);
                                                     }}
-                                                    className="px-6 py-4 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-colors"
+                                                    className="hidden md:block px-6 py-4 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-colors"
                                                 >
                                                     ביטול
                                                 </button>
                                                 <button
                                                     onClick={confirmReceipt}
                                                     disabled={isConfirmingReceipt}
-                                                    className="flex-1 py-4 bg-green-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-700 disabled:opacity-50 shadow-lg transition-all"
+                                                    className="flex-1 px-6 py-4 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl font-black shadow-lg shadow-green-200 hover:shadow-xl active:scale-95 transition-all text-lg flex items-center justify-center gap-2"
                                                 >
                                                     {isConfirmingReceipt ? (
-                                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                        <>
+                                                            <RefreshCw size={22} className="animate-spin" />
+                                                            מעדכן מלאי...
+                                                        </>
                                                     ) : (
                                                         <>
-                                                            <Check size={20} />
-                                                            אישור קבלה
+                                                            <Check size={22} strokeWidth={3} />
+                                                            אשר ועדכן מלאי
                                                         </>
                                                     )}
                                                 </button>
