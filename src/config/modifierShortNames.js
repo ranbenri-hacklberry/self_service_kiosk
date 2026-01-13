@@ -66,8 +66,14 @@ export const MOD_COLORS = {
  * @param {string} fullName - השם המלא מהDB
  * @returns {string|null} - השם הקצר, או null אם צריך להסתיר
  */
-export const getShortName = (fullName) => {
-    if (!fullName) return null;
+export const getShortName = (nameInput) => {
+    if (!nameInput) return null;
+
+    // Robustness: Handle objects if they leak through
+    const fullName = (typeof nameInput === 'object')
+        ? (nameInput.he || nameInput.name || nameInput.text || JSON.stringify(nameInput))
+        : String(nameInput);
+
     const trimmed = fullName.trim();
 
     // בדיקה אם צריך להסתיר

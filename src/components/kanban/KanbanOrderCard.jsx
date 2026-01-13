@@ -1,5 +1,5 @@
 import React, { useState, useCallback, memo, useMemo } from 'react';
-import { Clock, Edit, MapPin, Package, Phone, Truck, Eye, AlertCircle, Image as ImageIcon } from 'lucide-react';
+import { Clock, Edit, MapPin, Package, Phone, Truck, Eye, AlertCircle, Image as ImageIcon, Check } from 'lucide-react';
 import { sortItems } from '../../utils/kdsUtils';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
@@ -15,7 +15,8 @@ const KanbanOrderCard = memo(({
   isDriverView,
   dragAttributes,
   dragListeners,
-  onPaymentProofAction // 🆕 Action for approve/reject
+  onPaymentProofAction, // 🆕 Action for approve/reject
+  onMarkSeen // 🆕
 }) => {
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -32,9 +33,12 @@ const KanbanOrderCard = memo(({
   const statusStyles = useMemo(() => {
     const isUnpaid = isPaid === false;
     const isDelayedCard = order.type === 'delayed';
+    const isPending = statusLower === 'pending';
+    const isUnseen = !order.seen_at;
 
     if (isUnpaid) return 'border-t-[6px] border-red-500 shadow-sm';
     if (isDelayedCard) return 'border-t-[6px] border-slate-400 shadow-inner bg-slate-100 opacity-90';
+    if (isPending && isUnseen) return 'border-t-[6px] border-blue-400 shadow-md animate-pulse bg-blue-50/50';
     if (statusLower === 'pending') return 'border-t-[6px] border-amber-500 shadow-md animate-pulse bg-amber-50/30';
     if (statusLower === 'new') return 'border-t-[6px] border-green-500 shadow-md';
     if (statusLower === 'in_progress' || statusLower === 'in_prep') return 'border-t-[6px] border-yellow-500 shadow-lg ring-1 ring-yellow-100';
@@ -42,7 +46,7 @@ const KanbanOrderCard = memo(({
     if (statusLower === 'shipped') return 'border-t-[6px] border-blue-500 shadow-md';
 
     return 'border-gray-200 shadow-sm';
-  }, [order.type, statusLower, isPaid]);
+  }, [order.type, statusLower, isPaid, order.seen_at]);
 
   const unifiedItems = useMemo(() => sortItems(order.items || []), [order.items]);
 
@@ -221,17 +225,21 @@ const KanbanOrderCard = memo(({
         )}
 
         <div className="flex gap-2">
-          {/* Saw It Button for Pending */}
-          {statusLower === 'pending' && (
+          {statusLower === 'pending' && !order.seen_at && (
             <button
-              onClick={(e) => { e.stopPropagation(); onOrderStatusUpdate?.(order.id, 'new'); }}
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (onMarkSeen) {
+                  setIsUpdating(true);
+                  await onMarkSeen(order.id);
+                  setIsUpdating(false);
+                }
+              }}
               onPointerDown={(e) => e.stopPropagation()}
-              className="flex-1 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-blue-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+              className="w-full py-2.5 bg-blue-600 text-white rounded-xl font-black text-lg shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 mt-1"
             >
-              <div className="flex items-center gap-2">
-                <Eye size={16} />
-                <span>ראיתי</span>
-              </div>
+              <Check size={20} />
+              <span>{isUpdating ? 'מעדכן...' : 'ראיתי!'}</span>
             </button>
           )}
 
@@ -243,16 +251,6 @@ const KanbanOrderCard = memo(({
             >
               <Truck size={16} />
               <span>מסור לשליח</span>
-            </button>
-          )}
-
-          {onPaymentCollected && !isPaid && !order.payment_screenshot_url && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onPaymentCollected(order); }}
-              onPointerDown={(e) => e.stopPropagation()} // 🛑 Prevent drag
-              className="flex-1 py-2 bg-amber-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-amber-600 active:scale-95 transition-all"
-            >
-              ₪{order.totalAmount?.toFixed(0) || order.total_amount?.toFixed(0)} לתשלום
             </button>
           )}
 

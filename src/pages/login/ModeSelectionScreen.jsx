@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Monitor, ChefHat, LogOut, BarChart3, Coffee, Users, Music, ShieldAlert, Package, List, LayoutGrid, Truck, ShoppingCart } from 'lucide-react';
+import WhatsNewModal from '../../components/WhatsNewModal';
 
 const ModeSelectionScreen = () => {
     const navigate = useNavigate();
     const { currentUser, setMode, logout, appVersion } = useAuth();
+    const [showWhatsNew, setShowWhatsNew] = useState(true);
 
     // Check if user is a manager/admin (case-insensitive)
     const accessLevel = (currentUser?.access_level || '').toLowerCase();
@@ -139,7 +141,27 @@ const ModeSelectionScreen = () => {
                         </div>
                     </button>
 
-                    {/* NEW: Inventory - Visible on all devices now that it's responsive */}
+                    {/* 3. Prep Tasks - Reordered to be before Inventory */}
+                    <button
+                        onClick={() => handleModeSelect('prep')}
+                        className="group relative bg-white rounded-2xl p-5 hover:bg-indigo-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-indigo-100"
+                    >
+                        <div className="absolute top-3 left-3 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                            חדש
+                        </div>
+                        <div className="absolute top-0 left-0 w-20 h-20 bg-indigo-100 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
+                        <div className="relative z-10">
+                            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
+                                <List size={20} strokeWidth={2.5} />
+                            </div>
+                            <h2 className="text-xl font-black text-slate-900 mb-1">משימות</h2>
+                            <p className="text-slate-500 text-sm leading-relaxed font-medium">
+                                פתיחה, סגירה והכנות
+                            </p>
+                        </div>
+                    </button>
+
+                    {/* 4. Inventory - Reordered after Prep Tasks */}
                     <button
                         onClick={() => handleModeSelect('inventory')}
                         className="group relative bg-white rounded-2xl p-5 hover:bg-blue-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-blue-100"
@@ -155,26 +177,6 @@ const ModeSelectionScreen = () => {
                             <h2 className="text-xl font-black text-slate-900 mb-1">ניהול מלאי</h2>
                             <p className="text-slate-500 text-sm leading-relaxed font-medium">
                                 ספירות מלאי והזמנות רכש
-                            </p>
-                        </div>
-                    </button>
-
-                    {/* NEW: Prep Tasks */}
-                    <button
-                        onClick={() => handleModeSelect('prep')}
-                        className="hidden md:block group relative bg-white rounded-2xl p-5 hover:bg-indigo-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-indigo-100"
-                    >
-                        <div className="absolute top-3 left-3 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
-                            חדש
-                        </div>
-                        <div className="absolute top-0 left-0 w-20 h-20 bg-indigo-100 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
-                        <div className="relative z-10">
-                            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
-                                <List size={20} strokeWidth={2.5} />
-                            </div>
-                            <h2 className="text-xl font-black text-slate-900 mb-1">משימות</h2>
-                            <p className="text-slate-500 text-sm leading-relaxed font-medium">
-                                פתיחה, סגירה והכנות
                             </p>
                         </div>
                     </button>
@@ -292,6 +294,8 @@ const ModeSelectionScreen = () => {
                     </div>
                 </div>
             </div>
+            {/* What's New Modal - shows once per version after login */}
+            {showWhatsNew && <WhatsNewModal onClose={() => setShowWhatsNew(false)} />}
         </div>
     );
 };

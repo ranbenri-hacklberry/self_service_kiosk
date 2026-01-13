@@ -26,7 +26,8 @@ export function DraggableOrderCard({
     onReadyItems,
     onSmsClick,
     isDriverView = false,
-    onPaymentProofAction // 🆕
+    onPaymentProofAction, // 🆕
+    onFireItems // 🆕
 }) {
     const {
         attributes,
@@ -117,6 +118,7 @@ export function DraggableOrderCard({
                 dragAttributes={attributes} // 🆕 Pass listeners to child
                 dragListeners={listeners}   // 🆕 Pass listeners to child
                 onPaymentProofAction={onPaymentProofAction} // 🆕
+                onFireItems={onFireItems} // 🆕
             />
         </div>
     );

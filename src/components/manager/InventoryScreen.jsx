@@ -55,7 +55,7 @@ const InventoryScreen = () => {
     unit: 'יח׳', // or 'ק״ג'
     cost_per_unit: 0,
     count_step: 1,
-    unit_weight_grams: 0,
+    weight_per_unit: 0,
     min_order: 1,
     order_step: 1,
     case_quantity: 1
@@ -391,9 +391,10 @@ const InventoryScreen = () => {
           unit: updateData.unit,
           cost_per_unit: updateData.cost_per_unit,
           count_step: updateData.count_step,
-          unit_weight_grams: updateData.unit_weight_grams,
+          weight_per_unit: updateData.weight_per_unit,
           min_order: updateData.min_order,
           order_step: updateData.order_step,
+          item_type: updateData.unit === 'יח׳' ? 'unit' : 'weight',
           updated_at: new Date()
         })
         .eq('id', itemId);
@@ -401,7 +402,7 @@ const InventoryScreen = () => {
       if (error) throw error;
 
       // Refresh items
-      await fetchItems();
+      await fetchData();
 
       // Show success message
       setConfirmModal({
@@ -680,7 +681,7 @@ const InventoryScreen = () => {
         business_id: currentUser.business_id,
         current_stock: 0, // Default for new items
         count_step: newItemData.count_step,
-        unit_weight_grams: newItemData.unit === 'יח׳' ? newItemData.unit_weight_grams : null, // Only if type is unit
+        weight_per_unit: newItemData.weight_per_unit, // Fixed variable name
         case_quantity: newItemData.case_quantity || 1, // Ensure valid integer
         min_order: newItemData.min_order,
         order_step: newItemData.order_step,
@@ -877,6 +878,7 @@ const InventoryScreen = () => {
                         onStockChange={handleStockUpdate}
                         onOrderChange={(itemId, val) => handleOrderChange(itemId, val, item)}
                         onLocationChange={handleLocationUpdate}
+                        onUpdate={handleItemUpdate}
                       />
                     ))
                   )}
@@ -1096,17 +1098,15 @@ const InventoryScreen = () => {
                 {/* 2. Configuration Pickers */}
                 <div className="space-y-3">
 
-                  {/* Unit Weight (Only if Units) - e.g. "Pack of Cookies (200g)" */}
-                  {newItemData.unit === 'יח׳' && (
-                    <NumberPicker
-                      label="משקל יחידה (גרם)"
-                      value={newItemData.unit_weight_grams || 0}
-                      onChange={v => setNewItemData({ ...newItemData, unit_weight_grams: v })}
-                      unit="גרם"
-                      stepSmall={10}
-                      stepLarge={100}
-                    />
-                  )}
+                  {/* Package Weight (Replacement for unit_weight_grams) */}
+                  <NumberPicker
+                    label="משקל אריזה (גרם)"
+                    value={newItemData.weight_per_unit || 0}
+                    onChange={v => setNewItemData({ ...newItemData, weight_per_unit: v })}
+                    unit="גרם"
+                    stepSmall={10}
+                    stepLarge={100}
+                  />
 
                   {/* Count Step - Hidden for single units (always 1) */}
                   {newItemData.unit !== 'יח׳' && (

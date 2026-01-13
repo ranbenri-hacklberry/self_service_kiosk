@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, ChevronDown, Minus, Plus, ShoppingCart, Save, History, User, AlertCircle, RotateCcw, MapPin } from 'lucide-react';
+import { Package, ChevronDown, Minus, Plus, ShoppingCart, Save, History, User, AlertCircle, RotateCcw, MapPin, Settings, X } from 'lucide-react';
 
 // Common storage locations for autocomplete
 const COMMON_LOCATIONS = [
@@ -13,7 +13,7 @@ const COMMON_LOCATIONS = [
     'ארון אחסון',
 ];
 
-const InventoryItemCard = ({ item, onStockChange = null, onOrderChange = null, onLocationChange = null, draftOrderQty = 0 }) => {
+const InventoryItemCard = ({ item, onStockChange = null, onOrderChange = null, onLocationChange = null, onUpdate = null, draftOrderQty = 0 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [currentStock, setCurrentStock] = useState(() => {
         const val = Number(item.current_stock);
@@ -24,6 +24,8 @@ const InventoryItemCard = ({ item, onStockChange = null, onOrderChange = null, o
     const [hasOrderChange, setHasOrderChange] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editData, setEditData] = useState(null);
 
     // Location state
     const [location, setLocation] = useState(item.location || '');
@@ -167,6 +169,34 @@ const InventoryItemCard = ({ item, onStockChange = null, onOrderChange = null, o
         return 'ספירה ידנית';
     }, [lastCountSource, lastCountedByName]);
 
+    const handleOpenEdit = (e) => {
+        e.stopPropagation();
+        setEditData({
+            name: item.name,
+            unit: item.unit || 'יח׳',
+            cost_per_unit: item.cost_per_unit || 0,
+            count_step: item.count_step || 1,
+            weight_per_unit: item.weight_per_unit || 0,
+            min_order: item.min_order || 1,
+            order_step: item.order_step || 1
+        });
+        setShowEditModal(true);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!onUpdate) return;
+        setSaving(true);
+        try {
+            await onUpdate(item.id, editData);
+            setShowEditModal(false);
+        } catch (e) {
+            console.error('Update failed:', e);
+            alert('עדכון נכשל');
+        } finally {
+            setSaving(false);
+        }
+    };
+
 
 
     // Display convert logic: If weight_per_unit exists, show units, otherwise fallback to KG/G
@@ -230,6 +260,15 @@ const InventoryItemCard = ({ item, onStockChange = null, onOrderChange = null, o
                             <span className="font-bold text-sm">+{orderQty}</span>
                         </div>
                     )}
+
+                    {/* Edit Button */}
+                    <button
+                        onClick={handleOpenEdit}
+                        className="p-1.5 bg-gray-50 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="ערוך מאפיינים"
+                    >
+                        <Settings size={16} />
+                    </button>
 
                     <ChevronDown size={18} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                 </div>
@@ -422,6 +461,146 @@ const InventoryItemCard = ({ item, onStockChange = null, onOrderChange = null, o
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {/* Edit Modal (Portal-style overlay) */}
+            <AnimatePresence>
+                {showEditModal && editData && (
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.5 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setShowEditModal(false)}
+                            className="fixed inset-0 bg-black z-[100]"
+                        />
+                        <motion.div
+                            initial={{ y: '100%' }}
+                            animate={{ y: 0 }}
+                            exit={{ y: '100%' }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                            className="fixed bottom-0 left-0 right-0 bg-white z-[101] rounded-t-3xl shadow-2xl p-0 min-h-[70vh] flex flex-col max-h-[90vh]"
+                        >
+                            {/* Modal Header */}
+                            <div className="p-6 pb-6 bg-white rounded-t-3xl border-b border-gray-50 shrink-0 relative">
+                                <button
+                                    onClick={() => setShowEditModal(false)}
+                                    className="absolute top-6 right-6 w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition-colors"
+                                >
+                                    <X size={20} />
+                                </button>
+                                <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+                                <h3 className="text-2xl font-black text-slate-800 text-center">עריכת מאפייני פריט</h3>
+                                <p className="text-sm text-blue-500 text-center font-bold mt-1">{item.name}</p>
+                            </div>
+
+                            {/* Scrollable Form Content */}
+                            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                                {/* 1. Basic Details */}
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-sm font-bold text-slate-500 mb-1 block">שם הפריט</label>
+                                        <input
+                                            type="text"
+                                            value={editData.name}
+                                            onChange={e => setEditData({ ...editData, name: e.target.value })}
+                                            className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 focus:border-blue-500 outline-none font-bold text-xl text-center"
+                                        />
+                                    </div>
+
+                                    {/* Type Selector (Tabs) */}
+                                    <div className="bg-gray-100 p-1.5 rounded-2xl flex">
+                                        <button
+                                            onClick={() => setEditData({ ...editData, unit: 'יח׳', count_step: 1, min_order: 1, order_step: 1 })}
+                                            className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${editData.unit === 'יח׳' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                        >
+                                            פריט בודד (יח׳)
+                                        </button>
+                                        <button
+                                            onClick={() => setEditData({ ...editData, unit: 'גרם', count_step: 100, min_order: 1000, order_step: 500 })}
+                                            className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${editData.unit === 'גרם' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                        >
+                                            משקל (גרם)
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* 2. Configuration Pickers */}
+                                <div className="space-y-3">
+                                    <NumberPicker
+                                        label="משקל אריזה (גרם)"
+                                        value={editData.weight_per_unit || 0}
+                                        onChange={v => setEditData({ ...editData, weight_per_unit: v })}
+                                        unit="גרם"
+                                        stepSmall={10}
+                                        stepLarge={100}
+                                    />
+
+                                    {editData.unit !== 'יח׳' && (
+                                        <NumberPicker
+                                            label="קפיצות ספירה"
+                                            value={editData.count_step}
+                                            onChange={v => setEditData({ ...editData, count_step: v })}
+                                            unit={editData.unit}
+                                            stepSmall={10}
+                                            stepLarge={100}
+                                        />
+                                    )}
+
+                                    <NumberPicker
+                                        label="מינימום להזמנה"
+                                        value={editData.min_order}
+                                        onChange={v => setEditData({ ...editData, min_order: v })}
+                                        unit={editData.unit}
+                                        stepSmall={100}
+                                        stepLarge={500}
+                                    />
+
+                                    <NumberPicker
+                                        label="קפיצות הזמנה"
+                                        value={editData.order_step}
+                                        onChange={v => setEditData({ ...editData, order_step: v })}
+                                        unit={editData.unit}
+                                        stepSmall={100}
+                                        stepLarge={500}
+                                    />
+
+                                    <NumberPicker
+                                        label={editData.unit === 'גרם' ? 'עלות לק״ג (₪)' : `עלות ל${editData.unit} (₪)`}
+                                        value={editData.unit === 'גרם' ? (editData.cost_per_unit * 1000) : editData.cost_per_unit || 0}
+                                        onChange={v => {
+                                            const realCost = editData.unit === 'גרם' ? (v / 1000) : v;
+                                            setEditData({ ...editData, cost_per_unit: realCost });
+                                        }}
+                                        unit="₪"
+                                        stepSmall={1}
+                                        stepLarge={10}
+                                        format={v => v.toFixed(2)}
+                                    />
+                                </div>
+                                <div className="h-10"></div>
+                            </div>
+
+                            {/* Fixed Footer Action */}
+                            <div className="p-4 border-t border-gray-100 bg-white shrink-0">
+                                <button
+                                    onClick={handleSaveEdit}
+                                    disabled={saving}
+                                    className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xl shadow-xl shadow-slate-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                                >
+                                    {saving ? (
+                                        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <>
+                                            <Save size={20} />
+                                            שמור שינויים
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
         </div>
     );
 };
@@ -447,5 +626,38 @@ InventoryItemCard.propTypes = {
     draftOrderQty: PropTypes.number,
 };
 
+
+// --- Helper Component: Double Stepper Picker ---
+const NumberPicker = ({ value, onChange, label, unit = '', stepSmall = 1, stepLarge = 10, format = (v) => v, min = 0 }) => {
+    const handleChange = (delta) => {
+        const next = Math.max(min, value + delta);
+        onChange(Number(next.toFixed(3)));
+    };
+
+    return (
+        <div className="bg-gray-50 rounded-2xl border border-gray-100 p-3 flex items-center justify-between gap-3 h-20">
+            <label className="text-xs font-black text-gray-500 shrink-0 w-24 leading-3 text-right">
+                {label}
+            </label>
+
+            <div className="flex items-center gap-2 flex-1 justify-end">
+                <div className="flex gap-1">
+                    <button onClick={() => handleChange(-stepLarge)} className="w-10 h-10 bg-red-50 text-red-600 rounded-xl font-bold text-xs flex items-center justify-center hover:bg-red-100 transition-colors">- {stepLarge >= 1000 ? (stepLarge / 1000) + 'k' : stepLarge}</button>
+                    <button onClick={() => handleChange(-stepSmall)} className="w-10 h-10 bg-gray-50 text-gray-600 rounded-xl font-bold text-xs flex items-center justify-center hover:bg-gray-100 transition-colors">- {stepSmall}</button>
+                </div>
+
+                <div className="min-w-[4.5rem] text-center flex flex-col justify-center px-1">
+                    <div className="text-lg font-black text-slate-800 tracking-tight leading-none">{format(value)}</div>
+                    {unit && <div className="text-[10px] font-bold text-gray-400 mt-1">{unit}</div>}
+                </div>
+
+                <div className="flex gap-1">
+                    <button onClick={() => handleChange(stepSmall)} className="w-10 h-10 bg-gray-50 text-gray-600 rounded-xl font-bold text-xs flex items-center justify-center hover:bg-gray-100 transition-colors">+ {stepSmall}</button>
+                    <button onClick={() => handleChange(stepLarge)} className="w-10 h-10 bg-green-50 text-green-600 rounded-xl font-bold text-xs flex items-center justify-center hover:bg-green-100 transition-colors">+ {stepLarge >= 1000 ? (stepLarge / 1000) + 'k' : stepLarge}</button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 export default React.memo(InventoryItemCard);

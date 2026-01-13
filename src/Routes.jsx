@@ -31,10 +31,6 @@ import DriverPage from './pages/driver';
 import OrderTrackingPage from './pages/order-tracking';
 import CompleteProfile from './pages/login/CompleteProfile';
 
-// DEPRECATED/UNUSED PAGES (kept comments for reference if needed, but removed imports to clean up)
-// import NewCustomerNameCollectionScreen from './pages/new-customer-name-collection-screen';
-// import ReturningCustomerWelcomeScreen from './pages/returning-customer-welcome-screen';
-
 // Animation variants for page transitions
 const pageVariants = {
   initial: { opacity: 0, y: 10 },

@@ -15,7 +15,7 @@ const SplashScreen = ({ onFinish }) => {
     const finishTriggered = useRef(false);
 
     useEffect(() => {
-        console.log('🎨 SplashScreen v3.5 mounted');
+        console.log('🎨 SplashScreen v3.6 mounted');
 
         const initialize = async () => {
             // A. Version Check & Cleanup

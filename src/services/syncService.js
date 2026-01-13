@@ -261,9 +261,9 @@ export const syncOrders = async (businessId) => {
         return { success: false, reason: 'offline' };
     }
 
-    // Use date from 2 days ago (48h) to keep devices light & fast
+    // Use date from 14 days ago to capture enough historical data for the Advanced Screen
     const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 2); // 48 hours of history
+    fromDate.setDate(fromDate.getDate() - 14); // 14 days of history
     const fromDateISO = fromDate.toISOString();
     const toDateISO = new Date().toISOString();
 
@@ -369,6 +369,33 @@ export const syncOrders = async (businessId) => {
 
     } catch (err) {
         console.error('❌ syncOrders exception:', err);
+        return { success: false, error: err.message };
+    }
+};
+
+/**
+ * Sync loyalty data (cards and transactions)
+ * @param {string} businessId
+ */
+export const syncLoyalty = async (businessId) => {
+    if (!isOnline()) return { success: false, reason: 'offline' };
+
+    try {
+        console.log(`🔄 [syncLoyalty] Syncing loyalty for ${businessId}...`);
+
+        // 1. Sync Cards
+        const cardRes = await syncTable('loyalty_cards', 'loyalty_cards', null, businessId);
+
+        // 2. Sync Transactions
+        const txRes = await syncTable('loyalty_transactions', 'loyalty_transactions', null, businessId);
+
+        return {
+            success: true,
+            cards: cardRes.count || 0,
+            transactions: txRes.count || 0
+        };
+    } catch (err) {
+        console.error('❌ syncLoyalty failed:', err);
         return { success: false, error: err.message };
     }
 };
@@ -670,6 +697,7 @@ export default {
     syncTable,
     initialLoad,
     syncOrders,
+    syncLoyalty,
     pushPendingChanges,
     subscribeToOrders,
     subscribeToOrderItems,

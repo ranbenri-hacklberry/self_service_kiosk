@@ -9,13 +9,24 @@ import { Loader2, User, KeyRound, ArrowRight, CheckCircle, AlertTriangle, Eye, E
 
 const LoginScreen = () => {
     const navigate = useNavigate();
-    const { login } = useAuth();
+    const { login, currentUser } = useAuth();
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
+
+    // Auto-redirect if already logged in
+    React.useEffect(() => {
+        if (currentUser) {
+            if (currentUser.is_super_admin) {
+                navigate('/super-admin');
+            } else {
+                navigate('/mode-selection');
+            }
+        }
+    }, [currentUser, navigate]);
 
     const handleLogin = async (e) => {
         // ... existing handleLogin code ...
@@ -53,7 +64,7 @@ const LoginScreen = () => {
 
             // Success - login and navigate
             console.log('✅ Login successful for:', employee.name);
-            login(employee);
+            await login(employee); // CRITICAL: Await enriched data (business name etc)
 
             // Clock In (optional, don't block on failure)
             clockEvent(employee.id, 'clock_in').catch(e =>

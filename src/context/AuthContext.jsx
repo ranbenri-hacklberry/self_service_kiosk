@@ -8,7 +8,7 @@ const API_URL = import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
     'http://localhost:8080';
 
-export const APP_VERSION = '3.5'; // Employee Management & Mobile UI Updates
+export const APP_VERSION = '3.6'; // Second Course (מנה שניה) & KDS Split Cards
 export const AuthProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
     const [deviceMode, setDeviceMode] = useState(null); // 'kiosk', 'kds', 'manager', 'music'
@@ -184,7 +184,7 @@ export const AuthProvider = ({ children }) => {
         const runBackgroundSync = async () => {
             try {
                 console.log('🔄 [Background] Starting periodic sync...');
-                const { syncOrders, isOnline } = await import('../services/syncService');
+                const { syncOrders, syncLoyalty, isOnline } = await import('../services/syncService');
                 const { syncQueue } = await import('../services/offlineQueue');
 
                 if (!isOnline()) {
@@ -211,10 +211,15 @@ export const AuthProvider = ({ children }) => {
                     await initialLoad(currentUser.business_id);
                     localStorage.setItem('last_full_sync', Date.now().toString());
                 } else {
-                    // Just sync orders frequently
+                    // Just sync orders and loyalty frequently
                     const result = await syncOrders(currentUser.business_id);
+                    const loyaltyResult = await syncLoyalty(currentUser.business_id);
+
                     if (result.success) {
                         console.log(`✅ [Background] Synced ${result.ordersCount} orders`);
+                    }
+                    if (loyaltyResult.success) {
+                        console.log(`✅ [Background] Synced ${loyaltyResult.transactions} transactions`);
                     }
                 }
 
@@ -383,6 +388,7 @@ export const AuthProvider = ({ children }) => {
     return (
         <AuthContext.Provider value={{
             currentUser,
+            isAuthenticated: !!currentUser,
             deviceMode,
             login,
             logout,

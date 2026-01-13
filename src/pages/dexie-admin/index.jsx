@@ -168,8 +168,9 @@ const DexieAdminPanel = () => {
                             local = allRecords.filter(r => r.business_id === businessId).length;
                         }
                     } else if (table === 'order_items') {
-                        // Count all order items (assuming cleanup works)
-                        local = await db[table]?.count() || 0;
+                        // Count ONLY items belonging to orders of this business
+                        const businessOrderIds = (await db.orders.where('business_id').equals(businessId).toArray()).map(o => o.id);
+                        local = await db.order_items.where('order_id').anyOf(businessOrderIds).count();
                     } else {
                         local = await db[table]?.count() || 0;
                     }
@@ -184,8 +185,9 @@ const DexieAdminPanel = () => {
                     // 1. Determine Fetch Strategy
                     if (table === 'orders') {
                         // Strategy: RPC for Orders History (Bypasses RLS logic for count)
+                        // Use 14 days to match syncService.js window
                         const fromDate = new Date();
-                        fromDate.setDate(fromDate.getDate() - 30);
+                        fromDate.setDate(fromDate.getDate() - 14);
                         const { data, error } = await supabase.rpc('get_orders_history', {
                             p_business_id: businessId,
                             p_from_date: fromDate.toISOString(),
@@ -246,8 +248,8 @@ const DexieAdminPanel = () => {
                     cloudCount: cloud, // Keep raw value (-1) for logic checks
                     localError,
                     cloudError,
-                    // Relaxed needsSync check due to timing diffs
-                    needsSync: local === 0 && cloud > 0
+                    // Relaxed needsSync check
+                    needsSync: local !== cloud && cloud > 0
                 };
             }
             setSyncStatus(status);

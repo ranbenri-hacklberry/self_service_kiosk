@@ -393,7 +393,7 @@ const PaymentSelectionModal = ({
     >
       <div
         className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden flex flex-col"
-        style={{ maxHeight: '72vh' }}
+        style={{ maxHeight: '88vh' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header - Compact */}

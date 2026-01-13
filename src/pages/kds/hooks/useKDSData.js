@@ -15,6 +15,17 @@ import { groupOrderItems, sortItems } from '../../../utils/kdsUtils';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../../../db/database';
 
+// 🌸 MAYA'S MODULAR ARCHITECTURE: Import pure helpers for testability
+import {
+    extractString,
+    processOrderItems,
+    determineCardStatus,
+    buildBaseOrder,
+    groupItemsByStatus,
+    hasActiveItems,
+    getSmartId
+} from './kdsProcessingHelpers';
+
 // Check if device is online
 const checkOnline = () => navigator.onLine;
 
@@ -45,19 +56,7 @@ export const useKDSData = () => {
     const log = (...args) => console.log(...args);
     const warn = (...args) => console.warn(...args);
 
-    // 🛠️ SMART ID HELPER: Ensures ID is the correct type for Dexie (Numeric for Supabase, String for Local)
-    const getSmartId = (id) => {
-        if (!id) return id;
-        if (typeof id === 'number') return id;
-        const idStr = String(id).replace(/-stage-\d+/, '').replace('-ready', '');
-
-        // CRITICAL FIX: Do NOT parse UUIDs as integers even if they start with a digit!
-        if (idStr.length > 20 && idStr.includes('-')) return idStr;
-
-        if (idStr.startsWith('L')) return idStr; // Local ID
-        const parsed = parseInt(idStr, 10);
-        return isNaN(parsed) ? idStr : parsed;
-    };
+    // NOTE: getSmartId is now imported from kdsProcessingHelpers.js
 
     // 🛠️ GLOBAL AUTO-HEAL: Run once on mount to fix ALL Dexie inconsistencies
     useEffect(() => {
@@ -126,8 +125,45 @@ export const useKDSData = () => {
         healDexieData();
     }, []);
 
+    /**
+     * 🌸 FETCH ORDERS - Main Data Loading Function
+     * 
+     * This function is complex due to hybrid online/offline support.
+     * It follows this structured flow:
+     * 
+     * ┌─────────────────────────────────────────────────────────────────────┐
+     * │ PHASE 1: INITIALIZATION                                             │
+     * │   - Set loading state, check online status, load option map cache   │
+     * ├─────────────────────────────────────────────────────────────────────┤
+     * │ PHASE 2: ONLINE - SUPABASE FETCH                                    │
+     * │   - Sync pending queue, call get_kds_orders RPC                     │
+     * ├─────────────────────────────────────────────────────────────────────┤
+     * │ PHASE 3: ONLINE - DEXIE CACHE UPDATE                                │
+     * │   - Save fetched orders to Dexie, handle merge with local changes   │
+     * ├─────────────────────────────────────────────────────────────────────┤
+     * │ PHASE 4: OFFLINE - DEXIE LOAD                                       │
+     * │   - Load orders from Dexie when offline or Supabase fails           │
+     * ├─────────────────────────────────────────────────────────────────────┤
+     * │ PHASE 5: ONLINE - SUPPLEMENTAL FETCHES                              │
+     * │   - Fetch ready items, rescue orders with active items              │
+     * ├─────────────────────────────────────────────────────────────────────┤
+     * │ PHASE 6: MERGE LOCAL PENDING ORDERS                                 │
+     * │   - Merge truly offline orders (created locally, not yet synced)    │
+     * ├─────────────────────────────────────────────────────────────────────┤
+     * │ PHASE 7: PROCESS ORDERS FOR DISPLAY                                 │
+     * │   - Apply filters, group items, create split course cards           │
+     * ├─────────────────────────────────────────────────────────────────────┤
+     * │ PHASE 8: UPDATE STATE                                               │
+     * │   - Set React state with processed orders                           │
+     * └─────────────────────────────────────────────────────────────────────┘
+     * 
+     * @param {AbortSignal} signal - Optional abort signal for cancellation
+     */
     const fetchOrders = useCallback(async (signal) => {
         try {
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // PHASE 1: INITIALIZATION
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             setIsLoading(true);
             const businessId = currentUser?.business_id;
             const isOnline = navigator.onLine;
@@ -826,198 +862,38 @@ export const useKDSData = () => {
                 }
 
                 // CRITICAL: Map various source names to order_items
-                // - RPC returns items_detail
-                // - Offline mode uses 'items'
-                if (!order.order_items && order.items_detail) {
-                    order.order_items = order.items_detail;
-                }
-                if (!order.order_items && order.items) {
-                    order.order_items = order.items;
-                }
+                if (!order.order_items && order.items_detail) order.order_items = order.items_detail;
+                if (!order.order_items && order.items) order.order_items = order.items;
 
-                // Check if order has ANY active items (in_progress, new, pending)
-                // If so, it belongs in Active KDS even if order_status is 'completed'
-                const hasActiveItems = (order.order_items || []).some(item =>
-                    item.item_status === 'in_progress' ||
-                    item.item_status === 'new' ||
-                    item.item_status === 'pending' ||
-                    item.item_status === 'ready' ||
-                    item.item_status === 'held'
+                // 1. FILTER & MAP ITEMS (Extracted to helper)
+                const rawItems = processOrderItems(order, menuMapForProcessing);
+
+                // Check if order has ANY active items
+                const hasActiveItems = rawItems.some(item =>
+                    ['in_progress', 'new', 'pending', 'ready', 'held'].includes(item.item_status)
                 );
 
                 // Only skip to history if order is completed AND has no active items
-                if (order.order_status === 'completed' && !hasActiveItems) {
-                    if (idx < 3) log(`⏭️ [DIAG] Skipping order ${order.order_number} - completed with no active items`);
-                    return; // Skip entirely - belongs in History tab
-                }
-
-                // Filter items logic
-                const rawItems = (order.order_items || [])
-                    .filter(item => {
-                        // LOGGING for specific diagnosis
-                        const isTargetOrder = String(order.order_number) === '1790' || order.id === 'd264b6c9-3dcd-4b0f-adb3-8d50f355906f';
-
-                        // 🟢 NUCLEAR BYPASS: If locally in_progress, NEVER drop items (except cancelled)
-                        // This ensures Undo orders ALWAYS display, even with missing metadata
-                        const isLocalInProgress = (order._useLocalStatus || order.pending_sync) && order.order_status === 'in_progress';
-
-                        if (isLocalInProgress) {
-                            if (item.item_status === 'cancelled') return false;
-
-                            // ✅ SAFETY: Still validate basic data integrity
-                            const cachedMenuItem = menuMapForProcessing.get(item.menu_item_id);
-                            const hasName = item.menu_items?.name || item.name || cachedMenuItem?.name;
-
-                            if (!hasName) {
-                                console.warn(`⚠️ [NUCLEAR-BYPASS] Item ${item.id} lacks name - keeping anyway but marking as "Unknown"`);
-                                // Don't drop it, but we'll handle it in mapping below by providing fallback names
-                            }
-
-                            if (isTargetOrder) console.log(`🟢 [ITEM-FILTER] KEEPING item ${item.id} (Nuclear Bypass)`);
-                            return true; // Keep everything else
-                        }
-
-                        // 🔴 STANDARD FILTERING (Server Data only)
-
-                        // 1. Drop cancelled
-                        if (item.item_status === 'cancelled') return false;
-
-                        const menuItemFromCache = menuMapForProcessing.get(item.menu_item_id);
-                        const hasName = item.menu_items?.name || item.name || menuItemFromCache?.name;
-
-                        // FIX: Don't drop items with no name, just give them a fallback.
-                        // This supports custom items or virtual items (like delivery fees) that might not be in menu_items table.
-                        if (!hasName) {
-                            if (isTargetOrder) console.log(`🔍 [ITEM-FILTER] Keeping item ${item.id} with fallback name`);
-                        }
-
-                        // 3. (REMOVED) Drop Completed if order not in_progress
-                        // Old Logic: if (item.item_status === 'completed' && order.order_status !== 'in_progress') return false;
-                        // Fix: We need completed items to display orders in the "Completed/Ready" column!
-
-                        // 4. Routing Logic (Grab & Go)
-                        const kdsLogic = item.menu_items?.kds_routing_logic;
-                        let hasOverride = false;
-                        let mods = item.mods;
-                        if (typeof mods === 'string') {
-                            try {
-                                if (mods.includes('__KDS_OVERRIDE__')) { hasOverride = true; }
-                                else { const parsed = JSON.parse(mods); if (Array.isArray(parsed) && parsed.includes('__KDS_OVERRIDE__')) hasOverride = true; }
-                            } catch (e) { if (mods.includes('__KDS_OVERRIDE__')) hasOverride = true; }
-                        } else if (Array.isArray(mods)) { if (mods.includes('__KDS_OVERRIDE__')) hasOverride = true; }
-                        else if (typeof mods === 'object' && mods?.kds_override) { hasOverride = true; }
-
-                        if ((kdsLogic === 'GRAB_AND_GO' || kdsLogic === 'CONDITIONAL') && !hasOverride) return false;
-
-                        return true;
-                    })
-                    .map(item => {
-                        // VISUAL OVERRIDE: If we forced a completed item to show, make it look 'in_progress'
-                        const isLocalInProgress = (order._useLocalStatus || order.pending_sync) && order.order_status === 'in_progress';
-
-                        const visualStatus = (isLocalInProgress && ['completed', 'ready'].includes(item.item_status))
-                            ? 'in_progress'
-                            : item.item_status;
-
-                        let modsArray = [];
-                        if (item.mods) {
-                            try {
-                                const parsed = typeof item.mods === 'string' ? JSON.parse(item.mods) : item.mods;
-                                if (Array.isArray(parsed)) {
-                                    modsArray = parsed.map(m => {
-                                        if (typeof m === 'object' && m?.value_name) return m.value_name;
-                                        return String(m);
-                                    }).filter(m => m && !m.toLowerCase().includes('default') && m !== 'רגיל' && !String(m).includes('KDS_OVERRIDE'));
-                                }
-                            } catch (e) { /* ignore */ }
-                        }
-
-                        // Add Custom Note if exists
-                        if (item.notes) {
-                            modsArray.push({ name: item.notes, is_note: true });
-                        }
-
-                        // Construct Modifiers for React
-                        const structuredModifiers = modsArray.map(mod => {
-                            if (typeof mod === 'object' && mod.is_note) {
-                                return { text: mod.name, color: 'mod-color-purple', isNote: true };
-                            }
-
-                            const modName = typeof mod === 'string' ? mod : (mod.name || String(mod));
-                            let color = 'mod-color-gray';
-
-                            if (modName.includes('סויה')) color = 'mod-color-lightgreen';
-                            else if (modName.includes('שיבולת')) color = 'mod-color-beige';
-                            else if (modName.includes('שקדים')) color = 'mod-color-lightyellow';
-                            else if (modName.includes('נטול')) color = 'mod-color-blue';
-                            else if (modName.includes('רותח')) color = 'mod-color-red';
-                            else if (modName.includes('קצף') && !modName.includes('בלי')) color = 'mod-color-foam-up';
-                            else if (modName.includes('בלי קצף')) color = 'mod-color-foam-none';
-
-                            return { text: modName, color: color, isNote: false };
-                        });
-
-                        // FALLBACK: Try menuMapForProcessing if menu_items is missing from RPC
-                        const menuItemFromCache = menuMapForProcessing.get(item.menu_item_id);
-                        const itemName = item.menu_items?.name || item.name || menuItemFromCache?.name || 'פריט';
-                        const itemPrice = item.menu_items?.price || item.price || menuItemFromCache?.price || 0;
-                        const category = item.menu_items?.category || menuItemFromCache?.category || '';
-                        // ROBUST: Use menu_items.id if available, fall back to FK menu_item_id, or item.id as last resort
-                        const menuItemId = item.menu_items?.id || item.menu_item_id || item.id;
-
-                        const modsKey = modsArray.map(m => typeof m === 'object' ? m.name : m).sort().join('|');
-
-                        const isEarlyDelivered = item.is_early_delivered || (item.item_status === 'ready' && order.order_status !== 'ready' && order.order_status !== 'completed');
-
-                        return {
-                            id: item.id,
-                            menuItemId: menuItemId,
-                            name: itemName,
-                            modifiers: structuredModifiers,
-                            quantity: item.quantity,
-                            status: visualStatus,
-                            item_status: item.item_status, // 🆕 CRITICAL: Keep raw status for grouping logic
-                            price: itemPrice,
-                            category: category,
-                            modsKey: modsKey,
-                            course_stage: item.course_stage || 1,
-                            item_fired_at: item.item_fired_at,
-                            is_early_delivered: isEarlyDelivered
-                        };
-                    });
-
-                if (String(order.order_number) === '1790' || order.id === 'd264b6c9-3dcd-4b0f-adb3-8d50f355906f') {
-                    console.log(`🔍 [AFTER-FILTER] Order ${order.order_number} has ${rawItems.length} items after filtering`);
-                }
+                if (order.order_status === 'completed' && !hasActiveItems) return;
 
                 // Skip orders with no items after filtering
-                if (!rawItems || rawItems.length === 0) {
-                    if (String(order.order_number) === '1790' || order.id === 'd264b6c9-3dcd-4b0f-adb3-8d50f355906f') {
-                        console.log(`❌ [SKIP] Order ${order.order_number} skipped - no items after filter!`);
-                    }
-                    return;
-                }
+                if (!rawItems || rawItems.length === 0) return;
 
-                // Calculate total order amount from ALL non-cancelled items
+                // 2. CONSTRUCT BASE ORDER DATA
                 const itemsForTotal = (order.order_items || []).filter(i => i.item_status !== 'cancelled');
-
                 const calculatedTotal = itemsForTotal.reduce((sum, i) => sum + (i.price || i.menu_items?.price || 0) * (i.quantity || 1), 0);
                 const totalOrderAmount = order.total_amount || calculatedTotal;
-
-                // Calculate unpaid amount
                 const paidAmount = order.paid_amount || 0;
                 const unpaidAmount = totalOrderAmount - paidAmount;
 
                 const baseOrder = {
                     id: order.id,
-                    // CRITICAL: DO NOT CHANGE THIS - ORDER NUMBER MUST COME FROM SUPABASE ONLY!
-                    // If order_number is missing (e.g. newly created local order), show truncated ID instead of empty.
                     orderNumber: order.order_number || (order.id ? order.id.toString().slice(-4) : 'PENDING'),
                     customerName: order.customer_name || 'אורח',
                     customerPhone: order.customer_phone,
                     customerId: order.customer_id,
                     isPaid: order.is_paid,
-                    totalAmount: unpaidAmount > 0 ? unpaidAmount : totalOrderAmount, // Show unpaid amount, or full if nothing paid
+                    totalAmount: unpaidAmount > 0 ? unpaidAmount : totalOrderAmount,
                     paidAmount: paidAmount,
                     fullTotalAmount: totalOrderAmount,
                     timestamp: new Date(order.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
@@ -1035,69 +911,23 @@ export const useKDSData = () => {
                     totalOriginalAmount: totalOrderAmount + (Number(order.refund_amount) || 0)
                 };
 
-                // Completed orders are already filtered out at the start of the loop
+                // 3. GROUP ITEMS BY DISPLAY STATUS (Split Course Logic)
+                // CRITICAL: Use the helper function which properly separates ready from in_progress!
+                const itemsByGroup = groupItemsByStatus(rawItems);
 
-                // Skip orders with no items after filtering
-                if (!rawItems || rawItems.length === 0) return;
-
-                // NEW GROUPING LOGIC: Group items by "Display Status"
-                // This allows one order to have multiple cards (e.g., one 'new' card and one 'in_progress' card)
-                // and they will automatically MERGE when the 'new' card is moved to 'in_progress'.
-                const itemsByGroup = rawItems.reduce((acc, item) => {
-                    let groupKey;
-                    if (item.item_status === 'held') {
-                        groupKey = 'delayed';
-                    } else if (item.item_status === 'new' || item.item_status === 'pending') {
-                        groupKey = 'new';
-                    } else {
-                        groupKey = 'active'; // in_progress, ready, etc.
-                    }
-
-                    if (!acc[groupKey]) acc[groupKey] = [];
-                    acc[groupKey].push(item);
-                    return acc;
-                }, {});
-
-                // Process each group
+                // 4. GENERATE CARDS FOR EACH GROUP
                 Object.entries(itemsByGroup).forEach(([groupKey, groupItems]) => {
+                    const { cardType, cardStatus } = determineCardStatus(groupKey, groupItems, order);
                     const cardId = groupKey === 'active' ? order.id : `${order.id}-${groupKey}`;
-
-                    let cardType, cardStatus;
-                    const allReady = groupItems.every(i => ['ready', 'completed', 'cancelled'].includes(i.item_status));
-
-                    if (groupKey === 'new') {
-                        cardType = 'active';
-                        cardStatus = 'new';
-                    } else if (groupKey === 'delayed') {
-                        cardType = 'delayed';
-                        cardStatus = 'pending';
-                    } else {
-                        // active group (in_progress / ready)
-                        const isOrderReadyOrCompleted = order.order_status === 'ready' || order.order_status === 'completed';
-                        if (isOrderReadyOrCompleted || allReady) {
-                            cardType = 'ready';
-                            cardStatus = 'ready';
-                        } else {
-                            cardType = 'active';
-                            cardStatus = 'in_progress';
-                        }
-                    }
-
-                    const groupedItems = groupOrderItems(groupItems);
-                    const displayItems = sortItems(groupedItems);
 
                     processedOrders.push({
                         ...baseOrder,
                         id: cardId,
-                        originalOrderId: order.id,
-                        courseStage: groupItems[0]?.course_stage || 1,
-                        created_at: order.created_at,
-                        fired_at: groupItems[0]?.item_fired_at || order.created_at,
-                        isSecondCourse: groupItems.some(i => i.course_stage === 2),
-                        hasPendingItems: rawItems.some(i => i.item_status === 'completed'),
-                        items: displayItems,
+                        serverOrderId: order.id,
+                        status: cardStatus,
                         type: cardType,
-                        orderStatus: cardStatus
+                        items: sortItems(groupOrderItems(groupItems)),
+                        is_delayed: groupKey === 'delayed'
                     });
                 });
             });
@@ -1221,40 +1051,57 @@ export const useKDSData = () => {
             completedOrderIds: completedOrders.map(o => o.id).slice(0, 5)
         });
 
-        // 1. Calculate Logic first (before any Offline/Online split)
-        const statusLower = (currentStatus || '').toLowerCase();
-        let nextStatus = 'in_progress';
+
+        // Note: statusLower is defined after order lookup to use effectiveStatus
+
+        // CRITICAL FIX: Default should be null to catch unexpected states
+        let nextStatus = null;
 
         // Search for the order in both lists to ensure we have its data
         const order = currentOrders.find(o => o.id === orderId) || completedOrders.find(o => o.id === orderId);
-        log('🔍 Found order:', order ? { id: order.id, status: order.orderStatus, type: order.type } : 'NOT FOUND');
+
+        // CRITICAL FIX: If currentStatus is undefined, use the order's actual status!
+        const effectiveStatus = currentStatus || order?.status || order?.orderStatus;
+        const statusLower = (effectiveStatus || '').toLowerCase();
 
         const hasInProgress = order?.items?.some(i => i.status === 'in_progress' || i.status === 'new' || !i.status);
 
+        // STATUS TRANSITION LOGIC - follows lifecycle: pending → new → in_progress → ready → completed
         if (currentStatus === 'undo_ready') {
+            // UNDO: Move back to in_progress
             nextStatus = 'in_progress';
-        } else if (statusLower === 'completed' || statusLower === 'shipped') {
-            // If already completed/shipped or explicitly told to move to these, keep it that way
-            nextStatus = statusLower;
-        } else if (statusLower === 'pending') {
-            // Pending orders (e.g. deliveries) go to 'new' first (acknowledgment)
-            nextStatus = 'new';
-        } else if (statusLower === 'new') {
-            // 'new' orders go to in_progress (start preparation)
-            nextStatus = 'in_progress';
-        } else if (statusLower === 'in_progress' || hasInProgress) {
-            nextStatus = 'ready';
-        } else if (statusLower === 'ready' || currentStatus === 'ready') {
-            // Logic for Delivery: Ready -> Shipped
-            // Logic for Dine-in/Takeway: Ready -> Completed
+        } else if (statusLower === 'shipped') {
+            // SHIPPED -> COMPLETED (delivery completed)
+            nextStatus = 'completed';
+        } else if (statusLower === 'completed') {
+            // Already completed - keep it
+            nextStatus = 'completed';
+        } else if (statusLower === 'ready') {
+            // READY -> Next step depends on order type
             if (order?.type === 'delivery' || order?.order_type === 'delivery') {
                 nextStatus = 'shipped';
             } else {
                 nextStatus = 'completed';
             }
+        } else if (statusLower === 'in_progress') {
+            // IN_PROGRESS -> READY
+            nextStatus = 'ready';
+        } else if (statusLower === 'new') {
+            // NEW -> IN_PROGRESS (start preparation)
+            nextStatus = 'in_progress';
+        } else if (statusLower === 'pending') {
+            // PENDING -> NEW (acknowledge order)
+            nextStatus = 'new';
+        } else if (hasInProgress) {
+            // Fallback: If order has in_progress items, move to ready
+            nextStatus = 'ready';
+        } else {
+            // SAFETY FALLBACK: Log error and use current status
+            console.error(`⚠️ [STATUS-UPDATE] Unexpected status: "${effectiveStatus}". Defaulting to in_progress.`);
+            nextStatus = 'in_progress';
         }
 
-        log('🎯 Calculated nextStatus:', nextStatus);
+        log('🎯 [STATUS] Transition:', effectiveStatus, '→', nextStatus, '| Order:', orderId?.slice(-8));
 
         const smartOrderId = getSmartId(orderId);
 

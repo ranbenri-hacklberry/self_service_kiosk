@@ -75,7 +75,7 @@ const Header = memo(({
         setEmployeeSession(null);
 
         // Navigate back to login screen
-        navigate('/employee-login-screen');
+        navigate('/login');
       } else {
         console.error('Clock out failed:', result?.error);
         alert('שגיאה ביציאה מהעבודה. אנא נסה שוב.');
@@ -93,7 +93,7 @@ const Header = memo(({
     sessionStorage.removeItem('employee_session');
     setEmployeeSession(null);
     setIsClockedIn(false);
-    navigate('/employee-login-screen');
+    navigate('/login');
   }, [navigate]);
 
 

@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { House, RotateCcw, List, CheckCircle, Sunrise, Sunset, Utensils } from 'lucide-react';
+import { House, RotateCcw, List, CheckCircle, Sunrise, Sunset, Utensils, Clock, ChevronRight, ChevronLeft } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import TaskManagementView from '../../components/kds/TaskManagementView';
 import ConnectionStatusBar from '../../components/ConnectionStatusBar';
 import MiniMusicPlayer from '../../components/music/MiniMusicPlayer';
+import { isCategoryMatch, getCategoryAliases, TASK_CATEGORIES } from '../../config/taskCategories';
 
 const PrepPage = () => {
     const navigate = useNavigate();
@@ -17,39 +19,58 @@ const PrepPage = () => {
     const [prepBatches, setPrepBatches] = useState([]);
     const [closingTasks, setClosingTasks] = useState([]);
     const [currentHour, setCurrentHour] = useState(new Date().getHours());
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+
+    // Monitor screen size
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 1024);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    const [error, setError] = useState(null);
 
     const handleExit = () => {
         navigate('/mode-selection');
     };
 
-    // --- Task Fetching Logic (Extracted from KDS) ---
-    const fetchTasksByCategory = async (categories, targetSetter) => {
+    // --- Task Fetching Logic ---
+    const fetchTasksByCategory = useCallback(async (tabId, targetSetter) => {
         try {
             const todayIdx = new Date().getDay();
             const dateStr = new Date().toISOString().split('T')[0];
-            const categoryList = Array.isArray(categories) ? categories : [categories];
+            const aliases = getCategoryAliases(tabId);
+
+            if (!currentUser?.business_id) {
+                console.warn('PrepPage: No business_id found for current user');
+                return;
+            }
 
             const { data: rawTasks, error } = await supabase
                 .from('recurring_tasks')
                 .select('*')
-                .eq('business_id', currentUser?.business_id) // Add business_id filter
+                .eq('business_id', currentUser.business_id)
                 .eq('is_active', true);
 
             if (error) throw error;
 
-            const allTasks = (rawTasks || []).filter(t => categoryList.includes(t.category));
+            const allTasks = (rawTasks || []).filter(t => aliases.includes((t.category || '').toLowerCase()));
 
             const scheduled = (allTasks || []).filter(t => {
                 const schedule = t.weekly_schedule || {};
-                if (Object.keys(schedule).length > 0) {
+                if (schedule && Object.keys(schedule).length > 0) {
                     const config = schedule[todayIdx];
+                    // Show if specifically scheduled for today with qty > 0
                     return config && config.qty > 0;
                 }
+
+                // Fallback A: If explicitly assigned to a day of week
                 if (t.day_of_week !== null && t.day_of_week !== undefined) {
                     return t.day_of_week === todayIdx;
                 }
-                // FIXED: Don't show tasks without any schedule
-                return false;
+
+                // Fallback B: If schedule is missing or empty, assume it's a daily task
+                return true;
             });
 
             const { data: logs } = await supabase
@@ -60,7 +81,7 @@ const PrepPage = () => {
             const completedSet = new Set(logs?.map(l => l.recurring_task_id));
 
             const final = scheduled
-                .filter(t => !completedSet.has(t.id)) // Filter out completed tasks
+                .filter(t => !completedSet.has(t.id))
                 .map(t => {
                     const config = (t.weekly_schedule || {})[todayIdx] || {};
                     return {
@@ -71,39 +92,43 @@ const PrepPage = () => {
                         target_qty: config.qty || t.quantity,
                         logic_type: config.mode || t.logic_type || 'fixed',
                         category: t.category,
-                        due_time: t.due_time || '08:00',
+                        due_time: t.due_time || (t.category === 'opening' || t.category === 'פתיחה' ? '08:00' : null),
                         is_recurring: true,
-                        is_completed: completedSet.has(t.id), // Add is_completed flag
-                        // Logic for pre-closing sort
-                        is_pre_closing: t.category === 'closing' && t.due_time && t.due_time < '22:00' // Simple heuristic
+                        is_completed: false,
+                        is_pre_closing: t.is_pre_closing === true
                     };
                 });
 
             targetSetter(final);
         } catch (err) {
             console.error(`Error fetching tasks:`, err);
+            setError("שגיאה בטעינת המשימות. אנא רענן את העמוד.");
+            setTimeout(() => setError(null), 5000);
         }
-    };
+    }, [currentUser?.business_id]);
 
-    // Fetchers
-    const fetchOpeningTasks = () => fetchTasksByCategory(['פתיחה', 'opening'], setOpeningTasks);
-    const fetchPrepBatches = () => fetchTasksByCategory(['prep', 'הכנה'], setPrepBatches);
-    const fetchClosingTasks = () => fetchTasksByCategory(['סגירה', 'closing'], setClosingTasks);
+    const fetchAllTasks = useCallback(() => {
+        if (!currentUser?.business_id) return;
+        fetchTasksByCategory(TASK_CATEGORIES.OPENING.id, setOpeningTasks);
+        fetchTasksByCategory(TASK_CATEGORIES.PREP.id, setPrepBatches);
+        fetchTasksByCategory(TASK_CATEGORIES.CLOSING.id, setClosingTasks);
+    }, [fetchTasksByCategory, currentUser?.business_id]);
 
-    // Initial Fetch & Auto-Switch
+    const skipRealtimeRef = React.useRef(false);
+
     // Initial Fetch & Auto-Switch
     useEffect(() => {
-        console.log('PrepPage: Initial load, fetching tasks...');
-        fetchOpeningTasks();
-        fetchPrepBatches();
-        fetchClosingTasks();
+        fetchAllTasks();
 
-        const isClosingPhase = currentHour >= 12; // 12 PM (noon) - closing tasks appear
-        const isPrepPhase = currentHour >= 5 && currentHour < 12; // 5 AM - 12 PM
+        const isClosingPhase = currentHour >= 12;
+        const isPrepPhase = currentHour >= 5 && currentHour < 12;
 
-        if (isClosingPhase) setTasksSubTab('closing');
-        else if (!isPrepPhase) setTasksSubTab('opening');
-        else setTasksSubTab('prep');
+        let initialTab = 'prep';
+        if (isClosingPhase) initialTab = 'closing';
+        else if (!isPrepPhase) initialTab = 'opening';
+
+        // Auto-switch to first tab with tasks on mount
+        setTasksSubTab(initialTab);
 
         // Realtime Subscription
         const channel = supabase
@@ -111,12 +136,10 @@ const PrepPage = () => {
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'task_completions' },
-                (payload) => {
-                    console.log('PrepPage: Task completion update received!', payload);
-                    // Refresh all lists
-                    fetchOpeningTasks();
-                    fetchPrepBatches();
-                    fetchClosingTasks();
+                () => {
+                    if (!skipRealtimeRef.current) {
+                        fetchAllTasks();
+                    }
                 }
             )
             .subscribe();
@@ -126,12 +149,7 @@ const PrepPage = () => {
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'recurring_tasks' },
-                (payload) => {
-                    console.log('PrepPage: Task definition update received!', payload);
-                    fetchOpeningTasks();
-                    fetchPrepBatches();
-                    fetchClosingTasks();
-                }
+                () => fetchAllTasks()
             )
             .subscribe();
 
@@ -139,14 +157,20 @@ const PrepPage = () => {
             supabase.removeChannel(channel);
             supabase.removeChannel(tasksDefinitionChannel);
         };
-    }, []); // Run once on mount
+    }, [fetchAllTasks, currentHour]);
 
     const handleCompleteTask = async (task) => {
-        // Optimistic Update
-        const cat = task.category;
-        if (cat === 'opening' || cat === 'פתיחה') setOpeningTasks(p => p.filter(t => t.id !== task.id));
-        if (cat === 'prep' || cat === 'הכנה') setPrepBatches(p => p.filter(t => t.id !== task.id));
-        if (cat === 'closing' || cat === 'סגירה') setClosingTasks(p => p.filter(t => t.id !== task.id));
+        skipRealtimeRef.current = true;
+        setTimeout(() => { skipRealtimeRef.current = false; }, 2000);
+
+        // Optimistic Update with centralized category check
+        const isOpening = isCategoryMatch(TASK_CATEGORIES.OPENING.id, task.category);
+        const isPrep = isCategoryMatch(TASK_CATEGORIES.PREP.id, task.category);
+        const isClosing = isCategoryMatch(TASK_CATEGORIES.CLOSING.id, task.category);
+
+        if (isOpening) setOpeningTasks(p => p.filter(t => t.id !== task.id));
+        if (isPrep) setPrepBatches(p => p.filter(t => t.id !== task.id));
+        if (isClosing) setClosingTasks(p => p.filter(t => t.id !== task.id));
 
         try {
             if (task.is_recurring) {
@@ -160,56 +184,113 @@ const PrepPage = () => {
             }
         } catch (e) {
             console.error("Task completion failed:", e);
+            setError("שגיאה בסימון המשימה. אנא נסה שוב.");
+            setTimeout(() => setError(null), 3000);
+            fetchAllTasks(); // Rollback
         }
     };
 
+    const getActiveTasks = () => {
+        if (tasksSubTab === 'opening') return openingTasks;
+        if (tasksSubTab === 'prep') return prepBatches;
+        return closingTasks;
+    };
+
     return (
-        <div className="flex flex-col h-screen bg-gray-50 overflow-hidden" dir="rtl">
-            {/* Header */}
-            <div className="bg-white shadow-sm z-20 shrink-0 px-6 py-3 flex items-center border-b border-gray-200 font-heebo">
-                {/* Right Side - Home Button + Tabs */}
-                <div className="flex items-center gap-3 flex-1">
-                    <button onClick={handleExit} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition">
-                        <House size={22} />
+        <div className="flex flex-col h-[100dvh] bg-[#F8FAFC] overflow-hidden font-heebo" dir="rtl">
+            {/* Error Banner */}
+            <AnimatePresence>
+                {error && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -20, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-red-500 text-white px-8 py-4 rounded-3xl shadow-2xl font-black flex items-center gap-3 border-2 border-white/20 backdrop-blur-md"
+                    >
+                        <span className="text-2xl">⚠️</span> {error}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Premium Header */}
+            <div className="bg-white/80 backdrop-blur-xl shrink-0 h-20 flex items-center border-b border-slate-200/60 transition-all z-30 px-4 md:px-8">
+                {/* Right: Exit + Tabs */}
+                <div className="flex items-center gap-4 flex-1">
+                    <button
+                        onClick={handleExit}
+                        className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-2xl transition-all active:scale-95"
+                    >
+                        <House size={isMobile ? 20 : 24} />
                     </button>
 
-                    {/* Sub-tabs */}
-                    <div className="flex bg-gray-100 p-1 rounded-xl">
-                        <button onClick={() => setTasksSubTab('opening')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${tasksSubTab === 'opening' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500'}`}>
-                            <Sunrise size={16} /> פתיחה
-                            <span className="bg-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full">{openingTasks.length}</span>
+                    {/* Modern Sub-tabs */}
+                    <div className="flex bg-slate-100/80 p-1 rounded-[1.25rem] border border-slate-200/50">
+                        <button
+                            onClick={() => setTasksSubTab('opening')}
+                            className={`flex items-center gap-2 px-3 md:px-5 py-2 md:py-2.5 rounded-2xl text-sm font-black transition-all ${tasksSubTab === 'opening' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <Sunrise size={18} />
+                            <span className="hidden sm:inline">פתיחה</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${tasksSubTab === 'opening' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-200 text-slate-500'}`}>
+                                {openingTasks.length}
+                            </span>
                         </button>
-                        <button onClick={() => setTasksSubTab('prep')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${tasksSubTab === 'prep' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500'}`}>
-                            <Utensils size={16} /> הכנות
-                            <span className="bg-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full">{prepBatches.length}</span>
+                        <button
+                            onClick={() => setTasksSubTab('prep')}
+                            className={`flex items-center gap-2 px-3 md:px-5 py-2 md:py-2.5 rounded-2xl text-sm font-black transition-all ${tasksSubTab === 'prep' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <Utensils size={18} />
+                            <span className="hidden sm:inline">הכנות</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${tasksSubTab === 'prep' ? 'bg-orange-50 text-orange-600' : 'bg-slate-200 text-slate-500'}`}>
+                                {prepBatches.length}
+                            </span>
                         </button>
-                        <button onClick={() => setTasksSubTab('closing')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${tasksSubTab === 'closing' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500'}`}>
-                            <Sunset size={16} /> סגירה
-                            <span className="bg-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full">{closingTasks.length}</span>
+                        <button
+                            onClick={() => setTasksSubTab('closing')}
+                            className={`flex items-center gap-2 px-3 md:px-5 py-2 md:py-2.5 rounded-2xl text-sm font-black transition-all ${tasksSubTab === 'closing' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <Sunset size={18} />
+                            <span className="hidden sm:inline">סגירה</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${tasksSubTab === 'closing' ? 'bg-purple-50 text-purple-600' : 'bg-slate-200 text-slate-500'}`}>
+                                {closingTasks.length}
+                            </span>
                         </button>
                     </div>
                 </div>
 
-                {/* Center - Clock & Connection */}
-                <div className="flex items-center gap-3 px-4">
-                    <div className="text-lg font-black text-slate-700">
+                {/* Center: Clock (Desktop only) */}
+                <div className="hidden lg:flex items-center gap-4 bg-slate-50 px-5 py-2.5 rounded-2xl border border-slate-100 shadow-sm">
+                    <Clock size={16} className="text-slate-400" />
+                    <span className="text-lg font-black text-slate-700 font-mono">
                         {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                </div>
+
+                {/* Left: Music Player */}
+                {!isMobile && (
+                    <div className="flex items-center gap-4">
+                        <MiniMusicPlayer />
                     </div>
+                )}
+                {/* Connection Status Bar (always visible) */}
+                <div className="flex items-center gap-3 md:gap-6 justify-end">
                     <ConnectionStatusBar isIntegrated={true} />
                 </div>
-
-                {/* Left Side (RTL = far left) - Music */}
-                <div className="flex items-center gap-2 flex-1 justify-end">
-                    <MiniMusicPlayer />
-                </div>
             </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-hidden p-6">
-                {tasksSubTab === 'opening' && <TaskManagementView tasks={openingTasks} onComplete={handleCompleteTask} title="משימות פתיחה" />}
-                {tasksSubTab === 'prep' && <TaskManagementView tasks={prepBatches} onComplete={handleCompleteTask} title="באץ' הכנות" />}
-                {tasksSubTab === 'closing' && <TaskManagementView tasks={closingTasks} onComplete={handleCompleteTask} title="משימות סגירה" />}
-            </div>
+            {/* Content Area */}
+            <main className="flex-1 overflow-hidden relative bg-white md:bg-transparent">
+                <TaskManagementView
+                    tasks={getActiveTasks()}
+                    onComplete={handleCompleteTask}
+                    title={
+                        tasksSubTab === 'opening' ? 'משימות פתיחה' :
+                            tasksSubTab === 'prep' ? 'באץ׳ הכנות יומי' :
+                                'משימות סגירה'
+                    }
+                    tabType={tasksSubTab}
+                />
+            </main>
         </div>
     );
 };

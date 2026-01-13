@@ -78,18 +78,16 @@ export function useOrders({ businessId, filters = {} } = {}) {
     // Get orders grouped by status with custom sorting
     const ordersByStatus = useMemo(() => {
         const grouped = {};
-        const columns = ['new', 'in_prep', 'ready', 'shipped', 'delivered'];
+        const columns = ['pending', 'new', 'in_prep', 'ready', 'shipped', 'delivered'];
 
         columns.forEach(status => {
             let filtered = orders.filter(o => {
-                if (status === 'new') return o.order_status === 'new' || o.order_status === 'pending';
-                // 🆕 MAYA FIX: Only 'in_progress' maps to 'in_prep' column (was inconsistent before)
-                if (status === 'in_prep') return o.order_status === 'in_progress';
+                if (status === 'in_prep') return o.order_status === 'in_progress' || o.order_status === 'in_prep';
                 return o.order_status === status;
             });
 
             // CUSTOM SORTING LOGIC:
-            if (status === 'new') {
+            if (status === 'new' || status === 'pending') {
                 filtered.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
             } else if (status === 'in_prep') {
                 filtered.sort((a, b) => new Date(a.updated_at || a.created_at || 0) - new Date(b.updated_at || b.created_at || 0));

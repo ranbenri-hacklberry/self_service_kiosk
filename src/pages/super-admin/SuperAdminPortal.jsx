@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import SystemDiagnostics from '@/components/manager/SystemDiagnostics';
+import SystemMap from '@/components/super-admin/SystemMap';
 
 const SuperAdminPortal = () => {
     const navigate = useNavigate();
@@ -219,6 +220,11 @@ const SuperAdminPortal = () => {
                         ))}
                     </div>
                 )}
+            </div>
+
+            {/* SYSTEM DIRECTORY (NEW) */}
+            <div className="w-full max-w-6xl relative z-10 mt-12 mb-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                <SystemMap />
             </div>
 
             {/* DIAGNOSTICS MODAL */}

@@ -58,32 +58,28 @@ const SalesDashboard = () => {
   // Fetch Active Dates on Mount
   useEffect(() => {
     const fetchActiveDates = async () => {
-      let query = supabase
-        .from('orders')
-        .select('created_at')
-        .order('created_at', { ascending: false });
-
-      if (currentUser?.business_id) {
-        query = query.eq('business_id', currentUser.business_id);
-      }
-
-      const { data } = await query;
-
-      if (data && data.length > 0) {
-        const uniqueDates = new Set();
-        data.forEach(o => {
-          const dateStr = new Date(o.created_at).toDateString();
-          uniqueDates.add(dateStr);
+      try {
+        const { data, error } = await supabase.rpc('get_active_sales_dates', {
+          p_business_id: currentUser?.business_id
         });
-        const datesList = Array.from(uniqueDates);
-        setActiveDates(datesList);
 
-        const todayStr = new Date().toDateString();
-        if (!datesList.includes(todayStr) && datesList.length > 0) {
-          const mostRecent = new Date(datesList[0]);
-          mostRecent.setHours(0, 0, 0, 0);
-          setDateTuple([mostRecent.getTime(), 0]);
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          // RPC returns array of ISO date strings (YYYY-MM-DD)
+          // We need to convert them to .toDateString() format to match existing navigation logic
+          const datesList = data.map(d => new Date(d).toDateString());
+          setActiveDates(datesList);
+
+          const todayStr = new Date().toDateString();
+          if (!datesList.includes(todayStr) && datesList.length > 0) {
+            const mostRecent = new Date(datesList[0]);
+            mostRecent.setHours(0, 0, 0, 0);
+            setDateTuple([mostRecent.getTime(), 0]);
+          }
         }
+      } catch (e) {
+        console.error('Error fetching active dates:', e);
       }
     };
     fetchActiveDates();
@@ -490,7 +486,10 @@ const SalesDashboard = () => {
               initial="enter"
               animate="center"
               exit="exit"
-              transition={{ x: { type: "spring", stiffness: 300, damping: 30 }, opacity: { duration: 0.2 } }}
+              transition={{
+                x: { type: "tween", duration: 0.4, ease: [0.22, 1, 0.36, 1] },
+                opacity: { duration: 0.3 }
+              }}
               drag="x"
               dragConstraints={{ left: 0, right: 0 }}
               dragElastic={1}

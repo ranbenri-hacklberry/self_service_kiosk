@@ -5,12 +5,23 @@ import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { PlusCircle, X, Check, ClipboardList, ChevronLeft, Trash2, Coffee, ExternalLink } from 'lucide-react';
 import ConfirmationModal from '../ui/ConfirmationModal';
+import { TASK_CATEGORIES, isCategoryMatch, getCategoryAliases } from '@/config/taskCategories';
 
 // Variants for smooth animation
 const taskVariants = {
-  initial: { opacity: 0, height: 0 },
-  animate: { opacity: 1, height: 'auto', transition: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } },
-  exit: { opacity: 0, height: 0, transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] } }
+  initial: { opacity: 0, scale: 0.95, y: 20 },
+  animate: {
+    opacity: 1,
+    scale: 1,
+    y: 0,
+    transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] }
+  },
+  exit: {
+    opacity: 0,
+    scale: 0.95,
+    y: -20,
+    transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] }
+  }
 };
 
 const TasksManager = () => {
@@ -51,10 +62,11 @@ const TasksManager = () => {
     variant: 'info'
   });
 
+  // Centralized categories used for filtering
   const categoryMap = {
-    'opening': ['פתיחה', 'opening'],
-    'pre_closing': ['הכנה', 'prep'],  // Preparation tasks
-    'closing': ['סגירה', 'closing']
+    'opening': getCategoryAliases('opening'),
+    'pre_closing': getCategoryAliases('prep'),
+    'closing': getCategoryAliases('closing')
   };
 
   // Track completed tasks for today (Map: task_id -> timestamp)
@@ -119,16 +131,7 @@ const TasksManager = () => {
 
   // Filter tasks by current tab
   const filteredTasks = tasks.filter(task => {
-    if (activeTab === 'opening') {
-      return categoryMap.opening.includes(task.category);
-    }
-    if (activeTab === 'pre_closing') {
-      return categoryMap.pre_closing.includes(task.category);
-    }
-    if (activeTab === 'closing') {
-      return categoryMap.closing.includes(task.category);
-    }
-    return false;
+    return isCategoryMatch(activeTab, task.category);
   });
 
   // Sort tasks: Scheduled for today + not completed FIRST
@@ -473,121 +476,129 @@ const TasksManager = () => {
                     </div>
                   )}
 
-                <LayoutGroup>
-                  <AnimatePresence mode="wait">
-                    {sortedTasks.map(task => {
-                      // Get today's quantity from weekly_schedule
-                      const todayIdx = new Date().getDay();
-                      const schedule = task.weekly_schedule || {};
-                      const todayConfig = schedule[todayIdx];
-                      const todayQty = todayConfig?.qty || task.quantity || 0;
-                      const isPrepTask = activeTab === 'pre_closing';
-                      const hasTodayTask = todayQty > 0;
-                      const isCompleted = completedToday.has(task.id);
-                      const isUrgent = hasTodayTask && !isCompleted; // Scheduled today + not done
+                <div className="flex flex-col gap-3">
+                  <AnimatePresence initial={false}>
+                    {sortedTasks
+                      .map(task => {
+                        // Get today's quantity from weekly_schedule
+                        const todayIdx = new Date().getDay();
+                        const schedule = task.weekly_schedule || {};
+                        const todayConfig = schedule[todayIdx];
+                        const todayQty = todayConfig?.qty || task.quantity || 0;
+                        const isPrepTask = activeTab === 'pre_closing';
+                        const hasTodayTask = todayQty > 0;
+                        const isCompleted = completedToday.has(task.id);
+                        const isUrgent = hasTodayTask && !isCompleted; // Scheduled today + not done
 
-                      // Get days with tasks
-                      const daysWithTasks = Object.entries(schedule)
-                        .filter(([_, config]) => config?.qty > 0)
-                        .map(([day]) => ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'][parseInt(day)]);
+                        // Get days with tasks
+                        const daysWithTasks = Object.entries(schedule)
+                          .filter(([_, config]) => config?.qty > 0)
+                          .map(([day]) => ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'][parseInt(day)]);
 
-                      return (
-                        <motion.div
-                          key={task.id}
-                          variants={taskVariants}
-                          onClick={() => handleTaskClick(task)}
-                          className={`bg-white rounded-xl shadow-sm border p-2 pr-2 flex items-center gap-3 relative transition-all cursor-pointer group h-[88px] hover:shadow-md ${isCompleted
-                            ? 'border-green-300 bg-green-50/50'
-                            : isUrgent
-                              ? 'border-orange-300 bg-orange-50/30 ring-2 ring-orange-200'
-                              : isPrepTask && !hasTodayTask
-                                ? 'border-gray-200 opacity-50'
-                                : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50'
-                            }`}
-                        >
-                          {/* Icon / Complete Action Area (Right visually, Start of DOM) */}
-                          <div
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleTaskCompletion(task);
+                        return (
+                          <motion.div
+                            key={task.id}
+                            layout
+                            transition={{
+                              layout: { type: "tween", duration: 0.8, ease: [0.22, 1, 0.36, 1] },
+                              opacity: { duration: 0.5 }
                             }}
-                            className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center transition-all ${isCompleted
-                              ? 'bg-green-600 text-white shadow-md shadow-green-200'
-                              : 'bg-gray-100 text-gray-400 hover:bg-green-50 hover:text-green-600 active:scale-90 cursor-pointer'
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            onClick={() => handleTaskClick(task)}
+                            className={`bg-white rounded-xl shadow-sm border p-2 pr-2 flex items-center gap-3 relative cursor-pointer group h-[88px] ${isCompleted
+                              ? 'border-green-300 bg-green-50/50'
+                              : isUrgent
+                                ? 'border-orange-300 bg-orange-50/30 ring-2 ring-orange-200'
+                                : isPrepTask && !hasTodayTask
+                                  ? 'border-gray-200 opacity-50'
+                                  : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50'
                               }`}
                           >
-                            {isCompleted ? (
-                              <div className="flex flex-col items-center justify-center p-1">
-                                <Check size={28} strokeWidth={3} className="mb-0.5" />
-                                <span className="text-[10px] font-bold opacity-90 leading-none">
-                                  {(() => {
-                                    const ts = completedToday.get(task.id);
-                                    if (!ts) return '';
-                                    try {
-                                      return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                    } catch (e) {
-                                      return '';
-                                    }
-                                  })()}
-                                </span>
-                              </div>
-                            ) : isPrepTask && todayQty > 0 ? (
-                              <div className="flex flex-col items-center">
-                                <Check size={18} className="mb-px opacity-30" />
-                                <span className="text-xl font-black leading-none">{todayQty}</span>
-                                <span className="text-[10px] font-bold opacity-70">יח׳</span>
-                              </div>
-                            ) : task.menu_item_id ? (
-                              <Coffee size={24} />
-                            ) : (
-                              <ClipboardList size={24} />
-                            )}
-                          </div>
-
-                          {/* Content (Middle) */}
-                          <div className="flex-1 flex flex-col justify-center min-w-0 h-full py-1">
-                            <h3 className="font-bold text-gray-800 text-base leading-tight truncate mb-1 group-hover:text-blue-700 transition-colors">
-                              {task.name}
-                            </h3>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {task.menu_item_id && (
-                                <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100">
-                                  מתפריט
-                                </span>
-                              )}
-                              {isPrepTask && daysWithTasks.length > 0 && (
-                                <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
-                                  {daysWithTasks.join(' ')}
-                                </span>
-                              )}
-                              {!isPrepTask && task.description && (
-                                <span className="text-xs text-gray-400 truncate max-w-[150px]">
-                                  {task.description}
-                                </span>
+                            {/* Icon / Complete Action Area (Right visually, Start of DOM) */}
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleTaskCompletion(task);
+                              }}
+                              className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center transition-all ${isCompleted
+                                ? 'bg-green-600 text-white shadow-md shadow-green-200'
+                                : 'bg-gray-100 text-gray-400 hover:bg-green-50 hover:text-green-600 active:scale-90 cursor-pointer'
+                                }`}
+                            >
+                              {isCompleted ? (
+                                <div className="flex flex-col items-center justify-center p-1">
+                                  <Check size={28} strokeWidth={3} className="mb-0.5" />
+                                  <span className="text-[10px] font-bold opacity-90 leading-none">
+                                    {(() => {
+                                      const ts = completedToday.get(task.id);
+                                      if (!ts) return '';
+                                      try {
+                                        return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                      } catch (e) {
+                                        return '';
+                                      }
+                                    })()}
+                                  </span>
+                                </div>
+                              ) : isPrepTask && todayQty > 0 ? (
+                                <div className="flex flex-col items-center">
+                                  <Check size={18} className="mb-px opacity-30" />
+                                  <span className="text-xl font-black leading-none">{todayQty}</span>
+                                  <span className="text-[10px] font-bold opacity-70">יח׳</span>
+                                </div>
+                              ) : task.menu_item_id ? (
+                                <Coffee size={24} />
+                              ) : (
+                                <ClipboardList size={24} />
                               )}
                             </div>
-                          </div>
 
-                          {/* Actions (Left visually, End of DOM) */}
-                          <div className="pl-2 flex-shrink-0 flex items-center gap-2">
-                            {!task.menu_item_id && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteTask(task);
-                                }}
-                                className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-50 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            )}
-                            <ChevronLeft size={18} className="text-gray-300" />
-                          </div>
-                        </motion.div>
-                      );
-                    })}
+                            {/* Content (Middle) */}
+                            <div className="flex-1 flex flex-col justify-center min-w-0 h-full py-1">
+                              <h3 className="font-bold text-gray-800 text-base leading-tight truncate mb-1 group-hover:text-blue-700 transition-colors">
+                                {task.name}
+                              </h3>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {task.menu_item_id && (
+                                  <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100">
+                                    מתפריט
+                                  </span>
+                                )}
+                                {isPrepTask && daysWithTasks.length > 0 && (
+                                  <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                                    {daysWithTasks.join(' ')}
+                                  </span>
+                                )}
+                                {!isPrepTask && task.description && (
+                                  <span className="text-xs text-gray-400 truncate max-w-[150px]">
+                                    {task.description}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Actions (Left visually, End of DOM) */}
+                            <div className="pl-2 flex-shrink-0 flex items-center gap-2">
+                              {!task.menu_item_id && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteTask(task);
+                                  }}
+                                  className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-50 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              )}
+                              <ChevronLeft size={18} className="text-gray-300" />
+                            </div>
+                          </motion.div>
+                        );
+                      })}
                   </AnimatePresence>
-                </LayoutGroup>
+                </div>
               </>
             )}
           </motion.div>
@@ -610,15 +621,15 @@ const TasksManager = () => {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white z-50 rounded-t-3xl shadow-2xl p-0 min-h-[50vh] flex flex-col"
+              className="fixed bottom-0 left-0 right-0 bg-white z-50 rounded-t-[32px] shadow-2xl p-0 max-h-[92dvh] flex flex-col overflow-hidden"
             >
               {/* Modal Header */}
               <div className="p-6 pb-4 bg-white rounded-t-3xl border-b border-gray-50 shrink-0 relative">
                 <button
                   onClick={() => setShowEditModal(false)}
-                  className="absolute top-6 right-6 w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition-colors"
+                  className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition-colors z-10"
                 >
-                  <X size={20} />
+                  <X size={24} />
                 </button>
                 <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
                 <h3 className="text-2xl font-black text-slate-800 text-center">
@@ -794,15 +805,15 @@ const TasksManager = () => {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white z-50 rounded-t-3xl shadow-2xl min-h-[60vh] flex flex-col"
+              className="fixed bottom-0 left-0 right-0 bg-white z-50 rounded-t-[32px] shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden"
             >
               {/* Header */}
               <div className="p-6 pb-4 bg-white rounded-t-3xl border-b border-gray-50 shrink-0 relative">
                 <button
                   onClick={() => setShowPrepEditModal(false)}
-                  className="absolute top-6 right-6 w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition-colors"
+                  className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition-colors z-10"
                 >
-                  <X size={20} />
+                  <X size={24} />
                 </button>
                 <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
                 <h3 className="text-2xl font-black text-slate-800 text-center">

@@ -20,8 +20,8 @@ import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import KanbanColumn from './KanbanColumn';
 import KanbanOrderCard from './KanbanOrderCard';
 
-// Default column order - Unified with lifecycle: Incoming -> Acknowledged -> Prep -> Pick
-const DEFAULT_COLUMNS = ['pending', 'new', 'in_progress', 'ready', 'shipped', 'delivered'];
+// Default column order - Unified with lifecycle: Incoming -> Prep -> Ready -> Shipped
+const DEFAULT_COLUMNS = ['new', 'in_prep', 'ready', 'shipped'];
 
 export function KanbanBoard({
     ordersByStatus = {},
