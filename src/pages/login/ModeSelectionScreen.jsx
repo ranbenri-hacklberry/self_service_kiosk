@@ -11,18 +11,21 @@ const ModeSelectionScreen = () => {
 
     // Check if user is a manager/admin (case-insensitive)
     const accessLevel = (currentUser?.access_level || '').toLowerCase();
-    const isManager = currentUser?.role === 'admin' ||
-        currentUser?.role === 'manager' ||
+    const role = (currentUser?.role || '').toLowerCase();
+
+    const isManager = role === 'admin' ||
+        role === 'manager' ||
+        role === 'owner' ||
         accessLevel === 'admin' ||
         accessLevel === 'manager' ||
         accessLevel === 'owner' ||
         currentUser?.is_admin === true;
 
     // Check if user is a driver
-    const isDriver = currentUser?.is_driver === true;
+    const isDriver = currentUser?.is_driver === true || role === 'driver' || accessLevel === 'driver';
 
     // Check if user is owner
-    const isOwner = accessLevel === 'owner' || currentUser?.role === 'owner';
+    const isOwner = role === 'owner' || accessLevel === 'owner';
 
     const handleModeSelect = (mode) => {
         setMode(mode);
