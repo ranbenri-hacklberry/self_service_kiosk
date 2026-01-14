@@ -1,124 +1,101 @@
-import React from 'react';
-
-import Image from '../../../components/AppImage';
-
-import Icon from '../../../components/AppIcon';
-
-
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, Flame, Info, ShoppingBag } from 'lucide-react';
 
 const MenuItemCard = ({ item, onAddToCart }) => {
-  // Format price to Israeli Shekel (ILS) - number only
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('he-IL', {
-      maximumFractionDigits: 0
-    }).format(price);
-  };
+  const [isHovered, setIsHovered] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
 
+  // Fallback for missing image
+  const bgImage = item?.image || '/api/placeholder/400/300';
 
-
+  // Handler for click (supports both onAddToCart and onAdd prop names)
   const handleClick = () => {
-    // לחיצה בכל מקום בכרטיסייה פותחת את מסך ה-Modifier
-
-    if (onAddToCart && item?.available) {
-
-      onAddToCart(item);
-
+    if (item?.available !== false) {
+      onAddToCart?.(item);
     }
-
-  };
-
-
-
-  // Helper to optimize image URLs (mainly for Unsplash)
-  const optimizeImageUrl = (url, width = 400) => {
-    if (!url) return null;
-    try {
-      if (url.includes('images.unsplash.com')) {
-        // Create a URL object to handle existing params robustly
-        const urlObj = new URL(url);
-        urlObj.searchParams.set('w', width);
-        urlObj.searchParams.set('q', '75'); // Slightly lower quality for better speed
-        urlObj.searchParams.set('auto', 'format');
-        urlObj.searchParams.set('fit', 'crop');
-        return urlObj.toString();
-      }
-    } catch (e) {
-      console.warn('Failed to optimize image URL:', url);
-    }
-    return url;
   };
 
   return (
-    <div
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      whileHover={{ y: -5, scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      onHoverStart={() => setIsHovered(true)}
+      onHoverEnd={() => setIsHovered(false)}
+      className={`relative group w-full aspect-square rounded-3xl overflow-hidden cursor-pointer select-none ${item?.available === false ? 'opacity-60 cursor-not-allowed' : ''
+        }`}
       onClick={handleClick}
-      className={`
-        group relative flex flex-col
-        bg-white rounded-2xl shadow-sm border border-gray-100
-        aspect-[5/4]
-        hover:shadow-md hover:border-gray-200 hover:-translate-y-1
-        transition-all duration-300 cursor-pointer overflow-hidden
-        ${!item?.available ? 'opacity-60 cursor-not-allowed' : ''}
-      `}
     >
-      {/* Item Image - Takes up remaining space */}
-      <div className="flex-1 relative overflow-hidden bg-gray-50">
-        <Image
-          src={optimizeImageUrl(item?.image)}
+      {/* --- Background Image & Skeleton --- */}
+      <div className="absolute inset-0 z-0">
+        {!imageLoaded && (
+          <div className="w-full h-full bg-slate-800 animate-pulse" />
+        )}
+        <img
+          src={bgImage}
           alt={item?.name}
-          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+          className={`w-full h-full object-cover transition-transform duration-700 ease-out ${isHovered ? 'scale-110' : 'scale-100'
+            } ${!imageLoaded ? 'opacity-0' : 'opacity-100'}`}
+          onLoad={() => setImageLoaded(true)}
         />
-
-        {/* 'Not Available' Overlay */}
-        {!item?.available && (
-          <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center z-20">
-            <div className="bg-red-50 text-red-600 px-4 py-2 rounded-xl font-bold shadow-sm border border-red-100 flex items-center gap-2">
-              <Icon name="AlertCircle" size={18} />
-              <span>לא זמין</span>
-            </div>
-          </div>
-        )}
-
-        {/* Popularity Badge */}
-        {item?.isPopular && item?.available && (
-          <div className="absolute top-3 right-3 bg-yellow-400 text-yellow-950 px-3 py-1 rounded-full text-xs font-black shadow-sm z-10 flex items-center gap-1">
-            <Icon name="Star" size={12} className="fill-current" />
-            פופולרי
-          </div>
-        )}
-
-        {/* Modifiers Indicator */}
-        {(item?.options && item?.options?.length > 0) && item?.available && (
-          <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur text-slate-700 p-2 rounded-full shadow-sm z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-            <Icon name="Settings" size={16} />
-          </div>
-        )}
+        {/* Dark Gradient Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent opacity-90" />
       </div>
 
-      {/* Details - Compact single line */}
-      <div className="p-2 bg-white flex items-center justify-between gap-2 shrink-0 border-t border-gray-50" dir="rtl">
-        <h3 className="font-bold text-sm text-slate-800 leading-tight truncate flex-1 group-hover:text-orange-600 transition-colors">
-          {item?.name}
-        </h3>
+      {/* --- Not Available Overlay --- */}
+      {item?.available === false && (
+        <div className="absolute inset-0 z-20 bg-black/50 backdrop-blur-sm flex items-center justify-center">
+          <div className="bg-red-500/80 text-white px-4 py-2 rounded-xl font-bold shadow-lg">
+            לא זמין
+          </div>
+        </div>
+      )}
 
-        <div className="flex flex-col items-end leading-none">
-          {item?.originalPrice ? (
-            <>
-              <span className="text-[10px] text-gray-400 line-through mb-0.5">
-                {formatPrice(item.originalPrice)}
-              </span>
-              <span className="font-mono font-bold text-base text-red-600 bg-red-50 px-1.5 py-0.5 rounded-lg">
-                {formatPrice(item?.price)}
-              </span>
-            </>
-          ) : (
-            <span className="font-mono font-bold text-base text-slate-900 bg-gray-50 px-1.5 py-0.5 rounded-lg">
-              {formatPrice(item?.price)}
-            </span>
+      {/* --- Glassmorphism Content Area --- */}
+      <div className="absolute inset-0 z-10 flex flex-col justify-end p-5">
+
+        {/* Top Badges */}
+        <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
+          {item?.isPopular && (
+            <motion.div
+              initial={{ x: 20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-600 text-white text-xs font-bold shadow-lg flex items-center gap-1 backdrop-blur-md border border-white/10"
+            >
+              <Flame size={12} className="fill-white" />
+              פופולרי
+            </motion.div>
+          )}
+          {item?.isNew && (
+            <div className="px-3 py-1 rounded-full bg-blue-500/80 text-white text-xs font-bold backdrop-blur-md border border-blue-400/20">
+              חדש
+            </div>
           )}
         </div>
-      </div>
 
-    </div>
+        {/* Text Content - Name and price on same row */}
+        <div className="absolute bottom-0 left-0 right-0 p-4">
+          <div className="flex items-center justify-between gap-2" dir="rtl">
+            <h3 className="text-lg font-bold text-white leading-tight drop-shadow-md truncate flex-1">
+              {item?.name}
+            </h3>
+            {item?.originalPrice ? (
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="text-slate-400 text-sm line-through">{item.originalPrice}</span>
+                <span className="text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500">
+                  {item?.price}
+                </span>
+              </div>
+            ) : (
+              <span className="text-lg font-black text-white drop-shadow-lg shrink-0">{item?.price}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </motion.div>
   );
 };
 

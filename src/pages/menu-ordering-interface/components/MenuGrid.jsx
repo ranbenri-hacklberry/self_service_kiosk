@@ -6,7 +6,7 @@ const MenuGrid = ({ items = [], onAddToCart, isLoading = false, groupedItems = n
   if (isLoading) {
     return (
       <div className="p-4">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
           {Array.from({ length: 8 })?.map((_, index) => (
             <div key={`skeleton-${index}`} className="bg-card rounded-lg shadow-kiosk overflow-hidden animate-pulse">
               <div className="h-48 bg-muted"></div>
@@ -55,7 +55,7 @@ const MenuGrid = ({ items = [], onAddToCart, isLoading = false, groupedItems = n
               </h3>
             )}
             {/* Items in this group */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
               {group.items?.map((item) => (
                 <MenuItemCard
                   key={item?.id}
@@ -73,7 +73,7 @@ const MenuGrid = ({ items = [], onAddToCart, isLoading = false, groupedItems = n
   // Default: flat list
   return (
     <div className="p-4">
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
         {items?.map((item) => (
           <MenuItemCard
             key={item?.id}

@@ -73,8 +73,24 @@ const LoginScreen = () => {
                 return;
             }
 
-            // Single match - proceed as usual
-            await finalizeLogin(employees[0]);
+            // Single match - enrich with is_super_admin if missing (fallback for old RPC)
+            let employee = employees[0];
+            if (employee.is_super_admin === undefined) {
+                try {
+                    const { data: fullEmployee } = await supabase
+                        .from('employees')
+                        .select('is_super_admin, access_level')
+                        .eq('id', employee.id)
+                        .single();
+                    if (fullEmployee) {
+                        employee = { ...employee, is_super_admin: fullEmployee.is_super_admin, access_level: fullEmployee.access_level };
+                        console.log('🔑 Enriched employee with is_super_admin:', employee.is_super_admin);
+                    }
+                } catch (e) {
+                    console.warn('Could not enrich is_super_admin:', e);
+                }
+            }
+            await finalizeLogin(employee);
 
         } catch (err) {
             console.error('Login error:', err);
@@ -103,6 +119,8 @@ const LoginScreen = () => {
 
             // SPECIAL ROUTING FOR SUPER ADMIN
             if (employee.is_super_admin) {
+                // CRITICAL: Clear any leftover mode to ensure Super Admin goes to portal first
+                localStorage.removeItem('kiosk_mode');
                 navigate('/super-admin');
             } else {
                 navigate('/mode-selection');
