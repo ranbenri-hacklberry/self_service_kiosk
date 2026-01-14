@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Calendar, BarChart3, PieChart, ChevronDown, ChevronUp, Package, X, Phone, User, Clock, Hash, Receipt } from 'lucide-react';
+import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Calendar, BarChart3, PieChart, ChevronDown, ChevronUp, Package, X, Phone, User, Clock, Hash, Receipt, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
 
@@ -107,15 +107,12 @@ const SalesDashboard = () => {
       endOfWeek.setDate(endOfWeek.getDate() + 6);
       endOfWeek.setHours(23, 59, 59, 999);
 
-      if (now >= currentStart && now <= endOfWeek) {
-        currentEnd.setTime(now.getTime());
-      } else {
-        currentEnd.setTime(endOfWeek.getTime());
-      }
+      // ALWAYS fetch the full week for calculation purposes
+      currentEnd.setTime(endOfWeek.getTime());
 
+      // Previous week logic
       previousStart.setTime(currentStart.getTime() - (7 * 24 * 60 * 60 * 1000));
-      const duration = currentEnd.getTime() - currentStart.getTime();
-      previousEnd.setTime(previousStart.getTime() + duration);
+      previousEnd.setTime(currentEnd.getTime() - (7 * 24 * 60 * 60 * 1000));
 
     } else if (mode === 'monthly') {
       currentStart.setDate(1);
@@ -261,10 +258,94 @@ const SalesDashboard = () => {
   const totalPeriodStats = useMemo(() => aggregate(currentSales), [currentSales]);
   const previousStats = useMemo(() => aggregate(previousSales), [previousSales]);
 
+  // Calculate Percentage Change
+  const calculateChange = (current, previous) => {
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return ((current - previous) / previous) * 100;
+  };
+
   const percentageChange = useMemo(() => {
-    if (previousStats.total === 0) return totalPeriodStats.total > 0 ? 100 : 0;
-    return ((totalPeriodStats.total - previousStats.total) / previousStats.total) * 100;
+    return calculateChange(totalPeriodStats.total, previousStats.total);
   }, [totalPeriodStats, previousStats]);
+
+  /**
+   * SPLIT STATS - "Apples to Apples" Comparison Logic
+   * 
+   * Business Problem: When comparing weekly/monthly sales, a simple comparison
+   * is unfair. Example: It's Wednesday noon, and we compare to last full week.
+   * Last week had 7 days, this week has only 2.5 days = misleading comparison!
+   * 
+   * Solution: We calculate TWO metrics:
+   * 1. PARTIAL (Cumulative): Sales up to the same day/hour as "now"
+   *    - If today is Wed 12:00, we compare:
+   *      This week: Sun-Wed 12:00 vs Last week: Sun-Wed 12:00
+   *    - This gives a FAIR "apples to apples" comparison.
+   * 
+   * 2. FULL: Total sales for the entire period.
+   *    - For current period: Shows "in progress" indicator.
+   *    - For past periods: Shows final total.
+   * 
+   * The "offset" calculation converts a date to "minutes since period start"
+   * to enable comparing the same relative point in different periods.
+   */
+  const splitStats = useMemo(() => {
+    if (viewMode !== 'weekly' && viewMode !== 'monthly') return null;
+
+    const now = new Date();
+
+    if (viewMode === 'weekly') {
+      // Calculate offset in minutes from Sunday 00:00 (start of week)
+      // Formula: (dayOfWeek * 24 * 60) + (hours * 60) + minutes
+      const getWeekOffset = (d) => {
+        const date = new Date(d);
+        return (date.getDay() * 24 * 60) + (date.getHours() * 60) + date.getMinutes();
+      };
+      const currentOffset = getWeekOffset(now);
+      // Filter items that occurred before "now" relative to their week start
+      const isPartial = (item) => getWeekOffset(item.date) <= currentOffset;
+
+      const partialCurrent = currentSales.filter(isPartial);
+      const partialPrevious = previousSales.filter(isPartial);
+
+      return {
+        partial: {
+          total: aggregate(partialCurrent).total,
+          prev: aggregate(partialPrevious).total,
+          change: calculateChange(aggregate(partialCurrent).total, aggregate(partialPrevious).total)
+        },
+        full: {
+          total: totalPeriodStats.total,
+          prev: previousStats.total,
+          change: calculateChange(totalPeriodStats.total, previousStats.total)
+        }
+      };
+    } else {
+      // Monthly: Calculate offset in minutes from 1st of month 00:00
+      // Formula: (dayOfMonth * 24 * 60) + (hours * 60) + minutes
+      const getMonthOffset = (d) => {
+        const date = new Date(d);
+        return (date.getDate() * 24 * 60) + (date.getHours() * 60) + date.getMinutes();
+      };
+      const currentOffset = getMonthOffset(now);
+      const isPartial = (item) => getMonthOffset(item.date) <= currentOffset;
+
+      const partialCurrent = currentSales.filter(isPartial);
+      const partialPrevious = previousSales.filter(isPartial);
+
+      return {
+        partial: {
+          total: aggregate(partialCurrent).total,
+          prev: aggregate(partialPrevious).total,
+          change: calculateChange(aggregate(partialCurrent).total, aggregate(partialPrevious).total)
+        },
+        full: {
+          total: totalPeriodStats.total,
+          prev: previousStats.total,
+          change: calculateChange(totalPeriodStats.total, previousStats.total)
+        }
+      };
+    }
+  }, [viewMode, currentSales, previousSales, totalPeriodStats, previousStats]);
 
   // Graph Data Preparation
   const graphData = useMemo(() => {
@@ -317,31 +398,28 @@ const SalesDashboard = () => {
       let rangeStart, rangeEnd;
 
       if (viewMode === 'weekly') {
-        // Sunday of the selected week
         rangeStart = new Date(selectedDate);
         rangeStart.setDate(rangeStart.getDate() - rangeStart.getDay());
         rangeStart.setHours(0, 0, 0, 0);
 
-        // Saturday of that week
         rangeEnd = new Date(rangeStart);
         rangeEnd.setDate(rangeEnd.getDate() + 6);
         rangeEnd.setHours(23, 59, 59, 999);
-
-        // Current week: end at today
-        if (rangeEnd > now) rangeEnd = new Date(now);
       } else {
-        // Monthly: 1st to end of month
+        // Monthly logic
         rangeStart = new Date(selectedDate);
         rangeStart.setDate(1);
         rangeStart.setHours(0, 0, 0, 0);
 
         rangeEnd = new Date(rangeStart);
         rangeEnd.setMonth(rangeEnd.getMonth() + 1);
-        rangeEnd.setDate(0);
+        rangeEnd.setDate(0); // Last day of the month
         rangeEnd.setHours(23, 59, 59, 999);
 
-        // Current month: end at today
-        if (rangeEnd > now) rangeEnd = new Date(now);
+        // If the selected month is the current month, limit end date to 'now'
+        if (selectedDate.getMonth() === now.getMonth() && selectedDate.getFullYear() === now.getFullYear()) {
+          rangeEnd = new Date(now);
+        }
       }
 
       let currentDay = new Date(rangeStart);
@@ -429,6 +507,57 @@ const SalesDashboard = () => {
     return 'מול תקופה קודמת';
   }
 
+  // Helper: Get descriptive label for partial comparison
+  const getPartialLabel = () => {
+    const now = new Date();
+    const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    const timeStr = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+    if (viewMode === 'weekly') {
+      if (isNextDisabled()) {
+        return `עד היום בשעה ${timeStr}`;
+      } else {
+        return `עד יום ${days[now.getDay()]} ${timeStr}`;
+      }
+    } else if (viewMode === 'monthly') {
+      if (isNextDisabled()) {
+        return `עד ה-${now.getDate()} בשעה ${timeStr}`;
+      } else {
+        return `עד ה-${now.getDate()} בחודש`;
+      }
+    }
+    return '';
+  };
+
+  // Helper: Get period date range label
+  const getPeriodRangeLabel = () => {
+    const formatDate = (date) => `${date.getDate()}/${date.getMonth() + 1}`;
+    const d = new Date(selectedDate);
+
+    if (viewMode === 'weekly') {
+      if (isNextDisabled()) return 'השבוע הנוכחי';
+      const start = new Date(d); start.setDate(start.getDate() - start.getDay()); start.setHours(0, 0, 0, 0);
+      const end = new Date(start); end.setDate(end.getDate() + 6);
+
+      // Check if it's last week
+      const oneWeekAgo = new Date(); oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      const startOfLastWeek = new Date(oneWeekAgo); startOfLastWeek.setDate(startOfLastWeek.getDate() - startOfLastWeek.getDay()); startOfLastWeek.setHours(0, 0, 0, 0);
+      if (start.getTime() === startOfLastWeek.getTime()) {
+        return `שבוע שעבר (${formatDate(start)} - ${formatDate(end)})`;
+      }
+      return `${formatDate(start)} - ${formatDate(end)}`;
+    } else if (viewMode === 'monthly') {
+      if (isNextDisabled()) return selectedDate.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+      // Check if it's last month
+      const lastMonth = new Date(); lastMonth.setMonth(lastMonth.getMonth() - 1);
+      if (d.getMonth() === lastMonth.getMonth() && d.getFullYear() === lastMonth.getFullYear()) {
+        return `חודש שעבר (${d.toLocaleDateString('he-IL', { month: 'long' })})`;
+      }
+      return d.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+    }
+    return '';
+  };
+
   const slideVariants = {
     enter: (direction) => ({ x: direction > 0 ? -500 : 500, opacity: 0 }),
     center: { zIndex: 1, x: 0, opacity: 1 },
@@ -477,7 +606,7 @@ const SalesDashboard = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Main Stats Card */}
-        <div className="relative h-40 w-full">
+        <div className="relative h-44 w-full">
           <AnimatePresence initial={false} custom={direction} mode="popLayout">
             <motion.div
               key={`${viewMode}-${dateMs}`}
@@ -499,20 +628,92 @@ const SalesDashboard = () => {
               }}
               className="absolute inset-0 bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-2xl shadow-lg flex flex-col justify-center px-4 cursor-grab active:cursor-grabbing overflow-hidden"
             >
-              <div className="flex justify-between items-center w-full">
-                <button onClick={goToPreviousPeriod} className="p-2 bg-white/10 hover:bg-white/20 rounded-full text-white"><ChevronRight size={24} /></button>
-                <div className="text-center">
-                  <div className="text-blue-100 text-sm font-medium opacity-90">{getPeriodLabel()}</div>
-                  <div className="text-4xl font-black tracking-tight">{formatCurrency(totalPeriodStats.total)}</div>
-                  <div className="flex items-center justify-center gap-2 mt-1">
-                    <span className="text-xs text-blue-100 opacity-75">{getComparisonLabel()}: {formatCurrency(previousStats.total)}</span>
-                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${percentageChange >= 0 ? 'bg-green-400/20 text-green-200' : 'bg-red-400/20 text-red-200'}`}>
-                      {percentageChange >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                      {Math.abs(percentageChange).toFixed(1)}%
-                    </span>
-                  </div>
+              <div className="flex justify-between items-center w-full relative z-10 h-full py-3">
+                <button
+                  onClick={goToPreviousPeriod}
+                  aria-label="תקופה קודמת"
+                  className="p-2.5 bg-white/10 hover:bg-white/20 rounded-full text-white absolute right-1 top-1/2 -translate-y-1/2 transition-colors"
+                >
+                  <ChevronRight size={24} />
+                </button>
+
+                <div className="flex-1 flex items-center justify-center px-8 h-full">
+                  {(viewMode === 'weekly' || viewMode === 'monthly') && splitStats ? (
+                    <div className="flex flex-col w-full h-full">
+                      <div className="flex w-full flex-1 divide-x divide-white/20 divide-x-reverse min-h-0">
+                        {/* Right Side: Partial (Cumulative Comparison) */}
+                        <div className="flex-1 flex flex-col items-center justify-center px-2">
+                          {/* Row 1: Title with Info Tooltip */}
+                          <div className="text-blue-200 text-[10px] font-bold uppercase tracking-wider h-4 flex items-center gap-1">
+                            <span>מצטבר</span>
+                            <span
+                              title="השוואה הוגנת: משווה מכירות עד אותו יום ושעה בתקופה הקודמת"
+                              className="cursor-help opacity-60 hover:opacity-100 transition-opacity"
+                            >
+                              <Info size={10} />
+                            </span>
+                          </div>
+                          {/* Row 2: Amount (Same height on both sides) */}
+                          <div className="text-3xl font-black h-10 flex items-center">{formatCurrency(splitStats.partial.total)}</div>
+                          {/* Row 3: Subtitle */}
+                          <div className="text-[9px] text-blue-200/80 h-4 flex items-center">{getPartialLabel()}</div>
+                          {/* Row 4: Badge */}
+                          <div className="h-5 flex items-center">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${splitStats.partial.change >= 0 ? 'bg-green-400/20 text-green-200' : 'bg-red-400/20 text-red-200'}`}>
+                              {splitStats.partial.change >= 0 ? <TrendingUp size={8} /> : <TrendingDown size={8} />}
+                              {Math.abs(splitStats.partial.change).toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Left Side: Full Period */}
+                        <div className="flex-1 flex flex-col items-center justify-center px-2">
+                          {/* Row 1: Title */}
+                          <div className="text-blue-200 text-[10px] font-bold uppercase tracking-wider h-4 flex items-center">{viewMode === 'weekly' ? 'סה״כ שבועי' : 'סה״כ חודשי'}</div>
+                          {/* Row 2: Amount (Same height on both sides) */}
+                          <div className="text-3xl font-black h-10 flex items-center">{formatCurrency(splitStats.full.total)}</div>
+                          {/* Row 3: Subtitle (empty placeholder for alignment) */}
+                          <div className="text-[9px] text-blue-200/80 h-4 flex items-center opacity-0">-</div>
+                          {/* Row 4: Badge */}
+                          <div className="h-5 flex items-center">
+                            {isNextDisabled() ? (
+                              <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded-full">בתהליך</span>
+                            ) : (
+                              <span className="text-[10px] text-blue-200/80">סופי</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Bottom Date Range Label */}
+                      <div className="border-t border-white/10 mt-2 pt-1.5 text-center">
+                        <span className="text-[10px] text-blue-100 font-medium">{getPeriodRangeLabel()}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    // Default Single View (Daily only)
+                    <div className="text-center">
+                      <div className="text-blue-100 text-sm font-medium opacity-90">{getPeriodLabel()}</div>
+                      <div className="text-4xl font-black tracking-tight mt-2">{formatCurrency(totalPeriodStats.total)}</div>
+                      <div className="flex items-center justify-center gap-2 mt-2">
+                        <span className="text-xs text-blue-100 opacity-75">{getComparisonLabel()}: {formatCurrency(previousStats.total)}</span>
+                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${percentageChange >= 0 ? 'bg-green-400/20 text-green-200' : 'bg-red-400/20 text-red-200'}`}>
+                          {percentageChange >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                          {Math.abs(percentageChange).toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <button onClick={goToNextPeriod} disabled={isNextDisabled()} className={`p-2 bg-white/10 hover:bg-white/20 rounded-full text-white ${isNextDisabled() ? 'opacity-30' : ''}`}><ChevronLeft size={24} /></button>
+
+                <button
+                  onClick={goToNextPeriod}
+                  disabled={isNextDisabled()}
+                  aria-label="תקופה הבאה"
+                  className={`p-2.5 bg-white/10 hover:bg-white/20 rounded-full text-white absolute left-1 top-1/2 -translate-y-1/2 transition-colors ${isNextDisabled() ? 'opacity-30 cursor-not-allowed' : ''}`}
+                >
+                  <ChevronLeft size={24} />
+                </button>
               </div>
             </motion.div>
           </AnimatePresence>

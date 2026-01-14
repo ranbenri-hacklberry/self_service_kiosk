@@ -133,11 +133,12 @@ const TripleCheckCard = ({
             return { ...catItem, score };
         });
 
-        // Filter out items with 0 score if searching, sort by score, take top 10
+        // Filter out items with 0 score, sort by score, take top 20
+        // FIX: Lower threshold for search queries to show more results
         return scored
-            .filter(item => query ? item.score > 0 : true)
+            .filter(item => item.score > (query ? 0 : 40)) // Show anything matching query, but only good matches for auto-suggest
             .sort((a, b) => b.score - a.score)
-            .slice(0, 10);
+            .slice(0, 20); // Increased from 10 to 20
     }, [catalogItems, item.name, debouncedQuery]);
 
     const handleSelectCatalogItem = (selectedItem) => {
@@ -224,27 +225,44 @@ const TripleCheckCard = ({
                             </div>
                             <div className="overflow-y-auto max-h-[200px]">
                                 {suggestedItems.length > 0 ? (
-                                    suggestedItems.map((sugItem) => (
+                                    <>
+                                        {/* Option: Create New Item (Don't Map) */}
                                         <button
-                                            key={sugItem.id}
-                                            onClick={() => handleSelectCatalogItem(sugItem)}
-                                            className={`w-full px-4 py-3 text-right text-sm hover:bg-purple-50 transition-colors flex items-center justify-between border-b border-gray-50 last:border-0 ${catalogItemId === sugItem.id ? 'bg-purple-100' : ''}`}
+                                            onClick={() => handleSelectCatalogItem(null)}
+                                            className="w-full px-4 py-3 text-right text-sm hover:bg-purple-50 transition-colors flex items-center gap-2 border-b border-gray-100 text-purple-600 font-bold bg-purple-50/50"
                                         >
-                                            <div className="flex flex-col items-start min-w-0">
-                                                <span className="truncate font-bold">{sugItem.name}</span>
-                                                <span className="text-[11px] text-gray-500">
-                                                    {formatQtyWithUnit(sugItem.inventory_count_step || 1, sugItem.unit)}
-                                                    {sugItem.category && ` • ${sugItem.category}`}
-                                                </span>
-                                            </div>
-                                            {catalogItemId === sugItem.id && (
-                                                <Check size={16} className="text-purple-600 shrink-0" />
-                                            )}
+                                            <Sparkles size={16} />
+                                            <span>צור כפריט חדש</span>
                                         </button>
-                                    ))
+
+                                        {suggestedItems.map((sugItem) => (
+                                            <button
+                                                key={sugItem.id}
+                                                onClick={() => handleSelectCatalogItem(sugItem)}
+                                                className={`w-full px-4 py-3 text-right text-sm hover:bg-purple-50 transition-colors flex items-center justify-between border-b border-gray-50 last:border-0 ${catalogItemId === sugItem.id ? 'bg-purple-100' : ''}`}
+                                            >
+                                                <div className="flex flex-col items-start min-w-0">
+                                                    <span className="truncate font-bold">{sugItem.name}</span>
+                                                    <span className="text-[11px] text-gray-500">
+                                                        {formatQtyWithUnit(sugItem.inventory_count_step || 1, sugItem.unit)}
+                                                        {sugItem.category && ` • ${sugItem.category}`}
+                                                    </span>
+                                                </div>
+                                                {catalogItemId === sugItem.id && (
+                                                    <Check size={16} className="text-purple-600 shrink-0" />
+                                                )}
+                                            </button>
+                                        ))}
+                                    </>
                                 ) : (
                                     <div className="px-3 py-4 text-sm text-gray-400 text-center">
                                         לא נמצאו תוצאות
+                                        <button
+                                            onClick={() => handleSelectCatalogItem(null)}
+                                            className="block w-full mt-2 text-purple-600 font-bold hover:underline"
+                                        >
+                                            צור כפריט חדש
+                                        </button>
                                     </div>
                                 )}
                             </div>

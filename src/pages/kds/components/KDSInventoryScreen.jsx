@@ -44,31 +44,31 @@ const SCANNING_STEPS = [
 
 const ScanningAnimation = ({ isDataReady, onComplete }) => {
     const [stepIndex, setStepIndex] = useState(0);
-    const [localProgress, setLocalProgress] = useState(0); // 0 to 100
+    const [localProgress, setLocalProgress] = useState(0);
     const [hasReached95, setHasReached95] = useState(false);
 
-    const STEP_DURATION = 4000; // 4 seconds per step
-    const STEPS_COUNT = SCANNING_STEPS.length; // 5 steps
+    const STEP_DURATION = 3500; // Slightly faster steps for better UX
+    const STEPS_COUNT = SCANNING_STEPS.length;
 
     useEffect(() => {
-        // Continuous progress update
         const startTime = Date.now();
+        const duration = STEP_DURATION * STEPS_COUNT;
+
         const timer = setInterval(() => {
             const elapsed = Date.now() - startTime;
 
-            // Calculate progress based on time
-            // Steps 1-4 (0-16s) -> 0-80%
-            // Step 5 (16-20s) -> 80-95%
             let currentProgress = 0;
-            if (elapsed < 16000) {
-                currentProgress = (elapsed / 16000) * 80;
-                setStepIndex(Math.floor(elapsed / 4000));
-            } else if (elapsed < 20000) {
-                currentProgress = 80 + ((elapsed - 16000) / 4000) * 15;
-                setStepIndex(4);
+            const eightyPercentTime = STEP_DURATION * 4;
+
+            if (elapsed < eightyPercentTime) {
+                currentProgress = (elapsed / eightyPercentTime) * 80;
+                setStepIndex(Math.floor(elapsed / STEP_DURATION));
+            } else if (elapsed < duration) {
+                currentProgress = 80 + ((elapsed - eightyPercentTime) / STEP_DURATION) * 15;
+                setStepIndex(STEPS_COUNT - 1);
             } else {
                 currentProgress = 95;
-                setStepIndex(4);
+                setStepIndex(STEPS_COUNT - 1);
                 setHasReached95(true);
             }
 
@@ -76,122 +76,116 @@ const ScanningAnimation = ({ isDataReady, onComplete }) => {
         }, 50);
 
         return () => clearInterval(timer);
-    }, []);
+    }, [STEPS_COUNT]);
 
-    // Handle finishing logic: jump from 95 to 100 when data is ready
     useEffect(() => {
         if (hasReached95 && isDataReady) {
-            // Smoothly move from 95 to 100 in 500ms
             const start = localProgress;
             const startTime = Date.now();
             const finishTimer = setInterval(() => {
                 const elapsed = Date.now() - startTime;
-                const p = Math.min(1, elapsed / 500);
+                const p = Math.min(1, elapsed / 600);
                 const nextProgress = start + (100 - start) * p;
                 setLocalProgress(nextProgress);
 
                 if (p >= 1) {
                     clearInterval(finishTimer);
-                    setTimeout(onComplete, 200); // Small delay for UX
+                    setTimeout(onComplete, 300);
                 }
             }, 30);
             return () => clearInterval(finishTimer);
         }
-    }, [hasReached95, isDataReady, onComplete]);
+    }, [hasReached95, isDataReady, onComplete, localProgress]);
 
     const currentStep = SCANNING_STEPS[stepIndex];
 
     return (
-        <div className="h-full flex flex-col items-center justify-center">
-            {/* Warehouse Clerk Image or Video */}
-            <AnimatePresence mode="wait">
-                <motion.div
-                    key={stepIndex}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ duration: 0.4 }}
-                    className="mb-6"
-                >
-                    {currentStep.video ? (
-                        <div className="relative w-60 h-60 rounded-xl overflow-hidden bg-slate-50">
-                            <video
-                                src={currentStep.video}
-                                autoPlay
-                                muted
-                                playsInline
-                                className="w-full h-full object-cover scale-[1.15] brightness-105"
-                            />
-                            {/* Lighter gray overlay with higher transparency */}
-                            <div className="absolute inset-0 bg-slate-400/10 pointer-events-none" />
-                        </div>
-                    ) : (
-                        <div className="relative w-60 h-60 rounded-xl overflow-hidden bg-slate-50">
-                            <img
-                                src={currentStep.image}
-                                alt={currentStep.title}
-                                className="w-full h-full object-contain p-2"
-                            />
-                        </div>
-                    )}
-                </motion.div>
-            </AnimatePresence>
+        <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-50/50">
+            {/* Main Visual Container */}
+            <div className="relative mb-12">
+                {/* Glow Effect */}
+                <div className="absolute inset-0 bg-purple-500/20 blur-3xl rounded-full animate-pulse" />
 
-            {/* Rotating Messages */}
-            <AnimatePresence mode="wait">
-                <motion.div
-                    key={stepIndex}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.3 }}
-                    className="text-center"
-                >
-                    <h3 className="text-xl font-black text-slate-800">{currentStep.title}</h3>
-                    <p className="text-sm text-gray-400 mt-2">{currentStep.subtitle}</p>
-                </motion.div>
-            </AnimatePresence>
-
-            {/* Progress Bar with Percentage */}
-            <div className="mt-8 flex flex-col items-center">
-                <div className="w-64 h-3 bg-gray-200 rounded-full overflow-hidden shadow-inner">
+                <AnimatePresence mode="wait">
                     <motion.div
-                        className="h-full bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 rounded-full"
-                        animate={{ width: `${localProgress}%` }}
-                        transition={{
-                            duration: 0.8,
-                            ease: [0.33, 1, 0.68, 1] // Organic cubic-out easing
-                        }}
-                    />
-                </div>
-                <div className="flex items-center gap-2 mt-3">
-                    <span className="text-lg font-black text-purple-600">
-                        {Math.round(localProgress)}%
-                    </span>
-                </div>
+                        key={stepIndex}
+                        initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.8, y: -10 }}
+                        transition={{ duration: 0.5, ease: "easeOut" }}
+                        className="relative z-10"
+                    >
+                        <div className="w-64 h-64 rounded-[2.5rem] overflow-hidden bg-white shadow-2xl border-4 border-white flex items-center justify-center p-6 bg-gradient-to-b from-white to-slate-50">
+                            <motion.div
+                                className="text-7xl"
+                                animate={{
+                                    y: [0, -20, 0],
+                                    rotate: [0, 5, -5, 0]
+                                }}
+                                transition={{
+                                    duration: 2,
+                                    repeat: Infinity,
+                                    ease: "easeInOut"
+                                }}
+                            >
+                                {currentStep.title.includes('חשבונית') ? '📜' :
+                                    currentStep.title.includes('פריטים') ? '📦' :
+                                        currentStep.title.includes('שמות') ? '🔍' :
+                                            currentStep.title.includes('מחירים') ? '💰' : '✨'}
+                            </motion.div>
+                        </div>
+                    </motion.div>
+                </AnimatePresence>
             </div>
 
-            {/* Step indicator */}
-            <div className="flex gap-2 mt-6">
-                {SCANNING_STEPS.map((_, idx) => (
+            {/* Content Section */}
+            <div className="w-full max-w-sm text-center">
+                <AnimatePresence mode="wait">
                     <motion.div
-                        key={idx}
-                        className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${idx === stepIndex
-                            ? 'bg-purple-600'
-                            : idx < stepIndex
-                                ? 'bg-purple-400'
-                                : 'bg-gray-200'
-                            }`}
-                        animate={{
-                            scale: idx === stepIndex ? 1.4 : 1,
-                            backgroundColor: idx === stepIndex ? '#9333ea' : idx < stepIndex ? '#c084fc' : '#e2e8f0'
-                        }}
-                    />
-                ))}
+                        key={stepIndex}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.3 }}
+                        className="mb-6"
+                    >
+                        <h3 className="text-2xl font-black text-slate-800 tracking-tight">{currentStep.title}</h3>
+                        <p className="text-slate-400 font-medium mt-1">אנחנו מעבדים את הנתונים שלך...</p>
+                    </motion.div>
+                </AnimatePresence>
+
+                {/* Progress Bar Container */}
+                <div className="space-y-3">
+                    <div className="h-4 w-full bg-slate-200 rounded-full overflow-hidden shadow-inner p-1">
+                        <motion.div
+                            className="h-full bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 rounded-full shadow-lg"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${localProgress}%` }}
+                            transition={{ duration: 0.2 }}
+                        />
+                    </div>
+                    <div className="flex justify-between items-center px-1">
+                        <span className="text-xs font-black text-slate-400">PROGRESS</span>
+                        <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">{Math.round(localProgress)}%</span>
+                    </div>
+                </div>
+
+                {/* Status Dots */}
+                <div className="flex justify-center gap-2.5 mt-8">
+                    {SCANNING_STEPS.map((_, i) => (
+                        <div
+                            key={i}
+                            className={`h-2 rounded-full transition-all duration-500 ${i === stepIndex ? 'w-8 bg-indigo-500' :
+                                i < stepIndex ? 'w-2 bg-indigo-200' : 'w-2 bg-slate-200'
+                                }`}
+                        />
+                    ))}
+                </div>
             </div>
         </div>
     );
 };
+
 
 const KDSInventoryScreen = ({ onExit }) => {
     const { currentUser } = useAuth();
@@ -596,18 +590,22 @@ const KDSInventoryScreen = ({ onExit }) => {
                 ...globalCatalog.filter(gc => !items.some(i => i.catalog_item_id === gc.id)).map(gc => ({ ...gc, inInventory: false }))
             ];
 
-            const stopWords = ['קילו', 'ק"ג', 'גרם', 'ליטר', 'מל', 'יח', 'יחידות', 'חבילה', 'ארגז', 'גדולות', 'קטנות'];
-            const cleanName = normalizedInvoiceName
-                .replace(/[()\[\]{}]/g, '') // Remove brackets first
-                .replace(/\d+%/g, '')
-                .replace(/\d+\s?(גרם|קילו|ליטר|מל|kg|gr|ml|lt)/gi, '')
-                .replace(/['"״׳]/g, '') // Remove quotes
-                .replace(/\s+/g, ' ')
-                .trim();
+            const stopWords = ['קילו', 'ק"ג', 'גרם', 'ליטר', 'מל', 'יח', 'יחידות', 'חבילה', 'ארגז', 'גדולות', 'קטנות', 'מוסדי', 'קרטון', 'מקפיא', 'מחסן', 'מדף', 'קפוא', 'קפואה', 'טרי', 'טריה', 'סוג', 'א', 'ב', 'ג'];
 
-            const invoiceTokens = cleanName.split(/[\s,.-]+/)
-                .filter(w => w.length > 1 && !stopWords.includes(w.toLowerCase()))
-                .map(w => w.toLowerCase());
+            // CLEAN NAME: Focus on Hebrew tokens to bypass numeric codes and English noise
+            const hebrewTokens = normalizedInvoiceName.match(/[\u0590-\u05FF]+/g) || [];
+            const cleanName = hebrewTokens.filter(t => !stopWords.includes(t)).join(' ');
+
+            // Fallback to original cleaning if no Hebrew found (unlikely but safe)
+            if (hebrewTokens.length === 0) {
+                cleanName = normalizedInvoiceName
+                    .replace(/^[\d\-\.\/\|\*\#]+\s+/, '')
+                    .replace(/[()\[\]{}]/g, ' ')
+                    .replace(/\d+/g, '')
+                    .trim();
+            }
+
+            const invoiceTokens = hebrewTokens.filter(t => t.length > 1 && !stopWords.includes(t.toLowerCase()));
 
             // Log for debugging (only if not found or low score initially) or just once per batch
             // console.log(`🔎 Matching for: "${normalizedInvoiceName}" (Clean: "${cleanName}") - Candidates: ${allPossibleItems.length}`);
@@ -902,7 +900,10 @@ const KDSInventoryScreen = ({ onExit }) => {
 
             // 0. 🚑 ID RECOVERY: If inventoryItemId is missing but we have a catalogItemName that matches a real inventory item, recover the ID!
             workingItems.forEach(item => {
-                if (!item.inventoryItemId && !item.isNew) {
+                // CRITICAL FIX: Do NOT try to recover ID if user explicitly mapped it manually or marked as new
+                if (item.matchType === 'manual' || item.matchType === 'new') return;
+
+                if (!item.inventoryItemId) {
                     // Method A: Try by catalogItemName (Standard link)
                     let foundInInventory = null;
                     if (item.catalogItemName) {
@@ -916,7 +917,13 @@ const KDSInventoryScreen = ({ onExit }) => {
 
                     // Method C: Ultra-Fuzzy Name Match (Strip all garbage)
                     if (!foundInInventory && item.name) {
-                        const normalizeForIdRecovery = (str) => (str || '').replace(/[\s\-\*\"\'\(\)\[\]]/g, '').toLowerCase();
+                        const normalizeForIdRecovery = (str) => {
+                            return (str || '')
+                                .replace(/^[\u0590-\u05FF]{3,}\s?-?\s?\d+\s?-?\s?/, '') // Strip things like "מקפיא - 5 -"
+                                .replace(/^[\d\-\.\/\|\*\#]+\s+/, '') // Strip leading codes
+                                .replace(/[\s\-\*\"\'\(\)\[\]]/g, '')
+                                .toLowerCase();
+                        };
                         const searchNorm = normalizeForIdRecovery(item.name);
 
                         foundInInventory = items.find(i =>
@@ -948,16 +955,24 @@ const KDSInventoryScreen = ({ onExit }) => {
                         if (!uuidRegex.test(validCatalogId)) {
                             console.warn(`⚠️ Invalid UUID for creation: ${validCatalogId}. Trying to find real UUID from global catalog...`);
                             // Try to find correct UUID from globalCatalog cache
-                            let realCatalogItem = globalCatalog.find(gc => gc.name === item.catalogItemName || gc.name === item.name);
+                            let realCatalogItem = globalCatalog.find(gc =>
+                                gc.id === validCatalogId ||
+                                gc.name === item.catalogItemName ||
+                                gc.name === item.name ||
+                                item.name.includes(gc.name)
+                            );
 
                             // If not in cache, try fetching from DB directly!
                             if (!realCatalogItem) {
                                 console.log(`🕵️ Not in cache, searching DB for catalog item: "${item.catalogItemName || item.name}"...`);
+                                // Clean name for DB lookup (remove everything except Hebrew)
+                                const searchName = (item.catalogItemName || item.name).match(/[\u0590-\u05FF]+/g)?.join(' ') || item.name;
                                 const { data: dbItem } = await supabase
                                     .from('catalog_items')
-                                    .select('id')
-                                    .or(`name.eq."${item.catalogItemName}",name.eq."${item.name}"`)
-                                    .maybeSingle(); // Use maybeSingle to avoid error if not found
+                                    .select('id, name')
+                                    .or(`name.eq."${item.catalogItemName}",name.eq."${item.name}",name.ilike."%${searchName}%"`)
+                                    .limit(1)
+                                    .maybeSingle();
 
                                 if (dbItem) realCatalogItem = dbItem;
                             }
@@ -967,15 +982,23 @@ const KDSInventoryScreen = ({ onExit }) => {
                                 console.log(`✅ Found valid UUID locally/remotely for ${item.name}: ${validCatalogId}`);
                             } else {
                                 console.error(`❌ Could not find valid UUID for ${item.name} in global catalog. Skipping creation.`);
-                                return; // Skip this one to avoid error
+                                return;
                             }
                         }
 
-                        // FINAL CHECK: If still not a valid UUID, DO NOT CALL RPC
-                        if (!validCatalogId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(validCatalogId)) {
-                            console.error(`⛔ Aborting creation for ${item.name} - Invalid UUID: ${validCatalogId}`);
-                            return;
-                        }
+                        // Robust handling for supplierId (Check if it's a valid UUID)
+                        let preparedSupplierId = receivingSession.supplierId;
+                        const validUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                        const isSupplierUuid = (str) => typeof str === 'string' && validUuidRegex.test(str);
+
+                        const supplierIdToPass = isSupplierUuid(preparedSupplierId) ? preparedSupplierId : null;
+
+                        console.log(`🛠️ Creating Item RPC Params:`, {
+                            name: item.catalogItemName || item.name,
+                            catalogId: validCatalogId,
+                            supplierIdSource: preparedSupplierId,
+                            supplierIdFinal: supplierIdToPass
+                        });
 
                         // Use RPC to bypass RLS restrictions
                         const { data: newItemId, error } = await supabase
@@ -985,7 +1008,7 @@ const KDSInventoryScreen = ({ onExit }) => {
                                 p_name: item.catalogItemName || item.name,
                                 p_unit: item.unit || 'יח׳',
                                 p_cost_per_unit: item.catalogPrice || 0,
-                                p_supplier_id: receivingSession.supplierId || null
+                                p_supplier_id: supplierIdToPass
                             });
 
                         if (error) throw error;
@@ -993,7 +1016,7 @@ const KDSInventoryScreen = ({ onExit }) => {
                         if (newItemId) {
                             console.log(`✅ Created inventory item for "${item.name}" -> ID: ${newItemId}`);
                             item.inventoryItemId = newItemId;
-                            item.isNew = false; // It's now an existing item
+                            item.isNew = false;
                         }
                     } catch (err) {
                         console.error(`❌ Failed to create inventory item for ${item.name}:`, err);
@@ -1880,11 +1903,34 @@ const KDSInventoryScreen = ({ onExit }) => {
 
                                 {/* OCR Completed (no receivingSession yet) */}
                                 {!isScanning && !receivingSession && scanError && (
-                                    <div className="h-full flex flex-col items-center justify-center">
-                                        <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center max-w-md">
-                                            <AlertTriangle size={48} className="mx-auto text-red-600 mb-4" />
-                                            <h4 className="font-bold text-red-900 mb-2 text-lg">שגיאה בסריקה</h4>
-                                            <p className="text-sm text-red-700">{scanError}</p>
+                                    <div className="h-full flex flex-col items-center justify-center p-6">
+                                        <div className="bg-white border-2 border-red-100 rounded-[2rem] p-10 text-center max-w-md shadow-2xl shadow-red-100 relative overflow-hidden">
+                                            {/* Decorative background */}
+                                            <div className="absolute top-0 right-0 w-32 h-32 bg-red-50 rounded-full -mr-16 -mt-16" />
+
+                                            <div className="relative z-10">
+                                                <div className="w-20 h-20 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-6 text-red-600">
+                                                    <AlertTriangle size={40} strokeWidth={2.5} />
+                                                </div>
+                                                <h4 className="font-black text-slate-900 mb-3 text-2xl tracking-tight">אופס! משהו השתבש</h4>
+                                                <p className="text-slate-500 font-medium leading-relaxed mb-8">
+                                                    {scanError.includes('לא נמצא') ? 'המערכת לא זיהתה את מודל הבינה המלאכותית. פנה לתמיכה.' : scanError}
+                                                </p>
+
+                                                <div className="flex flex-col gap-3">
+                                                    <label className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black shadow-lg hover:bg-slate-800 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2">
+                                                        <input type="file" accept="image/*,application/pdf" onChange={handleImageUpload} className="hidden" />
+                                                        <RefreshCw size={20} />
+                                                        נסיון נוסף
+                                                    </label>
+                                                    <button
+                                                        onClick={() => setScannerStep('choose')}
+                                                        className="w-full py-3 text-slate-400 font-bold hover:text-slate-600 transition-colors"
+                                                    >
+                                                        חזרה להתחלה
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 )}

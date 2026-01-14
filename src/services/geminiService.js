@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { AI_MODELS, FALLBACK_MODELS } from '../config/models';
 
 /**
  * Gemini Service for OCR tasks using the official Google SDK
@@ -24,9 +25,10 @@ export const processInvoiceWithGemini = async (base64String, retryCount = 0) => 
         throw new Error('Gemini API Key is missing. Please set VITE_GEMINI_API_KEY in your environment.');
     }
 
-    // Try Gemini 3 Flash first, then fallback to 1.5 Flash if it fails
-    // Standard configuration: Flash for speed/cost, Pro for backup/accuracy
-    const modelName = retryCount > 0 ? "gemini-1.5-pro" : "gemini-1.5-flash";
+    // Use centralized model configuration with fallback strategy
+    const modelName = FALLBACK_MODELS[retryCount % FALLBACK_MODELS.length];
+    console.log(`🤖 Using AI Model: ${modelName} (Attempt ${retryCount + 1})`);
+
     const model = genAI.getGenerativeModel({ model: modelName });
 
     const mimeMatch = base64String.match(/^data:([^;]+);base64,(.+)$/);
@@ -80,13 +82,12 @@ export const processInvoiceWithGemini = async (base64String, retryCount = 0) => 
 
         const response = await result.response;
         const content = response.text();
-        const usage = response.usageMetadata; // This contains token counts
+        const usage = response.usageMetadata;
 
         if (!content || content.trim() === "") {
             throw new Error('Empty response from model');
         }
 
-        // Clean up markdown
         let cleanedContent = content.trim();
         if (cleanedContent.startsWith('```')) {
             cleanedContent = cleanedContent
@@ -100,7 +101,6 @@ export const processInvoiceWithGemini = async (base64String, retryCount = 0) => 
             parsed.items = [];
         }
 
-        // Return both results and usage metadata
         return {
             ...parsed,
             usageMetadata: usage
@@ -109,13 +109,25 @@ export const processInvoiceWithGemini = async (base64String, retryCount = 0) => 
     } catch (error) {
         console.error(`Error with model ${modelName} (attempt ${retryCount + 1}):`, error);
 
-        // Retry logic
-        if (retryCount < 1) {
-            console.log(`Retrying with fallback model...`);
+        // If high-tier model fails (common for 404 or Billing), try one more time with simple flash
+        if (retryCount < 2) {
+            console.log(`Retrying with safety fallback...`);
             return processInvoiceWithGemini(base64String, retryCount + 1);
         }
 
-        throw error;
+        // Clean up error message for user
+        let userMessage = error.message;
+        if (userMessage.includes('404')) {
+            userMessage = `המודל ${modelName} לא נמצא. כנראה שהמפתח שלך לא תומך בו.`;
+        } else if (userMessage.includes('API_KEY_INVALID')) {
+            userMessage = "מפתח ה-API של Gemini אינו תקין.";
+        } else if (userMessage.includes('SAFETY')) {
+            userMessage = "הקובץ נחסם על ידי מסנני הבטיחות של גוגל.";
+        }
+
+        const finalError = new Error(userMessage);
+        finalError.originalError = error;
+        throw finalError;
     }
 };
 

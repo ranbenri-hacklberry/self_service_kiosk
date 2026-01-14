@@ -188,9 +188,9 @@ const EmployeesView = ({ businessId }) => {
                             <label className="block text-slate-400 text-xs font-bold mb-1">תפקיד</label>
                             <select className="w-full bg-slate-800 rounded-xl px-4 py-2 text-white border border-slate-700 outline-none"
                                 value={formData.access_level} onChange={e => setFormData({ ...formData, access_level: e.target.value })}>
-                                <option value="Worker">עובד (Worker)</option>
+                                <option value="staff">עובד (staff)</option>
                                 <option value="Manager">מנהל (Manager)</option>
-                                <option value="Admin">אדמין (Admin)</option>
+                                <option value="owner">בעלים (owner)</option>
                             </select>
                         </div>
                         <div className="flex items-end mb-2">
@@ -398,7 +398,7 @@ const SuperAdminDashboard = () => {
             const { error: empError } = await supabase.from('employees').insert({
                 name: 'מנהל ראשי',
                 pin_code: '1234',
-                access_level: 'Admin',
+                access_level: 'Manager',  // Fixed: Using valid role instead of 'Admin'
                 business_id: newBusinessId,
                 is_admin: true,
                 email: formData.email || `admin@${newBusinessId.substring(0, 6)}.com`

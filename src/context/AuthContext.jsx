@@ -8,7 +8,7 @@ const API_URL = import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
     'http://localhost:8080';
 
-export const APP_VERSION = '3.6'; // Second Course (מנה שניה) & KDS Split Cards
+export const APP_VERSION = '3.7'; // Google Drive Integration & Orders Backup
 export const AuthProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
     const [deviceMode, setDeviceMode] = useState(null); // 'kiosk', 'kds', 'manager', 'music'
@@ -364,7 +364,7 @@ export const AuthProvider = ({ children }) => {
         const impersonatedUser = {
             ...currentUser,
             business_id: businessId,
-            access_level: 'Manager', // Elevate to manager
+            access_level: 'owner', // Elevate to owner for full access
             is_admin: true,
             impersonating_business_name: businessName,
             is_impersonating: true

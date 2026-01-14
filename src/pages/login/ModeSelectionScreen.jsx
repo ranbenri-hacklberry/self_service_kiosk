@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Monitor, ChefHat, LogOut, BarChart3, Coffee, Users, Music, ShieldAlert, Package, List, LayoutGrid, Truck, ShoppingCart } from 'lucide-react';
+import { Monitor, ChefHat, LogOut, BarChart3, Coffee, Users, Music, ShieldAlert, Package, List, LayoutGrid, Truck, ShoppingCart, Settings } from 'lucide-react';
 import WhatsNewModal from '../../components/WhatsNewModal';
 
 const ModeSelectionScreen = () => {
@@ -15,10 +15,14 @@ const ModeSelectionScreen = () => {
         currentUser?.role === 'manager' ||
         accessLevel === 'admin' ||
         accessLevel === 'manager' ||
+        accessLevel === 'owner' ||
         currentUser?.is_admin === true;
 
     // Check if user is a driver
     const isDriver = currentUser?.is_driver === true;
+
+    // Check if user is owner
+    const isOwner = accessLevel === 'owner' || currentUser?.role === 'owner';
 
     const handleModeSelect = (mode) => {
         setMode(mode);
@@ -45,6 +49,8 @@ const ModeSelectionScreen = () => {
             navigate('/kanban');
         } else if (mode === 'driver') {
             navigate('/driver');
+        } else if (mode === 'owner-settings') {
+            navigate('/owner-settings');
         }
     };
 
@@ -92,7 +98,7 @@ const ModeSelectionScreen = () => {
                     {isManager && (
                         <button
                             onClick={() => handleModeSelect('manager')}
-                            className="group relative bg-white rounded-2xl p-5 hover:bg-purple-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-100"
+                            className="md:hidden group relative bg-white rounded-2xl p-5 hover:bg-purple-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-100"
                         >
                             <div className="absolute top-0 left-0 w-20 h-20 bg-purple-100 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
                             <div className="relative z-10">
@@ -218,6 +224,28 @@ const ModeSelectionScreen = () => {
                         </div>
                     </button>
 
+                    {/* 7. Owner Settings - Owner Only */}
+                    {isOwner && (
+                        <button
+                            onClick={() => handleModeSelect('owner-settings')}
+                            className="group relative bg-slate-800 rounded-2xl p-5 hover:bg-slate-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-yellow-500"
+                        >
+                            <div className="absolute top-3 left-3 bg-yellow-500 text-slate-900 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                Owner
+                            </div>
+                            <div className="absolute top-0 left-0 w-20 h-20 bg-yellow-900/50 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
+                            <div className="relative z-10">
+                                <div className="w-10 h-10 bg-yellow-500 rounded-xl flex items-center justify-center text-slate-900 mb-3 shadow-lg group-hover:rotate-6 transition-transform">
+                                    <Settings size={20} strokeWidth={2.5} />
+                                </div>
+                                <h2 className="text-xl font-black text-white mb-1">הגדרות עסק</h2>
+                                <p className="text-slate-400 text-sm leading-relaxed font-medium">
+                                    ניהול חיבורים והגדרות ראשיות
+                                </p>
+                            </div>
+                        </button>
+                    )}
+
                     {/* 4b. Driver Screen - Only for drivers */}
                     {isDriver && (
                         <button
@@ -294,8 +322,8 @@ const ModeSelectionScreen = () => {
                     </div>
                 </div>
             </div>
-            {/* What's New Modal - shows once per version after login */}
-            {showWhatsNew && <WhatsNewModal onClose={() => setShowWhatsNew(false)} />}
+            {/* What's New Modal - shows once per version after login (only for owners) */}
+            {showWhatsNew && isOwner && <WhatsNewModal onClose={() => setShowWhatsNew(false)} />}
         </div>
     );
 };

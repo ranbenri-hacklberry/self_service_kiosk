@@ -30,6 +30,8 @@ import KanbanPage from './pages/kanban';
 import DriverPage from './pages/driver';
 import OrderTrackingPage from './pages/order-tracking';
 import CompleteProfile from './pages/login/CompleteProfile';
+import GoogleCallback from '@/pages/auth/GoogleCallback';
+import OwnerSettings from './pages/owner-settings';
 
 // Animation variants for page transitions
 const pageVariants = {
@@ -220,6 +222,9 @@ const AppRoutes = () => {
       {/* Spotify Callback Route - Public */}
       <Route path="/callback/spotify" element={<SpotifyCallback />} />
 
+      {/* Google Callback Route */}
+      <Route path="/auth/callback" element={<GoogleCallback />} />
+
       {/* Kanban Order System */}
       <Route path="/kanban" element={
         <ProtectedRoute>
@@ -230,6 +235,12 @@ const AppRoutes = () => {
       <Route path="/driver" element={
         <ProtectedRoute>
           <DriverPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/owner-settings" element={
+        <ProtectedRoute>
+          <OwnerSettings />
         </ProtectedRoute>
       } />
 

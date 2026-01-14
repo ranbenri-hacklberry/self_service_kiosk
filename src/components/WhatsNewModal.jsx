@@ -52,54 +52,41 @@ const WhatsNewModal = ({ onClose }) => {
 
                 {/* Features List - Tightened vertical spacing */}
                 <div className="p-5 space-y-3.5">
-                    {/* Feature 1: Second Course */}
+                    {/* Feature 1: Google Cloud + AI Integration */}
+                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-blue-50 to-cyan-50 rounded-2xl border border-blue-100 shadow-sm transition-transform hover:scale-[1.01]">
+                        <div className="w-12 h-12 rounded-xl bg-blue-500 flex items-center justify-center flex-shrink-0 shadow-lg">
+                            <span className="text-2xl">🤖</span>
+                        </div>
+                        <div>
+                            <h3 className="font-black text-slate-800 text-lg">Google Cloud + AI: המוח החדש שלכם</h3>
+                            <p className="text-slate-600 text-sm mt-0.5 leading-snug">
+                                חברו את ה-Google Cloud, העתיקו את הקישור ל-Gemini, ChatGPT או Claude, ותשאלו: "למה אני מוציא כל כך הרבה על חלב?". הוא יענה, רק אל תיעלבו מהתשובה. 😉
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Feature 2: Weekly/Monthly Comparison */}
                     <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-orange-50 to-amber-50 rounded-2xl border border-orange-100 shadow-sm transition-transform hover:scale-[1.01]">
                         <div className="w-12 h-12 rounded-xl bg-orange-500 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <ChefHat className="w-6 h-6 text-white" />
+                            <span className="text-2xl">📊</span>
                         </div>
                         <div>
-                            <h3 className="font-black text-slate-800 text-lg">מנה שניה 🍽️</h3>
+                            <h3 className="font-black text-slate-800 text-lg">השוואה הוגנת (סוף סוף)</h3>
                             <p className="text-slate-600 text-sm mt-0.5 leading-snug">
-                                לחצו על ⏱️ ליד הפריט בקופה והוא יופיע בכרטיס נפרד במסך הסרוויס להכנה מאוחרת.
+                                עכשיו משווים שבועות וחודשים בדיוק עד השנייה הנוכחית. לא עוד להשוות יום ראשון עמוס ליום חמישי שרק התחיל. הוגן, מדויק ומרגיע. 📈
                             </p>
                         </div>
                     </div>
 
-                    {/* Feature 2: Real-time Orders */}
+                    {/* Feature 3: Accountant Access - Automatic Sync */}
                     <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-purple-50 to-fuchsia-50 rounded-2xl border border-purple-100 shadow-sm transition-transform hover:scale-[1.01]">
                         <div className="w-12 h-12 rounded-xl bg-purple-500 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <Monitor className="w-6 h-6 text-white" />
+                            <span className="text-2xl">🤝</span>
                         </div>
                         <div>
-                            <h3 className="font-black text-slate-800 text-lg">הזמנות בזמן אמת 📱</h3>
+                            <h3 className="font-black text-slate-800 text-lg">חופש מרואה החשבון!</h3>
                             <p className="text-slate-600 text-sm mt-0.5 leading-snug">
-                                תצוגת הזמנות חיה בנייד לצוות ולמנהלים - לראות הכל מכל מקום.
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Feature 3: Task Management */}
-                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-blue-50 to-indigo-50 rounded-2xl border border-blue-100 shadow-sm transition-transform hover:scale-[1.01]">
-                        <div className="w-12 h-12 rounded-xl bg-blue-500 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <ClipboardList className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                            <h3 className="font-black text-slate-800 text-lg">ניהול משימות 📋</h3>
-                            <p className="text-slate-600 text-sm mt-0.5 leading-snug">
-                                מסך עריכה למנהלים ומסך ביצוע חדש שמאפשר לצוות לעדכן משימות מהנייד.
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Feature 4: Menu Editing */}
-                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-green-50 to-emerald-50 rounded-2xl border border-green-100 shadow-sm transition-transform hover:scale-[1.01]">
-                        <div className="w-12 h-12 rounded-xl bg-green-500 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <Settings className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                            <h3 className="font-black text-slate-800 text-lg">עריכת תפריט 🛠️</h3>
-                            <p className="text-slate-600 text-sm mt-0.5 leading-snug">
-                                הוספה, מחיקה וסידור קטגוריות + הגדרת הופעה במסך סרוויס לכל פריט.
+                                פשוט מזינים את המייל שלו, וזהו. כל מסמך שנסרק או מופק טס אליו אוטומטית ל-Google Cloud. פחות "איפה החשבונית?", יותר "יום טוב". ✈️
                             </p>
                         </div>
                     </div>
