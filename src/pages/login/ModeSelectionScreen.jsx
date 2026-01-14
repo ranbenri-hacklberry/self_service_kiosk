@@ -316,11 +316,22 @@ const ModeSelectionScreen = () => {
 
                 <div className="mt-6 text-center flex flex-col items-center gap-2">
                     <button
-                        onClick={currentUser?.is_impersonating ? logout : logout}
+                        onClick={() => {
+                            if (currentUser?.is_impersonating) {
+                                // Impersonating - return to Super Admin Portal
+                                logout();
+                            } else if (currentUser?.is_super_admin) {
+                                // Super Admin not impersonating - go to Super Admin Portal
+                                navigate('/super-admin');
+                            } else {
+                                // Regular user - full logout
+                                logout();
+                            }
+                        }}
                         className="inline-flex items-center gap-2 text-slate-400 hover:text-white transition-colors px-4 py-2 rounded-lg hover:bg-white/10 text-sm"
                     >
                         <LogOut size={16} />
-                        <span>{currentUser?.is_impersonating ? 'חזרה לפורטל הראשי' : 'יציאה'}</span>
+                        <span>{currentUser?.is_impersonating ? 'חזרה לפורטל הראשי' : currentUser?.is_super_admin ? 'חזרה לפורטל' : 'יציאה'}</span>
                     </button>
                     <div className="text-[10px] text-slate-500 font-mono opacity-50">
                         v{appVersion}
