@@ -101,10 +101,10 @@ const ModeSelectionScreen = () => {
                     {isManager && (
                         <button
                             onClick={() => handleModeSelect('manager')}
-                            className="md:hidden group relative bg-white rounded-2xl p-5 hover:bg-purple-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-100"
+                            className="md:hidden group relative bg-white rounded-2xl p-5 hover:bg-purple-50 transition-all duration-300 hover:-translate-y-1 active:scale-95 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-100 cursor-pointer z-30"
                         >
-                            <div className="absolute top-0 left-0 w-20 h-20 bg-purple-100 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
-                            <div className="relative z-10">
+                            <div className="absolute top-0 left-0 w-20 h-20 bg-purple-100 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform pointer-events-none" />
+                            <div className="relative z-10 pointer-events-none">
                                 <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
                                     <BarChart3 size={20} strokeWidth={2.5} />
                                 </div>
