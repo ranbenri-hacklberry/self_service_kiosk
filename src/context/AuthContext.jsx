@@ -8,7 +8,7 @@ const API_URL = import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
     'http://localhost:8080';
 
-export const APP_VERSION = '3.7.3'; // Google Drive Integration & Orders Backup
+export const APP_VERSION = '3.7.4'; // Role Normalization & Owner Access Fix
 export const AuthProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
     const [deviceMode, setDeviceMode] = useState(null); // 'kiosk', 'kds', 'manager', 'music'

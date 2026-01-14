@@ -34,8 +34,10 @@ const MusicPageContent = () => {
     const { currentUser } = useAuth();
 
     // Permission check: Only Managers and Admins
-    const isManager = currentUser?.access_level === 'Admin' ||
-        currentUser?.access_level === 'Manager' ||
+    const accessLevel = (currentUser?.access_level || '').toLowerCase();
+    const role = (currentUser?.role || '').toLowerCase();
+    const isManager = role === 'admin' || role === 'manager' || role === 'owner' ||
+        accessLevel === 'admin' || accessLevel === 'manager' || accessLevel === 'owner' ||
         currentUser?.is_admin;
 
     if (!isManager) {

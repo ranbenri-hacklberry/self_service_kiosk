@@ -32,7 +32,12 @@ const ManagerDashboard = () => {
       navigate('/login');
     } else {
       const accessLevel = (currentUser.access_level || '').toLowerCase();
-      if (accessLevel !== 'admin' && accessLevel !== 'manager' && !currentUser.is_admin) {
+      const role = (currentUser.role || '').toLowerCase();
+      const isAuthorized = role === 'admin' || role === 'manager' || role === 'owner' ||
+        accessLevel === 'admin' || accessLevel === 'manager' || accessLevel === 'owner' ||
+        currentUser.is_admin;
+
+      if (!isAuthorized) {
         navigate('/mode-selection');
       }
     }
