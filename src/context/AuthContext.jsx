@@ -8,7 +8,7 @@ const API_URL = import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
     'http://localhost:8080';
 
-export const APP_VERSION = '4.0.0'; // Advanced Data Dashboard Redesign + Loyalty Points Fix & Exact Search
+export const APP_VERSION = '4.0.1'; // Advanced Data Dashboard Redesign + Loyalty Points Fix & Exact Search
 export const AuthProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
     const [deviceMode, setDeviceMode] = useState(null); // 'kiosk', 'kds', 'manager', 'music'

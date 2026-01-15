@@ -74,10 +74,16 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
                 return { success: false, error: error.message };
             }
             if (data) {
-                await db[localTable].bulkPut(data);
+                // TAGGING: Ensure records have the correct businessId for local lookup
+                const recordsToPut = data.map(c => ({
+                    ...c,
+                    business_id: c.business_id || businessId
+                }));
+
+                await db[localTable].bulkPut(recordsToPut);
 
                 // AGGRESSIVE PRUNING: Remove local customers missing from cloud
-                const cloudIds = new Set(data.map(c => c.id));
+                const cloudIds = new Set(recordsToPut.map(c => c.id));
                 const allLocal = await db[localTable].toArray();
                 const idsToDelete = allLocal
                     .filter(item => (item.business_id === businessId || !item.business_id) && !cloudIds.has(item.id))
@@ -88,8 +94,8 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
                     await db[localTable].bulkDelete(idsToDelete);
                 }
 
-                console.log(`✅ Synced ${data.length} customers via RPC`);
-                return { success: true, count: data.length };
+                console.log(`✅ Synced ${recordsToPut.length} customers via RPC`);
+                return { success: true, count: recordsToPut.length };
             }
         }
 
@@ -105,10 +111,16 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
                 return { success: false, error: error.message };
             }
             if (data) {
-                await db[localTable].bulkPut(data);
+                // TAGGING
+                const recordsToPut = data.map(c => ({
+                    ...c,
+                    business_id: c.business_id || businessId
+                }));
+
+                await db[localTable].bulkPut(recordsToPut);
 
                 // AGGRESSIVE PRUNING: Remove local cards missing from cloud
-                const cloudIds = new Set(data.map(c => c.id));
+                const cloudIds = new Set(recordsToPut.map(c => c.id));
                 const allLocal = await db[localTable].toArray();
                 const idsToDelete = allLocal
                     .filter(item => (item.business_id === businessId || !item.business_id) && !cloudIds.has(item.id))
@@ -119,8 +131,8 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
                     await db[localTable].bulkDelete(idsToDelete);
                 }
 
-                console.log(`✅ Synced ${data.length} loyalty_cards via RPC`);
-                return { success: true, count: data.length };
+                console.log(`✅ Synced ${recordsToPut.length} loyalty_cards via RPC`);
+                return { success: true, count: recordsToPut.length };
             }
             return { success: true, count: 0 };
         }
@@ -256,13 +268,18 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
 
         // Fix for tables that might not have an 'id' field (like menuitemoptions)
         // Generate a unique id if missing
+        // Tag records with business_id if missing (for menu_items, etc)
         const dataWithIds = data.map((record, index) => {
-            if (!record.id) {
+            const enriched = {
+                ...record,
+                business_id: record.business_id || businessId
+            };
+            if (!enriched.id) {
                 // Create a composite key from available fields
-                const compositeId = `${record.item_id || ''}_${record.group_id || ''}_${index}`;
-                return { ...record, id: compositeId };
+                const compositeId = `${enriched.item_id || enriched.id || ''}_${enriched.group_id || ''}_${index}`;
+                enriched.id = enriched.id || compositeId;
             }
-            return record;
+            return enriched;
         });
 
         // Bulk upsert into Dexie
