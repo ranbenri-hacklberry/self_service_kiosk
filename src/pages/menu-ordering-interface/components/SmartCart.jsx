@@ -1,6 +1,13 @@
-import React, { useMemo } from 'react';
-import { Trash2, ShoppingBag, Edit2, CreditCard, ArrowRight, RefreshCw, Clock, UserPlus, Check, Phone, User, Truck } from 'lucide-react';
-import { v4 as uuidv4 } from 'uuid';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import {
+    X, Trash2, ShoppingBasket, ShoppingCart, ShoppingBag, Truck,
+    ArrowLeft, ArrowRight, User, Phone,
+    Plus, Minus, Clock, Check, AlertCircle,
+    RotateCcw, Edit2, RefreshCw, CreditCard
+} from 'lucide-react';
+import Button from '../../../components/ui/Button';
+import Icon from '../../../components/AppIcon';
+import { useTheme } from '@/context/ThemeContext';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
 /**
@@ -32,6 +39,7 @@ const formatPrice = (price = 0) => {
 
 // Memoized CartItem to prevent unnecessary re-renders
 const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrictedMode }) => {
+    const { isDarkMode } = useTheme();
     const cleanName = item.name ? item.name.replace(/<[^>]+>/g, '').trim() : '';
 
     // Parse modifiers for display - remove duplicates
@@ -70,7 +78,12 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrict
     return (
         <div
             onClick={() => !isRestrictedMode && onEdit?.(item)}
-            className={`group flex items-center justify-between bg-white px-[5px] py-3 border-b border-gray-100 transition-colors gap-[5px] ${item.isDelayed ? 'bg-amber-50/50' : ''} ${!isRestrictedMode ? 'hover:bg-gray-50 cursor-pointer' : ''}`}
+            className={`group flex items-center justify-between px-[5px] py-3 border-b transition-colors gap-[5px] 
+                ${isDarkMode
+                    ? `border-slate-800 ${item.isDelayed ? 'bg-amber-900/20' : 'bg-slate-900'} ${!isRestrictedMode ? 'hover:bg-slate-800' : ''}`
+                    : `border-gray-100 ${item.isDelayed ? 'bg-amber-50/50' : 'bg-white'} ${!isRestrictedMode ? 'hover:bg-gray-50' : ''}`
+                } 
+                ${!isRestrictedMode ? 'cursor-pointer' : ''}`}
         >
             {/* Right Side: Quantity + Name + Mods */}
             <div className="flex-1 flex flex-col items-start min-w-0">
@@ -80,13 +93,16 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrict
                             x{item.quantity}
                         </span>
                     )}
-                    <span className={`font-bold text-base truncate leading-tight ${item.isDelayed ? 'text-amber-800' : 'text-gray-800'}`}>
+                    <span className={`font-bold text-base truncate leading-tight ${item.isDelayed
+                        ? (isDarkMode ? 'text-amber-400' : 'text-amber-800')
+                        : (isDarkMode ? 'text-slate-200' : 'text-gray-800')
+                        }`}>
                         {cleanName}
                     </span>
                     {onEdit && !isRestrictedMode && (
                         <Edit2 size={14} className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                     )}
-                    <span className="font-mono font-bold text-gray-900 text-base shrink-0 mr-auto">
+                    <span className={`font-mono font-bold text-base shrink-0 mr-auto ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                         {formatPrice(item.price * item.quantity)}
                     </span>
                 </div>
@@ -122,7 +138,9 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrict
                         onClick={(e) => { e.stopPropagation(); onToggleDelay(item.id, item.signature); }}
                         className={`p-3 rounded-xl transition-all shrink-0 shadow-sm border active:scale-95 ${item.isDelayed
                             ? 'text-white bg-amber-500 border-amber-600 hover:bg-amber-600 shadow-amber-200'
-                            : 'text-gray-400 bg-white border-gray-200 hover:text-amber-500 hover:bg-amber-50 hover:border-amber-200'
+                            : (isDarkMode
+                                ? 'text-slate-400 bg-slate-800 border-slate-700 hover:text-amber-400 hover:bg-slate-700'
+                                : 'text-gray-400 bg-white border-gray-200 hover:text-amber-500 hover:bg-amber-50 hover:border-amber-200')
                             }`}
                         title={item.isDelayed ? "הכן עכשיו" : "הגש אחר כך (מנה שניה)"}
                     >
@@ -133,7 +151,10 @@ const CartItem = React.memo(({ item, onRemove, onEdit, onToggleDelay, isRestrict
                 {onRemove && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onRemove(item.id, item.signature); }}
-                        className="p-3 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-colors shrink-0"
+                        className={`p-3 rounded-xl border border-transparent transition-colors shrink-0 ${isDarkMode
+                            ? 'text-slate-500 hover:text-red-400 hover:bg-red-900/20 hover:border-red-900/30'
+                            : 'text-gray-400 hover:text-red-500 hover:bg-red-50 hover:border-red-100'
+                            }`}
                     >
                         <Trash2 size={24} strokeWidth={2} />
                     </button>
@@ -170,6 +191,7 @@ const SmartCart = ({
     onToggleSoldierDiscount,
     soldierDiscountAmount = 0
 }) => {
+    const { isDarkMode } = useTheme();
 
     // --- Calculations ---
     const currentTotal = cartItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
@@ -246,8 +268,10 @@ const SmartCart = ({
         if (cartItems.length === 0 && !isEditMode) return {
             text: 'העגלה ריקה',
             subtext: 'הוסף פריטים כדי להמשיך',
-            color: 'bg-gray-100 text-gray-400',
-            buttonColor: 'bg-gray-200 text-gray-400 cursor-not-allowed',
+            color: isDarkMode ? 'bg-slate-800/50 text-slate-500' : 'bg-gray-100 text-gray-400',
+            buttonColor: isDarkMode
+                ? 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700'
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed',
             icon: ShoppingBag,
             amount: null
         };
@@ -342,9 +366,9 @@ const SmartCart = ({
     });
 
     return (
-        <div className={`flex flex-col h-full bg-white ${className}`}>
+        <div className={`flex flex-col h-full ${isDarkMode ? 'bg-slate-900' : 'bg-white'} ${className}`}>
             {/* Header */}
-            <div className="p-4 border-b border-gray-100 bg-white z-10 shadow-sm">
+            <div className={`p-4 border-b ${isDarkMode ? 'border-slate-800 bg-slate-900 shadow-black/20' : 'border-gray-100 bg-white shadow-sm'} z-10 shadow-sm transition-colors duration-300`}>
                 {/* Single row header */}
                 <div className="flex items-center gap-1">
 
@@ -370,7 +394,7 @@ const SmartCart = ({
                                     <>
                                         {/* If we have a valid name but no phone, show name - RIGHTMOST */}
                                         {!isAnonymous && (
-                                            <h2 className="text-xl font-black text-gray-800 tracking-tight flex-shrink-0 ml-2">
+                                            <h2 className={`text-xl font-black tracking-tight flex-shrink-0 ml-2 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
                                                 {customerName}
                                             </h2>
                                         )}
@@ -390,7 +414,10 @@ const SmartCart = ({
                                         {isAnonymous && onAddCustomerDetails && (
                                             <button
                                                 onClick={() => onAddCustomerDetails('name')}
-                                                className="px-4 py-2.5 rounded-lg bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 transition-all font-bold text-sm flex items-center gap-1.5"
+                                                className={`px-4 py-2.5 rounded-lg border transition-all font-bold text-sm flex items-center gap-1.5 ${isDarkMode
+                                                    ? 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                                                    : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
+                                                    }`}
                                             >
                                                 <User size={16} />
                                                 <span>שם</span>
@@ -401,7 +428,10 @@ const SmartCart = ({
                                         {onSetDelivery && (
                                             <button
                                                 onClick={() => onSetDelivery()}
-                                                className="px-4 py-2.5 rounded-lg bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200 transition-all font-bold text-sm flex items-center gap-1.5"
+                                                className={`px-4 py-2.5 rounded-lg border transition-all font-bold text-sm flex items-center gap-1.5 ${isDarkMode
+                                                    ? 'bg-purple-900/30 text-purple-300 border-purple-800/50 hover:bg-purple-900/50'
+                                                    : 'bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-200'
+                                                    }`}
                                             >
                                                 <Truck size={16} />
                                                 <span>משלוח</span>
@@ -412,7 +442,7 @@ const SmartCart = ({
                                     /* Case: Valid Customer with Phone */
                                     <div className="flex items-center gap-3">
                                         <div className="flex flex-col">
-                                            <h2 className="text-xl font-black text-gray-800 tracking-tight leading-none">
+                                            <h2 className={`text-xl font-black tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
                                                 {customerName}
                                             </h2>
                                             <div className="flex items-center gap-2 text-gray-500 text-sm font-mono mt-0.5">
@@ -424,7 +454,8 @@ const SmartCart = ({
                                         {onAddCustomerDetails && (
                                             <button
                                                 onClick={() => onAddCustomerDetails('phone')}
-                                                className="p-2 bg-gray-50 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                                                className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'bg-slate-800 text-blue-400 hover:bg-slate-700' : 'bg-gray-50 text-blue-600 hover:bg-blue-50'
+                                                    }`}
                                             >
                                                 <Edit2 size={16} />
                                             </button>
@@ -439,7 +470,9 @@ const SmartCart = ({
                                             onClick={onToggleSoldierDiscount}
                                             className={`px-4 py-2.5 rounded-lg font-bold text-sm flex items-center gap-1.5 transition-all ${soldierDiscountEnabled
                                                 ? 'bg-blue-600 text-white shadow-sm'
-                                                : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100'
+                                                : isDarkMode
+                                                    ? 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'
+                                                    : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100'
                                                 }`}
                                         >
                                             <span>🎖️</span>
@@ -517,9 +550,9 @@ const SmartCart = ({
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
                 {cartItems.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-center opacity-60">
-                        <ShoppingBag size={48} className="text-gray-300 mb-4" />
-                        <p className="text-gray-500 font-medium">העגלה ריקה</p>
-                        <p className="text-sm text-gray-400">התחל להוסיף פריטים מהתפריט</p>
+                        <ShoppingBag size={48} className={isDarkMode ? 'text-slate-700 mb-4' : 'text-gray-300 mb-4'} />
+                        <p className={isDarkMode ? 'text-slate-400 font-medium' : 'text-gray-500 font-medium'}>העגלה ריקה</p>
+                        <p className={isDarkMode ? 'text-slate-500 text-sm' : 'text-gray-400 text-sm'}>התחל להוסיף פריטים מהתפריט</p>
                     </div>
                 ) : (
                     <div className="space-y-1">
@@ -541,9 +574,11 @@ const SmartCart = ({
                         {activeItems.length > 0 && delayedItems.length > 0 && (
                             <div className="relative py-4 text-center">
                                 <div className="absolute inset-0 flex items-center">
-                                    <div className="w-full border-t border-dashed border-amber-300"></div>
+                                    <div className={`w-full border-t border-dashed ${isDarkMode ? 'border-amber-700' : 'border-amber-300'}`}></div>
                                 </div>
-                                <span className="relative px-3 bg-gray-50 text-xs font-bold text-amber-600 flex items-center justify-center gap-1 mx-auto w-fit rounded-full border border-amber-200 shadow-sm">
+                                <span className={`relative px-3 text-xs font-bold flex items-center justify-center gap-1 mx-auto w-fit rounded-full border shadow-sm transition-colors duration-300 ${isDarkMode
+                                    ? 'bg-slate-900 text-amber-500 border-amber-800'
+                                    : 'bg-gray-50 text-amber-600 border-amber-200'}`}>
                                     <Clock size={12} />
                                     להמשך הארוחה
                                 </span>
@@ -568,7 +603,8 @@ const SmartCart = ({
             </div>
 
             {/* Footer / Action Area */}
-            <div className="p-4 bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+            <div className={`p-4 border-t shadow-[0_-4px_20px_rgba(0,0,0,0.05)] transition-colors duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200'
+                }`}>
 
                 {/* Refund Note - only show if there are items */}
                 {isRefund && cartItems.length > 0 && (

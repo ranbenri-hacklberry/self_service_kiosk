@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Phone, User, Check, Loader2, UserCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { useTheme } from '@/context/ThemeContext';
 import NumericKeypad from './NumericKeypad';
 
 /**
@@ -23,6 +24,7 @@ const CustomerInfoModal = ({
     onCustomerUpdate,
     orderId = null
 }) => {
+    const { isDarkMode } = useTheme();
     const { currentUser } = useAuth();
     const [step, setStep] = useState('phone'); // 'phone' | 'name' | 'lookup' | 'complete'
     const [phoneNumber, setPhoneNumber] = useState('');
@@ -484,17 +486,19 @@ const CustomerInfoModal = ({
                 <div className="p-4 space-y-3">
                     {/* Existing Phone Display (if exists) */}
                     {hasExistingPhone && phoneNumber === currentCustomer.phone && (
-                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between">
+                        <div className={`border rounded-xl p-3 flex items-center justify-between transition-colors ${isDarkMode ? 'bg-blue-900/20 border-blue-900/30' : 'bg-blue-50 border-blue-200'
+                            }`}>
                             <div className="flex items-center gap-2">
                                 <Phone size={18} className="text-blue-600" />
-                                <span className="text-blue-800 font-bold">טלפון קיים:</span>
-                                <span className="text-blue-900 font-mono font-black text-lg" dir="ltr">
+                                <span className={`font-bold ${isDarkMode ? 'text-blue-400' : 'text-blue-800'}`}>טלפון קיים:</span>
+                                <span className={`font-mono font-black text-lg ${isDarkMode ? 'text-blue-300' : 'text-blue-900'}`} dir="ltr">
                                     {formatPhoneDisplay(currentCustomer.phone)}
                                 </span>
                             </div>
                             <button
                                 onClick={() => setPhoneNumber('')}
-                                className="text-blue-600 hover:text-blue-800 p-1 rounded-lg hover:bg-blue-100 transition"
+                                className={`p-1 rounded-lg transition-colors ${isDarkMode ? 'text-blue-400 hover:bg-blue-900/40' : 'text-blue-600 hover:bg-blue-100'
+                                    }`}
                                 title="ערוך טלפון"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" /></svg>
@@ -506,10 +510,12 @@ const CustomerInfoModal = ({
                     {(!hasExistingPhone || phoneNumber !== currentCustomer.phone) && (
                         <>
                             <div
-                                className={`w-full h-14 bg-gray-50 rounded-xl border-2 flex items-center justify-center transition-colors ${error ? 'border-red-200 bg-red-50' : 'border-gray-100'
+                                className={`w-full h-14 rounded-xl border-2 flex items-center justify-center transition-colors ${error
+                                    ? (isDarkMode ? 'border-red-900 bg-red-900/20' : 'border-red-200 bg-red-50')
+                                    : (isDarkMode ? 'border-slate-800 bg-slate-800/50' : 'border-gray-100 bg-gray-50')
                                     }`}
                             >
-                                <div className="text-2xl font-mono font-bold text-gray-800 tracking-wider" dir="ltr">
+                                <div className={`text-2xl font-mono font-bold tracking-wider ${isDarkMode ? 'text-white' : 'text-gray-800'}`} dir="ltr">
                                     {formatPhoneDisplay(phoneNumber) || '___-___-____'}
                                 </div>
                             </div>
@@ -523,16 +529,19 @@ const CustomerInfoModal = ({
                             )}
 
                             {/* Keypad */}
-                            <NumericKeypad onKeyPress={handleKeypadPress} />
+                            <div className={isDarkMode ? 'brightness-90 contrast-125' : ''}>
+                                <NumericKeypad onKeyPress={handleKeypadPress} />
+                            </div>
                         </>
                     )}
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 border-t border-gray-200 flex gap-3">
+                <div className={`p-6 border-t flex gap-3 transition-colors duration-300 ${isDarkMode ? 'border-slate-800' : 'border-gray-200'}`}>
                     <button
                         onClick={onClose}
-                        className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
+                        className={`flex-1 py-4 rounded-xl font-bold text-lg transition ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                            }`}
                     >
                         ביטול
                     </button>
@@ -540,8 +549,8 @@ const CustomerInfoModal = ({
                         onClick={handlePhoneLookup}
                         disabled={phoneNumber.length !== 10 || isLoading}
                         className={`flex-1 py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 ${phoneNumber.length === 10 && !isLoading
-                            ? 'bg-orange-500 text-white hover:bg-orange-600'
-                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            ? (isDarkMode ? 'bg-orange-600 text-white hover:bg-orange-500' : 'bg-orange-500 text-white hover:bg-orange-600')
+                            : (isDarkMode ? 'bg-slate-800 text-slate-600' : 'bg-gray-100 text-gray-400') + ' cursor-not-allowed'
                             }`}
                     >
                         {isLoading ? (
@@ -568,11 +577,12 @@ const CustomerInfoModal = ({
                 <div className="p-4 space-y-3">
                     {/* Existing Name Indicator */}
                     {hasExistingName && customerName === currentCustomer.name && (
-                        <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-center justify-between mb-2">
+                        <div className={`border rounded-xl p-3 flex items-center justify-between mb-2 transition-colors ${isDarkMode ? 'bg-purple-900/20 border-purple-900/30' : 'bg-purple-50 border-purple-200'
+                            }`}>
                             <div className="flex items-center gap-2">
                                 <User size={18} className="text-purple-600" />
-                                <span className="text-purple-800 font-bold">שם קיים:</span>
-                                <span className="text-purple-900 font-black text-lg">
+                                <span className={`font-bold ${isDarkMode ? 'text-purple-400' : 'text-purple-800'}`}>שם קיים:</span>
+                                <span className={`font-black text-lg ${isDarkMode ? 'text-purple-300' : 'text-purple-900'}`}>
                                     {currentCustomer.name}
                                 </span>
                             </div>
@@ -581,7 +591,8 @@ const CustomerInfoModal = ({
                                     setCustomerName('');
                                     setTimeout(() => nameInputRef.current?.focus(), 50);
                                 }}
-                                className="text-purple-600 hover:text-purple-800 p-1 rounded-lg hover:bg-purple-100 transition"
+                                className={`p-1 rounded-lg transition-colors ${isDarkMode ? 'text-purple-400 hover:bg-purple-900/40' : 'text-purple-600 hover:bg-purple-100'
+                                    }`}
                                 title="ערוך שם"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" /></svg>
@@ -604,8 +615,10 @@ const CustomerInfoModal = ({
                             }
                         }}
                         placeholder={hasExistingName ? 'לחץ לעריכת השם...' : 'הכנס שם...'}
-                        className={`w-full h-14 bg-gray-50 rounded-xl border-2 px-4 text-xl font-bold text-gray-800 text-center transition-colors ${error ? 'border-red-200 bg-red-50' : 'border-gray-100 focus:border-purple-400'
-                            } outline-none`}
+                        className={`w-full h-14 rounded-xl border-2 px-4 text-xl font-bold text-center transition-colors outline-none ${error
+                            ? (isDarkMode ? 'border-red-900 bg-red-900/20 text-red-400' : 'border-red-200 bg-red-50 text-red-900')
+                            : (isDarkMode ? 'border-slate-800 bg-slate-800/50 text-white focus:border-purple-600' : 'border-gray-100 bg-gray-50 text-gray-800 focus:border-purple-400')
+                            }`}
                         dir="rtl"
                     />
 
@@ -619,10 +632,11 @@ const CustomerInfoModal = ({
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 border-t border-gray-200 flex gap-3">
+                <div className={`p-6 border-t flex gap-3 transition-colors duration-300 ${isDarkMode ? 'border-slate-800' : 'border-gray-200'}`}>
                     <button
                         onClick={onClose}
-                        className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
+                        className={`flex-1 py-4 rounded-xl font-bold text-lg transition ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                            }`}
                     >
                         ביטול
                     </button>
@@ -630,8 +644,8 @@ const CustomerInfoModal = ({
                         onClick={handleNameSubmit}
                         disabled={!customerName.trim() || isLoading}
                         className={`flex-1 py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 ${customerName.trim() && !isLoading
-                            ? 'bg-purple-500 text-white hover:bg-purple-600'
-                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            ? (isDarkMode ? 'bg-purple-600 text-white hover:bg-purple-500' : 'bg-purple-500 text-white hover:bg-purple-600')
+                            : (isDarkMode ? 'bg-slate-800 text-slate-600' : 'bg-gray-100 text-gray-400') + ' cursor-not-allowed'
                             }`}
                     >
                         {isLoading ? (
@@ -658,7 +672,8 @@ const CustomerInfoModal = ({
             dir="rtl"
         >
             <div
-                className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+                className={`rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200 transition-colors duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'
+                    }`}
                 onClick={(e) => e.stopPropagation()}
             >
                 {step === 'phone' && renderPhoneStep()}
@@ -672,16 +687,17 @@ const CustomerInfoModal = ({
                     onClick={handleCancelSwitch}
                 >
                     <div
-                        className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+                        className={`rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200 transition-colors duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'
+                            }`}
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* Header */}
-                        <div className="p-6 border-b border-gray-200 text-center">
+                        <div className={`p-6 border-b text-center transition-colors duration-300 ${isDarkMode ? 'border-slate-800' : 'border-gray-200'}`}>
                             <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-3">
                                 <UserCheck size={32} className="text-blue-600" />
                             </div>
-                            <h2 className="text-2xl font-black text-gray-900">לקוח קיים נמצא</h2>
-                            <p className="text-gray-500 font-medium mt-2">
+                            <h2 className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>לקוח קיים נמצא</h2>
+                            <p className={`font-medium mt-2 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                                 הטלפון {pendingCustomer.phone} שייך ל-{pendingCustomer.name}
                             </p>
                         </div>
@@ -694,10 +710,11 @@ const CustomerInfoModal = ({
                         </div>
 
                         {/* Footer */}
-                        <div className="p-6 border-t border-gray-200 flex gap-3">
+                        <div className={`p-6 border-t text-center transition-colors duration-300 ${isDarkMode ? 'border-slate-800' : 'border-gray-200'} flex gap-3`}>
                             <button
                                 onClick={handleCancelSwitch}
-                                className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-lg hover:bg-gray-300 transition"
+                                className={`flex-1 py-4 rounded-xl font-bold text-lg transition ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                                    }`}
                             >
                                 לקוח חדש
                             </button>

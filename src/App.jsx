@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import Routes from "./Routes";
 import { ConnectionProvider } from "@/context/ConnectionContext";
 import OfflineProvider from "@/context/OfflineContext";
+import { ThemeProvider } from "@/context/ThemeContext";
 import SplashScreen from "@/components/SplashScreen";
 
 
@@ -43,9 +44,11 @@ function App() {
   }
 
   return (
-    <ConnectionProvider>
-      <Routes />
-    </ConnectionProvider>
+    <ThemeProvider>
+      <ConnectionProvider>
+        <Routes />
+      </ConnectionProvider>
+    </ThemeProvider>
   );
 }
 

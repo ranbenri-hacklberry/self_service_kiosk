@@ -12,6 +12,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { X, Truck, MapPin, Phone, User, Check, Home, Dog, Users, Building2, Loader2 } from 'lucide-react';
 import { getAddressSuggestions, DEFAULT_CITY } from '../../../data/israelAddresses';
 import { supabase } from '../../../lib/supabase';
+import { useTheme } from '../../../context/ThemeContext';
 
 // Delivery note options (like payment method buttons)
 const DELIVERY_NOTES_OPTIONS = [
@@ -28,6 +29,7 @@ const DeliveryAddressModal = ({
     initialData = {},
     deliveryFee = 20 // Default, will be overridden from Supabase
 }) => {
+    const { isDarkMode } = useTheme();
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
     const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -275,11 +277,11 @@ const DeliveryAddressModal = ({
         >
             {/* Modal - Fixed width */}
             <div
-                className="relative w-[380px] flex flex-col bg-[#FAFAFA] rounded-2xl shadow-2xl overflow-hidden"
+                className={`relative w-[380px] flex flex-col rounded-2xl shadow-2xl overflow-hidden transition-colors duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-[#FAFAFA]'}`}
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header - Compact */}
-                <div className="bg-purple-600 px-4 py-3 flex items-center justify-between">
+                <div className={`${isDarkMode ? 'bg-purple-800' : 'bg-purple-600'} px-4 py-3 flex items-center justify-between transition-colors`}>
                     <div className="flex items-center gap-3">
                         <Truck size={20} className="text-white" />
                         <div>
@@ -300,7 +302,7 @@ const DeliveryAddressModal = ({
                     {/* Phone Step */}
                     {step === 'phone' && (
                         <div className="space-y-2">
-                            <label className="text-sm font-bold text-slate-600 flex items-center gap-2">
+                            <label className={`text-sm font-bold flex items-center gap-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                                 <Phone size={14} className="text-purple-500" />
                                 מספר טלפון
                                 {isLookingUp && <Loader2 size={14} className="animate-spin text-purple-500" />}
@@ -312,14 +314,15 @@ const DeliveryAddressModal = ({
                                 onChange={(e) => setCustomerPhone(e.target.value.replace(/[^0-9]/g, ''))}
                                 onKeyDown={handleKeyDown}
                                 placeholder="050-0000000"
-                                className="w-full px-3 py-3 text-lg font-bold text-center border-2 border-slate-200 rounded-xl focus:border-purple-500 outline-none"
+                                className={`w-full px-3 py-3 text-lg font-bold text-center border-2 rounded-xl focus:border-purple-500 outline-none transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-600' : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400'
+                                    }`}
                                 dir="ltr"
                                 autoFocus
                             />
                             {foundCustomer && (
-                                <div className="bg-green-50 border border-green-200 rounded-lg p-2 flex items-center gap-2">
+                                <div className={`border rounded-lg p-2 flex items-center gap-2 ${isDarkMode ? 'bg-green-900/20 border-green-900/30' : 'bg-green-50 border-green-200'}`}>
                                     <Check size={16} className="text-green-600" />
-                                    <span className="text-sm font-bold text-green-700">לקוח קיים: {foundCustomer.name}</span>
+                                    <span className={`text-sm font-bold ${isDarkMode ? 'text-green-400' : 'text-green-700'}`}>לקוח קיים: {foundCustomer.name}</span>
                                 </div>
                             )}
                         </div>
@@ -328,7 +331,7 @@ const DeliveryAddressModal = ({
                     {/* Name Step */}
                     {step === 'name' && (
                         <div className="space-y-2">
-                            <label className="text-sm font-bold text-slate-600 flex items-center gap-2">
+                            <label className={`text-sm font-bold flex items-center gap-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                                 <User size={14} className="text-purple-500" />
                                 שם הלקוח
                             </label>
@@ -339,7 +342,8 @@ const DeliveryAddressModal = ({
                                 onChange={(e) => setCustomerName(e.target.value)}
                                 onKeyDown={handleKeyDown}
                                 placeholder="שם מלא"
-                                className="w-full px-3 py-3 text-lg font-bold border-2 border-slate-200 rounded-xl focus:border-purple-500 outline-none"
+                                className={`w-full px-3 py-3 text-lg font-bold border-2 rounded-xl focus:border-purple-500 outline-none transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-600' : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400'
+                                    }`}
                                 autoFocus
                             />
                         </div>
@@ -350,16 +354,16 @@ const DeliveryAddressModal = ({
                         <>
                             {/* Customer summary */}
                             {(customerName || customerPhone) && (
-                                <div className="bg-purple-50 px-3 py-2 rounded-lg flex items-center gap-2 text-sm">
+                                <div className={`px-3 py-2 rounded-lg flex items-center gap-2 text-sm ${isDarkMode ? 'bg-purple-900/30' : 'bg-purple-50'}`}>
                                     <User size={14} className="text-purple-600" />
-                                    <span className="font-bold text-purple-900">{customerName || initialData.name}</span>
+                                    <span className={`font-bold ${isDarkMode ? 'text-purple-400' : 'text-purple-900'}`}>{customerName || initialData.name}</span>
                                     <span className="text-purple-500 font-mono text-xs" dir="ltr">{customerPhone || initialData.phone}</span>
                                 </div>
                             )}
 
                             {/* Address Input */}
                             <div className="space-y-2">
-                                <label className="text-sm font-bold text-slate-600 flex items-center gap-2">
+                                <label className={`text-sm font-bold flex items-center gap-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                                     <MapPin size={14} className="text-purple-500" />
                                     כתובת
                                 </label>
@@ -375,7 +379,8 @@ const DeliveryAddressModal = ({
                                     }}
                                     onKeyDown={handleKeyDown}
                                     placeholder={`רחוב ומספר, ${DEFAULT_CITY}`}
-                                    className="w-full px-3 py-3 text-base font-bold border-2 border-slate-200 rounded-xl focus:border-purple-500 outline-none"
+                                    className={`w-full px-3 py-3 text-base font-bold border-2 rounded-xl focus:border-purple-500 outline-none transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-600' : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400'
+                                        }`}
                                     autoFocus
                                 />
                                 {/* Quick Street Suggestions - Compact */}
@@ -389,7 +394,8 @@ const DeliveryAddressModal = ({
                                                     setDeliveryAddress(s);
                                                     setSuggestions([]);
                                                 }}
-                                                className="px-2 py-1 text-xs bg-slate-100 hover:bg-purple-100 text-slate-600 rounded-lg"
+                                                className={`px-2 py-1 text-xs rounded-lg transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-purple-900 text-slate-400 hover:text-white' : 'bg-slate-100 hover:bg-purple-100 text-slate-600'
+                                                    }`}
                                             >
                                                 {s.replace(`, ${DEFAULT_CITY}`, '')}
                                             </button>
@@ -411,7 +417,7 @@ const DeliveryAddressModal = ({
                                                 onClick={() => toggleNote(note.id)}
                                                 className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${isSelected
                                                     ? 'bg-purple-600 text-white shadow-md'
-                                                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                                    : (isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-400 hover:bg-slate-700' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50')
                                                     }`}
                                             >
                                                 <Icon size={16} />
@@ -423,20 +429,21 @@ const DeliveryAddressModal = ({
                             </div>
 
                             {/* Delivery Fee Display */}
-                            <div className="bg-purple-50 px-3 py-2 rounded-lg flex items-center justify-between">
-                                <span className="text-sm font-bold text-purple-700">דמי משלוח</span>
-                                <span className="text-lg font-black text-purple-900">₪{actualDeliveryFee}</span>
+                            <div className={`px-3 py-2 rounded-lg flex items-center justify-between transition-colors ${isDarkMode ? 'bg-purple-900/20' : 'bg-purple-50'}`}>
+                                <span className={`text-sm font-bold ${isDarkMode ? 'text-purple-400' : 'text-purple-700'}`}>דמי משלוח</span>
+                                <span className={`text-lg font-black ${isDarkMode ? 'text-purple-300' : 'text-purple-900'}`}>₪{actualDeliveryFee}</span>
                             </div>
                         </>
                     )}
                 </div>
 
                 {/* Footer - Compact */}
-                <div className="p-3 bg-white border-t border-slate-100 flex gap-2">
+                <div className={`p-3 border-t flex gap-2 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                     {step !== 'phone' && step !== 'address' && (
                         <button
                             onClick={() => setStep(step === 'name' ? 'phone' : 'name')}
-                            className="px-4 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl"
+                            className={`px-4 py-3 font-bold rounded-xl transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600'
+                                }`}
                         >
                             חזרה
                         </button>

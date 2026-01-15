@@ -52,41 +52,41 @@ const WhatsNewModal = ({ onClose }) => {
 
                 {/* Features List - Tightened vertical spacing */}
                 <div className="p-5 space-y-3.5">
-                    {/* Feature 1: Google Cloud + AI Integration */}
-                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-blue-50 to-cyan-50 rounded-2xl border border-blue-100 shadow-sm transition-transform hover:scale-[1.01]">
-                        <div className="w-12 h-12 rounded-xl bg-blue-500 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <span className="text-2xl">🤖</span>
+                    {/* Feature 1: Dark Mode */}
+                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-slate-800 to-slate-900 rounded-2xl border border-slate-700 shadow-sm transition-transform hover:scale-[1.01]">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-lg">
+                            <span className="text-2xl">🌙</span>
                         </div>
                         <div>
-                            <h3 className="font-black text-slate-800 text-lg">Google Cloud + AI: המוח החדש שלכם</h3>
-                            <p className="text-slate-600 text-sm mt-0.5 leading-snug">
-                                חברו את ה-Google Cloud, העתיקו את הקישור ל-Gemini, ChatGPT או Claude, ותשאלו: "למה אני מוציא כל כך הרבה על חלב?". הוא יענה, רק אל תיעלבו מהתשובה. 😉
+                            <h3 className="font-black text-white text-lg">מצב לילה (Dark Mode)</h3>
+                            <p className="text-slate-300 text-sm mt-0.5 leading-snug">
+                                בפינה השמאלית העליונה של התפריט יש עכשיו אייקון ירח 🌙 - לחצו עליו כדי לעבור למצב כהה. מושלם לעבודה בלילה או רק כי זה נראה מגניב. 😎
                             </p>
                         </div>
                     </div>
 
-                    {/* Feature 2: Weekly/Monthly Comparison */}
+                    {/* Feature 2: Card Improvements */}
                     <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-orange-50 to-amber-50 rounded-2xl border border-orange-100 shadow-sm transition-transform hover:scale-[1.01]">
                         <div className="w-12 h-12 rounded-xl bg-orange-500 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <span className="text-2xl">📊</span>
+                            <span className="text-2xl">🎨</span>
                         </div>
                         <div>
-                            <h3 className="font-black text-slate-800 text-lg">השוואה הוגנת (סוף סוף)</h3>
+                            <h3 className="font-black text-slate-800 text-lg">שיפור תצוגת הכרטיסיות</h3>
                             <p className="text-slate-600 text-sm mt-0.5 leading-snug">
-                                עכשיו משווים שבועות וחודשים בדיוק עד השנייה הנוכחית. לא עוד להשוות יום ראשון עמוס ליום חמישי שרק התחיל. הוגן, מדויק ומרגיע. 📈
+                                השם והמחיר של כל מנה עכשיו מיושרים יפה ובאותו גודל. נראה יותר נקי, יותר מקצועי, ויותר קל לקרוא. 📱
                             </p>
                         </div>
                     </div>
 
-                    {/* Feature 3: Accountant Access - Automatic Sync */}
-                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-purple-50 to-fuchsia-50 rounded-2xl border border-purple-100 shadow-sm transition-transform hover:scale-[1.01]">
-                        <div className="w-12 h-12 rounded-xl bg-purple-500 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <span className="text-2xl">🤝</span>
+                    {/* Feature 3: Espresso Consolidation */}
+                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-amber-50 to-yellow-50 rounded-2xl border border-amber-200 shadow-sm transition-transform hover:scale-[1.01]">
+                        <div className="w-12 h-12 rounded-xl bg-amber-700 flex items-center justify-center flex-shrink-0 shadow-lg">
+                            <span className="text-2xl">☕</span>
                         </div>
                         <div>
-                            <h3 className="font-black text-slate-800 text-lg">חופש מרואה החשבון!</h3>
+                            <h3 className="font-black text-slate-800 text-lg">אספרסו כפול? עכשיו בלחיצה אחת!</h3>
                             <p className="text-slate-600 text-sm mt-0.5 leading-snug">
-                                פשוט מזינים את המייל שלו, וזהו. כל מסמך שנסרק או מופק טס אליו אוטומטית ל-Google Cloud. פחות "איפה החשבונית?", יותר "יום טוב". ✈️
+                                הסרנו את הכפתור הנפרד לאספרסו כפול. <span className="font-bold">עכשיו:</span> לחצו על "אספרסו קצר" ובחרו מהאופציות "כפול קצר" או "כפול ארוך" (+2₪). פשוט יותר, מסודר יותר! ✨
                             </p>
                         </div>
                     </div>

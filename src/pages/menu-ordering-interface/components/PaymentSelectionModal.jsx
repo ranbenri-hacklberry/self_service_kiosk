@@ -3,6 +3,7 @@ import { X, Check, CreditCard, Clock, Gift, Banknote, Star } from 'lucide-react'
 import Button from '../../../components/ui/Button'; // Assuming Button component exists in this path, based on previous file
 import { cn } from '../../../utils/cn'; // Assuming cn exists
 import { useDiscounts } from '../hooks/useDiscounts';
+import { useTheme } from '../../../context/ThemeContext';
 
 const PaymentSelectionModal = ({
   isOpen,
@@ -20,6 +21,7 @@ const PaymentSelectionModal = ({
   customerName = '', // 🆕 Added prop
   customerPhone = '' // 🆕 Added prop
 }) => {
+  const { isDarkMode } = useTheme();
   const [step, setStep] = useState('selection'); // 'selection' or 'pos_instruction'
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -293,41 +295,42 @@ const PaymentSelectionModal = ({
         dir="rtl"
       >
         <div
-          className="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-4 overflow-hidden flex flex-col"
+          className={`rounded-3xl shadow-2xl max-w-md w-full mx-4 overflow-hidden flex flex-col transition-colors duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white'
+            }`}
           onClick={e => e.stopPropagation()}
         >
           {/* Header - More spacious like GitHub version */}
-          <div className="p-6 border-b border-slate-100">
+          <div className={`p-6 border-b transition-colors ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
             <div className="flex items-center gap-3">
-              <div className={`w-12 h-12 ${config?.iconBg} rounded-full flex items-center justify-center ${config?.iconColor} border border-slate-100`}>
+              <div className={`w-12 h-12 ${isDarkMode ? 'bg-slate-800 border-slate-700' : config?.iconBg} rounded-full flex items-center justify-center ${isDarkMode ? 'text-white' : config?.iconColor} border border-slate-100`}>
                 <IconComponent size={24} />
               </div>
               <div>
-                <h2 className="text-xl font-black text-slate-800">{config?.title}</h2>
-                <p className="text-sm text-slate-400">{config?.subtitle}</p>
+                <h2 className={`text-xl font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{config?.title}</h2>
+                <p className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{config?.subtitle}</p>
               </div>
             </div>
           </div>
 
           <div className="flex-1 p-8 flex flex-col items-center justify-center space-y-8">
             {/* Amount Display - BOLD & LARGE (7xl) like GitHub version */}
-            <div className={`w-full ${config?.amountBg} border-2 rounded-3xl p-8 text-center`}>
+            <div className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700' : config?.amountBg} border-2 rounded-3xl p-8 text-center`}>
               {/* Show discounts breakdown if any */}
               {(soldierDiscountAmount > 0 || loyaltyDiscount > 0) && (
-                <div className="text-sm text-slate-500 mb-4 space-y-1">
+                <div className={`text-sm mb-4 space-y-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   <p>סהכ לפני הנחות: {formatPrice(subtotal)}</p>
                   {soldierDiscountAmount > 0 && (
-                    <p className="text-blue-600">🎖️ הנחת חייל (10%): -{formatPrice(soldierDiscountAmount)}</p>
+                    <p className="text-blue-400">🎖️ הנחת חייל (10%): -{formatPrice(soldierDiscountAmount)}</p>
                   )}
                   {loyaltyDiscount > 0 && (
-                    <p className="text-green-600">🎁 הנחת נאמנות: -{formatPrice(loyaltyDiscount)}</p>
+                    <p className="text-green-400">🎁 הנחת נאמנות: -{formatPrice(loyaltyDiscount)}</p>
                   )}
                 </div>
               )}
-              <p className="text-sm font-bold mb-3 text-slate-600">
+              <p className={`text-sm font-bold mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                 {isRefund ? 'סכום לזיכוי:' : 'סכום לתשלום:'}
               </p>
-              <p className={`text-5xl font-black ${config?.amountColor}`}>
+              <p className={`text-5xl font-black ${isDarkMode ? 'text-white' : config?.amountColor}`}>
                 {pendingPaymentMethod === 'oth' ? formatPrice(0) : formatPrice(isRefund ? refundAmount : finalPrice)}{isRefund && pendingPaymentMethod !== 'oth' ? '-' : ''}
               </p>
             </div>
@@ -335,7 +338,7 @@ const PaymentSelectionModal = ({
             {/* Instructions */}
             <div className="w-full space-y-2 text-center">
               {config?.instructions.map((instruction, idx) => (
-                <p key={idx} className="text-base text-slate-700 font-medium">
+                <p key={idx} className={`text-base font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                   {instruction}
                 </p>
               ))}
@@ -343,12 +346,13 @@ const PaymentSelectionModal = ({
           </div>
 
           {/* Footer Buttons - Larger (h-14) like GitHub version */}
-          <div className="p-6 border-t border-slate-100">
+          <div className={`p-6 border-t transition-colors ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
             <div className="flex gap-3">
               <button
                 onClick={handleCancelInstruction}
                 disabled={isProcessing}
-                className="flex-1 h-14 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-xl transition disabled:opacity-50"
+                className={`flex-1 h-14 rounded-2xl font-bold text-xl transition disabled:opacity-50 ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
               >
                 חזור
               </button>
@@ -363,7 +367,7 @@ const PaymentSelectionModal = ({
                 ) : (
                   <>
                     <Check size={24} strokeWidth={3} />
-                    <span>{config?.confirmText}</span>
+                    <span>{isDarkMode && isRefund ? 'אישור זיכוי' : config?.confirmText}</span>
                   </>
                 )}
               </button>
@@ -392,22 +396,24 @@ const PaymentSelectionModal = ({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden flex flex-col"
+        className={`rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden flex flex-col transition-colors duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-white'
+          }`}
         style={{ maxHeight: '88vh' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header - Compact */}
-        <div className="p-4 border-b border-slate-100 flex-shrink-0">
+        <div className={`p-4 border-b flex-shrink-0 transition-colors ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 border border-blue-100">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center border transition-colors ${isDarkMode ? 'bg-slate-800 text-blue-400 border-slate-700' : 'bg-blue-50 text-blue-600 border-blue-100'
+                }`}>
                 <CreditCard size={20} />
               </div>
               <div>
-                <h2 className="text-xl font-black text-slate-800">
+                <h2 className={`text-xl font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                   {isRefund ? 'אישור זיכוי' : 'תשלום'}
                 </h2>
-                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                <div className={`flex items-center gap-1.5 text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   <span>{cartItems?.reduce((count, item) => count + item?.quantity, 0)} פריטים</span>
                   <span>•</span>
                   <span>סה״כ: {formatPrice(cartTotal)}</span>
@@ -416,7 +422,8 @@ const PaymentSelectionModal = ({
             </div>
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-slate-100 rounded-full transition-colors text-slate-400 hover:text-slate-600"
+              className={`p-1.5 rounded-full transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-500 hover:text-white' : 'hover:bg-slate-100 text-slate-400 hover:text-slate-600'
+                }`}
               disabled={isProcessing}
             >
               <X size={20} />
@@ -428,10 +435,13 @@ const PaymentSelectionModal = ({
         <div className="flex-1 p-4 space-y-4 overflow-y-auto">
 
           {/* Totals Summary - Compact */}
-          <div className={`${isRefund ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'} border-2 rounded-2xl p-4`}>
+          <div className={`border-2 rounded-2xl p-4 transition-colors ${isRefund
+              ? (isDarkMode ? 'bg-red-900/20 border-red-900/30' : 'bg-red-50 border-red-200')
+              : (isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200')
+            }`}>
             <div className="flex justify-between items-center">
-              <span className="text-lg font-bold text-slate-800">סה״כ לתשלום</span>
-              <span className={`text-3xl font-black ${isRefund ? 'text-red-600' : 'text-slate-800'}`}>
+              <span className={`text-lg font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>סה״כ לתשלום</span>
+              <span className={`text-3xl font-black ${isRefund ? 'text-red-500' : (isDarkMode ? 'text-white' : 'text-slate-800')}`}>
                 {formatPrice(finalPrice)}
               </span>
             </div>
@@ -440,7 +450,7 @@ const PaymentSelectionModal = ({
           {/* Payment Methods Grid - Compact */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-base font-bold text-slate-800">אמצעי {isRefund ? 'החזר' : 'תשלום'}</h3>
+              <h3 className={`text-base font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-800'}`}>אמצעי {isRefund ? 'החזר' : 'תשלום'}</h3>
               {isRefund && originalPaymentMethod && (
                 <div className="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded-full font-black border border-amber-200 animate-pulse">
                   תשלום מקורי: {PAYMENT_METHODS.find(m => m.id === originalPaymentMethod)?.label || originalPaymentMethod}
@@ -459,7 +469,9 @@ const PaymentSelectionModal = ({
                     disabled={isProcessing}
                     className={cn(
                       "flex flex-col items-center justify-center gap-1.5 rounded-xl transition-all border-2",
-                      method.color,
+                      isDarkMode
+                        ? "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white"
+                        : method.color,
                       isOriginal ? "border-amber-500 ring-4 ring-amber-200 shadow-lg scale-[1.05] z-10" : "border-transparent",
                       "hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md",
                       ['cash', 'credit_card'].includes(method.id) ? 'col-span-2 h-32 p-4' : 'col-span-1 h-20 p-2'
@@ -481,17 +493,20 @@ const PaymentSelectionModal = ({
         </div>
 
         {/* Footer - Compact */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50">
+        <div className={`p-4 border-t transition-colors ${isDarkMode ? 'bg-slate-800/50 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
           <button
             onClick={handlePayLater}
             disabled={isProcessing}
-            className="w-full py-3 bg-white border-2 border-amber-400 text-amber-700 rounded-xl font-bold text-lg hover:bg-amber-50 transition shadow-sm flex flex-col items-center justify-center gap-0.5"
+            className={`w-full py-3 border-2 rounded-xl font-bold text-lg transition shadow-sm flex flex-col items-center justify-center gap-0.5 ${isDarkMode
+                ? 'bg-slate-800 border-amber-600 text-amber-500 hover:bg-slate-700'
+                : 'bg-white border-amber-400 text-amber-700 hover:bg-amber-50'
+              }`}
           >
             <div className="flex items-center gap-2">
               <Clock size={20} />
               <span>שלח למטבח (תשלום אחר כך)</span>
             </div>
-            <span className="text-xs font-medium opacity-70">ההזמנה תופיע ב-KDS כטרם שולמה</span>
+            <span className={`text-xs font-medium opacity-70 ${isDarkMode ? 'text-amber-500/80' : 'text-amber-700/80'}`}>ההזמנה תופיע ב-KDS כטרם שולמה</span>
           </button>
         </div>
       </div>

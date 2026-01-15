@@ -115,24 +115,40 @@ const ScanningAnimation = ({ isDataReady, onComplete }) => {
                         transition={{ duration: 0.5, ease: "easeOut" }}
                         className="relative z-10"
                     >
-                        <div className="w-64 h-64 rounded-[2.5rem] overflow-hidden bg-white shadow-2xl border-4 border-white flex items-center justify-center p-6 bg-gradient-to-b from-white to-slate-50">
-                            <motion.div
-                                className="text-7xl"
-                                animate={{
-                                    y: [0, -20, 0],
-                                    rotate: [0, 5, -5, 0]
-                                }}
-                                transition={{
-                                    duration: 2,
-                                    repeat: Infinity,
-                                    ease: "easeInOut"
-                                }}
-                            >
-                                {currentStep.title.includes('חשבונית') ? '📜' :
-                                    currentStep.title.includes('פריטים') ? '📦' :
-                                        currentStep.title.includes('שמות') ? '🔍' :
-                                            currentStep.title.includes('מחירים') ? '💰' : '✨'}
-                            </motion.div>
+                        <div className="w-64 h-64 rounded-[2.5rem] overflow-hidden bg-white shadow-2xl border-4 border-white">
+                            {currentStep.video ? (
+                                <video
+                                    src={currentStep.video}
+                                    autoPlay
+                                    loop
+                                    muted
+                                    playsInline
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : currentStep.image ? (
+                                <img
+                                    src={currentStep.image}
+                                    alt={currentStep.title}
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-white to-slate-50">
+                                    <motion.div
+                                        className="text-7xl"
+                                        animate={{
+                                            y: [0, -20, 0],
+                                            rotate: [0, 5, -5, 0]
+                                        }}
+                                        transition={{
+                                            duration: 2,
+                                            repeat: Infinity,
+                                            ease: "easeInOut"
+                                        }}
+                                    >
+                                        ✨
+                                    </motion.div>
+                                </div>
+                            )}
                         </div>
                     </motion.div>
                 </AnimatePresence>
@@ -594,7 +610,7 @@ const KDSInventoryScreen = ({ onExit }) => {
 
             // CLEAN NAME: Focus on Hebrew tokens to bypass numeric codes and English noise
             const hebrewTokens = normalizedInvoiceName.match(/[\u0590-\u05FF]+/g) || [];
-            const cleanName = hebrewTokens.filter(t => !stopWords.includes(t)).join(' ');
+            let cleanName = hebrewTokens.filter(t => !stopWords.includes(t)).join(' ');
 
             // Fallback to original cleaning if no Hebrew found (unlikely but safe)
             if (hebrewTokens.length === 0) {
@@ -904,9 +920,18 @@ const KDSInventoryScreen = ({ onExit }) => {
                 if (item.matchType === 'manual' || item.matchType === 'new') return;
 
                 if (!item.inventoryItemId) {
-                    // Method A: Try by catalogItemName (Standard link)
                     let foundInInventory = null;
-                    if (item.catalogItemName) {
+
+                    // Method 0 (NEW): Try by catalog_item_id - Most reliable for catalog-matched items!
+                    if (item.catalogItemId && !foundInInventory) {
+                        foundInInventory = items.find(i => i.catalog_item_id === item.catalogItemId);
+                        if (foundInInventory) {
+                            console.log(`🔗 Found inventory item by catalog_item_id for "${item.name}"`);
+                        }
+                    }
+
+                    // Method A: Try by catalogItemName (Standard link)
+                    if (!foundInInventory && item.catalogItemName) {
                         foundInInventory = items.find(i => i.name === item.catalogItemName);
                     }
 
@@ -1000,16 +1025,30 @@ const KDSInventoryScreen = ({ onExit }) => {
                             supplierIdFinal: supplierIdToPass
                         });
 
-                        // Use RPC to bypass RLS restrictions
+                        // FINAL SAFETY CHECK: Ensure catalog ID is a valid UUID before calling RPC
+                        if (!uuidRegex.test(validCatalogId)) {
+                            console.error(`🚫 FINAL CHECK FAILED: catalogId "${validCatalogId}" is not a valid UUID. Skipping.`);
+                            return;
+                        }
+
+                        // DEBUG: Log exact values being sent
+                        const rpcParams = {
+                            p_business_id: currentUser.business_id,
+                            p_catalog_item_id: validCatalogId,
+                            p_name: item.catalogItemName || item.name,
+                            p_unit: item.unit || 'יח׳',
+                            p_cost_per_unit: item.catalogPrice || 0,
+                            p_supplier_id: String(receivingSession.supplierId || '')
+                        };
+                        console.log('📦 RPC PARAMS DEBUG:', rpcParams, {
+                            businessIdType: typeof rpcParams.p_business_id,
+                            catalogIdType: typeof rpcParams.p_catalog_item_id,
+                            catalogIdIsUuid: uuidRegex.test(rpcParams.p_catalog_item_id)
+                        });
+
+                        // Use V2 RPC (handles TEXT supplier_id safely)
                         const { data: newItemId, error } = await supabase
-                            .rpc('create_missing_inventory_item', {
-                                p_business_id: currentUser.business_id,
-                                p_catalog_item_id: validCatalogId,
-                                p_name: item.catalogItemName || item.name,
-                                p_unit: item.unit || 'יח׳',
-                                p_cost_per_unit: item.catalogPrice || 0,
-                                p_supplier_id: supplierIdToPass
-                            });
+                            .rpc('create_missing_inventory_item_v2', rpcParams);
 
                         if (error) throw error;
 
@@ -1019,7 +1058,13 @@ const KDSInventoryScreen = ({ onExit }) => {
                             item.isNew = false;
                         }
                     } catch (err) {
-                        console.error(`❌ Failed to create inventory item for ${item.name}:`, err);
+                        console.error(`❌ Failed to create inventory item for ${item.name}:`, {
+                            message: err?.message,
+                            code: err?.code,
+                            hint: err?.hint,
+                            details: err?.details,
+                            full: err
+                        });
                     }
                 }));
             }

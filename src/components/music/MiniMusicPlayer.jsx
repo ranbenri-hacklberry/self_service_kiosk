@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Play, Pause, SkipBack, ThumbsUp, ThumbsDown, Music, ChevronLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { useTheme } from '@/context/ThemeContext';
 
 /**
  * Compact Mini music player for headers
@@ -10,6 +11,7 @@ import { useAuth } from '@/context/AuthContext';
  * Light/white theme, ~1/3 screen width
  */
 const MiniMusicPlayer = ({ className = '' }) => {
+    const { isDarkMode } = useTheme();
     const { currentUser } = useAuth();
     const [playback, setPlayback] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -178,12 +180,16 @@ const MiniMusicPlayer = ({ className = '' }) => {
 
     return (
         <div
-            className={`flex items-center gap-3 bg-gray-100 hover:bg-gray-50 rounded-xl px-4 py-2 transition-all max-w-[340px] min-w-[220px] ${className}`}
+            className={`flex items-center gap-3 rounded-xl px-4 py-2 transition-all max-w-[340px] min-w-[220px] border transition-colors duration-300 ${isDarkMode
+                ? 'bg-slate-800/80 hover:bg-slate-700/80 border-slate-700 shadow-black/20'
+                : 'bg-gray-100 hover:bg-gray-50 border-gray-200 shadow-sm'
+                } ${className}`}
             dir="rtl"
         >
             {/* Album Art - Right side in RTL */}
             <div
-                className="w-10 h-10 rounded-lg overflow-hidden bg-gray-200 shrink-0 cursor-pointer shadow-sm"
+                className={`w-10 h-10 rounded-lg overflow-hidden shrink-0 cursor-pointer shadow-sm ${isDarkMode ? 'bg-slate-700' : 'bg-gray-200'
+                    }`}
                 onClick={openRanTunes}
             >
                 {playback.cover_url ? (
@@ -193,7 +199,7 @@ const MiniMusicPlayer = ({ className = '' }) => {
                         className="w-full h-full object-cover"
                     />
                 ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
+                    <div className={`w-full h-full flex items-center justify-center ${isDarkMode ? 'text-slate-500' : 'text-gray-400'}`}>
                         <Music className="w-5 h-5" />
                     </div>
                 )}
@@ -201,10 +207,10 @@ const MiniMusicPlayer = ({ className = '' }) => {
 
             {/* Song & Artist */}
             <div className="min-w-0 flex-1 cursor-pointer text-right" onClick={openRanTunes}>
-                <p className="text-gray-800 text-sm font-semibold truncate leading-tight">
+                <p className={`text-sm font-semibold truncate leading-tight ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
                     {playback.song_title}
                 </p>
-                <p className="text-gray-500 text-xs truncate leading-tight">
+                <p className={`text-xs truncate leading-tight ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                     {playback.artist_name}
                 </p>
             </div>
@@ -217,7 +223,7 @@ const MiniMusicPlayer = ({ className = '' }) => {
                     className={`w-7 h-7 rounded-full flex items-center justify-center transition-all
                         ${isLiked
                             ? 'bg-green-100 text-green-600'
-                            : 'text-gray-400 hover:text-green-500 hover:bg-gray-200'
+                            : `${isDarkMode ? 'text-slate-500 hover:text-green-400 hover:bg-slate-700' : 'text-gray-400 hover:text-green-500 hover:bg-gray-200'}`
                         }`}
                     title="אהבתי"
                 >
@@ -230,7 +236,7 @@ const MiniMusicPlayer = ({ className = '' }) => {
                     className={`w-7 h-7 rounded-full flex items-center justify-center transition-all
                         ${isDisliked
                             ? 'bg-red-100 text-red-600'
-                            : 'text-gray-400 hover:text-red-500 hover:bg-gray-200'
+                            : `${isDarkMode ? 'text-slate-500 hover:text-red-400 hover:bg-slate-700' : 'text-gray-400 hover:text-red-500 hover:bg-gray-200'}`
                         }`}
                     title="לא אהבתי"
                 >
@@ -241,14 +247,16 @@ const MiniMusicPlayer = ({ className = '' }) => {
                 <button
                     onClick={() => sendCommand(playback.is_playing ? 'pause' : 'play')}
                     disabled={isLoading}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isLoading ? 'bg-gray-200 opacity-50' : 'bg-gray-200 hover:bg-gray-300'
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isLoading
+                        ? (isDarkMode ? 'bg-slate-800 opacity-50' : 'bg-gray-200 opacity-50')
+                        : (isDarkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-gray-200 hover:bg-gray-300')
                         }`}
                     title={playback.is_playing ? 'השהה' : 'נגן'}
                 >
                     {playback.is_playing ? (
-                        <Pause className="w-4 h-4 text-gray-700 fill-gray-700" />
+                        <Pause className={`w-4 h-4 ${isDarkMode ? 'text-slate-200 fill-slate-200' : 'text-gray-700 fill-gray-700'}`} />
                     ) : (
-                        <Play className="w-4 h-4 text-gray-700 fill-gray-700" />
+                        <Play className={`w-4 h-4 ${isDarkMode ? 'text-slate-200 fill-slate-200' : 'text-gray-700 fill-gray-700'}`} />
                     )}
                 </button>
 
@@ -256,7 +264,9 @@ const MiniMusicPlayer = ({ className = '' }) => {
                 <button
                     onClick={() => sendCommand('next')}
                     disabled={isLoading}
-                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${isLoading ? 'text-gray-300' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
+                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${isLoading
+                        ? (isDarkMode ? 'text-slate-700' : 'text-gray-300')
+                        : (isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200')
                         }`}
                     title="שיר הבא"
                 >

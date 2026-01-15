@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MessageSquare } from 'lucide-react';
+import { useTheme } from '../../../context/ThemeContext';
 
 /**
  * MTOQuickNotesModal Component
@@ -10,6 +11,7 @@ import { MessageSquare } from 'lucide-react';
  * @param {Function} onClose - Close modal callback
  */
 const MTOQuickNotesModal = ({ selectedItem, onSubmitNotes, onClose }) => {
+    const { isDarkMode } = useTheme();
     const [notes, setNotes] = useState('');
     const textareaRef = useRef(null);
 
@@ -49,11 +51,12 @@ const MTOQuickNotesModal = ({ selectedItem, onSubmitNotes, onClose }) => {
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
             <div
-                className="bg-[#FAFAFA] w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200"
+                className={`w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 transition-colors duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-[#FAFAFA]'
+                    }`}
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}
-                <div className="relative h-32 bg-slate-900 flex items-end p-6 overflow-hidden shrink-0">
+                <div className={`relative h-32 flex items-end p-6 overflow-hidden shrink-0 transition-colors duration-300 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-900'}`}>
                     <div className="absolute inset-0 opacity-20">
                         <div className="absolute -right-10 -top-10 w-40 h-40 bg-blue-500 rounded-full blur-3xl" />
                         <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-indigo-500 rounded-full blur-3xl" />
@@ -79,13 +82,13 @@ const MTOQuickNotesModal = ({ selectedItem, onSubmitNotes, onClose }) => {
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-6">
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-2 px-1">
+                        <label className={`block text-sm font-bold mb-2 px-1 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                             הערה מותאמת (עד 7 מילים)
                         </label>
-                        <div className={`relative rounded-xl border transition-all duration-200 bg-white
+                        <div className={`relative rounded-xl border transition-all duration-200
               ${notes.trim().length > 0
                                 ? 'border-blue-500 ring-1 ring-blue-500'
-                                : 'border-slate-200 hover:border-slate-300'
+                                : (isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-slate-600' : 'bg-white border-slate-200 hover:border-slate-300')
                             }`}>
                             <textarea
                                 ref={textareaRef}
@@ -94,7 +97,8 @@ const MTOQuickNotesModal = ({ selectedItem, onSubmitNotes, onClose }) => {
                                 onKeyDown={handleKeyDown}
                                 placeholder="לדוגמה: בלי חסה תוספת עגבניות ללא בצל"
                                 rows={4}
-                                className="w-full px-4 py-3 bg-transparent rounded-xl focus:outline-none resize-none text-base placeholder:text-slate-400"
+                                className={`w-full px-4 py-3 bg-transparent rounded-xl focus:outline-none resize-none text-base placeholder:text-slate-400 ${isDarkMode ? 'text-white' : 'text-slate-900'
+                                    }`}
                             />
                             <div className="absolute bottom-2 left-2 text-[10px] font-medium text-slate-400">
                                 {wordCount}/7 מילים
@@ -116,17 +120,19 @@ const MTOQuickNotesModal = ({ selectedItem, onSubmitNotes, onClose }) => {
                 </div>
 
                 {/* Footer */}
-                <div className="p-3 bg-white border-t border-slate-100 shadow-[0_-10px_30px_rgba(0,0,0,0.03)]">
+                <div className={`p-3 border-t transition-colors duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-[0_-10px_30px_rgba(0,0,0,0.03)]'}`}>
                     <div className="flex gap-3">
                         <button
                             onClick={onClose}
-                            className="w-1/3 h-12 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold transition-colors active:scale-95"
+                            className={`w-1/3 h-12 rounded-2xl font-bold transition-colors active:scale-95 ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                                }`}
                         >
                             ביטול
                         </button>
                         <button
                             onClick={handleSubmit}
-                            className="flex-1 bg-slate-900 hover:bg-black text-white h-12 rounded-2xl flex items-center justify-center px-6 text-base font-bold shadow-xl shadow-slate-300/50 transition-colors active:scale-98"
+                            className={`flex-1 h-12 rounded-2xl flex items-center justify-center px-6 text-base font-bold transition-colors active:scale-98 shadow-xl ${isDarkMode ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-900/20' : 'bg-slate-900 hover:bg-black text-white shadow-slate-300/50'
+                                }`}
                         >
                             <span>אישור והוספה</span>
                         </button>

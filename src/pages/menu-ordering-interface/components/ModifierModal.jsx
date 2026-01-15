@@ -1,9 +1,11 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  X, Check, Coffee, Milk, Leaf, Wheat, Nut,
-  Cloud, CloudOff, Thermometer, Flame, Droplets,
+  X, Check, Info, AlertTriangle, Plus, Minus, MessageSquare,
+  Trash2, Coffee, Milk, Layers, ShoppingCart, Loader2,
+  Cloud, CloudOff, Thermometer, Flame, Droplets, Leaf, Wheat, Nut,
   Zap, Ban, Puzzle, ArrowUpFromLine, ArrowDownToLine, Blend, Gauge, Apple, Disc
 } from 'lucide-react';
+import { useTheme } from '../../../context/ThemeContext';
 import { supabase } from '../../../lib/supabase';
 import { fetchManagerItemOptions, clearOptionsCache, normalizeOptionGroups } from '@/lib/managerApi';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -85,6 +87,7 @@ const getIconForValue = (valueName, groupName) => {
 
 // Milk Card Component (Hero Section)
 const MilkCard = ({ label, Icon, price, isSelected, onClick }) => {
+  const { isDarkMode } = useTheme();
   const numericPrice = Number(price || 0);
   return (
     <button
@@ -93,8 +96,8 @@ const MilkCard = ({ label, Icon, price, isSelected, onClick }) => {
         relative flex-1 flex flex-col items-center justify-center gap-1.5 py-4 px-3 rounded-2xl
         font-semibold transition-all duration-200 touch-manipulation min-h-[88px] active:scale-95
         ${isSelected
-          ? "bg-orange-50 text-orange-600 ring-2 ring-orange-400 ring-offset-2 shadow-lg shadow-orange-100"
-          : "bg-white text-slate-500 hover:bg-slate-50 border border-slate-100 shadow-sm hover:shadow-md"
+          ? (isDarkMode ? "bg-orange-500/20 text-orange-400 ring-2 ring-orange-500 ring-offset-2 ring-offset-slate-900 shadow-lg shadow-orange-500/10" : "bg-orange-50 text-orange-600 ring-2 ring-orange-400 ring-offset-2 shadow-lg shadow-orange-100")
+          : (isDarkMode ? "bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700 shadow-sm" : "bg-white text-slate-500 hover:bg-slate-50 border border-slate-100 shadow-sm hover:shadow-md")
         }
       `}
     >
@@ -115,21 +118,22 @@ const MilkCard = ({ label, Icon, price, isSelected, onClick }) => {
 
 // Modifier Pill Button
 const ModifierPill = ({ label, Icon, isSelected, onClick, variant = "default", price }) => {
+  const { isDarkMode } = useTheme();
   const numericPrice = Number(price || 0);
   const selectedStyles =
     variant === "purple"
       ? "bg-purple-600 text-white shadow-lg shadow-purple-200"
-      : "bg-slate-800 text-white shadow-lg shadow-slate-300";
+      : (isDarkMode ? "bg-slate-200 text-slate-900 shadow-lg" : "bg-slate-800 text-white shadow-lg shadow-slate-300");
 
   return (
     <button
       onClick={onClick}
       className={`
         w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl
-        font-medium transition-all duration-200 touch-manipulation active:scale-95
+        font-bold transition-all duration-200 touch-manipulation active:scale-95
         ${isSelected
           ? selectedStyles
-          : "bg-white text-slate-600 border border-slate-100 shadow-sm hover:shadow-md hover:bg-slate-50"
+          : (isDarkMode ? "bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700" : "bg-white text-slate-600 border border-slate-100 shadow-sm hover:shadow-md hover:bg-slate-50")
         }
       `}
     >
@@ -146,9 +150,7 @@ const ModifierPill = ({ label, Icon, isSelected, onClick, variant = "default", p
 
 const ModifierModal = (props) => {
   const { isOpen, selectedItem, onClose, onAddItem } = props;
-
-  // ⚠️ CRITICAL: All hooks MUST be called before any early returns (React Rules of Hooks)
-  // const [optionGroups, setOptionGroups] = useState([]); // Removed, now derived
+  const { isDarkMode } = useTheme();
   const [orderNote, setOrderNote] = useState('');
   const [isNoteOpen, setIsNoteOpen] = useState(false);
   const [optionSelections, setOptionSelections] = useState({});
@@ -830,18 +832,21 @@ const ModifierModal = (props) => {
 
       {/* Modal */}
       <div
-        className="relative w-auto max-w-[90vw] min-w-[420px] flex flex-col bg-[#FAFAFA] rounded-[2rem] shadow-2xl overflow-hidden"
+        className={`relative w-auto max-w-[90vw] min-w-[420px] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden transition-colors duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-[#FAFAFA]'
+          }`}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-white/80 backdrop-blur-xl px-6 py-4 flex items-center sticky top-0 z-20 border-b border-slate-100/50">
+        <div className={`backdrop-blur-xl px-6 py-4 flex items-center sticky top-0 z-20 border-b transition-colors ${isDarkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-white/80 border-slate-100/50'
+          }`}>
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-orange-100 to-orange-50 text-orange-500 rounded-2xl flex items-center justify-center shadow-inner">
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-inner ${isDarkMode ? 'bg-orange-500/10 text-orange-400' : 'bg-gradient-to-br from-orange-100 to-orange-50 text-orange-500'
+              }`}>
               <Coffee size={20} strokeWidth={2.5} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-800 tracking-tight">{selectedItem.name}</h2>
-              <p className="text-sm text-slate-400">התאמה אישית</p>
+              <h2 className={`text-lg font-bold tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{selectedItem.name}</h2>
+              <p className={`text-sm ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>התאמה אישית</p>
             </div>
           </div>
         </div>
@@ -852,7 +857,7 @@ const ModifierModal = (props) => {
           {/* 1. Milk Selection - Hero - MOVED TO TOP EXPLICITLY */}
           {milkGroup && milkGroup.values && !isEspresso && (
             <section className="order-first mb-4">
-              <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
+              <div className={`p-2 rounded-2xl shadow-sm border transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}`}>
                 <div className="flex gap-2">
                   {(() => {
                     const seen = new Set();
@@ -932,7 +937,8 @@ const ModifierModal = (props) => {
 
           {/* Empty State Message */}
           {(optionGroups || []).length === 0 && !isLoadingOptions && (
-            <div className="p-4 text-center text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200 mb-4">
+            <div className={`p-4 text-center rounded-xl border border-dashed mb-4 ${isDarkMode ? 'text-slate-500 bg-slate-800/50 border-slate-700' : 'text-slate-500 bg-slate-50 border-slate-200'
+              }`}>
               <p className="font-medium">אין תוספות מובנות לפריט זה</p>
               <p className="text-xs mt-1">אבל אפשר לכתוב הערות חופשיות למטה 👇</p>
             </div>
@@ -1075,9 +1081,10 @@ const ModifierModal = (props) => {
                 if (visibleOptions.length === 0) return null;
 
                 return (
-                  <div key={group.id} className="flex flex-col gap-2 bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
-                    <h4 className="text-sm font-black text-slate-800 px-1">{group.name}</h4>
-                    <div className={`grid gap-2 ${isMultipleSelect ? 'grid-cols-3' : visibleOptions.length <= 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                  <div key={group.id} className={`flex flex-col gap-2 p-3 rounded-2xl shadow-sm border transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-100'
+                    }`}>
+                    <h4 className={`text-sm font-black px-1 ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{group.name}</h4>
+                    <div className={`grid gap-2 ${isMultipleSelect ? 'grid-cols-3' : visibleOptions.length === 4 ? 'grid-cols-2' : visibleOptions.length <= 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
                       {visibleOptions.map(value => {
                         const IconComponent = getIconForValue(value.name, group.name);
                         const valueIdStr = String(value.id);
@@ -1102,8 +1109,8 @@ const ModifierModal = (props) => {
                                 relative flex flex-col items-center justify-center gap-1.5 py-4 px-3 rounded-2xl
                                 font-semibold transition-all duration-200 touch-manipulation min-h-[88px] active:scale-95
                                 ${isSelected
-                                ? "bg-orange-50 text-orange-600 ring-2 ring-orange-400 ring-offset-2 shadow-lg shadow-orange-100"
-                                : "bg-white text-slate-500 hover:bg-slate-50 border border-slate-100 shadow-sm hover:shadow-md"
+                                ? (isDarkMode ? "bg-orange-500/20 text-orange-400 ring-2 ring-orange-500 ring-offset-2 ring-offset-slate-800 shadow-lg shadow-orange-500/10" : "bg-orange-50 text-orange-600 ring-2 ring-orange-400 ring-offset-2 shadow-lg shadow-orange-100")
+                                : (isDarkMode ? "bg-slate-900 text-slate-400 hover:bg-slate-700 border border-slate-700 shadow-sm" : "bg-white text-slate-500 hover:bg-slate-50 border border-slate-100 shadow-sm hover:shadow-md")
                               }
                               `}
                           >
@@ -1182,8 +1189,8 @@ const ModifierModal = (props) => {
                             key={value.id}
                             onClick={() => toggleOption(value.groupId, String(value.id))}
                             className={`flex-1 relative flex items-center justify-center gap-2 h-[50px] rounded-xl border transition-all duration-200 ${isSelected
-                              ? 'bg-purple-50 border-purple-200 ring-1 ring-purple-500'
-                              : 'bg-white border-slate-200 hover:border-slate-300'
+                              ? (isDarkMode ? 'bg-purple-900/30 border-purple-500 ring-1 ring-purple-500' : 'bg-purple-50 border-purple-200 ring-1 ring-purple-500')
+                              : (isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-slate-600' : 'bg-white border-slate-200 hover:border-slate-300')
                               }`}
                           >
                             <IconComponent size={16} className={isSelected ? 'text-purple-600' : 'text-slate-400'} />
@@ -1203,7 +1210,7 @@ const ModifierModal = (props) => {
                   {selectedItem?.allow_notes !== false && (
                     <div className={`relative flex items-center h-[50px] rounded-xl border transition-all duration-200 ${orderNote.length > 0
                       ? 'bg-orange-50 border-orange-500 ring-1 ring-orange-500'
-                      : 'bg-white border-slate-200 hover:border-slate-300'
+                      : (isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-slate-600' : 'bg-white border-slate-200 hover:border-slate-300')
                       }`}>
 
                       <input
@@ -1212,7 +1219,9 @@ const ModifierModal = (props) => {
                         onChange={(e) => setOrderNote(e.target.value)}
                         maxLength={20}
                         placeholder="הוסף הערה"
-                        className={`w-full h-full bg-transparent text-center font-bold text-sm focus:outline-none px-2 placeholder:text-slate-400 ${orderNote.length > 0 ? 'text-orange-600' : 'text-slate-800'
+                        className={`w-full h-full bg-transparent text-center font-bold text-sm focus:outline-none px-2 placeholder:text-slate-400 ${orderNote.length > 0
+                          ? (isDarkMode ? 'text-orange-400' : 'text-orange-600')
+                          : (isDarkMode ? 'text-slate-300' : 'text-slate-800')
                           }`}
                       />
 
@@ -1235,20 +1244,23 @@ const ModifierModal = (props) => {
 
 
 
-        <div className="p-3 bg-white border-t border-slate-100 shadow-[0_-10px_30px_rgba(0,0,0,0.03)]">
+        <div className={`p-3 border-t shadow-[0_-10px_30px_rgba(0,0,0,0.03)] transition-colors duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'
+          }`}>
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="w-1/3 h-12 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold transition-colors active:scale-95"
+              className={`w-1/3 h-12 rounded-2xl font-bold transition-colors active:scale-95 ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
             >
               ביטול
             </button>
             <button
               onClick={handleAdd}
-              className="flex-1 bg-slate-900 hover:bg-black text-white h-12 rounded-2xl flex items-center justify-between px-6 text-base font-bold shadow-xl shadow-slate-300/50 transition-colors active:scale-98"
+              className={`flex-1 h-12 rounded-2xl flex items-center justify-between px-6 text-base font-bold transition-colors active:scale-98 shadow-xl ${isDarkMode ? 'bg-orange-500 hover:bg-orange-600 text-white shadow-orange-900/20' : 'bg-slate-900 hover:bg-black text-white shadow-slate-300/50'
+                }`}
             >
               <span>הוסף להזמנה</span>
-              <div className="flex items-center gap-2 bg-white/15 px-3 py-1 rounded-xl">
+              <div className={`flex items-center gap-2 px-3 py-1 rounded-xl ${isDarkMode ? 'bg-black/20' : 'bg-white/15'}`}>
                 <span>₪{totalPrice}</span>
                 <Check size={16} />
               </div>

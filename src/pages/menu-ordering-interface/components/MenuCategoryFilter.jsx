@@ -1,8 +1,9 @@
 import React from 'react';
-import Button from '../../../components/ui/Button';
-
+import { useTheme } from '../../../context/ThemeContext';
 
 const MenuCategoryFilter = ({ activeCategory = 'hot-drinks', onCategoryChange, categories: propCategories }) => {
+  const { isDarkMode } = useTheme();
+
   // Fallback categories if none provided
   const defaultCategories = [
     { id: 'hot-drinks', name: 'שתיה חמה', icon: 'Coffee' },
@@ -23,12 +24,11 @@ const MenuCategoryFilter = ({ activeCategory = 'hot-drinks', onCategoryChange, c
   };
 
   return (
-    <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm font-heebo">
+    <div className={`sticky top-0 z-20 ${isDarkMode ? 'bg-slate-900/95 border-slate-800' : 'bg-white/95 border-gray-100'} backdrop-blur-sm border-b shadow-sm font-heebo transition-colors duration-300`}>
       <div className="px-4 py-3">
         <div className="flex items-center overflow-x-auto scrollbar-hide" dir="rtl">
-          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl min-w-max mx-auto">
+          <div className={`flex items-center gap-1 p-1 rounded-xl min-w-max mx-auto ${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
             {categories?.map((category) => {
-              // Icon mapping if needed, or just use text
               const isActive = activeCategory === category?.id;
 
               return (
@@ -38,12 +38,11 @@ const MenuCategoryFilter = ({ activeCategory = 'hot-drinks', onCategoryChange, c
                   className={`
                     flex items-center gap-1.5 px-3 py-3 rounded-lg transition-all duration-200 text-[15px] font-bold whitespace-nowrap
                     ${isActive
-                      ? 'bg-white text-slate-900 shadow-sm scale-[1.02]'
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20'
+                      : (isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50')
                     }
                   `}
                 >
-                  {/* We can add icons here if we import them, but text is clean */}
                   <span>{category?.name}</span>
                 </button>
               );

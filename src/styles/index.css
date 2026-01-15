@@ -145,3 +145,58 @@ body {
   content: '';
   margin: 0;
 }
+
+/* --- Responsive Grid for Short Screens (Tablets) --- */
+/* Target tablets & small laptops (height < 850px) */
+@media (max-height: 850px) {
+  .responsive-menu-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 0.75rem !important;
+  }
+
+  /* The "Secret Ingredient": Change aspect ratio from 1:1 to 5:4 to save 20% height */
+  .compact-card-ratio {
+    aspect-ratio: 5 / 4 !important;
+  }
+}
+
+/* For Large Screens (Desktop) - Always stick to 5 columns even if height is short */
+@media (min-width: 1350px) {
+  .responsive-menu-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+}
+
+/* On very wide and tall screens, ensure square ratio is restored */
+@media (min-width: 1350px) and (min-height: 851px) {
+  .compact-card-ratio {
+    aspect-ratio: 1 / 1 !important;
+  }
+}
+
+/* Global compactness for short screens */
+@media (max-height: 850px) {
+  .compact-header-h {
+    height: 52px !important;
+  }
+
+  .compact-padding-p {
+    padding: 0.5rem !important;
+  }
+
+  .compact-padding-s {
+    padding: 0.6rem !important;
+  }
+
+  .compact-text-xl {
+    font-size: 1.1rem !important;
+  }
+
+  .compact-text-lg {
+    font-size: 0.95rem !important;
+  }
+
+  .compact-sidebar-w {
+    width: 310px !important;
+  }
+}

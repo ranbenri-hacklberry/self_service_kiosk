@@ -15,6 +15,7 @@ import CustomerInfoModal from '@/components/CustomerInfoModal';
 import { addCoffeePurchase, getLoyaltyCount, handleLoyaltyAdjustment, getLoyaltyRedemptionForOrder } from "@/lib/loyalty";
 import { supabase } from '@/lib/supabase';
 import { useAuth, APP_VERSION } from '@/context/AuthContext';
+import { useTheme } from '@/context/ThemeContext';
 import ConnectionStatusBar from '@/components/ConnectionStatusBar';
 import MiniMusicPlayer from '@/components/music/MiniMusicPlayer';
 import Icon from '@/components/AppIcon';
@@ -26,6 +27,7 @@ const ORDER_ORIGIN_STORAGE_KEY = 'order_origin';
 const MenuOrderingInterface = () => {
   console.log('🚀 MenuOrderingInterface component rendering...');
   const { currentUser, deviceMode } = useAuth();
+  const { isDarkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   console.log('📍 Location state received:', location.state);
@@ -2280,11 +2282,11 @@ const MenuOrderingInterface = () => {
 
   if (menuLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 font-heebo" dir="rtl">
+      <div className={`min-h-screen font-heebo transition-colors duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-gray-50'}`} dir="rtl">
         <div className="flex items-center justify-center min-h-screen">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
-            <p className="text-lg font-medium text-gray-600">טוען תפריט...</p>
+            <p className={`text-lg font-medium ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>טוען תפריט...</p>
           </div>
         </div>
       </div>
@@ -2294,13 +2296,13 @@ const MenuOrderingInterface = () => {
   // Show error state
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 font-heebo" dir="rtl">
+      <div className={`min-h-screen font-heebo transition-colors duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-gray-50'}`} dir="rtl">
         <div className="flex items-center justify-center min-h-screen">
           <div className="text-center">
-            <p className="text-lg font-medium text-red-600 mb-4">{error}</p>
+            <p className={`text-lg font-medium mb-4 ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}>{error}</p>
             <button
               onClick={fetchMenuItems}
-              className="px-4 py-2 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-colors font-bold"
+              className="px-4 py-2 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-colors font-bold shadow-lg"
             >
               נסה שוב
             </button>
@@ -2311,16 +2313,17 @@ const MenuOrderingInterface = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 font-heebo" dir="rtl">
+    <div className={`min-h-screen ${isDarkMode ? 'bg-slate-900' : 'bg-gray-50'} font-heebo`} dir="rtl">
 
       {/* Top Navigation Bar */}
-      <div className="bg-white border-b border-gray-200 flex items-center px-6 py-3 sticky top-0 z-30 shadow-sm">
+      <div className={`${isDarkMode ? 'bg-slate-800 border-slate-700 shadow-lg' : 'bg-white border-gray-200 shadow-sm'} border-b flex items-center px-6 py-3 sticky top-0 z-30 transition-colors duration-300 compact-header-h`}>
 
         {/* Right Side Group (RTL): Home/Back Button + Sync */}
         <div className="flex items-center gap-2 flex-1">
           <button
             onClick={handleBack}
-            className="flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 w-10 h-10 rounded-xl transition-all"
+            className={`flex items-center justify-center w-10 h-10 rounded-xl transition-all ${isDarkMode ? 'text-slate-300 hover:text-white hover:bg-slate-700' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              }`}
             title={(sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) === 'kds' || fromKDSParam) ? "חזרה ל-KDS" : "חזרה לדף הבית"}
           >
             <Icon
@@ -2351,16 +2354,27 @@ const MenuOrderingInterface = () => {
                 btn.disabled = false;
               }
             }}
-            className="flex items-center justify-center text-blue-600 hover:text-blue-700 hover:bg-blue-50 w-10 h-10 rounded-xl transition-all disabled:opacity-50"
+            className={`flex items-center justify-center w-10 h-10 rounded-xl transition-all disabled:opacity-50 ${isDarkMode ? 'text-blue-400 hover:text-blue-300 hover:bg-slate-700' : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
+              }`}
             title="סנכרון נתונים"
           >
             <Icon name="RefreshCw" size={18} />
+          </button>
+
+          {/* Theme Toggle Button */}
+          <button
+            onClick={toggleTheme}
+            className={`flex items-center justify-center w-10 h-10 rounded-xl transition-all ${isDarkMode ? 'text-yellow-400 hover:bg-slate-700' : 'text-slate-600 hover:bg-gray-100'
+              }`}
+            title={isDarkMode ? "מעבר למצב יום" : "מעבר למצב לילה"}
+          >
+            <Icon name={isDarkMode ? "Sun" : "Moon"} size={18} />
           </button>
         </div>
 
         {/* Center - Clock & Connection Status */}
         <div className="flex items-center gap-3 px-4">
-          <div className="text-lg font-black text-slate-700">
+          <div className={`text-lg font-black ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>
             {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
           </div>
           <ConnectionStatusBar isIntegrated={true} />
@@ -2405,7 +2419,7 @@ const MenuOrderingInterface = () => {
       <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] overflow-hidden">
 
         {/* Menu Panel - First in DOM = Right in RTL */}
-        <div className="flex-1 flex flex-col bg-gray-50 h-full overflow-hidden">
+        <div className={`flex-1 flex flex-col ${isDarkMode ? 'bg-slate-900' : 'bg-gray-50'} h-full overflow-hidden`}>
           {/* Category Filter - Fixed at top */}
           <div className="shrink-0 z-20 relative">
             <MenuCategoryFilter
@@ -2427,7 +2441,7 @@ const MenuOrderingInterface = () => {
         </div>
 
         {/* Cart Panel - Second in DOM = Left in RTL */}
-        <div className="lg:w-96 lg:border-r border-gray-200 bg-white shadow-sm z-10">
+        <div className={`lg:w-96 lg:border-r ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200'} shadow-sm z-10 compact-sidebar-w`}>
           <div className="sticky top-16 h-[calc(100vh-64px)] flex flex-col">
             <SmartCart
               cartItems={cartItems}

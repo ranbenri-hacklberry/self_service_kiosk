@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import Button from '../../../components/ui/Button';
 import Icon from '../../../components/AppIcon';
+import { useTheme } from '../../../context/ThemeContext';
 
 const CheckoutButton = ({
   cartTotal = 0,
@@ -13,6 +14,7 @@ const CheckoutButton = ({
   isEditMode = false,
   editingOrderData = null
 }) => {
+  const { isDarkMode } = useTheme();
   // Format price to Israeli Shekel (ILS) - show agorot if present
   const formatPrice = (price) => {
     const num = Number(price);
@@ -103,29 +105,31 @@ const CheckoutButton = ({
   }, [isDisabled, isEditMode, isRefund, isAdditionalCharge, isFinalizingOrder]);
 
   return (
-    <div className={`fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-40 lg:static lg:z-auto ${className}`} dir="rtl">
+    <div className={`fixed bottom-0 left-0 right-0 p-4 z-40 lg:static lg:z-auto transition-colors duration-300 ${isDarkMode ? 'bg-slate-900 border-t border-slate-800' : 'bg-white border-t border-gray-200'
+      } ${className}`} dir="rtl">
 
       {/* Payment Information for Paid Orders */}
       {isEditMode && originalIsPaid && (
-        <div className="flex flex-col gap-2 mb-3 bg-blue-50 border border-blue-100 rounded-xl p-3 shadow-sm">
+        <div className={`flex flex-col gap-2 mb-3 border rounded-xl p-3 shadow-sm transition-colors ${isDarkMode ? 'bg-blue-900/20 border-blue-900/30' : 'bg-blue-50 border-blue-100'
+          }`}>
           <div className="flex justify-between items-center">
-            <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">סטטוס תשלום</span>
+            <span className={`text-xs font-bold uppercase tracking-wider ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>סטטוס תשלום</span>
             <span className="flex items-center gap-1.5 px-2 py-0.5 bg-green-500 text-white text-[10px] font-black rounded-full">
               <Icon name="CheckCircle" size={10} /> שולם
             </span>
           </div>
           <div className="flex justify-between items-end">
             <div>
-              <p className="text-xs text-blue-700 font-medium opacity-70">אמצעי תשלום</p>
-              <p className="text-sm font-black text-blue-900">
+              <p className={`text-xs font-medium opacity-70 ${isDarkMode ? 'text-blue-300' : 'text-blue-700'}`}>אמצעי תשלום</p>
+              <p className={`text-sm font-black ${isDarkMode ? 'text-blue-100' : 'text-blue-900'}`}>
                 {editingOrderData?.paymentMethod === 'cash' ? '💵 מזומן' :
                   editingOrderData?.paymentMethod === 'credit_card' ? '💳 כרטיס אשראי' :
                     '📱 תשלום דיגיטלי'}
               </p>
             </div>
             <div className="text-right">
-              <p className="text-xs text-blue-700 font-medium opacity-70">סכום ששולם</p>
-              <p className="text-xl font-mono font-black text-blue-900">{formatPrice(originalTotalAmount)}</p>
+              <p className={`text-xs font-medium opacity-70 ${isDarkMode ? 'text-blue-300' : 'text-blue-700'}`}>סכום ששולם</p>
+              <p className={`text-xl font-mono font-black ${isDarkMode ? 'text-white' : 'text-blue-900'}`}>{formatPrice(originalTotalAmount)}</p>
             </div>
           </div>
         </div>
@@ -133,25 +137,28 @@ const CheckoutButton = ({
 
       {/* Refund Note */}
       {isRefund && (
-        <div className="flex justify-between items-center mb-3 px-3 py-2 text-sm font-bold text-red-700 bg-red-50 rounded-xl border border-red-100 shadow-sm animate-pulse">
+        <div className={`flex justify-between items-center mb-3 px-3 py-2 text-sm font-bold border rounded-xl shadow-sm animate-pulse transition-colors ${isDarkMode ? 'bg-red-900/20 border-red-900/30 text-red-400' : 'bg-red-50 border-red-100 text-red-700'
+          }`}>
           <span className="flex items-center gap-2">↩️ החזר ללקוח</span>
-          <span className="bg-white px-2 py-0.5 rounded text-red-800 dir-ltr">{formatPrice(Math.abs(priceDifference))}</span>
+          <span className={`px-2 py-0.5 rounded dir-ltr ${isDarkMode ? 'bg-slate-800 text-red-400' : 'bg-white text-red-800'}`}>{formatPrice(Math.abs(priceDifference))}</span>
         </div>
       )}
 
       {/* Additional Charge Note */}
       {isAdditionalCharge && (
-        <div className="flex justify-between items-center mb-3 px-3 py-2 text-sm font-bold text-orange-700 bg-orange-50 rounded-xl border border-orange-100 shadow-sm">
+        <div className={`flex justify-between items-center mb-3 px-3 py-2 text-sm font-bold border rounded-xl shadow-sm transition-colors ${isDarkMode ? 'bg-orange-900/20 border-orange-900/30 text-orange-400' : 'bg-orange-50 border-orange-100 text-orange-700'
+          }`}>
           <span className="flex items-center gap-2">💳 הפרש לתשלום נוסף</span>
-          <span className="bg-white px-2 py-0.5 rounded text-orange-800 dir-ltr">+{formatPrice(priceDifference)}</span>
+          <span className={`px-2 py-0.5 rounded dir-ltr ${isDarkMode ? 'bg-slate-800 text-orange-400' : 'bg-white text-orange-800'}`}>+{formatPrice(priceDifference)}</span>
         </div>
       )}
 
       {/* Loyalty Discount Badge */}
       {loyaltyDiscount > 0 && (
-        <div className="flex justify-between items-center mb-3 px-3 py-2 text-sm font-bold text-green-700 bg-green-50 rounded-xl border border-green-100 shadow-sm">
+        <div className={`flex justify-between items-center mb-3 px-3 py-2 text-sm font-bold border rounded-xl shadow-sm transition-colors ${isDarkMode ? 'bg-green-900/20 border-green-900/30 text-green-400' : 'bg-green-50 border-green-100 text-green-700'
+          }`}>
           <span className="flex items-center gap-2">🎁 הנחת נאמנות</span>
-          <span className="bg-white px-2 py-0.5 rounded text-green-800 dir-ltr">-{formatPrice(loyaltyDiscount)}</span>
+          <span className={`px-2 py-0.5 rounded dir-ltr ${isDarkMode ? 'bg-slate-800 text-green-400' : 'bg-white text-green-800'}`}>-{formatPrice(loyaltyDiscount)}</span>
         </div>
       )}
 
@@ -183,7 +190,8 @@ const CheckoutButton = ({
       {/* Payment Methods Info */}
       {/* Show payment methods only in regular checkout mode */}
       {!isDisabled && !isEditMode && (
-        <div className="flex items-center justify-center space-x-6 text-xs text-gray-400 bg-gray-50 rounded-lg p-3 mt-3">
+        <div className={`flex items-center justify-center space-x-6 text-xs rounded-lg p-3 mt-3 transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-gray-50 text-gray-400'
+          }`}>
           <div className="flex items-center space-x-1">
             <Icon name="CreditCard" size={14} />
             <span>כרטיס אשראי</span>
