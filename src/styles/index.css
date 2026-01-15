@@ -160,15 +160,15 @@ body {
   }
 }
 
-/* For Large Screens (Desktop) - Always stick to 5 columns even if height is short */
-@media (min-width: 1350px) {
+/* For Large Screens (Desktop) - 5 columns from 1270px width */
+@media (min-width: 1270px) {
   .responsive-menu-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
   }
 }
 
 /* On very wide and tall screens, ensure square ratio is restored */
-@media (min-width: 1350px) and (min-height: 851px) {
+@media (min-width: 1270px) and (min-height: 851px) {
   .compact-card-ratio {
     aspect-ratio: 1 / 1 !important;
   }

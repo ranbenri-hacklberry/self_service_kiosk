@@ -338,8 +338,8 @@ const ModeSelectionScreen = () => {
                     </div>
                 </div>
             </div>
-            {/* What's New Modal - shows once per version after login (only for owners) */}
-            {showWhatsNew && isOwner && <WhatsNewModal onClose={() => setShowWhatsNew(false)} />}
+            {/* What's New Modal - shows once per version after login (for all managers) */}
+            {showWhatsNew && isManager && <WhatsNewModal onClose={() => setShowWhatsNew(false)} />}
         </div>
     );
 };
