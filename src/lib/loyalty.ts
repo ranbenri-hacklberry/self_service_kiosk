@@ -75,6 +75,13 @@ export async function addCoffeePurchase(customerPhone, orderId, itemsCount = 1, 
     return { success: false, newCount: 0, addedPoints: 0 };
   }
 
+  // 🔒 Client-side validation: Only allow Israeli mobile phones (05...)
+  const cleanPhone = customerPhone.replace(/\D/g, '');
+  if (!cleanPhone.startsWith('05') || cleanPhone.length < 10) {
+    console.warn('⚠️ [Loyalty] Invalid phone for loyalty (must be 05...):', cleanPhone);
+    return { success: false, newCount: 0, addedPoints: 0, error: 'invalid_phone' };
+  }
+
   try {
     const client = getSupabase(user);
     const { data, error } = await client.rpc('handle_loyalty_purchase', {
@@ -85,6 +92,43 @@ export async function addCoffeePurchase(customerPhone, orderId, itemsCount = 1, 
     });
 
     if (error) throw error;
+
+    // 🔥 IMMEDIATE LOCAL UPDATE - Update Dexie so data is available instantly
+    if (data?.success && data?.card_id && user?.business_id) {
+      try {
+        const { db } = await import('../db/database');
+        const cleanPhone = customerPhone.replace(/\D/g, '');
+
+        // Update or insert the loyalty card in Dexie
+        await db.loyalty_cards.put({
+          id: data.card_id,
+          customer_phone: cleanPhone,
+          business_id: user.business_id,
+          points_balance: data.new_balance,
+          total_coffees_purchased: (data.total_purchased || 0),
+          last_updated: new Date().toISOString()
+        });
+
+        // Also add the transaction to Dexie
+        if (orderId && itemsCount > 0) {
+          await db.loyalty_transactions.put({
+            id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            card_id: data.card_id,
+            order_id: orderId,
+            business_id: user.business_id,
+            change_amount: itemsCount,
+            points_earned: itemsCount,
+            points_redeemed: redeemedCount,
+            transaction_type: 'purchase',
+            created_at: new Date().toISOString()
+          });
+        }
+
+        console.log('✅ [Loyalty] Local Dexie updated immediately:', { phone: cleanPhone, balance: data.new_balance });
+      } catch (dexieError) {
+        console.warn('⚠️ [Loyalty] Failed to update local Dexie (will sync later):', dexieError);
+      }
+    }
 
     return {
       success: data.success,

@@ -65,109 +65,146 @@ const SystemDiagnostics = ({ businessId }) => {
         setActiveProcess(null);
     };
 
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = () => {
+        const text = logs.map(l => `[${l.time}] ${l.msg}`).join('\n');
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
     return (
-        <div className="h-full p-6 overflow-hidden flex flex-col gap-6">
+        <div className="h-full p-4 md:p-6 overflow-auto flex flex-col gap-4">
             {/* Header */}
-            <div>
-                <h1 className="text-3xl font-black text-slate-800">🛠️ כלי דיאגנוסטיקה (Admin Only)</h1>
-                <p className="text-slate-500">בדיקות עומק, סימולציות ובדיקת עומס</p>
+            <div className="text-center md:text-right">
+                <h1 className="text-2xl md:text-3xl font-black bg-gradient-to-r from-blue-600 via-purple-600 to-pink-500 bg-clip-text text-transparent">
+                    🛠️ כלי דיאגנוסטיקה
+                </h1>
+                <p className="text-slate-500 text-sm">בדיקות עומק, סימולציות ובדיקת מערכת הנאמנות</p>
             </div>
 
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 overflow-hidden">
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0">
                 {/* Control Panel */}
-                <div className="md:col-span-1 space-y-4">
+                <div className="lg:col-span-1 flex flex-col gap-4">
 
                     {/* Health Check Card */}
                     <motion.div
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className="bg-white rounded-2xl p-6 shadow-lg border border-slate-100"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-5 shadow-lg border border-blue-100"
                     >
-                        <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center mb-4">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
+                        <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-cyan-500 text-white rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-200">
+                            <span className="text-2xl">🔍</span>
                         </div>
-                        <h3 className="text-xl font-bold mb-2">בדיקת בריאות מהירה</h3>
-                        <p className="text-sm text-slate-400 mb-6">
-                            מריצה הזמנה אחת: יצירה, סנכרון, עדכון ומחיקה. מוודאת לוגיקה תקינה.
+                        <h3 className="text-lg font-bold text-blue-800 mb-1">בדיקת בריאות מהירה</h3>
+                        <p className="text-xs text-blue-600/70 mb-4">
+                            יצירה, סנכרון, עדכון ומחיקה של הזמנת בדיקה
                         </p>
                         <button
                             onClick={handleRunHealthCheck}
                             disabled={isRunning}
-                            className={`w-full py-3 px-4 rounded-xl font-bold transition-all ${isRunning
-                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 shadow-xl hover:shadow-2xl'
+                            className={`w-full py-3 px-4 rounded-xl font-bold transition-all transform ${isRunning
+                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                : 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white shadow-lg shadow-blue-300 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]'
                                 }`}
                         >
-                            {isRunning && activeProcess === 'health' ? 'בודק...' : 'הרץ בדיקה כעת'}
+                            {isRunning && activeProcess === 'health' ? '⏳ בודק...' : '🚀 הרץ בדיקה'}
                         </button>
                     </motion.div>
 
                     {/* Simulation Card */}
                     <motion.div
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.1 }}
-                        className="bg-white rounded-2xl p-6 shadow-lg border border-slate-100"
+                        className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-5 shadow-lg border border-purple-100"
                     >
-                        <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center mb-4">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                            </svg>
+                        <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-pink-500 text-white rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-purple-200">
+                            <span className="text-2xl">☕</span>
                         </div>
-                        <h3 className="text-xl font-bold mb-2">סימולטור עומס לילה</h3>
-                        <p className="text-sm text-slate-400 mb-6">
-                            יוצר 10 הזמנות מגוונות ושומר בהיסטוריה.
+                        <h3 className="text-lg font-bold text-purple-800 mb-1">סימולציית 10 הזמנות</h3>
+                        <p className="text-xs text-purple-600/70 mb-4">
+                            יוצר הזמנות עם נקודות נאמנות - הרץ שוב לבדוק צבירה!
                         </p>
                         <button
                             onClick={handleRunTrafficSim}
                             disabled={isRunning}
-                            className={`w-full py-3 px-4 rounded-xl font-bold transition-all ${isRunning
-                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 shadow-xl hover:shadow-2xl'
+                            className={`w-full py-3 px-4 rounded-xl font-bold transition-all transform ${isRunning
+                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white shadow-lg shadow-purple-300 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]'
                                 }`}
                         >
-                            {isRunning && activeProcess === 'traffic' ? 'מבצע סימולציה...' : 'הרץ סימולציה (10 הזמנות)'}
+                            {isRunning && activeProcess === 'traffic' ? '⏳ מסמלץ...' : '🎰 הרץ סימולציה'}
                         </button>
                     </motion.div>
 
                 </div>
 
                 {/* Console Output */}
-                <div className="md:col-span-2 bg-slate-900 rounded-2xl shadow-2xl overflow-hidden flex flex-col font-mono text-sm border border-slate-700 h-[600px] max-h-full">
-                    <div className="bg-slate-800 p-3 border-b border-slate-700 flex justify-between items-center shrink-0">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="lg:col-span-2 bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col font-mono text-sm border border-slate-600 min-h-[300px] max-h-[500px] lg:max-h-full"
+                >
+                    {/* Console Header */}
+                    <div className="bg-slate-800/80 backdrop-blur px-4 py-3 border-b border-slate-600 flex justify-between items-center shrink-0">
                         <div className="flex gap-2">
-                            <div className="w-3 h-3 rounded-full bg-red-500" />
-                            <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                            <div className="w-3 h-3 rounded-full bg-green-500" />
+                            <div className="w-3 h-3 rounded-full bg-red-500 shadow-lg shadow-red-500/50" />
+                            <div className="w-3 h-3 rounded-full bg-yellow-500 shadow-lg shadow-yellow-500/50" />
+                            <div className="w-3 h-3 rounded-full bg-green-500 shadow-lg shadow-green-500/50" />
                         </div>
-                        <span className="text-slate-400">System Logs output</span>
+                        <div className="flex items-center gap-3">
+                            <span className="text-slate-400 text-xs">📟 System Logs</span>
+                            {logs.length > 0 && (
+                                <button
+                                    onClick={handleCopy}
+                                    className={`px-4 py-1.5 rounded-lg font-bold text-xs transition-all transform hover:scale-105 active:scale-95 ${copied
+                                            ? 'bg-green-500 text-white shadow-lg shadow-green-500/50'
+                                            : 'bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-lg shadow-orange-400/50 hover:from-amber-500 hover:to-orange-600'
+                                        }`}
+                                >
+                                    {copied ? '✅ הועתק!' : '📋 העתק הכל'}
+                                </button>
+                            )}
+                        </div>
                     </div>
 
-                    <div className="flex-1 p-4 overflow-y-auto space-y-2 text-slate-300">
+                    {/* Console Body */}
+                    <div className="flex-1 p-4 overflow-y-auto space-y-1 text-slate-300 min-h-0">
                         {logs.length === 0 && (
-                            <div className="h-full flex flex-col items-center justify-center text-slate-600 opacity-50">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                </svg>
-                                <p>Ready for command...</p>
+                            <div className="h-full flex flex-col items-center justify-center text-slate-500">
+                                <div className="text-6xl mb-4 animate-pulse">🖥️</div>
+                                <p className="text-lg font-bold">מוכן לפקודות...</p>
+                                <p className="text-xs text-slate-600 mt-1">לחץ על אחד הכפתורים להתחלה</p>
                             </div>
                         )}
 
                         {logs.map((log, idx) => (
-                            <div key={idx} className="flex gap-3 border-b border-slate-800/50 pb-1 last:border-0 hover:bg-slate-800/30">
-                                <span className="text-slate-500 select-none">[{log.time}]</span>
-                                <span className={`${log.msg.includes('❌') ? 'text-red-400 font-bold' :
-                                        log.msg.includes('✅') ? 'text-emerald-400 font-bold' :
+                            <motion.div
+                                key={idx}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                className={`flex gap-3 py-1 px-2 rounded-lg ${log.msg.includes('📊') || log.msg.includes('====')
+                                        ? 'bg-purple-900/30 border-l-2 border-purple-400'
+                                        : 'hover:bg-slate-800/50'
+                                    }`}
+                            >
+                                <span className="text-slate-500 select-none text-xs">[{log.time}]</span>
+                                <span className={`flex-1 ${log.msg.includes('❌') ? 'text-red-400 font-bold' :
+                                        log.msg.includes('✅') ? 'text-emerald-400' :
                                             log.msg.includes('⚠️') ? 'text-amber-400' :
-                                                'text-slate-300'
+                                                log.msg.includes('📊') ? 'text-purple-300 font-bold' :
+                                                    log.msg.includes('🎉') ? 'text-pink-400 font-bold' :
+                                                        log.msg.includes('💡') ? 'text-yellow-300' :
+                                                            log.msg.includes('📱') ? 'text-cyan-300' :
+                                                                'text-slate-300'
                                     }`}>{log.msg}</span>
-                            </div>
+                            </motion.div>
                         ))}
                         <div ref={logsEndRef} />
                     </div>
-                </div>
+                </motion.div>
             </div>
         </div>
     );

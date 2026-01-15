@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, ChefHat, ClipboardList, Settings, ArrowLeft, Monitor } from 'lucide-react';
+import { Sparkles, ChefHat, ClipboardList, Settings, ArrowLeft, Monitor, Users } from 'lucide-react';
 import { APP_VERSION } from '../context/AuthContext';
 
 /**
@@ -50,43 +50,43 @@ const WhatsNewModal = ({ onClose }) => {
                     </div>
                 </div>
 
-                {/* Features List - Tightened vertical spacing */}
+                {/* Features List - Version 4.0.0 Highlights for the Team */}
                 <div className="p-5 space-y-3.5">
-                    {/* Feature 1: Dark Mode */}
-                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-slate-800 to-slate-900 rounded-2xl border border-slate-700 shadow-sm transition-transform hover:scale-[1.01]">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <span className="text-2xl">🌙</span>
+                    {/* Feature 1: Advanced Data Explanation (Humorous) */}
+                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-slate-50 to-blue-50 rounded-2xl border border-blue-100 shadow-sm transition-transform hover:scale-[1.01]">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center flex-shrink-0 shadow-lg">
+                            <Monitor className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                            <h3 className="font-black text-white text-lg">מצב לילה (Dark Mode)</h3>
-                            <p className="text-slate-300 text-sm mt-0.5 leading-snug">
-                                בפינה השמאלית העליונה של התפריט יש עכשיו אייקון ירח 🌙 - לחצו עליו כדי לעבור למצב כהה. מושלם לעבודה בלילה או רק כי זה נראה מגניב. 😎
+                            <h3 className="font-black text-slate-800 text-lg">"מידע מתקדם" - הפעם זה באמת עובד! 📊</h3>
+                            <p className="text-slate-600 text-sm mt-0.5 leading-snug">
+                                זוכרים את הכפתור ההוא שתמיד היה שם אבל הראה דברים מוזרים? אז זהו, סידרנו לו את הצורה! הממשק החדש מהיר, מדויק, ונותן לכם <span className="font-bold">תמונה אמיתית</span> על הלקוחות וההזמנות שלכם.
                             </p>
                         </div>
                     </div>
 
-                    {/* Feature 2: Card Improvements */}
+                    {/* Feature 2: Exact Search How-To (Clarity on location) */}
                     <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-orange-50 to-amber-50 rounded-2xl border border-orange-100 shadow-sm transition-transform hover:scale-[1.01]">
-                        <div className="w-12 h-12 rounded-xl bg-orange-500 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <span className="text-2xl">🎨</span>
+                        <div className="w-12 h-12 rounded-xl bg-orange-500 flex items-center justify-center flex-shrink-0 shadow-lg" title="Advanced Search Only in Advanced Data">
+                            <Sparkles className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                            <h3 className="font-black text-slate-800 text-lg">שיפור תצוגת הכרטיסיות</h3>
+                            <h3 className="font-black text-slate-800 text-lg">חיפוש "בול פגיעה" במידע מתקדם 🎯</h3>
                             <p className="text-slate-600 text-sm mt-0.5 leading-snug">
-                                השם והמחיר של כל מנה עכשיו מיושרים יפה ובאותו גודל. נראה יותר נקי, יותר מקצועי, ויותר קל לקרוא. 📱
+                                צריכים למצוא לקוח אחד ספציפי בלי כל הבלגן מסביב? בתוך מסך "מידע מתקדם", הקלידו שם או טלפון ולחצו על <span className="font-bold underline">Enter</span>. המערכת תנעל עליו ולא תשחרר עד שתלחצו על ה-X!
                             </p>
                         </div>
                     </div>
 
-                    {/* Feature 3: Espresso Consolidation */}
-                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-amber-50 to-yellow-50 rounded-2xl border border-amber-200 shadow-sm transition-transform hover:scale-[1.01]">
-                        <div className="w-12 h-12 rounded-xl bg-amber-700 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <span className="text-2xl">☕</span>
+                    {/* Feature 3: Loyalty & Clean Data (More "High Temp" Humor) */}
+                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-emerald-50 to-green-50 rounded-2xl border border-emerald-200 shadow-sm transition-transform hover:scale-[1.01]">
+                        <div className="w-12 h-12 rounded-xl bg-emerald-600 flex items-center justify-center flex-shrink-0 shadow-lg">
+                            <Users className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                            <h3 className="font-black text-slate-800 text-lg">אספרסו כפול? עכשיו בלחיצה אחת!</h3>
+                            <h3 className="font-black text-slate-800 text-lg">ניצחנו את הבוט (ואת עצמנו!) ✨</h3>
                             <p className="text-slate-600 text-sm mt-0.5 leading-snug">
-                                הסרנו את הכפתור הנפרד לאספרסו כפול. <span className="font-bold">עכשיו:</span> לחצו על "אספרסו קצר" ובחרו מהאופציות "כפול קצר" או "כפול ארוך" (+2₪). פשוט יותר, מסודר יותר! ✨
+                                אחרי חודש שבו הוכחנו לעולם שכישורי התכנות שלנו דומים יותר להכנת מקיאטו מפורק... מצאנו את הבאג! מעכשיו מועדון הלקוחות סטרילי: רק מספרי 05 תקינים ורק לקוחות שיש להם נקודות באמת. אנחנו אולי לא מהנדסי טילים, אבל לפחות הנקודות שלכם בטוחות!
                             </p>
                         </div>
                     </div>

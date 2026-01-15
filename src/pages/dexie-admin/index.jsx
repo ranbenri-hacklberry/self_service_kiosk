@@ -19,9 +19,17 @@ const DexieAdminPanel = () => {
     const [loading, setLoading] = useState(true);
 
     // Filter states
-    const [selectedLetter, setSelectedLetter] = useState('הכל');
-    const [selectedDate, setSelectedDate] = useState(new Date());
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedQuery, setDebouncedQuery] = useState('');
+    const [exactMatchQuery, setExactMatchQuery] = useState(null);
+
+    // Filter Debounce Logic: Prevents heavy re-calculation on every keystroke
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedQuery(searchQuery);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
 
     // Data states
     const [customers, setCustomers] = useState([]);
@@ -34,7 +42,7 @@ const DexieAdminPanel = () => {
 
     useEffect(() => {
         loadData();
-    }, [selectedDate]); // Reload data when date changes
+    }, []); // Load once on mount
 
     const loadData = async () => {
         setLoading(true);
@@ -78,60 +86,72 @@ const DexieAdminPanel = () => {
             }));
             setCustomers(customersWithHistory);
 
-            // 2. Load Hierarchy Data (Points & Orders) for selected date
-            const dateStr = selectedDate.toISOString().split('T')[0];
-            const startOfDay = new Date(dateStr);
-            const endOfDay = new Date(dateStr);
-            endOfDay.setHours(23, 59, 59, 999);
+            // 2. Load ALL Transactions (last 30 days) - no date filter, sorted by date
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-            // Fetch Transactions for date
             const txData = await db.loyalty_transactions
                 .where('business_id')
                 .equals(businessId)
                 .toArray();
 
-            const filteredTx = txData.filter(tx => {
-                const txDate = new Date(tx.created_at);
-                return txDate >= startOfDay && txDate <= endOfDay;
-            }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            // Filter to last 30 days and sort newest first
+            const allTx = txData
+                .filter(tx => new Date(tx.created_at) >= thirtyDaysAgo)
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-            const txWithNames = filteredTx.map(tx => {
+            const txWithNames = allTx.map(tx => {
                 const card = loyaltyCards.find(c => c.id === tx.card_id);
+                const cardPhone = card?.customer_phone?.replace(/\D/g, '');
                 const customer = finalCustomers.find(cust => {
                     const cp = (cust.phone_number || cust.phone || '').toString().replace(/\D/g, '');
-                    const ccp = (card?.customer_phone || '').replace(/\D/g, '');
-                    return cp === ccp;
+                    return cp === cardPhone;
                 });
                 return {
                     ...tx,
-                    customerName: customer?.name || 'לקוח אנונימי',
-                    customer_id: customer?.id || tx.customer_id
+                    customerName: customer?.name || (cardPhone ? `${cardPhone}` : 'לקוח אנונימי'),
+                    customerPhone: card?.customer_phone || customer?.phone_number || customer?.phone,
+                    currentBalance: card?.points_balance ?? 0,
+                    customer_id: customer?.id || tx.customer_id,
+                    // Add date string for grouping
+                    dateGroup: new Date(tx.created_at).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })
                 };
             });
             setTransactions(txWithNames);
 
-            // Fetch Orders for date
-            const ordersData = await db.orders
-                .where('[business_id+created_at]')
-                .between([businessId, startOfDay.toISOString()], [businessId, endOfDay.toISOString()])
-                .reverse()
+            // 3. Load ALL Orders (last 14 days) - no date filter
+            const fourteenDaysAgo = new Date();
+            fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+            const allOrdersData = await db.orders
+                .where('business_id')
+                .equals(businessId)
                 .toArray();
 
+            const recentOrders = allOrdersData
+                .filter(o => new Date(o.created_at) >= fourteenDaysAgo)
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
             // Fetch Order Items for these orders
-            const orderIds = ordersData.map(o => o.id);
+            const orderIds = recentOrders.map(o => o.id);
             const orderItems = await db.order_items.where('order_id').anyOf(orderIds).toArray();
 
-            // Fetch Menu Items to get names (if not already loaded)
+            // Fetch Menu Items to get names
             const allMenuItems = await db.menu_items.where('business_id').equals(businessId).toArray();
             const menuMap = new Map(allMenuItems.map(m => [m.id, m.name]));
 
             // Attach items to orders
-            const ordersWithItems = ordersData.map(order => {
+            const ordersWithItems = recentOrders.map(order => {
                 const items = orderItems.filter(i => i.order_id === order.id).map(i => ({
                     ...i,
                     menu_item_name: menuMap.get(i.menu_item_id) || 'פריט לא ידוע'
                 }));
-                return { ...order, items };
+                return {
+                    ...order,
+                    items,
+                    // Add date string for grouping
+                    dateGroup: new Date(order.created_at).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })
+                };
             });
 
             setOrders(ordersWithItems);
@@ -261,34 +281,81 @@ const DexieAdminPanel = () => {
         }
     };
 
-    // Alphabet Logic
-    const letters = useMemo(() => {
-        const available = new Set(customers.map(c => (c.name || '').trim().charAt(0)).filter(l => l));
-        const alephBet = "אבגדהוזחטיכלמנסעפצקרשת".split('');
-        return ['הכל', ...alephBet.filter(l => available.has(l))];
-    }, [customers]);
-
+    /**
+     * ADVANCED DATA GROUPING ENGINE
+     * Optimized for scalability: uses single-pass reduction for O(n) performance
+     * and debouncing to prevent UI lag.
+     */
     const filteredContent = useMemo(() => {
-        const query = searchQuery.toLowerCase();
+        const query = (exactMatchQuery || debouncedQuery || '').toLowerCase().trim();
+        const isExact = !!exactMatchQuery;
+
+        if (!query) {
+            // Fast Path: Full data grouping without filtering
+            return {
+                customers: groupData(customers, c => (c.name || '').trim().charAt(0)),
+                menu: menuItems,
+                orders: groupData(orders, o => o.dateGroup),
+                transactions: groupData(transactions, t => t.dateGroup)
+            };
+        }
+
+        // 1. Optimized Customer Filtering
+        const filteredCustomers = customers.filter(c => {
+            const phone = (c.phone_number || c.phone || '').toString().replace(/\D/g, '');
+            if (!phone.startsWith('05') || (c.points || 0) <= 0) return false;
+            if (!c.name || c.name.startsWith('לקוח אנונימי')) return false;
+
+            const name = (c.name || '').toLowerCase();
+            return isExact ? (name === query || phone === query) : (name.includes(query) || phone.includes(query));
+        });
+
+        // 2. Optimized Transaction Filtering
+        const filteredTransactions = transactions.filter(t => {
+            const name = (t.customerName || '').toLowerCase();
+            const phone = (t.customerPhone || '').toLowerCase();
+            return isExact ? (name === query || phone === query) : (name.includes(query) || phone.includes(query));
+        });
+
+        // 3. Optimized Order Filtering
+        const filteredOrders = orders.filter(o => {
+            const orderNum = o.order_number?.toString() || '';
+            const name = (o.customer_name || '').toLowerCase();
+            const phone = (o.customer_phone || '').toLowerCase();
+            return isExact ? (name === query || phone === query || orderNum === query) :
+                (name.includes(query) || phone.includes(query) || orderNum.includes(query));
+        });
+
         return {
-            customers: customers.filter(c => {
-                // Filter out anonymous customers (including those with no name)
-                if (!c.name || c.name === 'לקוח אנונימי' || c.name.startsWith('לקוח אנונימי')) return false;
-
-                const matchSearch = !query || c.name?.toLowerCase().includes(query) || (c.phone_number || '').includes(query);
-                const matchLetter = selectedLetter === 'הכל' || (c.name || '').trim().startsWith(selectedLetter);
-                return matchSearch && matchLetter;
+            customers: groupData(filteredCustomers, c => (c.name || '').trim().charAt(0)),
+            menu: menuItems.filter(m => {
+                const name = (m.name || '').toLowerCase();
+                return isExact ? name === query : name.includes(query);
             }),
-            menu: menuItems.filter(m => !query || m.name?.toLowerCase().includes(query)),
-            orders: orders.filter(o => !query || o.order_number?.toString().includes(query)),
-            transactions: transactions.filter(t => !query || t.customerName?.toLowerCase().includes(query))
+            orders: groupData(filteredOrders, o => o.dateGroup),
+            transactions: groupData(filteredTransactions, t => t.dateGroup)
         };
-    }, [customers, menuItems, orders, transactions, searchQuery, selectedLetter]);
+    }, [customers, menuItems, orders, transactions, debouncedQuery, exactMatchQuery]);
 
-    const changeDate = (days) => {
-        const newDate = new Date(selectedDate);
-        newDate.setDate(newDate.getDate() + days);
-        setSelectedDate(newDate);
+    // Helper: High-performance grouping utility (O(n) complexity)
+    function groupData(items, labelSelector) {
+        return items.reduce((acc, item) => {
+            const label = labelSelector(item);
+            const lastGroup = acc[acc.length - 1];
+            if (lastGroup && lastGroup.label === label) {
+                lastGroup.items.push(item);
+            } else {
+                acc.push({ label, items: [item] });
+            }
+            return acc;
+        }, []);
+    }
+
+    // Helper: Deterministic size generator (Moved to scope for cleaner code)
+    const getShoeSize = (id) => {
+        if (!id) return 42;
+        const hash = id.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+        return Math.floor(Math.abs(Math.sin(hash)) * (45 - 36 + 1)) + 36;
     };
 
     const tabs = [
@@ -340,51 +407,39 @@ const DexieAdminPanel = () => {
                         ))}
                     </nav>
 
-                    <div className="relative w-64">
-                        <Icon name="Search" size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input
-                            type="text"
-                            placeholder="חיפוש..."
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pr-11 pl-4 text-sm font-bold focus:ring-2 focus:ring-orange-500/10 outline-none"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                    </div>
-                </div>
+                    <div className="relative w-80 group">
+                        <div className={`
+                            flex items-center gap-2 w-full bg-slate-50 border transition-all duration-200 rounded-xl px-3 py-1.5
+                            ${exactMatchQuery ? 'border-orange-200 ring-2 ring-orange-500/5' : 'border-slate-200 focus-within:border-orange-400 focus-within:ring-2 focus-within:ring-orange-500/10'}
+                        `}>
+                            <Icon name="Search" size={16} className={`${exactMatchQuery ? 'text-orange-400' : 'text-slate-400'}`} />
 
-                {/* Second Level: Context Bar (Letter Filter or Date Picker) */}
-                <div className="bg-slate-50 border-t border-slate-100 px-6 py-2">
-                    <div className="max-w-7xl mx-auto flex items-center justify-center">
-                        {activeTab === 'customers' ? (
-                            <div className="flex flex-wrap items-center justify-center gap-1">
-                                {letters.map(l => (
+                            {exactMatchQuery && (
+                                <div className="flex items-center gap-2 px-2 py-1 bg-orange-100 text-orange-700 rounded-lg border border-orange-200 animate-in zoom-in-95 duration-200 shrink-0">
                                     <button
-                                        key={l}
-                                        onClick={() => setSelectedLetter(l)}
-                                        className={`w-9 h-9 flex items-center justify-center rounded-lg font-black text-sm transition-all ${selectedLetter === l ? 'bg-orange-500 text-white shadow-md' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
-                                            }`}
+                                        onClick={() => setExactMatchQuery(null)}
+                                        className="p-0.5 hover:bg-orange-200 rounded-md transition-colors"
                                     >
-                                        {l}
+                                        <Icon name="X" size={10} />
                                     </button>
-                                ))}
-                            </div>
-                        ) : (activeTab === 'orders' || activeTab === 'transactions') ? (
-                            <div className="flex items-center gap-6">
-                                <button onClick={() => changeDate(-1)} className="p-2 hover:bg-slate-200 rounded-lg text-slate-500"><Icon name="ChevronRight" size={20} /></button>
-                                <div className="flex items-center gap-3 bg-white px-6 py-2 rounded-xl shadow-sm border border-slate-100">
-                                    <Icon name="Calendar" size={18} className="text-orange-500" />
-                                    <span className="font-black text-slate-700">
-                                        {selectedDate.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })}
-                                    </span>
+                                    <span className="text-xs font-black tracking-tight">{exactMatchQuery}</span>
                                 </div>
-                                <button onClick={() => changeDate(1)} className="p-2 hover:bg-slate-200 rounded-lg text-slate-500"><Icon name="ChevronLeft" size={20} /></button>
-                                <button onClick={() => setSelectedDate(new Date())} className="text-xs font-black text-orange-500 hover:underline">היום</button>
-                            </div>
-                        ) : (
-                            <div className="h-9 flex items-center text-xs font-bold text-slate-300 uppercase tracking-widest">
-                                {activeTab} details visualization
-                            </div>
-                        )}
+                            )}
+
+                            <input
+                                type="text"
+                                placeholder={exactMatchQuery ? "" : "חיפוש..."}
+                                className="flex-1 bg-transparent border-none p-0 py-1 text-sm font-bold outline-none placeholder:text-slate-400"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && searchQuery.trim()) {
+                                        setExactMatchQuery(searchQuery.trim());
+                                        setSearchQuery('');
+                                    }
+                                }}
+                            />
+                        </div>
                     </div>
                 </div>
             </header>
@@ -398,207 +453,200 @@ const DexieAdminPanel = () => {
                 ) : (
                     <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
                         {activeTab === 'customers' && (
-                            <div className="bg-white rounded-[32px] overflow-hidden border border-slate-100 shadow-xl">
-                                <table className="w-full text-right border-collapse">
-                                    <thead>
-                                        <tr className="bg-slate-50 border-b border-slate-100">
-                                            <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">לקוח</th>
-                                            <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">טלפון</th>
-                                            <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">נקודות</th>
-                                            <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">קנייה אחרונה</th>
-                                            <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">מידת נעליים 🤫</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {filteredContent.customers.length === 0 ? (
-                                            <tr><td colSpan="5" className="py-20 text-center font-bold text-slate-300">לא נמצאו לקוחות</td></tr>
-                                        ) : filteredContent.customers.map(cust => {
-                                            // Local random shoe size generator (fun request)
-                                            const shoeSize = Math.floor(Math.abs(Math.sin(cust.id.split('').reduce((a, b) => a + b.charCodeAt(0), 0))) * (45 - 36 + 1)) + 36;
+                            <div className="space-y-4">
+                                {filteredContent.customers.length === 0 ? (
+                                    <div className="py-20 text-center font-bold text-slate-300 bg-white rounded-3xl border border-dashed border-slate-200">לא נמצאו לקוחות</div>
+                                ) : filteredContent.customers.map((group, gIdx) => (
+                                    <div key={`customer-group-${group.label}-${gIdx}`} className="space-y-4">
+                                        <div className="flex items-center gap-3 py-6 sticky top-20 z-20 bg-[#F8FAFC]">
+                                            <div className="px-4 py-1.5 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-xs shadow-md">
+                                                {group.label}
+                                            </div>
+                                            <div className="h-[1px] flex-1 bg-slate-200"></div>
+                                        </div>
 
-                                            return (
-                                                <tr key={cust.id} className="hover:bg-slate-50/50 transition-colors group">
-                                                    <td className="px-6 py-5">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center font-black text-slate-400 group-hover:bg-orange-50 group-hover:text-orange-500 transition-colors">
-                                                                {(cust.name || '?').charAt(0)}
-                                                            </div>
-                                                            <div className="font-black text-slate-800 text-lg uppercase">{cust.name || 'לקוח אנונימי'}</div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-5 font-bold text-slate-400">{cust.phone_number || cust.phone || '---'}</td>
-                                                    <td className="px-6 py-5">
-                                                        <div className={`w-fit px-4 py-1.5 rounded-xl font-black text-sm flex items-center gap-2 ${cust.points >= 9 ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
-                                                            }`}>
-                                                            <Icon name="Coffee" size={14} />
-                                                            {cust.points}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-5 text-slate-500 font-bold">
-                                                        {cust.last_purchase ? new Date(cust.last_purchase).toLocaleDateString('he-IL') : 'מעולם לא'}
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        <div className="text-sm font-black text-slate-300 group-hover:text-slate-600 transition-colors">
-                                                            EU {shoeSize}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
+                                        <div className="bg-white rounded-[32px] overflow-hidden border border-slate-100 shadow-xl">
+                                            <table className="w-full text-right border-collapse">
+                                                <thead>
+                                                    <tr className="bg-slate-50 border-b border-slate-100">
+                                                        <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">לקוח</th>
+                                                        <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">טלפון</th>
+                                                        <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">נקודות</th>
+                                                        <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">קנייה אחרונה</th>
+                                                        <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">מידת נעליים 🤫</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {group.items.map(cust => {
+                                                        const shoeSize = getShoeSize(cust.id);
+                                                        return (
+                                                            <tr key={cust.id} className="hover:bg-slate-50/50 transition-colors group">
+                                                                <td className="px-6 py-5">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center font-black text-slate-400 group-hover:bg-orange-50 group-hover:text-orange-500 transition-colors">
+                                                                            {(cust.name || '?').charAt(0)}
+                                                                        </div>
+                                                                        <div className="font-black text-slate-800 text-lg uppercase">{cust.name || 'לקוח אנונימי'}</div>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-5 font-bold text-slate-400">{cust.phone_number || cust.phone || '---'}</td>
+                                                                <td className="px-6 py-5">
+                                                                    <div className={`w-fit px-4 py-1.5 rounded-xl font-black text-sm flex items-center gap-2 ${cust.points >= 9 ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                                                        <Icon name="Coffee" size={14} />
+                                                                        {cust.points}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-5 text-slate-500 font-bold">
+                                                                    {cust.last_purchase ? new Date(cust.last_purchase).toLocaleDateString('he-IL') : 'מעולם לא'}
+                                                                </td>
+                                                                <td className="px-6 py-5">
+                                                                    <div className="text-sm font-black text-slate-300 group-hover:text-slate-600 transition-colors">
+                                                                        EU {shoeSize}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         )}
 
                         {activeTab === 'transactions' && (
-                            <div className="bg-white rounded-3xl overflow-hidden border border-slate-100 shadow-sm">
-                                <table className="w-full text-right">
-                                    <thead>
-                                        <tr className="bg-slate-50 border-b border-slate-100">
-                                            <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">זמן</th>
-                                            <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">לקוח</th>
-                                            <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">טלפון</th>
-                                            <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">פעולה</th>
-                                            <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">שינוי</th>
-                                            <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">יתרה נוכחית</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-50">
-                                        {filteredContent.transactions.length === 0 ? (
-                                            <tr><td colSpan="6" className="py-20 text-center font-bold text-slate-300">אין פעולות בתאריך זה</td></tr>
-                                        ) : filteredContent.transactions.map(tx => {
-                                            const relatedCustomer = customers.find(c => c.id === tx.customer_id) || {};
-                                            return (
-                                                <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
-                                                    <td className="px-6 py-4 text-sm font-bold text-slate-500">{new Date(tx.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</td>
-                                                    <td className="px-6 py-4 font-black text-slate-800">{tx.customerName}</td>
-                                                    <td className="px-6 py-4 text-sm text-slate-500 font-mono" dir="ltr">{relatedCustomer.phone || relatedCustomer.phone_number || '---'}</td>
-                                                    <td className="px-6 py-4">
-                                                        <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase ${(tx.transaction_type === 'purchase' && (tx.change_amount || 0) >= 0) ? 'bg-blue-50 text-blue-600' :
-                                                            (tx.transaction_type === 'refund' || tx.transaction_type === 'cancellation' || (tx.transaction_type === 'purchase' && tx.change_amount < 0)) ? 'bg-red-50 text-red-600' :
-                                                                tx.transaction_type === 'redemption' ? 'bg-green-50 text-green-600' :
-                                                                    'bg-purple-50 text-purple-600'
-                                                            }`}>
-                                                            {(tx.transaction_type === 'purchase' && (tx.change_amount || 0) >= 0) ? 'רכישה' :
-                                                                (tx.transaction_type === 'refund' || tx.transaction_type === 'cancellation' || (tx.transaction_type === 'purchase' && tx.change_amount < 0)) ? 'ביטול/החזר' :
-                                                                    tx.transaction_type === 'redemption' ? 'מימוש' :
-                                                                        'תיקון ידני'}
-                                                        </span>
-                                                    </td>
-                                                    <td className={`px-6 py-4 font-black ${tx.change_amount > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                        {tx.change_amount > 0 ? `+${tx.change_amount}` : tx.change_amount}
-                                                    </td>
-                                                    <td className="px-6 py-4 font-black text-slate-700">
-                                                        <div className="flex items-center gap-1 bg-slate-100 w-fit px-2 py-1 rounded-lg">
-                                                            <Icon name="Coffee" size={14} className="text-slate-400" />
-                                                            <span>{relatedCustomer.points ?? '?'}</span>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            )
-                                        })}
-                                    </tbody>
-                                </table>
+                            <div className="space-y-4">
+                                {filteredContent.transactions.length === 0 ? (
+                                    <div className="py-20 text-center font-bold text-slate-300 bg-white rounded-3xl border border-dashed border-slate-200">אין פעולות בתאריך זה</div>
+                                ) : filteredContent.transactions.map((group, gIdx) => (
+                                    <div key={`tx-group-${group.label}-${gIdx}`} className="space-y-4">
+                                        <div className="flex items-center gap-3 py-6 sticky top-20 z-20 bg-[#F8FAFC]">
+                                            <div className="px-4 py-1.5 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-xs shadow-md">
+                                                {group.label}
+                                            </div>
+                                            <div className="h-[1px] flex-1 bg-slate-200"></div>
+                                        </div>
+
+                                        <div className="bg-white rounded-3xl overflow-hidden border border-slate-100 shadow-sm">
+                                            <table className="w-full text-right border-collapse">
+                                                <thead>
+                                                    <tr className="bg-slate-50 border-b border-slate-100">
+                                                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">זמן</th>
+                                                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">לקוח</th>
+                                                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">טלפון</th>
+                                                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">פעולה</th>
+                                                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">שינוי</th>
+                                                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">יתרה נוכחית</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-50">
+                                                    {group.items.map(tx => (
+                                                        <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
+                                                            <td className="px-6 py-4 text-sm font-bold text-slate-500">{new Date(tx.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</td>
+                                                            <td className="px-6 py-4 font-black text-slate-800">{tx.customerName}</td>
+                                                            <td className="px-6 py-4 text-sm text-slate-500 font-mono" dir="ltr">{tx.customerPhone || '---'}</td>
+                                                            <td className="px-6 py-4">
+                                                                <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase ${(tx.transaction_type === 'purchase' && (tx.change_amount || 0) >= 0) ? 'bg-blue-50 text-blue-600' :
+                                                                    (tx.transaction_type === 'refund' || tx.transaction_type === 'cancellation' || (tx.transaction_type === 'purchase' && tx.change_amount < 0)) ? 'bg-red-50 text-red-600' :
+                                                                        tx.transaction_type === 'redemption' ? 'bg-green-50 text-green-600' :
+                                                                            'bg-purple-50 text-purple-600'}`}>
+                                                                    {(tx.transaction_type === 'purchase' && (tx.change_amount || 0) >= 0) ? 'רכישה' :
+                                                                        (tx.transaction_type === 'refund' || tx.transaction_type === 'cancellation' || (tx.transaction_type === 'purchase' && tx.change_amount < 0)) ? 'ביטול/החזר' :
+                                                                            tx.transaction_type === 'redemption' ? 'מימוש' :
+                                                                                'תיקון ידני'}
+                                                                </span>
+                                                            </td>
+                                                            <td className={`px-6 py-4 font-black ${tx.change_amount > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                                {tx.change_amount > 0 ? `+${tx.change_amount}` : tx.change_amount}
+                                                            </td>
+                                                            <td className="px-6 py-4 font-black text-slate-700">
+                                                                <div className="flex items-center gap-1 bg-slate-100 w-fit px-2 py-1 rounded-lg">
+                                                                    <Icon name="Coffee" size={14} className="text-slate-400" />
+                                                                    <span>{tx.currentBalance}</span>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         )}
 
                         {activeTab === 'orders' && (
-                            <div className="space-y-3">
+                            <div className="space-y-4">
                                 {filteredContent.orders.length === 0 ? (
                                     <div className="py-20 text-center font-bold text-slate-300 bg-white rounded-3xl border border-dashed border-slate-200">אין הזמנות בתאריך זה</div>
-                                ) : filteredContent.orders.map(order => {
-                                    // Calculate stats
-                                    const prepTime = order.updated_at && order.created_at ?
-                                        Math.round((new Date(order.updated_at) - new Date(order.created_at)) / 60000) : 0;
-
-                                    // Parse payment method
-                                    const paymentMethod = order.payment_method === 'cash' ? 'מזומן' :
-                                        order.payment_method === 'credit_card' ? 'אשראי' :
-                                            order.payment_method === 'bis' ? 'תן ביס' :
-                                                order.payment_method === 'cibus' ? 'סיבוס' : order.payment_method || '?';
-
-                                    // Find Phone
-                                    const relatedCustomer = customers.find(c => c.name === order.customer_name || c.id === order.customer_id);
-                                    const displayPhone = order.customer_phone || relatedCustomer?.phone || relatedCustomer?.phone_number;
-
-                                    return (
-                                        <div key={order.id} className="bg-white rounded-xl px-4 py-3 border border-slate-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4 group w-full text-slate-800 h-[72px]">
-
-                                            {/* 1. Name & Number (Fixed Width for alignment) */}
-                                            <div className="flex flex-col justify-center w-[180px] shrink-0 border-l border-slate-50 pl-4">
-                                                <div className="font-black text-lg leading-tight text-slate-800 truncate text-right" title={order.customer_name}>
-                                                    {order.customer_name || `#${order.order_number}`}
-                                                </div>
-                                                <div className="text-xs font-bold text-slate-400 flex items-center gap-2 mt-0.5 h-4">
-                                                    {order.customer_name && <span>#{order.order_number}</span>}
-                                                    {displayPhone && displayPhone !== '0500000000' && displayPhone !== 'null' && displayPhone !== 'undefined' && (
-                                                        <>
-                                                            {order.customer_name && <span className="text-slate-300">|</span>}
-                                                            <span className="truncate" dir="ltr">{displayPhone}</span>
-                                                        </>
-                                                    )}
-                                                </div>
+                                ) : filteredContent.orders.map((group, gIdx) => (
+                                    <div key={`order-group-${group.label}-${gIdx}`} className="space-y-3">
+                                        <div className="flex items-center gap-3 py-6 sticky top-20 z-20 bg-[#F8FAFC]">
+                                            <div className="px-4 py-1.5 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-xs shadow-md">
+                                                {group.label}
                                             </div>
-
-                                            {/* 2. Time (Fixed Width) */}
-                                            <div className="w-[60px] text-center shrink-0">
-                                                <div className="text-sm font-bold text-slate-400 font-mono">
-                                                    {new Date(order.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-                                                </div>
-                                            </div>
-
-                                            {/* 3. Items (Flexible Middle) */}
-                                            <div className="flex-1 flex items-center overflow-hidden h-full px-4 border-r border-slate-100 bg-slate-50/50 rounded-lg mx-2">
-                                                <div className="flex items-center gap-1 text-sm truncate w-full">
-                                                    {order.items?.length > 0 ? (
-                                                        order.items.map((item, idx) => (
-                                                            <span key={idx} className="flex items-center whitespace-nowrap text-slate-700">
-                                                                {item.quantity > 1 && <span className="font-black text-black ml-1.5">{item.quantity}</span>}
-                                                                <span className="font-bold">{item.menu_item_name}</span>
-                                                                {item.notes && <span className="text-slate-400 text-xs mx-1 font-normal">({item.notes})</span>}
-                                                                {idx < order.items.length - 1 && <span className="mx-2 text-slate-300">|</span>}
-                                                            </span>
-                                                        ))
-                                                    ) : (
-                                                        <span className="text-slate-400 italic text-xs">טוען...</span>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* 4. Payment & Amount */}
-                                            <div className="flex items-center gap-4 w-[140px] justify-between shrink-0 pl-2">
-                                                <div className="text-right">
-                                                    <span className="block font-black text-xl">₪{order.total_amount}</span>
-                                                </div>
-                                                <div className="flex flex-col items-end">
-                                                    {order.is_paid ? (
-                                                        <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md whitespace-nowrap min-w-[50px] text-center">
-                                                            {paymentMethod !== '?' ? paymentMethod : 'שולם'}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-[10px] font-black text-red-500 bg-red-50 px-2 py-0.5 rounded-md whitespace-nowrap">לא שולם</span>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* 5. Duration */}
-                                            <div className="w-[70px] flex justify-center shrink-0">
-                                                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-slate-100 text-slate-400 bg-white">
-                                                    <Icon name="Clock" size={12} />
-                                                    <span className="text-xs font-bold font-mono">{prepTime > 0 ? `${prepTime}'` : '--'}</span>
-                                                </div>
-                                            </div>
-
-                                            {/* 6. Status */}
-                                            <div className="w-[90px] flex justify-end shrink-0">
-                                                <div className={`w-full py-1.5 rounded-xl text-xs font-black text-center shadow-sm ${order.order_status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                                                    }`}>
-                                                    {order.order_status === 'completed' ? 'הושלם' : 'בתהליך'}
-                                                </div>
-                                            </div>
+                                            <div className="h-[1px] flex-1 bg-slate-200"></div>
                                         </div>
-                                    );
-                                })}
+
+                                        {group.items.map(order => {
+                                            const prepTime = order.updated_at && order.created_at ? Math.round((new Date(order.updated_at) - new Date(order.created_at)) / 60000) : 0;
+                                            const paymentMethod = order.payment_method === 'cash' ? 'מזומן' : order.payment_method === 'credit_card' ? 'אשראי' : order.payment_method === 'bis' ? 'תן ביס' : order.payment_method === 'cibus' ? 'סיבוס' : order.payment_method || '?';
+                                            const relatedCustomer = customers.find(c => c.name === order.customer_name || c.id === order.customer_id);
+                                            const displayPhone = order.customer_phone || relatedCustomer?.phone || relatedCustomer?.phone_number;
+
+                                            return (
+                                                <div key={order.id} className="bg-white rounded-xl px-4 py-3 border border-slate-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4 group w-full text-slate-800 h-[72px]">
+                                                    <div className="flex flex-col justify-center w-[180px] shrink-0 border-l border-slate-50 pl-4">
+                                                        <div className="font-black text-lg leading-tight text-slate-800 truncate text-right" title={order.customer_name}>
+                                                            {order.customer_name || `#${order.order_number}`}
+                                                        </div>
+                                                        <div className="text-xs font-bold text-slate-400 flex items-center gap-2 mt-0.5 h-4">
+                                                            {order.customer_name && <span>#{order.order_number}</span>}
+                                                            {displayPhone && displayPhone !== '0500000000' && (
+                                                                <>
+                                                                    {order.customer_name && <span className="text-slate-300">|</span>}
+                                                                    <span className="truncate" dir="ltr">{displayPhone}</span>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="w-[60px] text-center shrink-0">
+                                                        <div className="text-sm font-bold text-slate-400 font-mono">
+                                                            {new Date(order.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex-1 flex items-center overflow-hidden h-full px-4 border-r border-slate-100 bg-slate-50/50 rounded-lg mx-2">
+                                                        <div className="flex items-center gap-1 text-sm truncate w-full">
+                                                            {order.items?.map((item, idx) => (
+                                                                <span key={idx} className="flex items-center whitespace-nowrap text-slate-700">
+                                                                    {item.quantity > 1 && <span className="font-black text-black ml-1.5">{item.quantity}</span>}
+                                                                    <span className="font-bold">{item.menu_item_name}</span>
+                                                                    {idx < order.items.length - 1 && <span className="mx-2 text-slate-300">|</span>}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-4 w-[140px] justify-between shrink-0 pl-2">
+                                                        <span className="block font-black text-xl">₪{order.total_amount}</span>
+                                                        <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">{paymentMethod !== '?' ? paymentMethod : 'שולם'}</span>
+                                                    </div>
+                                                    <div className="w-[70px] flex justify-center shrink-0">
+                                                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-slate-100 text-slate-400 bg-white">
+                                                            <Icon name="Clock" size={12} />
+                                                            <span className="text-xs font-bold font-mono">{prepTime > 0 ? `${prepTime}'` : '--'}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="w-[90px] flex justify-end shrink-0">
+                                                        <div className={`w-full py-1.5 rounded-xl text-xs font-black text-center shadow-sm ${order.order_status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                            {order.order_status === 'completed' ? 'הושלם' : 'בתהליך'}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ))}
                             </div>
                         )}
 

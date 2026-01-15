@@ -183,16 +183,27 @@ export const runSystemDiagnostics = async (businessId) => {
 
 /**
  * Simulates nightly traffic to populate history
+ * Uses FIXED phone numbers (050-TEST-001 through 050-TEST-010) so you can:
+ * 1. Run multiple times and see points accumulate
+ * 2. Check loyalty cards in admin panel
+ * 
+ * DOES NOT DELETE ORDERS - you can remove them manually from history
  */
 export const simulateNightlyTraffic = async (businessId, count = 10) => {
     const logs = [];
-    const log = (msg) => logs.push(msg); // Simplified logging for UI loop
+    const log = (msg) => logs.push(msg);
+
+    // FIXED phone numbers for repeatable testing
+    const TEST_PHONES = [
+        '0500000001', '0500000002', '0500000003', '0500000004', '0500000005',
+        '0500000006', '0500000007', '0500000008', '0500000009', '0500000010'
+    ];
 
     try {
         // Fetch Menu Items
         const { data: menuItems } = await supabase
             .from('menu_items')
-            .select('id, name, price')
+            .select('id, name, price, category')
             .eq('business_id', businessId);
 
         if (!menuItems?.length) {
@@ -200,25 +211,48 @@ export const simulateNightlyTraffic = async (businessId, count = 10) => {
             return { logs };
         }
 
-        log(`🎰 Simulating ${count} orders using ${menuItems.length} menu items...`);
+        log(`🎰 סימולציה של ${count} הזמנות עם ${menuItems.length} פריטים...`);
+        log(`📱 טלפונים קבועים: ${TEST_PHONES[0]} עד ${TEST_PHONES[count - 1]}`);
+
+        // Track points for summary
+        const pointsSummary = {};
 
         for (let i = 0; i < count; i++) {
-            // Build Random Order
+            const customerPhone = TEST_PHONES[i % TEST_PHONES.length];
+            const customerName = `לקוח בדיקה ${i + 1}`;
+
+            // Check initial points
+            let initialPoints = 0;
+            try {
+                const { data: pts } = await supabase.rpc('get_diagnostic_customer_points', {
+                    p_phone: customerPhone,
+                    p_business_id: businessId
+                });
+                initialPoints = pts || 0;
+            } catch { }
+
+            // Build Random Order (1-4 items)
             const numItems = Math.floor(Math.random() * 4) + 1;
             const orderItems = [];
             let total = 0;
+            let hotDrinkCount = 0;
 
             for (let j = 0; j < numItems; j++) {
                 const item = menuItems[Math.floor(Math.random() * menuItems.length)];
+                const isHotDrink = (item.category?.includes('קפה') || item.category?.includes('חמה') || Math.random() > 0.5);
+
                 orderItems.push({
                     item_id: item.id,
                     name: item.name,
                     price: item.price,
                     quantity: 1,
                     kds_routing_logic: 'MADE_TO_ORDER',
+                    item_status: 'in_progress',
+                    is_hot_drink: isHotDrink, // 🎯 Critical for loyalty points!
                     notes: Math.random() > 0.8 ? 'Extra spicy' : ''
                 });
                 total += item.price;
+                if (isHotDrink) hotDrinkCount++;
             }
 
             // Create Order
@@ -228,23 +262,42 @@ export const simulateNightlyTraffic = async (businessId, count = 10) => {
                 p_order_type: Math.random() > 0.7 ? 'take_away' : 'dine_in',
                 p_payment_method: 'credit',
                 p_is_paid: true,
-                p_customer_name: `Sim Customer ${i + 1}`,
-                p_customer_phone: `05000000${i}`,
+                p_customer_name: customerName,
+                p_customer_phone: customerPhone,
                 p_items: orderItems
             });
 
             if (createError) {
-                log(`❌ Order ${i + 1} Failed: ${createError.message}`);
+                log(`❌ הזמנה ${i + 1} נכשלה: ${createError.message}`);
                 continue;
             }
 
-            log(`✅ Order ${i + 1}/${count} Created (ID: ${orderResult.order_number})`);
+            // Check final points
+            let finalPoints = initialPoints;
+            try {
+                const { data: pts } = await supabase.rpc('get_diagnostic_customer_points', {
+                    p_phone: customerPhone,
+                    p_business_id: businessId
+                });
+                finalPoints = pts || initialPoints;
+            } catch { }
 
-            // Randomly advance status
+            const pointsEarned = finalPoints - initialPoints;
+            pointsSummary[customerPhone] = {
+                name: customerName,
+                orderNumber: orderResult.order_number,
+                hotDrinks: hotDrinkCount,
+                pointsEarned,
+                totalPoints: finalPoints
+            };
+
+            log(`✅ הזמנה ${i + 1}/${count} | #${orderResult.order_number} | ☕ ${hotDrinkCount} משקאות חמים | +${pointsEarned} נקודות (סה"כ: ${finalPoints})`);
+
+            // Advance status to completed (in background)
             setTimeout(async () => {
                 await supabase.rpc('update_order_status_v3', {
                     p_order_id: orderResult.order_id,
-                    p_new_status: 'ready', // CORRECTED HERE TOO
+                    p_new_status: 'ready',
                     p_business_id: businessId
                 });
             }, 500);
@@ -252,17 +305,27 @@ export const simulateNightlyTraffic = async (businessId, count = 10) => {
             setTimeout(async () => {
                 await supabase.rpc('update_order_status_v3', {
                     p_order_id: orderResult.order_id,
-                    p_new_status: 'completed', // CORRECTED HERE TOO
+                    p_new_status: 'completed',
                     p_business_id: businessId
                 });
             }, 1000);
         }
 
-        log('🎉 Simulation Batch Sent!');
+        // Summary
+        log('');
+        log('📊 ========== סיכום נקודות נאמנות ==========');
+        for (const [phone, data] of Object.entries(pointsSummary)) {
+            log(`📱 ${phone} | ${data.name} | הזמנה #${data.orderNumber} | +${data.pointsEarned} נקודות | סה"כ: ${data.totalPoints}`);
+        }
+        log('============================================');
+        log('');
+        log('🎉 הסימולציה הושלמה! ההזמנות נשמרות - ניתן למחוק ידנית מההיסטוריה.');
+        log('💡 הרץ שוב כדי לראות נקודות מצטברות לאותם לקוחות!');
+
         return { success: true, logs };
 
     } catch (err) {
-        log(`🔥 Sim Error: ${err.message}`);
+        log(`🔥 שגיאת סימולציה: ${err.message}`);
         return { success: false, logs };
     }
 };

@@ -48,7 +48,8 @@ const KanbanOrderCard = memo(({
     return 'border-gray-200 shadow-sm';
   }, [order.type, statusLower, isPaid, order.seen_at]);
 
-  const unifiedItems = useMemo(() => sortItems(order.items || []), [order.items]);
+  // ⚠️ CRITICAL: NO sortItems here! Items must stay in place when status changes
+  const unifiedItems = useMemo(() => order.items || [], [order.items]);
 
   // ... (Address & Delivery Info) ...
   const deliveryInfo = useMemo(() => {

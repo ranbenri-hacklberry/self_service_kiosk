@@ -119,7 +119,10 @@ const OrderCard = memo(({
   }, [order.type, order.orderStatus, isHistory, order.isPaid]);
 
   const { isLargeOrder, rightColItems, leftColItems, unifiedItems } = useMemo(() => {
-    const items = sortItems(order.items || []);
+    // ⚠️ CRITICAL: NO sortItems here!
+    // Items arrive pre-sorted and must NOT be re-sorted on render
+    // This prevents items from jumping when marked as ready
+    const items = order.items || [];
 
     const getItemRows = (item) => {
       if (!item.modifiers) return 1;

@@ -189,6 +189,11 @@ export const processOrderItems = (order, menuMap) => {
             const modsArray = parseModifiers(item.mods);
             const structuredModifiers = buildStructuredModifiers(modsArray, item.notes);
 
+            // 🔑 CRITICAL: Generate modsKey for proper item grouping
+            // This key ensures items with different modifiers are NOT merged together
+            // e.g., coffee with oat milk vs regular coffee should remain separate
+            const modsKey = modsArray.map(m => typeof m === 'object' ? (m.name || m.text || JSON.stringify(m)) : String(m)).sort().join('|');
+
             // Fallback to menu cache if menu_items missing from RPC
             const menuItem = menuMap?.get(item.menu_item_id);
 
@@ -197,6 +202,7 @@ export const processOrderItems = (order, menuMap) => {
                 menuItemId: item.menu_items?.id || item.menu_item_id || item.id,
                 name: extractString(item.menu_items?.name || item.name || menuItem?.name || 'פריט'),
                 modifiers: structuredModifiers,
+                modsKey, // 🔑 Key for groupOrderItems to distinguish items by modifiers
                 quantity: item.quantity,
                 status: visualStatus,
                 item_status: item.item_status,

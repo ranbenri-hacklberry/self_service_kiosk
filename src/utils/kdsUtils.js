@@ -10,27 +10,24 @@ export const isHotDrink = (item) => {
 
 export const sortItems = (items) => {
     return [...items].sort((a, b) => {
-        // 0. Status Sorting (Active first, then Ready/Completed/Cancelled)
-        const getStatusWeight = (s) => ['ready', 'completed', 'cancelled'].includes(s) ? 1 : 0;
-        const aWeight = getStatusWeight(a.status);
-        const bWeight = getStatusWeight(b.status);
-
-        if (aWeight !== bWeight) return aWeight - bWeight;
+        // ⚠️ CRITICAL: NO status-based sorting!
+        // Items must NOT jump positions when marked as ready/completed
+        // This prevents confusing the barista mid-service
 
         const aHot = isHotDrink(a);
         const bHot = isHotDrink(b);
         const aDrink = isDrink(a);
         const bDrink = isDrink(b);
 
-        // 1. Hot drinks first
+        // 1. Hot drinks first (they need to be made fresh)
         if (aHot && !bHot) return -1;
         if (!aHot && bHot) return 1;
 
-        // 2. Cold drinks second (if not both hot)
+        // 2. Cold drinks second
         if (aDrink && !bDrink) return -1;
         if (!aDrink && bDrink) return 1;
 
-        // 3. Food last (preserve original order for food)
+        // 3. Food last - preserve original order
         return 0;
     });
 };
@@ -89,25 +86,36 @@ export const groupOrderItems = (items) => {
     const grouped = [];
     const map = new Map();
 
-    items.forEach(item => {
-        // מפתח ייחודי: ID המנה + מחרוזת המודים הממוינת + סטטוס + האם יצא מוקדם
-        const key = `${item.menuItemId}|${item.modsKey || ''}|${item.status}|${item.is_early_delivered || false}`;
+    items.forEach((item, originalIndex) => {
+        // ⚠️ CRITICAL: Key does NOT include status or is_early_delivered!
+        // This ensures items stay in place when marked as ready
+        // מפתח ייחודי: ID המנה + מחרוזת המודים בלבד
+        const key = `${item.menuItemId}|${item.modsKey || ''}`;
 
         if (map.has(key)) {
             const existing = map.get(key);
             existing.quantity += item.quantity;
-            existing.ids.push(item.id); // שומרים את כל ה-IDs המקוריים
+            existing.ids.push(item.id);
             existing.totalPrice += item.price * item.quantity;
+            // Keep the most "advanced" status and early delivered flag
+            if (item.is_early_delivered) existing.is_early_delivered = true;
+            // Keep lowest ID for stable sorting
+            if (String(item.id) < String(existing._firstId)) {
+                existing._firstId = item.id;
+            }
         } else {
             const newItem = {
                 ...item,
-                ids: [item.id], // אתחול מערך IDs
-                totalPrice: item.price * item.quantity
+                ids: [item.id],
+                totalPrice: item.price * item.quantity,
+                _firstId: item.id // First ID for stable sorting
             };
             map.set(key, newItem);
             grouped.push(newItem);
         }
     });
 
-    return grouped;
+    // ⚠️ CRITICAL: Sort by first item ID to ensure STABLE order across refreshes
+    // Without this, items may appear in different order each time data comes from server
+    return grouped.sort((a, b) => String(a._firstId).localeCompare(String(b._firstId)));
 };

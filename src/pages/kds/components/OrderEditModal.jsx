@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { X, Check, Phone, User, Edit3 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import CustomerInfoModal from '../../../components/CustomerInfoModal';
+import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
 /**
  * OrderEditModal - Simple modal for viewing order items and marking early delivery
@@ -73,7 +74,8 @@ const OrderEditModal = ({
                     quantity: 1,
                     price: item.price || 0,
                     status: item.status,
-                    is_early_delivered: item.is_early_delivered || false
+                    is_early_delivered: item.is_early_delivered || false,
+                    modifiers: item.modifiers || [] // 🔑 Pass modifiers for display
                 });
             });
         });
@@ -149,17 +151,36 @@ const OrderEditModal = ({
                 <div className="px-4 py-4 space-y-2 max-h-[50vh] overflow-y-auto">
                     {items.length === 0 ? (
                         <div className="py-10 text-center text-slate-400 font-medium">אין פריטים להצגה</div>
-                    ) : items.map((item) => (
-                        <div key={item.id} onClick={() => handleToggleEarlyDelivered(item)} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl cursor-pointer hover:bg-gray-100 transition-all active:scale-[0.99]">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 me-3 ${item.is_early_delivered ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'}`}>
-                                <Check size={20} strokeWidth={3} />
+                    ) : items.map((item) => {
+                        // Get visible modifiers with short names
+                        const visibleMods = (item.modifiers || [])
+                            .map(mod => ({ ...mod, shortName: getShortName(mod.text || mod.valueName || mod) }))
+                            .filter(mod => mod.shortName !== null);
+
+                        return (
+                            <div key={item.id} onClick={() => handleToggleEarlyDelivered(item)} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl cursor-pointer hover:bg-gray-100 transition-all active:scale-[0.99]">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 me-3 ${item.is_early_delivered ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'}`}>
+                                    <Check size={20} strokeWidth={3} />
+                                </div>
+                                <div className="flex-1 flex flex-col gap-1">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <span className={`text-lg font-bold ${item.is_early_delivered ? 'text-gray-400 line-through' : 'text-slate-800'}`}>{item.name}</span>
+                                        <div className={`text-base font-bold ${item.is_early_delivered ? 'text-gray-400' : 'text-gray-600'}`}>{formatPrice(item.price)}</div>
+                                    </div>
+                                    {/* 🔑 Show modifiers so barista knows what to prepare */}
+                                    {visibleMods.length > 0 && (
+                                        <div className="flex flex-wrap gap-1">
+                                            {visibleMods.map((mod, i) => (
+                                                <span key={i} className={`mod-label text-xs ${getModColorClass(mod.text || mod.valueName || mod, mod.shortName)} ${item.is_early_delivered ? 'opacity-50' : ''}`}>
+                                                    {mod.shortName}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            <div className="flex-1 flex items-center justify-between gap-3">
-                                <span className={`text-lg font-bold ${item.is_early_delivered ? 'text-gray-400 line-through' : 'text-slate-800'}`}>{item.name}</span>
-                                <div className={`text-base font-bold ${item.is_early_delivered ? 'text-gray-400' : 'text-gray-600'}`}>{formatPrice(item.price)}</div>
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 {!isLoading && orderData && (

@@ -1265,7 +1265,8 @@ const InventoryScreen = () => {
                               await scanInvoice(file);
                               setScannerStep('results');
                             } catch (err) {
-                              setScannerStep('choose');
+                              console.error('❌ Scanner error:', err);
+                              setScannerStep('results'); // Show error on results screen
                             }
                           }
                         };
@@ -1291,7 +1292,8 @@ const InventoryScreen = () => {
                               await scanInvoice(file);
                               setScannerStep('results');
                             } catch (err) {
-                              setScannerStep('choose');
+                              console.error('❌ Scanner error:', err);
+                              setScannerStep('results'); // Show error on results screen
                             }
                           }
                         };
@@ -1568,7 +1570,7 @@ const InventoryScreen = () => {
         confirmText={confirmModal.confirmText}
         cancelText={confirmModal.cancelText}
       />
-    </div>
+    </div >
   );
 };
 
