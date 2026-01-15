@@ -71,11 +71,20 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
 
             if (error) {
                 console.error(`❌ RPC error for customers:`, error.message);
-                // Don't fall through - return error
                 return { success: false, error: error.message };
             }
             if (data) {
                 await db[localTable].bulkPut(data);
+
+                // PRUNING: Remove local customers that no longer exist in cloud for this business
+                const cloudIds = new Set(data.map(c => c.id));
+                const localItems = await db[localTable].where('business_id').equals(businessId).toArray();
+                const idsToDelete = localItems.filter(item => !cloudIds.has(item.id)).map(item => item.id);
+                if (idsToDelete.length > 0) {
+                    console.log(`🧹 Pruning ${idsToDelete.length} stale customers...`);
+                    await db[localTable].bulkDelete(idsToDelete);
+                }
+
                 console.log(`✅ Synced ${data.length} customers via RPC`);
                 return { success: true, count: data.length };
             }
@@ -94,6 +103,16 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
             }
             if (data) {
                 await db[localTable].bulkPut(data);
+
+                // PRUNING: Remove local cards missing from cloud
+                const cloudIds = new Set(data.map(c => c.id));
+                const localItems = await db[localTable].where('business_id').equals(businessId).toArray();
+                const idsToDelete = localItems.filter(item => !cloudIds.has(item.id)).map(item => item.id);
+                if (idsToDelete.length > 0) {
+                    console.log(`🧹 Pruning ${idsToDelete.length} stale loyalty_cards...`);
+                    await db[localTable].bulkDelete(idsToDelete);
+                }
+
                 console.log(`✅ Synced ${data.length} loyalty_cards via RPC`);
                 return { success: true, count: data.length };
             }
@@ -113,6 +132,16 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
             }
             if (data) {
                 await db[localTable].bulkPut(data);
+
+                // PRUNING: Remove local transactions missing from cloud
+                const cloudIds = new Set(data.map(c => c.id));
+                const localItems = await db[localTable].where('business_id').equals(businessId).toArray();
+                const idsToDelete = localItems.filter(item => !cloudIds.has(item.id)).map(item => item.id);
+                if (idsToDelete.length > 0) {
+                    console.log(`🧹 Pruning ${idsToDelete.length} stale loyalty_transactions...`);
+                    await db[localTable].bulkDelete(idsToDelete);
+                }
+
                 console.log(`✅ Synced ${data.length} loyalty_transactions via RPC`);
                 return { success: true, count: data.length };
             }
@@ -261,13 +290,13 @@ export const syncOrders = async (businessId) => {
         return { success: false, reason: 'offline' };
     }
 
-    // Use date from 14 days ago to capture enough historical data for the Advanced Screen
+    // Use date from 30 days ago to capture enough historical data and ensure cleanup of old demo data
     const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 14); // 14 days of history
+    fromDate.setDate(fromDate.getDate() - 30); // 30 days of history
     const fromDateISO = fromDate.toISOString();
     const toDateISO = new Date().toISOString();
 
-    console.log('📅 [syncOrders] Filtering from:', fromDateISO, 'to:', toDateISO);
+    console.log('📅 [syncOrders] Filtering and Pruning from:', fromDateISO, 'to:', toDateISO);
 
     try {
         // Use get_orders_history RPC to get ALL orders (not just active)
@@ -277,40 +306,29 @@ export const syncOrders = async (businessId) => {
             p_business_id: businessId
         });
 
-        // RPC returns JSONB, parse if needed
-        const orders = Array.isArray(ordersData) ? ordersData : (ordersData || []);
-
-        console.log('📦 [syncOrders] RPC response:', {
-            ordersCount: orders?.length,
-            hasError: !!ordersError,
-            error: ordersError
-        });
-
         if (ordersError) {
             console.error('❌ Orders sync error:', ordersError);
             return { success: false, error: ordersError };
         }
 
-        if (orders && orders.length > 0) {
-            console.log(`💾 [syncOrders] Processing ${orders.length} orders for Dexie...`);
+        const orders = Array.isArray(ordersData) ? ordersData : (ordersData || []);
+        const cloudOrderIds = new Set(orders.map(o => o.id));
+        let prunedCount = 0;
 
-            await db.transaction('rw', [db.orders, db.order_items], async () => {
+        console.log(`📦 [syncOrders] Cloud returned ${orders.length} orders. Starting sync & pruning...`);
+
+        await db.transaction('rw', [db.orders, db.order_items], async () => {
+            // 1. Update/Insert orders from cloud
+            if (orders.length > 0) {
                 for (const order of orders) {
                     const existing = await db.orders.get(order.id);
-
-                    // PROTECTION: Skip if local is pending sync and server isn't newer
-                    if (existing && existing.pending_sync) {
+                    if (existing?.pending_sync) {
                         const serverTime = new Date(order.updated_at || 0).getTime();
                         const localTime = new Date(existing.updated_at || 0).getTime();
-                        if (serverTime <= localTime) {
-                            // console.log(`🛡️ [syncOrders] Skipping ${order.order_number} - local is pending and newer/equal`);
-                            continue;
-                        }
+                        if (serverTime <= localTime) continue;
                     }
 
-                    // Map server format to local format
                     const orderItems = order.order_items || order.items_detail || [];
-
                     await db.orders.put({
                         id: order.id,
                         order_number: order.order_number,
@@ -327,21 +345,18 @@ export const syncOrders = async (businessId) => {
                         delivery_notes: order.delivery_notes,
                         created_at: order.created_at,
                         updated_at: order.updated_at || new Date().toISOString(),
-                        pending_sync: false, // Coming from server, so synced
-                        // 🆕 Mission Critical for Kanban
+                        pending_sync: false,
                         payment_screenshot_url: order.payment_screenshot_url,
                         payment_method: order.payment_method,
                         payment_verified: order.payment_verified,
                         seen_at: order.seen_at,
-                        // 🆕 Driver/Courier Info
                         driver_id: order.driver_id,
                         driver_name: order.driver_name,
                         driver_phone: order.driver_phone,
                         courier_name: order.courier_name
                     });
 
-                    // Update items
-                    if (orderItems && orderItems.length > 0) {
+                    if (orderItems.length > 0) {
                         for (const item of orderItems) {
                             await db.order_items.put({
                                 id: item.id,
@@ -358,14 +373,30 @@ export const syncOrders = async (businessId) => {
                         }
                     }
                 }
+            }
+
+            // 2. AGGRESSIVE PRUNING: Find local records in this window that are NOT in the cloud response
+            // We fetch ALL local orders to ensure legacy/demo data (possibly with wrong business_id) is cleared.
+            const allLocalOrders = await db.orders.toArray();
+            const ordersToDelete = allLocalOrders.filter(o => {
+                const orderDate = new Date(o.created_at);
+                // Only prune within our 30-day sync window
+                if (orderDate < fromDate) return false;
+                // If it's a local order in our window but NOT in the cloud response -> Delete
+                return !cloudOrderIds.has(o.id);
             });
 
-            console.log(`✅ [syncOrders] Finished processing ${orders.length} orders`);
-        } else {
-            console.log('📭 [syncOrders] No orders found matching criteria');
-        }
+            if (ordersToDelete.length > 0) {
+                prunedCount = ordersToDelete.length;
+                const idsToDelete = ordersToDelete.map(o => o.id);
+                console.warn(`🧹 [syncOrders] PRUNING: Removing ${idsToDelete.length} deleted/demo orders...`);
+                await db.orders.bulkDelete(idsToDelete);
+                // Clean up orphaned items
+                await db.order_items.where('order_id').anyOf(idsToDelete).delete();
+            }
+        });
 
-        return { success: true, ordersCount: orders?.length || 0 };
+        return { success: true, ordersCount: orders.length, prunedCount };
 
     } catch (err) {
         console.error('❌ syncOrders exception:', err);

@@ -205,9 +205,9 @@ const DexieAdminPanel = () => {
                     // 1. Determine Fetch Strategy
                     if (table === 'orders') {
                         // Strategy: RPC for Orders History (Bypasses RLS logic for count)
-                        // Use 14 days to match syncService.js window
+                        // Use 30 days to match the new aggressive sync window
                         const fromDate = new Date();
-                        fromDate.setDate(fromDate.getDate() - 14);
+                        fromDate.setDate(fromDate.getDate() - 30);
                         const { data, error } = await supabase.rpc('get_orders_history', {
                             p_business_id: businessId,
                             p_from_date: fromDate.toISOString(),
@@ -218,10 +218,17 @@ const DexieAdminPanel = () => {
                             cloudError = error.message;
                         } else {
                             cloud = data?.length || 0;
-                            // Calculate items count from the fetched orders for the next iteration
+
+                            // CRITICAL FIX: To show truthful status, local count MUST match the same 30-day window
+                            const localOrdersInWindow = await db.orders
+                                .where('business_id').equals(businessId)
+                                .filter(o => new Date(o.created_at) >= fromDate)
+                                .toArray();
+                            local = localOrdersInWindow.length;
+
+                            // Calculate items count from the fetched orders
                             if (data) {
                                 calculatedCloudOrderItems = data.reduce((sum, order) => {
-                                    // items might be in order_items or items_detail depending on RPC version
                                     const items = order.order_items || order.items_detail || [];
                                     return sum + items.length;
                                 }, 0);
@@ -708,7 +715,8 @@ const DexieAdminPanel = () => {
                                                             if (res?.success) {
                                                                 // Format nice report
                                                                 const changes = Object.entries(res.results).filter(([_, r]) => r.count > 0).map(([t, r]) => `${t}: ${r.count}`).join(', ');
-                                                                setSyncResult(`סנכרון הושלם בהצלחה (${res.duration}s). ${changes ? 'עודכנו: ' + changes : 'הכל מעודכן.'}`);
+                                                                const pruned = res.results.orders?.prunedCount || 0;
+                                                                setSyncResult(`סנכרון הושלם בהצלחה (${res.duration}s). ${changes ? 'עודכנו: ' + changes : 'הכל מעודכן.'} ${pruned > 0 ? `🧹 נוקו ${pruned} הזמנות עודפות.` : ''}`);
                                                             } else {
                                                                 setSyncResult('סנכרון נכשל or אוף-ליין');
                                                             }
