@@ -76,12 +76,15 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
             if (data) {
                 await db[localTable].bulkPut(data);
 
-                // PRUNING: Remove local customers that no longer exist in cloud for this business
+                // AGGRESSIVE PRUNING: Remove local customers missing from cloud
                 const cloudIds = new Set(data.map(c => c.id));
-                const localItems = await db[localTable].where('business_id').equals(businessId).toArray();
-                const idsToDelete = localItems.filter(item => !cloudIds.has(item.id)).map(item => item.id);
+                const allLocal = await db[localTable].toArray();
+                const idsToDelete = allLocal
+                    .filter(item => (item.business_id === businessId || !item.business_id) && !cloudIds.has(item.id))
+                    .map(item => item.id);
+
                 if (idsToDelete.length > 0) {
-                    console.log(`🧹 Pruning ${idsToDelete.length} stale customers...`);
+                    console.warn(`🧹 Pruning ${idsToDelete.length} stale customers from local DB...`);
                     await db[localTable].bulkDelete(idsToDelete);
                 }
 
@@ -104,12 +107,15 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
             if (data) {
                 await db[localTable].bulkPut(data);
 
-                // PRUNING: Remove local cards missing from cloud
+                // AGGRESSIVE PRUNING: Remove local cards missing from cloud
                 const cloudIds = new Set(data.map(c => c.id));
-                const localItems = await db[localTable].where('business_id').equals(businessId).toArray();
-                const idsToDelete = localItems.filter(item => !cloudIds.has(item.id)).map(item => item.id);
+                const allLocal = await db[localTable].toArray();
+                const idsToDelete = allLocal
+                    .filter(item => (item.business_id === businessId || !item.business_id) && !cloudIds.has(item.id))
+                    .map(item => item.id);
+
                 if (idsToDelete.length > 0) {
-                    console.log(`🧹 Pruning ${idsToDelete.length} stale loyalty_cards...`);
+                    console.warn(`🧹 Pruning ${idsToDelete.length} stale loyalty_cards from local DB...`);
                     await db[localTable].bulkDelete(idsToDelete);
                 }
 
@@ -133,12 +139,15 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
             if (data) {
                 await db[localTable].bulkPut(data);
 
-                // PRUNING: Remove local transactions missing from cloud
+                // AGGRESSIVE PRUNING: Remove local transactions missing from cloud
                 const cloudIds = new Set(data.map(c => c.id));
-                const localItems = await db[localTable].where('business_id').equals(businessId).toArray();
-                const idsToDelete = localItems.filter(item => !cloudIds.has(item.id)).map(item => item.id);
+                const allLocal = await db[localTable].toArray();
+                const idsToDelete = allLocal
+                    .filter(item => (item.business_id === businessId || !item.business_id) && !cloudIds.has(item.id))
+                    .map(item => item.id);
+
                 if (idsToDelete.length > 0) {
-                    console.log(`🧹 Pruning ${idsToDelete.length} stale loyalty_transactions...`);
+                    console.warn(`🧹 Pruning ${idsToDelete.length} stale loyalty_transactions from local DB...`);
                     await db[localTable].bulkDelete(idsToDelete);
                 }
 
