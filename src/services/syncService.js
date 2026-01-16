@@ -82,15 +82,22 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
 
                 await db[localTable].bulkPut(recordsToPut);
 
-                // AGGRESSIVE PRUNING: Remove local customers missing from cloud
+                // AGGRESSIVE PRUNING: Remove local records that aren't in the cloud for this business
+                // This includes "orphaned" records (null business_id) that cause stale data display
                 const cloudIds = new Set(recordsToPut.map(c => c.id));
                 const allLocal = await db[localTable].toArray();
                 const idsToDelete = allLocal
-                    .filter(item => (item.business_id === businessId || !item.business_id) && !cloudIds.has(item.id))
+                    .filter(item => {
+                        // Delete if it belongs to this business but not in cloud
+                        if (item.business_id === businessId && !cloudIds.has(item.id)) return true;
+                        // ALSO delete if it has NO business_id (orphaned data causing the 219 vs 6 mismatch)
+                        if (!item.business_id || item.business_id === 'null') return true;
+                        return false;
+                    })
                     .map(item => item.id);
 
                 if (idsToDelete.length > 0) {
-                    console.warn(`🧹 Pruning ${idsToDelete.length} stale customers from local DB...`);
+                    console.warn(`🧹 Pruning ${idsToDelete.length} stale/orphaned ${localTable} records...`);
                     await db[localTable].bulkDelete(idsToDelete);
                 }
 
@@ -119,15 +126,19 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
 
                 await db[localTable].bulkPut(recordsToPut);
 
-                // AGGRESSIVE PRUNING: Remove local cards missing from cloud
+                // AGGRESSIVE PRUNING: Safe but thorough
                 const cloudIds = new Set(recordsToPut.map(c => c.id));
                 const allLocal = await db[localTable].toArray();
                 const idsToDelete = allLocal
-                    .filter(item => (item.business_id === businessId || !item.business_id) && !cloudIds.has(item.id))
+                    .filter(item => {
+                        if (item.business_id === businessId && !cloudIds.has(item.id)) return true;
+                        if (!item.business_id || item.business_id === 'null') return true;
+                        return false;
+                    })
                     .map(item => item.id);
 
                 if (idsToDelete.length > 0) {
-                    console.warn(`🧹 Pruning ${idsToDelete.length} stale loyalty_cards from local DB...`);
+                    console.warn(`🧹 Pruning ${idsToDelete.length} stale/orphaned ${localTable} records...`);
                     await db[localTable].bulkDelete(idsToDelete);
                 }
 

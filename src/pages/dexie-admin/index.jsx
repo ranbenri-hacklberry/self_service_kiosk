@@ -41,8 +41,10 @@ const DexieAdminPanel = () => {
     const [speedTest, setSpeedTest] = useState(null);
 
     useEffect(() => {
-        loadData();
-    }, []); // Load once on mount
+        if (currentUser?.business_id) {
+            loadData();
+        }
+    }, [currentUser?.business_id]); // Re-load when business identity is confirmed
 
     const loadData = async () => {
         setLoading(true);
@@ -50,9 +52,14 @@ const DexieAdminPanel = () => {
             const businessId = currentUser?.business_id;
             if (!businessId) return;
 
-            // 1. Load Customers
-            const customersData = await db.customers.where('business_id').equals(businessId).toArray();
-            const loyaltyCards = await db.loyalty_cards.where('business_id').equals(businessId).toArray();
+            // 1. Load Customers (Resilient Loading - avoiding flaky indexes)
+            const allLocalCustomers = await db.customers.toArray();
+            const customersData = allLocalCustomers.filter(c => c.business_id === businessId || !c.business_id);
+            console.log(`📊 Loaded ${customersData.length} customers from Dexie (out of ${allLocalCustomers.length} total)`);
+
+            const allLoyaltyCards = await db.loyalty_cards.toArray();
+            const loyaltyCards = allLoyaltyCards.filter(c => c.business_id === businessId || !c.business_id);
+
             const loyaltyMap = new Map();
             loyaltyCards.forEach(card => {
                 const phone = card.customer_phone;
@@ -61,16 +68,23 @@ const DexieAdminPanel = () => {
 
             const finalCustomers = customersData.map(c => {
                 const cleanPhone = (c.phone_number || c.phone || '').toString().replace(/\D/g, '');
-                const cardPoints = loyaltyMap.get(cleanPhone);
+                const card = loyaltyCards.find(lc => lc.customer_phone?.replace(/\D/g, '') === cleanPhone);
+                const cardPoints = card?.points_balance;
+                const cardRewards = card?.free_coffees;
+
                 return {
                     ...c,
-                    points: cardPoints !== undefined ? cardPoints : (c.loyalty_coffee_count || 0)
+                    points: cardPoints !== undefined ? cardPoints : (c.loyalty_coffee_count || 0),
+                    rewards: cardRewards || 0
                 };
             }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
 
             // 1.1 Load last purchase dates for these customers
             // Fetch all orders from business to match in-memory for speed if not too many
-            const allOrders = await db.orders.where('business_id').equals(businessId).toArray();
+            const allOrdersRaw = await db.orders.toArray();
+            const allOrders = allOrdersRaw.filter(o => o.business_id === businessId);
+            console.log(`📊 Loaded ${allOrders.length} orders for history mapping`);
+
             const lastPurchaseMap = new Map();
             allOrders.forEach(order => {
                 if (!order.customer_id) return;
@@ -86,14 +100,13 @@ const DexieAdminPanel = () => {
             }));
             setCustomers(customersWithHistory);
 
-            // 2. Load ALL Transactions (last 30 days) - no date filter, sorted by date
+            // 2. Load ALL Transactions (last 30 days) - resilient loading
             const thirtyDaysAgo = new Date();
             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-            const txData = await db.loyalty_transactions
-                .where('business_id')
-                .equals(businessId)
-                .toArray();
+            const txDataRaw = await db.loyalty_transactions.toArray();
+            const txData = txDataRaw.filter(tx => tx.business_id === businessId);
+            console.log(`📊 Loaded ${txData.length} transactions for sync check`);
 
             // Filter to last 30 days and sort newest first
             const allTx = txData
@@ -119,14 +132,13 @@ const DexieAdminPanel = () => {
             });
             setTransactions(txWithNames);
 
-            // 3. Load ALL Orders (last 14 days) - no date filter
+            // 3. Load ALL Orders (last 14 days) - resilient loading
             const fourteenDaysAgo = new Date();
             fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
 
-            const allOrdersData = await db.orders
-                .where('business_id')
-                .equals(businessId)
-                .toArray();
+            const allOrdersDataRaw = await db.orders.toArray();
+            const allOrdersData = allOrdersDataRaw.filter(o => o.business_id === businessId);
+            console.log(`📊 Loaded ${allOrdersData.length} total orders for this business`);
 
             const recentOrders = allOrdersData
                 .filter(o => new Date(o.created_at) >= fourteenDaysAgo)
@@ -309,12 +321,15 @@ const DexieAdminPanel = () => {
 
         // 1. Optimized Customer Filtering
         const filteredCustomers = customers.filter(c => {
-            const phone = (c.phone_number || c.phone || '').toString().replace(/\D/g, '');
-            if (!phone.startsWith('05') || (c.points || 0) <= 0) return false;
-            if (!c.name || c.name.startsWith('לקוח אנונימי')) return false;
-
             const name = (c.name || '').toLowerCase();
-            return isExact ? (name === query || phone === query) : (name.includes(query) || phone.includes(query));
+            const phone = (c.phone_number || c.phone || '').toString().replace(/\D/g, '');
+
+            // Search match logic
+            const isMatch = isExact
+                ? (name === query || phone === query)
+                : (name.includes(query) || phone.includes(query));
+
+            return isMatch;
         });
 
         // 2. Optimized Transaction Filtering
@@ -346,8 +361,9 @@ const DexieAdminPanel = () => {
 
     // Helper: High-performance grouping utility (O(n) complexity)
     function groupData(items, labelSelector) {
+        if (!items || items.length === 0) return [];
         return items.reduce((acc, item) => {
-            const label = labelSelector(item);
+            const label = labelSelector(item) || '#';
             const lastGroup = acc[acc.length - 1];
             if (lastGroup && lastGroup.label === label) {
                 lastGroup.items.push(item);
@@ -479,8 +495,8 @@ const DexieAdminPanel = () => {
                                                         <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">לקוח</th>
                                                         <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">טלפון</th>
                                                         <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">נקודות</th>
+                                                        <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">צ'ופרים 🎁</th>
                                                         <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">קנייה אחרונה</th>
-                                                        <th className="px-6 py-5 text-sm font-black text-slate-500 uppercase">מידת נעליים 🤫</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100">
@@ -507,9 +523,14 @@ const DexieAdminPanel = () => {
                                                                     {cust.last_purchase ? new Date(cust.last_purchase).toLocaleDateString('he-IL') : 'מעולם לא'}
                                                                 </td>
                                                                 <td className="px-6 py-5">
-                                                                    <div className="text-sm font-black text-slate-300 group-hover:text-slate-600 transition-colors">
-                                                                        EU {shoeSize}
-                                                                    </div>
+                                                                    {cust.rewards > 0 ? (
+                                                                        <div className="flex items-center gap-1.5 bg-green-100 text-green-700 px-3 py-1.5 rounded-xl font-black text-sm animate-pulse border border-green-200">
+                                                                            <Icon name="Gift" size={14} />
+                                                                            {cust.rewards} קפה חינם
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span className="text-slate-300 font-bold">-</span>
+                                                                    )}
                                                                 </td>
                                                             </tr>
                                                         );
@@ -734,36 +755,37 @@ const DexieAdminPanel = () => {
                                                     disabled={syncStatus.syncing}
                                                     onClick={async () => {
                                                         if (!window.confirm('האם אתה בטוח? פעולה זו תמחק את כל הנתונים המקומיים ותסנכרן מחדש מהענן.')) return;
-                                                        setSyncStatus(prev => ({ ...prev, syncing: true }));
-                                                        setSyncResult(null);
+
+                                                        // 1. Immediate UI Feedback - set local counts to 1 (visual cue that it changed) or 0
+                                                        setSyncStatus(prev => {
+                                                            const cleared = { ...prev, syncing: true };
+                                                            Object.keys(cleared).forEach(k => {
+                                                                if (k !== 'syncing') cleared[k] = { ...cleared[k], count: 0 };
+                                                            });
+                                                            return cleared;
+                                                        });
+                                                        setSyncResult('מנקה נתונים מקומיים...');
+
                                                         try {
-                                                            // Import clearAllData from database
+                                                            // 2. Clear Database
                                                             const { clearAllData, db } = await import('../../db/database');
                                                             await clearAllData();
-                                                            // FORCE clear order_items explicitly just in case
-                                                            await db.order_items.clear();
 
-                                                            setSyncResult('נתונים מקומיים נמחקו. מתחיל סנכרון...');
+                                                            // 3. Force re-load metadata to UI (should show zeros)
+                                                            await loadData();
+                                                            setSyncResult('מסד הנתונים נוקה. מתחיל סנכרון רענן...');
 
-                                                            // Now sync fresh
+                                                            // 4. Fresh Sync
                                                             const res = await syncService.initialLoad(currentUser.business_id);
 
-                                                            // Force reload of data to UI
+                                                            // 5. Final UI Refresh
                                                             await loadData();
-
-                                                            // DIAGNOSTIC: Check loyalty cards
-                                                            const cards = await db.loyalty_cards.toArray();
-                                                            if (cards.length > 0) {
-                                                                console.log('🔍 [Diagnostic] Loyalty Card sample:', cards[0]);
-                                                                console.log('🔍 [Diagnostic] Current Business ID:', currentUser.business_id);
-                                                                console.log('🔍 [Diagnostic] Match?', cards[0].business_id === currentUser.business_id);
-                                                            }
 
                                                             if (res?.success) {
                                                                 const changes = Object.entries(res.results).filter(([_, r]) => r.count > 0).map(([t, r]) => `${t}: ${r.count}`).join(', ');
-                                                                setSyncResult(`🔄 אתחול הושלם! (${res.duration}s). ${changes ? 'נטענו: ' + changes : 'הכל מעודכן.'}`);
+                                                                setSyncResult(`🔄 אתחול הושלם בהצלחה! הכל נקי ומסונכרן. (${res.duration}s)`);
                                                             } else {
-                                                                setSyncResult('⚠️ אתחול חלקי - יש לבדוק חיבור');
+                                                                setSyncResult('⚠️ אתחול חלקי - אנא בדוק חיבור');
                                                             }
                                                         } catch (err) {
                                                             setSyncResult('❌ שגיאה: ' + err.message);
