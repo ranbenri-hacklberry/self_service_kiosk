@@ -41,8 +41,12 @@ const CustomerInfoModal = ({
         if (isOpen) {
             // Reset state
             setPhoneNumber(currentCustomer?.phone || '');
-            // Clear name if it's "הזמנה מהירה" or empty
-            setCustomerName(currentCustomer?.name === 'הזמנה מהירה' ? '' : (currentCustomer?.name || ''));
+
+            // Clear name if it's generic/placeholder
+            const currentName = currentCustomer?.name || '';
+            const isPlaceholder = ['אורח', 'אורח אנונימי', 'הזמנה מהירה', 'אורח/ת'].includes(currentName);
+            setCustomerName(isPlaceholder ? '' : currentName);
+
             setError('');
             setLookupResult(null);
             setIsLoading(false);
@@ -184,7 +188,7 @@ const CustomerInfoModal = ({
                 return;
             } else {
                 // New customer - advance to name entry
-                if (mode === 'phone-then-name') {
+                if (mode === 'phone-then-name' || mode === 'phone') {
                     setStep('name');
                     setTimeout(() => nameInputRef.current?.focus(), 100);
                 } else {
@@ -203,7 +207,7 @@ const CustomerInfoModal = ({
 
             // 🔥 FAIL-SAFE: If the database is busy, offline, or the RPC is broken, 
             // DO NOT block the user. Just proceed to name entry as a new customer.
-            if (mode === 'phone-then-name') {
+            if (mode === 'phone-then-name' || mode === 'phone') {
                 setStep('name');
                 setTimeout(() => nameInputRef.current?.focus(), 100);
             } else {
@@ -323,8 +327,10 @@ const CustomerInfoModal = ({
                 // Queue for sync
                 try {
                     const { queueAction } = await import('../services/offlineQueue');
+                    const cleanIdForQueue = orderId ? (orderId.toString().match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] || orderId) : null;
+
                     await queueAction('UPDATE_CUSTOMER', {
-                        orderId: cleanOrderId,
+                        orderId: cleanIdForQueue,
                         customerId: finalId,
                         customerName: updatedCustomer.name,
                         customerPhone: updatedCustomer.phone
@@ -357,6 +363,7 @@ const CustomerInfoModal = ({
             if (rpcError) throw rpcError;
             customerId = customerData;
 
+            // OPTIMISTIC UPDATE: Close modal and update UI immediately
             const customer = {
                 id: customerId,
                 phone: cleanPhone || null,
@@ -364,31 +371,58 @@ const CustomerInfoModal = ({
                 loyalty_coffee_count: 0
             };
 
-            // Cache to Dexie for offline use
+            onCustomerUpdate?.(customer);
+            onClose();
+
+            // Background processing - Don't block the UI
+            (async () => {
+                try {
+                    // Cache to Dexie for offline use
+                    const { db } = await import('../db/database');
+                    await db.customers.put({
+                        ...customer,
+                        phone_number: cleanPhone || null,
+                        business_id: currentUser?.business_id,
+                        updated_at: new Date().toISOString()
+                    });
+                    console.log('💾 Customer cached to Dexie');
+
+                    // If editing an order (KDS flow), update it
+                    if (orderId) {
+                        await updateOrderCustomer(orderId, customer);
+                    }
+                } catch (bgErr) {
+                    console.warn('⚠️ Background customer update error (non-blocking):', bgErr);
+                }
+            })();
+        } catch (err) {
+            console.error('Name submission error - falling back to transient save:', err);
+
+            // 🛡️ FAIL-SAFE: If the database is busy or the RPC is broken, 
+            // DO NOT block the user. Just use the name locally so they can finish the order.
+            const cleanPhone = phoneNumber.replace(/\D/g, '');
+            const transientCustomer = {
+                id: currentCustomer?.id || `temp-${Date.now()}`,
+                phone: cleanPhone || null,
+                name: customerName.trim(),
+                loyalty_coffee_count: currentCustomer?.loyalty_coffee_count || 0,
+                isTransient: true
+            };
+
+            // Attempt local cache update if possible
             try {
-                const { db } = await import('../db/database');
-                await db.customers.put({
-                    ...customer,
+                const { db: dDb } = await import('../db/database');
+                await dDb.customers.put({
+                    ...transientCustomer,
                     phone_number: cleanPhone || null,
                     business_id: currentUser?.business_id,
                     updated_at: new Date().toISOString()
                 });
-                console.log('💾 Customer cached to Dexie');
-            } catch (e) {
-                console.warn('Could not cache customer:', e);
-            }
+            } catch (e) { console.warn('Dexie transient cache failed:', e); }
 
-            // If editing an order (KDS flow), update it
-            if (orderId) {
-                await updateOrderCustomer(orderId, customer);
-            }
-
-            // Return customer data
-            onCustomerUpdate?.(customer);
+            if (orderId) await updateOrderCustomer(orderId, transientCustomer);
+            onCustomerUpdate?.(transientCustomer);
             onClose();
-        } catch (err) {
-            console.error('Name submission error:', err);
-            setError('שגיאה בשמירת הנתונים. אנא נסה שוב.');
         } finally {
             setIsLoading(false);
         }
@@ -466,7 +500,7 @@ const CustomerInfoModal = ({
 
             if (rpcError) {
                 console.error('❌ RPC Order Update Error:', rpcError);
-                window.confirm(`שגיאת עדכון בשרת: ${rpcError.message}. נסה שוב?`);
+                // System will retry via offline queue if failed
                 throw rpcError;
             }
             console.log('✅ Order updated in Supabase via RPC');

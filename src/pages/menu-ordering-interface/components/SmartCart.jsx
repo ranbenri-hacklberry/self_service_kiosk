@@ -376,7 +376,7 @@ const SmartCart = ({
                     {(() => {
                         const isAnonymous = !customerName || customerName.includes('אורח אנונימי') || customerName === 'אורח';
                         const isValidPhone = customerPhone && /^[0-9+\-\s]+$/.test(customerPhone) && customerPhone.length < 15;
-                        const showAddButtons = isAnonymous || !isValidPhone;
+                        const showAddButtons = !isValidPhone;
 
                         return (
                             <>
@@ -402,7 +402,7 @@ const SmartCart = ({
                                         {/* Phone Button */}
                                         {onAddCustomerDetails && (
                                             <button
-                                                onClick={() => onAddCustomerDetails('phone')}
+                                                onClick={() => onAddCustomerDetails('phone-then-name')}
                                                 className="px-4 py-2.5 rounded-lg bg-orange-500 text-white shadow-sm hover:bg-orange-600 transition-all font-bold text-sm flex items-center gap-1.5"
                                             >
                                                 <Phone size={16} />
@@ -453,7 +453,7 @@ const SmartCart = ({
 
                                         {onAddCustomerDetails && (
                                             <button
-                                                onClick={() => onAddCustomerDetails('phone')}
+                                                onClick={() => onAddCustomerDetails('phone-then-name')}
                                                 className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'bg-slate-800 text-blue-400 hover:bg-slate-700' : 'bg-gray-50 text-blue-600 hover:bg-blue-50'
                                                     }`}
                                             >

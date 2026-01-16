@@ -555,8 +555,12 @@ const KdsScreen = () => {
   const location = useLocation();
   // State persistence: Load from localStorage or defaults
   const [viewMode, setViewMode] = useState(() => {
-    const saved = localStorage.getItem('kds_viewMode');
-    return saved || location.state?.viewMode || 'active';
+    // 🚀 FORCE 'active' for new entries to KDS
+    const isNavigationState = !!(location.state?.viewMode);
+    if (isNavigationState) return location.state.viewMode;
+
+    // Always default to active when entering fresh, but allow persistence IF the user is already on the page
+    return 'active';
   });
 
   const [selectedDate, setSelectedDate] = useState(() => {

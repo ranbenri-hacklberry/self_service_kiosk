@@ -50,43 +50,43 @@ const WhatsNewModal = ({ onClose }) => {
                     </div>
                 </div>
 
-                {/* Features List - Version 4.0.0 Highlights for the Team */}
+                {/* Features List - Friday Rush Quick Version */}
                 <div className="p-5 space-y-3.5">
-                    {/* Feature 1: Advanced Data Explanation (Humorous) */}
+                    {/* Feature 1: The Invisible Customer Fix */}
                     <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-slate-50 to-blue-50 rounded-2xl border border-blue-100 shadow-sm transition-transform hover:scale-[1.01]">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <Monitor className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                            <h3 className="font-black text-slate-800 text-lg">"מידע מתקדם" - הפעם זה באמת עובד! 📊</h3>
-                            <p className="text-slate-600 text-sm mt-0.5 leading-snug">
-                                זוכרים את הכפתור ההוא שתמיד היה שם אבל הראה דברים מוזרים? אז זהו, סידרנו לו את הצורה! הממשק החדש מהיר, מדויק, ונותן לכם <span className="font-bold">תמונה אמיתית</span> על הלקוחות וההזמנות שלכם.
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Feature 2: Exact Search How-To (Clarity on location) */}
-                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-orange-50 to-amber-50 rounded-2xl border border-orange-100 shadow-sm transition-transform hover:scale-[1.01]">
-                        <div className="w-12 h-12 rounded-xl bg-orange-500 flex items-center justify-center flex-shrink-0 shadow-lg" title="Advanced Search Only in Advanced Data">
-                            <Sparkles className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                            <h3 className="font-black text-slate-800 text-lg">חיפוש "בול פגיעה" במידע מתקדם 🎯</h3>
-                            <p className="text-slate-600 text-sm mt-0.5 leading-snug">
-                                צריכים למצוא לקוח אחד ספציפי בלי כל הבלגן מסביב? בתוך מסך "מידע מתקדם", הקלידו שם או טלפון ולחצו על <span className="font-bold underline">Enter</span>. המערכת תנעל עליו ולא תשחרר עד שתלחצו על ה-X!
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Feature 3: Loyalty & Clean Data (More "High Temp" Humor) */}
-                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-emerald-50 to-green-50 rounded-2xl border border-emerald-200 shadow-sm transition-transform hover:scale-[1.01]">
-                        <div className="w-12 h-12 rounded-xl bg-emerald-600 flex items-center justify-center flex-shrink-0 shadow-lg">
                             <Users className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                            <h3 className="font-black text-slate-800 text-lg">ניצחנו את הבוט (ואת עצמנו!) ✨</h3>
+                            <h3 className="font-black text-slate-800 text-lg">סוף ללקוחות רפאים! 👻</h3>
                             <p className="text-slate-600 text-sm mt-0.5 leading-snug">
-                                אחרי חודש שבו הוכחנו לעולם שכישורי התכנות שלנו דומים יותר להכנת מקיאטו מפורק... מצאנו את הבאג! מעכשיו מועדון הלקוחות סטרילי: רק מספרי 05 תקינים ורק לקוחות שיש להם נקודות באמת. אנחנו אולי לא מהנדסי טילים, אבל לפחות הנקודות שלכם בטוחות!
+                                הקופה כבר לא תתקע לכם על לקוחות שלא קיימים – תנו גז על ההזמנה, המערכת כבר תסתדר עם היתר.
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Feature 2: UUID & NaN Detox */}
+                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-orange-50 to-amber-50 rounded-2xl border border-orange-100 shadow-sm transition-transform hover:scale-[1.01]">
+                        <div className="w-12 h-12 rounded-xl bg-orange-500 flex items-center justify-center flex-shrink-0 shadow-lg" title="Detoxed Data">
+                            <Settings className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                            <h3 className="font-black text-slate-800 text-lg">המספרים הפסיקו להשתגע 🧼</h3>
+                            <p className="text-slate-600 text-sm mt-0.5 leading-snug">
+                                ניקינו את כל הלכלוך שגרם למחירים וחשבונות להראות שגיאות מוזרות – הכל עובר עכשיו חלק כמו חלב מוקצף.
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Feature 3: KDS & Loyalty Precision */}
+                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-emerald-50 to-green-50 rounded-2xl border border-emerald-200 shadow-sm transition-transform hover:scale-[1.01]">
+                        <div className="w-12 h-12 rounded-xl bg-emerald-600 flex items-center justify-center flex-shrink-0 shadow-lg">
+                            <ChefHat className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                            <h3 className="font-black text-slate-800 text-lg">KDS תמיד דרוך לעבודה ☕</h3>
+                            <p className="text-slate-600 text-sm mt-0.5 leading-snug">
+                                המסך נפתח ישר על ההזמנות שצריך להכין (בלי היסטוריה מיותרת) והנקודות נספרות בול – יאללה, תקתקו עבודה!
                             </p>
                         </div>
                     </div>
