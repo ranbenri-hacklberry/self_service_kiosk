@@ -158,24 +158,7 @@ body {
   .compact-card-ratio {
     aspect-ratio: 5 / 4 !important;
   }
-}
 
-/* For Large Screens (Desktop) - 5 columns from 1270px width */
-@media (min-width: 1270px) {
-  .responsive-menu-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-  }
-}
-
-/* On very wide and tall screens, ensure square ratio is restored */
-@media (min-width: 1270px) and (min-height: 851px) {
-  .compact-card-ratio {
-    aspect-ratio: 1 / 1 !important;
-  }
-}
-
-/* Global compactness for short screens */
-@media (max-height: 850px) {
   .compact-header-h {
     height: 52px !important;
   }
@@ -199,4 +182,47 @@ body {
   .compact-sidebar-w {
     width: 310px !important;
   }
+}
+
+/* For Large Screens (Desktop) - 5 columns from 1270px width */
+@media (min-width: 1270px) {
+  .responsive-menu-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+}
+
+/* On very wide and tall screens, ensure square ratio is restored */
+@media (min-width: 1270px) and (min-height: 851px) {
+  .compact-card-ratio {
+    aspect-ratio: 1 / 1 !important;
+  }
+}
+
+/* --- 🔋 LITE MODE OPTIMIZATIONS (Weak Devices) --- */
+.lite-mode * {
+  /* Disable heavy dropshadows and blurs */
+  box-shadow: none !important;
+  text-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition-duration: 0.05s !important;
+}
+
+.lite-mode .brand-logo-img {
+  filter: none !important;
+  transition: opacity 0.5s ease-out !important;
+}
+
+.lite-mode .shadow-2xl,
+.lite-mode .shadow-xl,
+.lite-mode .shadow-lg,
+.lite-mode .shadow-md,
+.lite-mode .shadow-sm {
+  box-shadow: none !important;
+  border: 1px solid #e5e7eb !important;
+}
+
+.lite-mode * {
+  animation-duration: 0.05s !important;
+  animation-iteration-count: 1 !important;
 }

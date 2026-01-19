@@ -8,7 +8,7 @@ const API_URL = import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
     'http://localhost:8080';
 
-export const APP_VERSION = '4.5.0'; // Major Inventory & Tasks Update
+export const APP_VERSION = '4.5.1'; // Lite Mode & Optimization Update
 export const AuthProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
     const [deviceMode, setDeviceMode] = useState(null); // 'kiosk', 'kds', 'manager', 'music'
@@ -206,8 +206,12 @@ export const AuthProvider = ({ children }) => {
                 const timeSinceFullSync = lastFullSync ? (Date.now() - parseInt(lastFullSync)) : Infinity;
 
                 // Run full sync if it's been more than 1 hour or never ran
-                if (timeSinceFullSync > 60 * 60 * 1000) {
-                    console.log('🔄 [Background] Running FULL initial load (periodic/login)...');
+                const shouldRunFullSync = isLiteMode
+                    ? timeSinceFullSync > 4 * 60 * 60 * 1000 // Only every 4 hours for lite devices
+                    : timeSinceFullSync > 60 * 60 * 1000;
+
+                if (shouldRunFullSync) {
+                    console.log(`🔄 [Background] Running FULL initial load (${isLiteMode ? 'Lite' : 'Standard'})...`);
                     await initialLoad(currentUser.business_id);
                     localStorage.setItem('last_full_sync', Date.now().toString());
                 } else {
@@ -229,11 +233,15 @@ export const AuthProvider = ({ children }) => {
             }
         };
 
+        // Check for Lite Mode
+        const isLiteMode = localStorage.getItem('lite_mode') === 'true';
+
         // Run immediately on login
         runBackgroundSync();
 
-        // Then run every 5 minutes
-        const interval = setInterval(runBackgroundSync, 5 * 60 * 1000);
+        // Adjust interval based on device capability
+        const syncIntervalMs = isLiteMode ? 10 * 60 * 1000 : 5 * 60 * 1000;
+        const interval = setInterval(runBackgroundSync, syncIntervalMs);
 
         return () => clearInterval(interval);
     }, [currentUser?.business_id]);

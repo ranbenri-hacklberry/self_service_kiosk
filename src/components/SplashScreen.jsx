@@ -18,13 +18,59 @@ const SplashScreen = ({ onFinish }) => {
         console.log('🎨 SplashScreen v3.6 mounted');
 
         const initialize = async () => {
-            // A. Version Check & Cleanup
+            // A. Version Check & Cleanup + Performance Support
             const { APP_VERSION } = await import('../context/AuthContext');
             const lastVersion = localStorage.getItem('app_version');
 
+            // --- 🔋 WEAK DEVICE DETECTION & CLEANUP ---
+            const isWeakDevice = (navigator.deviceMemory && navigator.deviceMemory <= 4) ||
+                (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
+                /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+            if (isWeakDevice) {
+                console.log('🐌 Weak device detected. Activating Lite Mode...');
+                localStorage.setItem('lite_mode', 'true');
+                document.body.classList.add('lite-mode');
+            } else {
+                localStorage.removeItem('lite_mode');
+                document.body.classList.remove('lite-mode');
+            }
+
+            // Deep memory cleanup
+            sessionStorage.clear(); // Free up session memory
+
+            // Selective localStorage pruning (Keep ONLY what's needed for the current business)
+            const keysToKeep = [
+                'app_version', 'kiosk_user', 'kiosk_auth_time', 'kiosk_mode',
+                'lite_mode', 'whats_new_seen_version', 'last_full_sync',
+                'last_sync_time', 'manager_auth_key', 'manager_employee_id',
+                'pwa_installed', 'kiosk_theme'
+            ];
+
+            const currentBusinessId = localStorage.getItem('kiosk_user') ?
+                JSON.parse(localStorage.getItem('kiosk_user')).business_id : null;
+
+            Object.keys(localStorage).forEach(key => {
+                // 1. If it's in the hardcoded keep list, keep it.
+                if (keysToKeep.includes(key)) return;
+
+                // 2. If it's a draft or sync queue for the CURRENT business, keep it.
+                if (currentBusinessId && (key.includes(currentBusinessId))) return;
+
+                // 3. Otherwise, if it's an old draft, log, or internal browser junk - DELETE.
+                if (key.startsWith('inventory_draft_') ||
+                    key.startsWith('sync_queue_') ||
+                    key.startsWith('order_draft_') ||
+                    key.startsWith('loglevel') ||
+                    key.startsWith('debug') ||
+                    key === 'supabase.auth.token') {
+                    localStorage.removeItem(key);
+                }
+            });
+
             if (lastVersion && lastVersion !== APP_VERSION) {
                 console.warn(`🚨 VERSION MISMATCH (${lastVersion} -> ${APP_VERSION}). Performing silent cleanup...`);
-                localStorage.removeItem('kiosk_mode');
+                // Clear all sync-related flags to force fresh start
                 localStorage.removeItem('last_full_sync');
                 localStorage.removeItem('last_sync_time');
 
