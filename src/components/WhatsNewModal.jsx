@@ -1,6 +1,7 @@
+```
 import React, { useState, useEffect } from 'react';
 import { Sparkles, ChefHat, ClipboardList, Settings, ArrowLeft, Monitor, Users } from 'lucide-react';
-import { APP_VERSION } from '../context/AuthContext';
+import { APP_VERSION } from '../version';
 
 /**
  * WhatsNewModal - Shows version update highlights to users
@@ -33,9 +34,9 @@ const WhatsNewModal = ({ onClose }) => {
     if (!shouldShow) return null;
 
     return (
-        <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-4 transition-all duration-300 ${isVisible ? 'bg-black/60 backdrop-blur-sm' : 'bg-transparent pointer-events-none'}`}>
+        <div className={`fixed inset - 0 z - [9999] flex items - center justify - center p - 4 transition - all duration - 300 ${ isVisible ? 'bg-black/60 backdrop-blur-sm' : 'bg-transparent pointer-events-none' } `}>
             <div
-                className={`bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden transform transition-all duration-300 ${isVisible ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}`}
+                className={`bg - white rounded - [2rem] shadow - 2xl w - full max - w - lg overflow - hidden transform transition - all duration - 300 ${ isVisible ? 'scale-100 opacity-100' : 'scale-95 opacity-0' } `}
                 dir="rtl"
             >
                 {/* Header - Tightened padding */}

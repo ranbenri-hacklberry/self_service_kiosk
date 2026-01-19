@@ -18,112 +18,98 @@ const SplashScreen = ({ onFinish }) => {
         console.log('🎨 SplashScreen v3.6 mounted');
 
         const initialize = async () => {
-            // A. Version Check & Cleanup + Performance Support
-            const { APP_VERSION } = await import('../context/AuthContext');
-            const lastVersion = localStorage.getItem('app_version');
+            try {
+                // A. Version Check & Performance Support
+                const { APP_VERSION } = await import('../version');
+                const lastVersion = localStorage.getItem('app_version');
 
-            // --- 🔋 WEAK DEVICE DETECTION & CLEANUP ---
-            const isWeakDevice = (navigator.deviceMemory && navigator.deviceMemory <= 4) ||
-                (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
-                /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                // --- 🔋 WEAK DEVICE DETECTION & CLEANUP ---
+                const isWeakDevice = (navigator.deviceMemory && navigator.deviceMemory <= 4) ||
+                    (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
+                    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-            if (isWeakDevice) {
-                console.log('🐌 Weak device detected. Activating Lite Mode...');
-                localStorage.setItem('lite_mode', 'true');
-                document.body.classList.add('lite-mode');
-            } else {
-                localStorage.removeItem('lite_mode');
-                document.body.classList.remove('lite-mode');
-            }
-
-            // Deep memory cleanup
-            sessionStorage.clear(); // Free up session memory
-
-            // Selective localStorage pruning (Keep ONLY what's needed for the current business)
-            const keysToKeep = [
-                'app_version', 'kiosk_user', 'kiosk_auth_time', 'kiosk_mode',
-                'lite_mode', 'whats_new_seen_version', 'last_full_sync',
-                'last_sync_time', 'manager_auth_key', 'manager_employee_id',
-                'pwa_installed', 'kiosk_theme'
-            ];
-
-            const currentBusinessId = localStorage.getItem('kiosk_user') ?
-                JSON.parse(localStorage.getItem('kiosk_user')).business_id : null;
-
-            Object.keys(localStorage).forEach(key => {
-                // 1. If it's in the hardcoded keep list, keep it.
-                if (keysToKeep.includes(key)) return;
-
-                // 2. If it's a draft or sync queue for the CURRENT business, keep it.
-                if (currentBusinessId && (key.includes(currentBusinessId))) return;
-
-                // 3. Otherwise, if it's an old draft, log, or internal browser junk - DELETE.
-                if (key.startsWith('inventory_draft_') ||
-                    key.startsWith('sync_queue_') ||
-                    key.startsWith('order_draft_') ||
-                    key.startsWith('loglevel') ||
-                    key.startsWith('debug') ||
-                    key === 'supabase.auth.token') {
-                    localStorage.removeItem(key);
+                if (isWeakDevice) {
+                    console.log('🐌 Weak device detected. Activating Lite Mode...');
+                    localStorage.setItem('lite_mode', 'true');
+                    document.body.classList.add('lite-mode');
+                } else {
+                    localStorage.removeItem('lite_mode');
+                    document.body.classList.remove('lite-mode');
                 }
-            });
 
-            if (lastVersion && lastVersion !== APP_VERSION) {
-                console.warn(`🚨 VERSION MISMATCH (${lastVersion} -> ${APP_VERSION}). Performing silent cleanup...`);
-                // Clear all sync-related flags to force fresh start
-                localStorage.removeItem('last_full_sync');
-                localStorage.removeItem('last_sync_time');
+                // Deep memory cleanup
+                sessionStorage.clear();
+
+                // Selective localStorage pruning
+                const keysToKeep = [
+                    'app_version', 'kiosk_user', 'kiosk_auth_time', 'kiosk_mode',
+                    'lite_mode', 'whats_new_seen_version', 'last_full_sync',
+                    'last_sync_time', 'manager_auth_key', 'manager_employee_id'
+                ];
 
                 try {
-                    const { db } = await import('../db/database');
-                    await db.delete();
-                    console.log('✅ Dexie database cleared');
+                    const session = localStorage.getItem('kiosk_user');
+                    const currentBusinessId = session ? JSON.parse(session).business_id : null;
+
+                    Object.keys(localStorage).forEach(key => {
+                        if (keysToKeep.includes(key)) return;
+                        if (currentBusinessId && key.includes(currentBusinessId)) return;
+                        if (key.startsWith('inventory_draft_') || key.startsWith('sync_queue_') || key.startsWith('loglevel')) {
+                            localStorage.removeItem(key);
+                        }
+                    });
                 } catch (e) {
-                    console.error('Failed to clear Dexie:', e);
+                    console.warn('Pruning error:', e);
                 }
-            }
-            localStorage.setItem('app_version', APP_VERSION);
 
-            // B. Auth Check & Daily Sync
-            try {
+                if (lastVersion && lastVersion !== APP_VERSION) {
+                    console.warn(`🚨 VERSION CHANGE. Cleaning up old data...`);
+                    localStorage.removeItem('last_full_sync');
+                    try {
+                        const { db } = await import('../db/database');
+                        await db.delete();
+                    } catch (e) { console.error(e); }
+                }
+                localStorage.setItem('app_version', APP_VERSION);
+
+                // B. Auth Check & Daily Sync
                 const { data: { user } } = await supabase.auth.getUser();
-                console.log('👤 Auth check result:', user ? 'Logged In' : 'Guest');
-
                 if (user) {
                     setIsAuthenticated(true);
-                    setStatusText('מזהה משתמש...');
+                    setStatusText('מתחבר לענן...');
 
-                    // Attempt to get business_id
                     let businessId = user.user_metadata?.business_id;
                     if (!businessId) {
-                        try {
-                            const { data: emp } = await supabase.from('employees')
-                                .select('business_id')
-                                .eq('auth_user_id', user.id)
-                                .maybeSingle();
-                            if (emp) businessId = emp.business_id;
-                        } catch (e) {
-                            console.warn('Failed to fetch employee record:', e);
-                        }
+                        const { data: emp } = await supabase.from('employees')
+                            .select('business_id')
+                            .eq('auth_user_id', user.id)
+                            .maybeSingle();
+                        if (emp) businessId = emp.business_id;
                     }
 
                     if (businessId) {
-                        setStatusText('מבצע סנכרון יומי...');
+                        setStatusText('מסנכרן נתונים...');
+                        // ⏱️ TIMEOUT WRAPPER for sync
+                        const syncPromise = initialLoad(businessId, (table, count, percent) => {
+                            setStatusText(`טוען ${table}...`);
+                        });
+
+                        const timeoutPromise = new Promise((_, reject) =>
+                            setTimeout(() => reject(new Error('Sync Timeout')), 12000)
+                        );
+
                         try {
-                            await initialLoad(businessId, (table, count, percent) => {
-                                setStatusText(`מסנכרן ${table} (${percent}%)...`);
-                            });
-                            setStatusText('הסנכרון הושלם בהצלחה!');
-                        } catch (syncErr) {
-                            console.error('Initial sync failed:', syncErr);
-                            setStatusText('שגיאה בסנכרון (ממשיך...)');
+                            await Promise.race([syncPromise, timeoutPromise]);
+                            setStatusText('מוכן!');
+                        } catch (timeoutErr) {
+                            console.warn('⚠️ Sync too slow, skipping to app...');
+                            setStatusText('טוען ממטמון...');
                         }
-                    } else {
-                        setStatusText('לא נמצא עסק מקושר');
                     }
                 }
             } catch (err) {
-                console.error('Auth check error:', err);
+                console.error('❌ Initialization error:', err);
+                setStatusText('שגיאה בטעינה, ממשיך...');
             } finally {
                 setAuthChecked(true);
                 setSyncComplete(true);
