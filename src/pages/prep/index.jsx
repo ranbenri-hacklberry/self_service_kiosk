@@ -18,12 +18,13 @@ const PrepPage = () => {
     const [openingTasks, setOpeningTasks] = useState([]);
     const [prepBatches, setPrepBatches] = useState([]);
     const [closingTasks, setClosingTasks] = useState([]);
+    const [supplierTasks, setSupplierTasks] = useState([]); // New: Inventory counting tasks
     const [currentHour, setCurrentHour] = useState(new Date().getHours());
-    const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
     // Monitor screen size
     useEffect(() => {
-        const handleResize = () => setIsMobile(window.innerWidth < 1024);
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
@@ -107,12 +108,94 @@ const PrepPage = () => {
         }
     }, [currentUser?.business_id]);
 
-    const fetchAllTasks = useCallback(() => {
+    const fetchSupplierTasks = useCallback(async () => {
         if (!currentUser?.business_id) return;
-        fetchTasksByCategory(TASK_CATEGORIES.OPENING.id, setOpeningTasks);
-        fetchTasksByCategory(TASK_CATEGORIES.PREP.id, setPrepBatches);
-        fetchTasksByCategory(TASK_CATEGORIES.CLOSING.id, setClosingTasks);
-    }, [fetchTasksByCategory, currentUser?.business_id]);
+        try {
+            const today = new Date();
+            // Map JS Day (0=Sun, 6=Sat) to User Day (1=Sun, 7=Sat) for TOMORROW
+            // Formula: ((today.getDay() + 1) % 7) + 1
+            const tomorrowIdx = ((today.getDay() + 1) % 7) + 1;
+            const dateStr = today.toISOString().split('T')[0];
+
+            // 1. Fetch suppliers with delivery tomorrow
+            const { data: suppliers } = await supabase
+                .from('suppliers')
+                .select('*')
+                .eq('business_id', currentUser.business_id);
+
+            console.log(`🔍 Total suppliers for business: ${suppliers?.length || 0}`);
+
+            const relevantSuppliers = (suppliers || []).filter(s => {
+                if (!s.delivery_days) return false;
+
+                let days = [];
+                if (Array.isArray(s.delivery_days)) {
+                    days = s.delivery_days;
+                } else if (typeof s.delivery_days === 'string') {
+                    try {
+                        // Try JSON first
+                        const parsed = JSON.parse(s.delivery_days);
+                        days = Array.isArray(parsed) ? parsed : [parsed];
+                    } catch (e) {
+                        // Fallback to comma-separated
+                        days = s.delivery_days.split(',').map(d => d.trim());
+                    }
+                }
+
+                // Ensure we compare numbers to numbers
+                const isMatch = days.map(d => Number(d)).includes(tomorrowIdx);
+                if (isMatch) console.log(`🎯 Match found for supplier: ${s.name} (tomorrowIdx: ${tomorrowIdx})`);
+                return isMatch;
+            });
+
+            console.log(`📦 Relevant suppliers for tomorrow's delivery: ${relevantSuppliers.map(s => s.name).join(', ')}`);
+
+            // 2. Check completions (Virtual tasks are stored in the 'notes' column because recurring_task_id is an integer)
+            const { data: logs } = await supabase
+                .from('task_completions')
+                .select('notes')
+                .eq('completion_date', dateStr)
+                .like('notes', 'inv-count-%');
+
+            const completedSet = new Set(logs?.map(l => l.notes));
+
+            // 3. Generate virtual tasks
+            const virtualTasks = relevantSuppliers
+                .map(s => ({
+                    id: `inv-count-${s.id}`,
+                    supplier_id: s.id,
+                    name: `ספירת מלאי: ${s.name}`,
+                    description: `הספק מגיע מחר. יש לבצע ספירת מלאי כדי לוודא שכל החוסרים הוזמנו.`,
+                    image_url: null,
+                    target_qty: 1,
+                    unit: 'שגרה',
+                    logic_type: 'fixed',
+                    category: 'prep',
+                    is_recurring: true,
+                    is_completed: false,
+                    is_supplier_task: true
+                }))
+                .filter(t => !completedSet.has(t.id));
+
+            console.log(`✅ Filtered virtual tasks: ${virtualTasks.length}`);
+
+            setSupplierTasks(virtualTasks);
+        } catch (err) {
+            console.error('Error fetching supplier tasks:', err);
+        }
+    }, [currentUser?.business_id]);
+
+    const fetchAllTasks = useCallback(async () => {
+        if (!currentUser?.business_id) return;
+
+        // Fetch standard tasks
+        await fetchTasksByCategory(TASK_CATEGORIES.OPENING.id, setOpeningTasks);
+        await fetchTasksByCategory(TASK_CATEGORIES.PREP.id, setPrepBatches);
+        await fetchTasksByCategory(TASK_CATEGORIES.CLOSING.id, setClosingTasks);
+
+        // Fetch supplier related tasks
+        await fetchSupplierTasks();
+    }, [fetchTasksByCategory, fetchSupplierTasks, currentUser?.business_id]);
 
     const skipRealtimeRef = React.useRef(false);
 
@@ -169,17 +252,24 @@ const PrepPage = () => {
         const isClosing = isCategoryMatch(TASK_CATEGORIES.CLOSING.id, task.category);
 
         if (isOpening) setOpeningTasks(p => p.filter(t => t.id !== task.id));
-        if (isPrep) setPrepBatches(p => p.filter(t => t.id !== task.id));
+        if (isPrep || task.is_supplier_task) {
+            setPrepBatches(p => p.filter(t => t.id !== task.id));
+            if (task.is_supplier_task) {
+                setSupplierTasks(p => p.filter(t => t.id !== task.id));
+            }
+        }
         if (isClosing) setClosingTasks(p => p.filter(t => t.id !== task.id));
 
         try {
-            if (task.is_recurring) {
+            if (task.id) {
+                // If it's a supplier task, store ID in 'notes' (string) and leave recurring_task_id (int) as null
                 await supabase.from('task_completions').insert({
-                    recurring_task_id: task.id,
+                    recurring_task_id: task.is_supplier_task ? null : task.id,
                     business_id: currentUser?.business_id,
-                    quantity_produced: task.target_qty,
+                    quantity_produced: task.target_qty || 1,
                     completion_date: new Date().toISOString().split('T')[0],
-                    completed_by: currentUser?.id
+                    completed_by: currentUser?.id,
+                    notes: task.is_supplier_task ? task.id : null
                 });
             }
         } catch (e) {
@@ -191,9 +281,21 @@ const PrepPage = () => {
     };
 
     const getActiveTasks = () => {
-        if (tasksSubTab === 'opening') return openingTasks;
-        if (tasksSubTab === 'prep') return prepBatches;
-        return closingTasks;
+        const morningPrepSelector = (t) =>
+            (t.due_time && t.due_time < '10:00') ||
+            (t.category || '').includes('בוקר') ||
+            (t.name || '').includes('פתיחה') ||
+            (t.category || '').includes('פתיחה');
+
+        if (tasksSubTab === 'opening') {
+            const morningPrepFromBatches = prepBatches.filter(morningPrepSelector);
+            return [...openingTasks, ...morningPrepFromBatches];
+        } else if (tasksSubTab === 'prep') {
+            const actualPrepBatches = prepBatches.filter(t => !morningPrepSelector(t));
+            return [...actualPrepBatches, ...supplierTasks];
+        } else {
+            return [...closingTasks];
+        }
     };
 
     return (
@@ -232,7 +334,15 @@ const PrepPage = () => {
                             <Sunrise size={18} />
                             <span className="hidden sm:inline">פתיחה</span>
                             <span className={`text-[10px] px-2 py-0.5 rounded-full ${tasksSubTab === 'opening' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-200 text-slate-500'}`}>
-                                {openingTasks.length}
+                                {(() => {
+                                    const morningPrepCount = prepBatches.filter(t =>
+                                        (t.due_time && t.due_time < '10:00') ||
+                                        (t.category || '').includes('בוקר') ||
+                                        (t.name || '').includes('פתיחה') ||
+                                        (t.category || '').includes('פתיחה')
+                                    ).length;
+                                    return openingTasks.length + morningPrepCount;
+                                })()}
                             </span>
                         </button>
                         <button
@@ -240,9 +350,17 @@ const PrepPage = () => {
                             className={`flex items-center gap-2 px-3 md:px-5 py-2 md:py-2.5 rounded-2xl text-sm font-black transition-all ${tasksSubTab === 'prep' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                         >
                             <Utensils size={18} />
-                            <span className="hidden sm:inline">הכנות</span>
+                            <span className="hidden sm:inline">משימות</span>
                             <span className={`text-[10px] px-2 py-0.5 rounded-full ${tasksSubTab === 'prep' ? 'bg-orange-50 text-orange-600' : 'bg-slate-200 text-slate-500'}`}>
-                                {prepBatches.length}
+                                {(() => {
+                                    const morningPrepCount = prepBatches.filter(t =>
+                                        (t.due_time && t.due_time < '10:00') ||
+                                        (t.category || '').includes('בוקר') ||
+                                        (t.name || '').includes('פתיחה') ||
+                                        (t.category || '').includes('פתיחה')
+                                    ).length;
+                                    return (prepBatches.length - morningPrepCount) + supplierTasks.length;
+                                })()}
                             </span>
                         </button>
                         <button
@@ -285,7 +403,7 @@ const PrepPage = () => {
                     onComplete={handleCompleteTask}
                     title={
                         tasksSubTab === 'opening' ? 'משימות פתיחה' :
-                            tasksSubTab === 'prep' ? 'באץ׳ הכנות יומי' :
+                            tasksSubTab === 'prep' ? `משימות והכנות יום - ${new Date().toLocaleDateString('he-IL')}` :
                                 'משימות סגירה'
                     }
                     tabType={tasksSubTab}

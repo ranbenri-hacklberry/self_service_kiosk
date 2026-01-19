@@ -12,8 +12,8 @@ export const TASK_CATEGORIES = {
     PREP: {
         id: 'prep',
         db_id: 'pre_closing', // Manager tab ID for prep
-        label: 'הכנה',
-        aliases: ['prep', 'הכנה', 'הכנות', 'mid']
+        label: 'משימות',
+        aliases: ['prep', 'הכנה', 'הכנות', 'mid', 'משימות']
     },
     CLOSING: {
         id: 'closing',

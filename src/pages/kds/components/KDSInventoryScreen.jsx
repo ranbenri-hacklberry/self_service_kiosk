@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { Search, Truck, Plus, X, ArrowRight, Package, Save, Check, RefreshCw, ChevronLeft, ChevronRight, Trash2, Edit2, AlertTriangle, ChevronDown, ChevronUp, Clock, House, Camera, Upload, ScanLine } from 'lucide-react';
+import { Search, Truck, Plus, X, ArrowRight, Package, Save, Check, RefreshCw, ChevronLeft, ChevronRight, Trash2, Edit2, AlertTriangle, ChevronDown, ChevronUp, Clock, House, Camera, Upload, ScanLine, Filter, RotateCcw, Calculator, ClipboardList } from 'lucide-react';
+import LowStockReportModal from './LowStockReportModal';
 import ConfirmationModal from '../../../components/ui/ConfirmationModal';
 import ConnectionStatusBar from '../../../components/ConnectionStatusBar';
 import BusinessInfoBar from '../../../components/BusinessInfoBar';
@@ -288,6 +289,9 @@ const KDSInventoryScreen = ({ onExit }) => {
     });
     const [isConfirmingReceipt, setIsConfirmingReceipt] = useState(false);
     const [showFullscreenInvoice, setShowFullscreenInvoice] = useState(false);
+
+    // State for Low Stock Report
+    const [showReportModal, setShowReportModal] = useState(false);
 
     // Save receivingSession to localStorage whenever it changes
     useEffect(() => {
@@ -1402,7 +1406,18 @@ const KDSInventoryScreen = ({ onExit }) => {
 
     // Render Items Grid (Left/Center Column)
     const renderItemsGrid = () => (
-        <div className="h-full min-h-0 overflow-y-auto p-2 pb-20">
+        <div className="h-full min-h-0 overflow-y-auto p-2 pb-24 relative">
+            {/* FAB for Report */}
+            <div className="fixed bottom-6 left-6 z-50">
+                <button
+                    onClick={() => setShowReportModal(true)}
+                    className="flex items-center gap-2 bg-slate-900 text-white px-5 py-3 rounded-full shadow-xl shadow-slate-900/30 hover:bg-slate-800 active:scale-95 transition-all font-bold"
+                >
+                    <ClipboardList size={20} />
+                    <span>דוח חוסרים</span>
+                </button>
+            </div>
+
             {!selectedSupplierId ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
                     <ArrowRight size={64} className="mb-6 animate-pulse" />
@@ -1411,82 +1426,137 @@ const KDSInventoryScreen = ({ onExit }) => {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 auto-rows-max pb-24">
-                    {/* Search Bar inside Grid area if needed, or stick to top */}
                     {filteredItems.map(item => {
                         const currentStock = stockUpdates[item.id] !== undefined ? stockUpdates[item.id] : item.current_stock;
                         const isChanged = stockUpdates[item.id] !== undefined && stockUpdates[item.id] !== item.current_stock;
 
-                        // Get package size from weight_per_unit (e.g., 1000 for 1kg/1L items)
-                        const packageSize = item.weight_per_unit || 1000; // Default 1000 (1 kg or 1 liter)
-                        // Determine Step Size
-                        // 1. Use explicit DB step if defined
-                        // 2. If 'single unit' (packageSize=1), step by 1
-                        // 3. Otherwise (weight/volume), step by half package (0.5)
-                        let countStep;
-                        if (item.count_step && item.count_step > 0) {
-                            countStep = item.count_step;
-                        } else if (packageSize === 1) {
-                            countStep = 1;
+                        // Toggle state for weight vs unit view
+                        // We use a local state or just check if user toggled.
+                        // Ideally we need a state map for toggles: const [showWeight, setShowWeight] = useState({})
+                        const isWeightMode = expandedItems[item.id] || false; // Reusing expandedItems for toggle (true=Weight, false=Unit)
+
+                        const wpu = parseFloat(item.weight_per_unit) || 0;
+                        const dbStep = parseFloat(item.count_step) || 1;
+
+                        // 1. Calculate actual delta to add/remove from DB stock
+                        let stepToApply;
+                        // If toggle is ON (Weight Mode), we add/remove in Grams/KG steps? 
+                        // Actually, simplify: always use the defined step logic, just change DISPLAY.
+                        // But user asked to UPDATE stock in units or kg. 
+
+                        if (wpu > 0) {
+                            stepToApply = dbStep * wpu;
                         } else {
-                            countStep = packageSize * 0.5;
+                            stepToApply = dbStep;
                         }
 
-                        // Smart Price Display - show per package (per kg/per liter)
+                        // 2. Calculate Display Value & Unit
+                        let displayStock = currentStock;
+                        let displayUnit = item.unit;
+                        let secondaryInfo = null;
+
+                        if (wpu > 0) {
+                            if (isWeightMode) {
+                                // WEIGHT MODE: Show total weight (KG/G)
+                                if (currentStock >= 1000) {
+                                    displayStock = currentStock / 1000;
+                                    displayUnit = 'ק״ג';
+                                } else {
+                                    displayUnit = 'גרם';
+                                }
+                                secondaryInfo = `${parseFloat((currentStock / wpu).toFixed(2))} יח׳`;
+                            } else {
+                                // UNIT MODE: Show units count
+                                displayStock = currentStock / wpu;
+                                displayUnit = 'יח׳';
+                                secondaryInfo = wpu >= 1000
+                                    ? `${parseFloat((displayStock * (wpu / 1000)).toFixed(2))} ק״ג`
+                                    : `${Math.round(displayStock * wpu)} גרם`;
+                            }
+                        } else if (item.unit === 'גרם' && currentStock >= 1000) {
+                            displayStock = currentStock / 1000;
+                            displayUnit = 'ק״ג';
+                        } else if (item.unit === 'מ״ל' && currentStock >= 1000) {
+                            displayStock = currentStock / 1000;
+                            displayUnit = 'ליטר';
+                        }
+
+                        // Format display - max 2 decimals, no trailing zeros
+                        displayStock = parseFloat(displayStock.toFixed(2));
+
+                        // 3. Price Display (for reference)
                         let priceDisplay = null;
                         if (item.cost_per_unit > 0) {
-                            if (item.unit === 'גרם' || item.unit === 'מ״ל') {
-                                // Price per package (kg or liter)
-                                const pricePerPackage = (item.cost_per_unit * packageSize).toFixed(2);
-                                const unitLabel = item.unit === 'גרם' ? 'ק״ג' : 'ליטר';
-                                priceDisplay = `₪${pricePerPackage}/${unitLabel}`;
+                            if (wpu > 0) {
+                                // Price per unit (pack)
+                                priceDisplay = `₪${item.cost_per_unit}`;
+                            } else if (item.unit === 'גרם' || item.unit === 'מ״ל') {
+                                // Bulk: Price per KG/L
+                                priceDisplay = `₪${(item.cost_per_unit * 1000).toFixed(2)}/${item.unit === 'גרם' ? 'ק״ג' : 'ליטר'}`;
                             } else {
                                 priceDisplay = `₪${item.cost_per_unit}`;
                             }
                         }
 
-                        // Convert to package units for display
-                        const stockInPackageUnits = currentStock / packageSize;
-
-                        // Worker display: Round to nearest 0.5
-                        const roundToHalf = (num) => Math.round(num * 2) / 2;
-                        const displayStock = roundToHalf(stockInPackageUnits);
-
-                        // Determine display unit label
-                        let displayUnit = item.unit;
-                        if (item.unit === 'גרם') displayUnit = 'ק״ג';
-                        else if (item.unit === 'מ״ל') displayUnit = 'ליטר';
+                        const isCountedToday = (() => {
+                            if (!item.last_counted_at) return false;
+                            const lastDate = new Date(item.last_counted_at).toLocaleDateString();
+                            const today = new Date().toLocaleDateString();
+                            return lastDate === today;
+                        })();
 
                         return (
-                            <div key={item.id} className="bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between hover:border-blue-300 transition-colors group">
-                                <div className="flex items-center gap-4 flex-1">
-                                    <div className="flex flex-col">
-                                        <h4 className="font-bold text-slate-800 text-sm leading-tight">{item.name}</h4>
-                                        {item.location && (
-                                            <div className="flex items-center gap-1 text-xs text-amber-600 mt-0.5">
-                                                <span>📍</span>
-                                                <span>{item.location}</span>
-                                            </div>
-                                        )}
+                            <div key={item.id} className={`px-4 py-2 rounded-xl shadow-sm border transition-colors group flex items-center justify-between
+                                ${isChanged ? 'bg-blue-50 border-blue-300' :
+                                    isCountedToday ? 'bg-emerald-50/50 border-emerald-200' : 'bg-white border-gray-100 hover:border-blue-300'}`}>
+                                <div className="flex items-center gap-4 flex-1 min-w-0">
+                                    <div className="flex flex-col min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <h4 className="font-bold text-slate-800 text-sm leading-tight truncate">{item.name}</h4>
+                                            {wpu > 0 && (
+                                                <button
+                                                    onClick={() => setExpandedItems(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                                                    className="bg-gray-100 hover:bg-gray-200 text-gray-500 text-[10px] px-1.5 py-0.5 rounded font-bold transition-colors"
+                                                >
+                                                    {isWeightMode ? 'הצג יח׳' : 'הצג משקל'}
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <div className="flex items-center gap-3 mt-0.5">
+                                            {item.location && (
+                                                <div className="flex items-center gap-1 text-xs text-amber-600">
+                                                    <span>📍</span>
+                                                    <span>{item.location}</span>
+                                                </div>
+                                            )}
+                                            {secondaryInfo && (
+                                                <div className="text-[10px] text-gray-400 font-medium">
+                                                    ({secondaryInfo})
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
                                 <div className="flex items-center gap-3">
                                     <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
                                         <button
-                                            onClick={() => handleStockChange(item.id, -countStep)}
+                                            onClick={() => handleStockChange(item.id, -stepToApply)}
                                             className="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-500 hover:text-red-500 hover:bg-red-50 transition active:scale-95"
                                         >
                                             <span className="text-xl font-bold leading-none mb-1">-</span>
                                         </button>
 
-                                        <div className="w-16 text-center">
+                                        <div className="w-20 text-center flex flex-col justify-center leading-none">
                                             <span className={`font-mono text-lg font-black ${isChanged ? 'text-blue-600' : 'text-slate-700'}`}>
                                                 {displayStock}
                                             </span>
+                                            <span className="text-[10px] text-gray-400 font-bold">{displayUnit}</span>
                                         </div>
 
                                         <button
-                                            onClick={() => handleStockChange(item.id, countStep)}
+                                            onClick={() => handleStockChange(item.id, stepToApply)}
                                             className="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-500 hover:text-green-600 hover:bg-green-50 transition active:scale-95"
                                         >
                                             <Plus size={16} strokeWidth={3} />
@@ -1518,8 +1588,23 @@ const KDSInventoryScreen = ({ onExit }) => {
 
                     )}
                 </div>
-            )}
-        </div>
+            )
+            }
+
+            {/* Low Stock Report Modal */}
+            <LowStockReportModal
+                isOpen={showReportModal}
+                onClose={() => setShowReportModal(false)}
+                items={items} // Pass all items so it can filter global low stock
+                currentStocks={stockUpdates} // Pass local edits buffer + original logic is inside modal?
+                // "currentStocks" prop in modal expects { id: val }. 
+                // We should pass a merged map? Or just pass 'stockUpdates'.
+                // Modal logic: const stock = currentStocks[item.id] !== undefined ? currentStocks[item.id] : (item.current_stock || 0);
+                // This matches exactly what we do in the grid. So passing 'stockUpdates' is correct.
+                // BUT we also need to handle updates.
+                onUpdateStock={handleStockChange}
+            />
+        </div >
     );
 
     return (

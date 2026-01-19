@@ -145,7 +145,7 @@ const ModeSelectionScreen = () => {
                             </div>
                             <h2 className="text-xl font-black text-slate-900 mb-1">סרוויס (KDS)</h2>
                             <p className="text-slate-500 text-sm leading-relaxed font-medium">
-                                ניהול הזמנות ומשימות הכנה
+                                ניהול הזמנות ומשימות
                             </p>
                         </div>
                     </button>
@@ -165,7 +165,7 @@ const ModeSelectionScreen = () => {
                             </div>
                             <h2 className="text-xl font-black text-slate-900 mb-1">משימות</h2>
                             <p className="text-slate-500 text-sm leading-relaxed font-medium">
-                                פתיחה, סגירה והכנות
+                                פתיחה, סגירה ומשימות יום
                             </p>
                         </div>
                     </button>

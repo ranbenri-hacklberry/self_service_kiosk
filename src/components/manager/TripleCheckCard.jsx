@@ -54,7 +54,7 @@ const TripleCheckCard = ({
     const formatQtyWithUnit = (qty, unitStr, showUnit = true) => {
         if (qty === null || qty === undefined) return '-';
         const num = parseFloat(qty);
-        if (isNaN(num)) return '-';
+        if (isNaN(num)) return '-'; // Do not return '-' for 0
 
         const lowerUnit = (unitStr || '').toLowerCase().trim();
         const isGram = lowerUnit === 'גרם' || lowerUnit === 'g' || lowerUnit === 'gram';
@@ -62,7 +62,9 @@ const TripleCheckCard = ({
         if (isGram) {
             const kg = num / 1000;
             // Always divide by 1000 for weight-based items to show KG
-            return showUnit ? `${formatValue(kg)} ק״ג` : formatValue(kg);
+            let val = formatValue(kg);
+            if (val.endsWith('.0')) val = val.slice(0, -2);
+            return showUnit ? `${val} ק״ג` : val;
         }
 
         // Hide units for "יח׳" or similar generic units and trailing apostrophes

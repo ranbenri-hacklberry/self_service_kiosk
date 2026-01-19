@@ -305,23 +305,6 @@ const InventoryScreen = () => {
   };
 
   // Handle location update
-  const handleLocationUpdate = async (itemId, newLocation) => {
-    try {
-      console.log('📍 Updating location:', itemId, newLocation);
-      const { error } = await supabase
-        .from('inventory_items')
-        .update({ location: newLocation })
-        .eq('id', itemId);
-
-      if (error) throw error;
-
-      console.log('✅ Location updated successfully');
-      setItems(prev => prev.map(i => i.id === itemId ? { ...i, location: newLocation } : i));
-    } catch (error) {
-      console.error('Error updating location:', error);
-      throw error;
-    }
-  };
 
   const handleFinishOrder = async (group) => {
     if (!currentUser?.business_id) return;
@@ -384,9 +367,12 @@ const InventoryScreen = () => {
     try {
       setLoading(true);
 
-      const { error } = await supabase
-        .from('inventory_items')
-        .update({
+      /* 
+       * USE RPC UPDATE - Bypasses RLS issues since we don't use Supabase Auth
+       */
+      const { data, error } = await supabase.rpc('update_inventory_item_details', {
+        p_item_id: itemId,
+        p_updates: {
           name: updateData.name,
           unit: updateData.unit,
           cost_per_unit: updateData.cost_per_unit,
@@ -394,15 +380,38 @@ const InventoryScreen = () => {
           weight_per_unit: updateData.weight_per_unit,
           min_order: updateData.min_order,
           order_step: updateData.order_step,
-          item_type: updateData.unit === 'יח׳' ? 'unit' : 'weight',
-          updated_at: new Date()
-        })
-        .eq('id', itemId);
+          low_stock_alert: updateData.low_stock_alert,
+          location: updateData.location
+        }
+      });
 
-      if (error) throw error;
+      if (error) {
+        console.error('RPC Error:', error);
+        // If RPC fails (e.g. doesn't exist), show specific alert
+        if (error.message.includes('function') && error.message.includes('does not exist')) {
+          alert('שגיאה: פונקציית העדכון חסרה.\nאנא הרץ את הקובץ CREATE_INVENTORY_UPDATE_RPC.sql ב-Supabase.');
+        } else {
+          alert('שגיאה בשמירת הנתונים: ' + error.message);
+        }
+        setLoading(false);
+        return;
+      }
 
-      // Refresh items
-      await fetchData();
+      // If data is null, something weird happened but RPC usually returns something specific
+      if (!data) {
+        console.warn('RPC returned no data');
+      }
+
+      // Optimistic update: instantly update the local state without waiting for fetch
+      setItems(prev => prev.map(i => i.id === itemId ? {
+        ...i,
+        ...updateData,
+        // Ensure we map back the type correctly if needed, though mostly visual
+        count_step: updateData.count_step,
+        low_stock_alert: updateData.low_stock_alert,
+        cost_per_unit: updateData.cost_per_unit,
+        location: updateData.location
+      } : i));
 
       // Show success message
       setConfirmModal({
@@ -877,7 +886,6 @@ const InventoryScreen = () => {
                         draftOrderQty={draftOrders[item.id]?.qty || 0}
                         onStockChange={handleStockUpdate}
                         onOrderChange={(itemId, val) => handleOrderChange(itemId, val, item)}
-                        onLocationChange={handleLocationUpdate}
                         onUpdate={handleItemUpdate}
                       />
                     ))

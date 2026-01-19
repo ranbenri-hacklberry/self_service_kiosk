@@ -215,7 +215,7 @@ const TasksManager = () => {
       // Map tab to correct category
       const categoryByTab = {
         'opening': 'פתיחה',
-        'pre_closing': 'הכנה',
+        'pre_closing': 'משימות',
         'closing': 'סגירה'
       };
       const category = categoryByTab[activeTab] || 'פתיחה';
@@ -392,7 +392,7 @@ const TasksManager = () => {
 
   const tabLabels = {
     'opening': 'פתיחה',
-    'pre_closing': 'הכנות',
+    'pre_closing': 'משימות',
     'closing': 'סגירה'
   };
 
