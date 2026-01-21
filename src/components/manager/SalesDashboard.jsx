@@ -209,6 +209,40 @@ const SalesDashboard = () => {
   useEffect(() => {
     if (currentUser?.business_id) {
       fetchSalesData();
+
+      // NEW: Realtime Sync for "Immediate Indicator"
+      const channel = supabase
+        .channel('schema-db-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'orders',
+            filter: `business_id=eq.${currentUser.business_id}`
+          },
+          (payload) => {
+            console.log('🔄 Realtime Order Update detected:', payload);
+            fetchSalesData(); // Trigger full refresh to update graphs and lists
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'order_items',
+            filter: `business_id=eq.${currentUser.business_id}`
+          },
+          () => {
+            fetchSalesData();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [viewMode, selectedDate, currentUser?.business_id]);
 
@@ -1027,7 +1061,7 @@ const SalesDashboard = () => {
                           <span className="font-bold font-mono text-xs">{timeStr}</span>
                         </div>
                         <div className="flex flex-col">
-                          <span className="font-black text-gray-900 text-base">{order.customer_name || 'לקוח מזדמן'}</span>
+                          <span className="font-black text-gray-900 text-base">{order.customer_name || order.customerName || 'לקוח מזדמן'}</span>
                           <span className="text-xs text-gray-500 flex items-center gap-1">
                             <Hash size={10} /> הזמנה {orderNum}
                           </span>

@@ -204,12 +204,12 @@ const SmartCart = ({
     // Use passed finalTotal if available, otherwise calculate
     const effectiveTotal = finalTotal !== undefined ? finalTotal : currentTotal;
 
-    console.log('🔍 SmartCart finalTotal check:', {
-        finalTotal,
-        currentTotal,
-        effectiveTotal,
-        loyaltyDiscount
-    });
+    // [CLEANED] console.log('🔍 SmartCart finalTotal check:', {
+    // [CLEANED]     finalTotal,
+    // [CLEANED]     currentTotal,
+    // [CLEANED]     effectiveTotal,
+    // [CLEANED]     loyaltyDiscount
+    // [CLEANED] });
 
     const originalTotal = editingOrderData?.originalTotal || 0;
     const originalIsPaid = editingOrderData?.isPaid || false;
@@ -227,16 +227,16 @@ const SmartCart = ({
     // New: Cancel Order if Unpaid + Empty
     const isCancelOrder = isEditMode && !originalIsPaid && cartItems.length === 0;
 
-    console.log('🛒 SmartCart Debug:', {
-        isEditMode,
-        originalIsPaid,
-        originalTotal,
-        effectiveTotal,
-        priceDifference,
-        isRefund,
-        isCancelOrder,
-        cartItemsCount: cartItems.length
-    });
+    // [CLEANED] console.log('🛒 SmartCart Debug:', {
+    // [CLEANED]     isEditMode,
+    // [CLEANED]     originalIsPaid,
+    // [CLEANED]     originalTotal,
+    // [CLEANED]     effectiveTotal,
+    // [CLEANED]     priceDifference,
+    // [CLEANED]     isRefund,
+    // [CLEANED]     isCancelOrder,
+    // [CLEANED]     cartItemsCount: cartItems.length
+    // [CLEANED] });
 
     // האם בוצע שינוי כלשהו מאז פתיחת העריכה?
     const hasChanges = cartHistory.length > 0;
@@ -251,16 +251,16 @@ const SmartCart = ({
         (isEditMode && originalIsPaid && isNoPriceChange && !hasChanges);
 
     // DEBUG: Log status decision values
-    console.log('🎯 SmartCart Status Decision:', {
-        isDisabled,
-        isRefund,
-        isAdditionalCharge,
-        isNoChange,
-        isCancelOrder,
-        isEditMode,
-        originalIsPaid,
-        priceDifference
-    });
+    // [CLEANED] console.log('🎯 SmartCart Status Decision:', {
+    // [CLEANED] isDisabled,
+    // [CLEANED]     isRefund,
+    // [CLEANED]     isAdditionalCharge,
+    // [CLEANED]     isNoChange,
+    // [CLEANED]     isCancelOrder,
+    // [CLEANED]     isEditMode,
+    // [CLEANED]     originalIsPaid,
+    // [CLEANED]     priceDifference
+    // [CLEANED] });
 
     // --- UI Config ---
     const statusConfig = useMemo(() => {
@@ -358,19 +358,19 @@ const SmartCart = ({
     }, [customerName]);
 
     // DEBUG: Check why button isn't showing
-    console.log('🛒 SmartCart Debug:', {
-        hasCustomerName: !!customerName,
-        customerName,
-        hasRealCustomer,
-        hasAddHandler: !!onAddCustomerDetails
-    });
+    // [CLEANED] console.log('🛒 SmartCart Debug:', {
+    // [CLEANED] hasCustomerName: !!customerName,
+    // [CLEANED]     customer_name: customerName,
+    // [CLEANED]     hasRealCustomer,
+    // [CLEANED]     hasAddHandler: !!onAddCustomerDetails
+    // [CLEANED]     });
 
     return (
         <div className={`flex flex-col h-full ${isDarkMode ? 'bg-slate-900' : 'bg-white'} ${className}`}>
             {/* Header */}
             <div className={`p-4 border-b ${isDarkMode ? 'border-slate-800 bg-slate-900 shadow-black/20' : 'border-gray-100 bg-white shadow-sm'} z-10 shadow-sm transition-colors duration-300`}>
-                {/* Single row header */}
-                <div className="flex items-center gap-1">
+                {/* Single row header with wrap support for small screens */}
+                <div className="flex items-center gap-2 flex-wrap">
 
                     {/* Logic: If name is 'Anonymous Guest', treat as no customer */}
                     {(() => {
@@ -380,21 +380,12 @@ const SmartCart = ({
 
                         return (
                             <>
-                                {/* Icon */}
-                                {/* <div className="bg-orange-100 p-2 rounded-xl flex-shrink-0">
-                                    <ShoppingBag className="w-5 h-5 text-orange-600" />
-                                </div> */}
-                                {/* User wanted exactly like screenshot - no icon shown there? Actually let's keep it minimal or hide if needed. 
-                                   Screenshot shows buttons on the right. Let's follow the screenshot layout.
-                                   Screenshot has: [Orange +Phone] [Gray +Name] ...
-                                */}
-
                                 {/* Case: No valid customer (or anonymous) - Show buttons */}
                                 {showAddButtons ? (
                                     <>
                                         {/* If we have a valid name but no phone, show name - RIGHTMOST */}
                                         {!isAnonymous && (
-                                            <h2 className={`text-xl font-black tracking-tight flex-shrink-0 ml-2 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                                            <h2 className={`text-xl font-black tracking-tight flex-shrink-0 ml-1 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
                                                 {customerName}
                                             </h2>
                                         )}
@@ -403,7 +394,7 @@ const SmartCart = ({
                                         {onAddCustomerDetails && (
                                             <button
                                                 onClick={() => onAddCustomerDetails('phone-then-name')}
-                                                className="px-4 py-2.5 rounded-lg bg-orange-500 text-white shadow-sm hover:bg-orange-600 transition-all font-bold text-sm flex items-center gap-1.5"
+                                                className="px-3 py-2 rounded-lg bg-orange-500 text-white shadow-sm hover:bg-orange-600 transition-all font-bold text-sm flex items-center gap-1.5 flex-grow justify-center sm:flex-grow-0"
                                             >
                                                 <Phone size={16} />
                                                 <span>טלפון</span>
@@ -414,7 +405,7 @@ const SmartCart = ({
                                         {isAnonymous && onAddCustomerDetails && (
                                             <button
                                                 onClick={() => onAddCustomerDetails('name')}
-                                                className={`px-4 py-2.5 rounded-lg border transition-all font-bold text-sm flex items-center gap-1.5 ${isDarkMode
+                                                className={`px-3 py-2 rounded-lg border transition-all font-bold text-sm flex items-center gap-1.5 flex-grow justify-center sm:flex-grow-0 ${isDarkMode
                                                     ? 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
                                                     : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
                                                     }`}
@@ -424,11 +415,11 @@ const SmartCart = ({
                                             </button>
                                         )}
 
-                                        {/* Delivery Button - NEW */}
-                                        {onSetDelivery && (
+                                        {/* Delivery Button - NEW (HIDDEN TEMPORARILY) */}
+                                        {/* {onSetDelivery && (
                                             <button
                                                 onClick={() => onSetDelivery()}
-                                                className={`px-4 py-2.5 rounded-lg border transition-all font-bold text-sm flex items-center gap-1.5 ${isDarkMode
+                                                className={`px-3 py-2 rounded-lg border transition-all font-bold text-sm flex items-center gap-1.5 flex-grow justify-center sm:flex-grow-0 ${isDarkMode
                                                     ? 'bg-purple-900/30 text-purple-300 border-purple-800/50 hover:bg-purple-900/50'
                                                     : 'bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-200'
                                                     }`}
@@ -436,11 +427,11 @@ const SmartCart = ({
                                                 <Truck size={16} />
                                                 <span>משלוח</span>
                                             </button>
-                                        )}
+                                        )} */}
                                     </>
                                 ) : (
                                     /* Case: Valid Customer with Phone */
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-3 w-full sm:w-auto">
                                         <div className="flex flex-col">
                                             <h2 className={`text-xl font-black tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
                                                 {customerName}
@@ -468,7 +459,7 @@ const SmartCart = ({
                                     {onToggleSoldierDiscount && !isRestrictedMode && (
                                         <button
                                             onClick={onToggleSoldierDiscount}
-                                            className={`px-4 py-2.5 rounded-lg font-bold text-sm flex items-center gap-1.5 transition-all ${soldierDiscountEnabled
+                                            className={`px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-1.5 transition-all text-nowrap ${soldierDiscountEnabled
                                                 ? 'bg-blue-600 text-white shadow-sm'
                                                 : isDarkMode
                                                     ? 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'

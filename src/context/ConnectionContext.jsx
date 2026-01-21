@@ -48,11 +48,9 @@ export const ConnectionProvider = ({ children }) => {
             const timeoutId = setTimeout(() => abortController.abort(), 3000); // 3s timeout
 
             const { error } = await supabase
-                .from('menu_items')
+                .from('businesses')
                 .select('id')
-                .limit(1)
-                .maybeSingle()
-                .abortSignal(abortController.signal);
+                .limit(1);
 
             clearTimeout(timeoutId);
             cloudOk = !error;

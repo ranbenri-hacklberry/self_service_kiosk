@@ -71,9 +71,20 @@ export const useLoyalty = ({
     // Calculate discount based on cart items and loyalty
     useEffect(() => {
         // Calculate how many free coffees the customer can redeem
-        // In the new model, we ONLY use points (10 points = 1 free coffee)
+        // Use the pre-calculated free_coffees from the database (updated when points reach 10)
         const effectivePoints = isEditMode ? adjustedLoyaltyPoints : loyaltyPoints;
-        let freeItemsCount = Math.floor(effectivePoints / 10);
+        // FIX: Use loyaltyFreeCoffees from DB, plus any additional from current points
+        let freeItemsCount = loyaltyFreeCoffees + Math.floor(effectivePoints / 10);
+
+        // DEBUG: Log values to understand why discount might not apply
+        // [CLEANED] console.log('🔍 [useLoyalty] Discount calculation:', {
+        // [CLEANED]         loyaltyFreeCoffees,
+        // [CLEANED]         loyaltyPoints,
+        // [CLEANED]         effectivePoints,
+        // [CLEANED]         freeItemsCount,
+        // [CLEANED]         coffeeItemsCount: coffeeItems.length,
+        // [CLEANED]         coffeeItems: coffeeItems.map(c => ({ name: c.name, is_hot_drink: c.is_hot_drink, price: c.price }))
+        // [CLEANED]     });
 
         // In edit mode with original discount, PRESERVE the original discount
         if (isEditMode && editingOrderData?.originalLoyaltyDiscount > 0) {

@@ -60,14 +60,13 @@ const MenuItemCard = ({ item, onAddToCart }) => {
           <div className={`w-full h-full animate-pulse ${isDarkMode ? 'bg-slate-800' : 'bg-slate-200'}`} />
         )}
         <img
-          src={bgImage}
+          src={item?.image}
           alt={item?.name}
           loading="lazy"
           className={`w-full h-full object-cover transition-transform duration-700 ease-out 
             ${isHovered ? 'scale-110' : 'scale-100'} 
             ${!imageLoaded ? 'opacity-0' : 'opacity-100'}`}
           onLoad={() => setImageLoaded(true)}
-          onError={() => setImageError(true)}
         />
 
         {/* Premium Dark Gradient Overlay - Always keep dark for text readability on background */}

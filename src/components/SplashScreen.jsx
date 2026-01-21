@@ -53,6 +53,7 @@ const SplashScreen = ({ onFinish }) => {
                 // --- 🔋 WEAK DEVICE DETECTION ---
                 const isWeakDevice = (navigator.deviceMemory && navigator.deviceMemory <= 4) ||
                     (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
+                    window.innerWidth < 1024 ||
                     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
                 if (isWeakDevice) {
@@ -171,10 +172,13 @@ const SplashScreen = ({ onFinish }) => {
 
                     {showSkipButton && (
                         <button
-                            onClick={() => onFinish()}
+                            onClick={() => {
+                                localStorage.setItem('lite_mode', 'true');
+                                onFinish();
+                            }}
                             className="mt-4 px-6 py-2 bg-white/10 hover:bg-white/20 text-white text-xs rounded-full border border-white/20 transition-all animate-bounce"
                         >
-                            דלג על סנכרון והכנס ➔
+                            דלג על סנכרון והכנס ➔ (Lite Mode)
                         </button>
                     )}
                 </div>

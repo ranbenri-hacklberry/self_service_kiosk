@@ -1,7 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { runSystemDiagnostics, simulateNightlyTraffic } from '../../services/healthCheck';
 import { useAuth } from '../../context/AuthContext';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+
+// 🛠️ Force local backend for diagnostics if we're on localhost
+const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? `http://${window.location.hostname}:8081`
+    : (import.meta.env.VITE_MUSIC_API_URL || `http://${window.location.hostname}:8081`);
 
 const SystemDiagnostics = ({ businessId }) => {
     const { currentUser } = useAuth();
@@ -10,8 +15,12 @@ const SystemDiagnostics = ({ businessId }) => {
 
     const [isRunning, setIsRunning] = useState(false);
     const [logs, setLogs] = useState([]);
-    const [activeProcess, setActiveProcess] = useState(null); // 'health', 'traffic'
+    const [activeProcess, setActiveProcess] = useState(null); // 'health', 'traffic', 'e2e'
+    const [liveScreenshot, setLiveScreenshot] = useState(null);
+    const [e2eLogs, setE2eLogs] = useState([]);
+    const [isWatchingE2E, setIsWatchingE2E] = useState(false);
     const logsEndRef = useRef(null);
+    const e2eIntervalRef = useRef(null);
 
     // Auto-scroll logs
     useEffect(() => {
@@ -88,32 +97,8 @@ const SystemDiagnostics = ({ businessId }) => {
                 {/* Control Panel */}
                 <div className="lg:col-span-1 flex flex-col gap-4">
 
-                    {/* Health Check Card */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-5 shadow-lg border border-blue-100"
-                    >
-                        <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-cyan-500 text-white rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-200">
-                            <span className="text-2xl">🔍</span>
-                        </div>
-                        <h3 className="text-lg font-bold text-blue-800 mb-1">בדיקת בריאות מהירה</h3>
-                        <p className="text-xs text-blue-600/70 mb-4">
-                            יצירה, סנכרון, עדכון ומחיקה של הזמנת בדיקה
-                        </p>
-                        <button
-                            onClick={handleRunHealthCheck}
-                            disabled={isRunning}
-                            className={`w-full py-3 px-4 rounded-xl font-bold transition-all transform ${isRunning
-                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                : 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white shadow-lg shadow-blue-300 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]'
-                                }`}
-                        >
-                            {isRunning && activeProcess === 'health' ? '⏳ בודק...' : '🚀 הרץ בדיקה'}
-                        </button>
-                    </motion.div>
-
                     {/* Simulation Card */}
+
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -139,6 +124,83 @@ const SystemDiagnostics = ({ businessId }) => {
                         </button>
                     </motion.div>
 
+                    {/* E2E Live Test Card */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 }}
+                        className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl p-5 shadow-lg border border-emerald-100"
+                    >
+                        <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-500 text-white rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-emerald-200">
+                            <span className="text-2xl">🎬</span>
+                        </div>
+                        <h3 className="text-lg font-bold text-emerald-800 mb-1">בדיקת E2E לייב</h3>
+                        <p className="text-xs text-emerald-600/70 mb-4">
+                            צפה בבדיקה בזמן אמת עם צילומי מסך
+                        </p>
+                        <div className="flex flex-col gap-2">
+                            <button
+                                onClick={async () => {
+                                    setIsWatchingE2E(true);
+                                    setE2eLogs([{ time: new Date().toISOString(), msg: '🚀 טוען בדיקה...', type: 'info' }]);
+
+                                    try {
+                                        const response = await fetch(`${API_URL}/api/run-e2e`, { method: 'POST' });
+                                        if (!response.ok) throw new Error('כבר רץ או שגיאה בשרת');
+
+                                        // Start polling if not already
+                                        if (!e2eIntervalRef.current) {
+                                            e2eIntervalRef.current = setInterval(() => {
+                                                setLiveScreenshot(`/screenshots/live.png?t=${Date.now()}`);
+                                                fetch(`/screenshots/log.json?t=${Date.now()}`)
+                                                    .then(r => r.ok ? r.json() : [])
+                                                    .then(data => setE2eLogs(data || []))
+                                                    .catch(() => { });
+                                            }, 1000);
+                                        }
+                                    } catch (err) {
+                                        addLog(`❌ שגיאת הפעלה: ${err.message}`);
+                                    }
+                                }}
+                                disabled={isWatchingE2E}
+                                className={`w-full py-3 px-4 rounded-xl font-bold transition-all transform ${isWatchingE2E
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                    : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white shadow-lg shadow-emerald-300 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]'
+                                    }`}
+                            >
+                                {isWatchingE2E ? '⚙️ בדיקה רצה...' : '🚀 הרץ בדיקה אוטומטית'}
+                            </button>
+
+                            <button
+                                onClick={() => {
+                                    setIsWatchingE2E(!isWatchingE2E);
+                                    if (!isWatchingE2E) {
+                                        // Start polling only
+                                        setLiveScreenshot(`/screenshots/live.png?t=${Date.now()}`);
+                                        e2eIntervalRef.current = setInterval(() => {
+                                            setLiveScreenshot(`/screenshots/live.png?t=${Date.now()}`);
+                                            fetch(`/screenshots/log.json?t=${Date.now()}`)
+                                                .then(r => r.ok ? r.json() : [])
+                                                .then(data => setE2eLogs(data || []))
+                                                .catch(() => { });
+                                        }, 1000);
+                                    } else {
+                                        if (e2eIntervalRef.current) clearInterval(e2eIntervalRef.current);
+                                    }
+                                }}
+                                className={`w-full py-2 px-4 rounded-xl font-bold transition-all text-sm ${isWatchingE2E
+                                    ? 'bg-red-500 hover:bg-red-600 text-white'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                                    }`}
+                            >
+                                {isWatchingE2E ? '⏹️ הפסק צפייה' : '👁️ צפה בלבד'}
+                            </button>
+                        </div>
+                        <p className="text-[10px] text-emerald-500 mt-2 text-center">
+                            הרץ בטרמינל: <code className="bg-emerald-100 px-1 rounded">node tests/e2e-live.test.js</code>
+                        </p>
+                    </motion.div>
+
                 </div>
 
                 {/* Console Output */}
@@ -150,18 +212,25 @@ const SystemDiagnostics = ({ businessId }) => {
                     {/* Console Header */}
                     <div className="bg-slate-800/80 backdrop-blur px-4 py-3 border-b border-slate-600 flex justify-between items-center shrink-0">
                         <div className="flex gap-2">
-                            <div className="w-3 h-3 rounded-full bg-red-500 shadow-lg shadow-red-500/50" />
+                            <div className={`w-3 h-3 rounded-full ${isWatchingE2E ? 'bg-red-500 animate-pulse' : 'bg-red-500'} shadow-lg shadow-red-500/50`} />
                             <div className="w-3 h-3 rounded-full bg-yellow-500 shadow-lg shadow-yellow-500/50" />
                             <div className="w-3 h-3 rounded-full bg-green-500 shadow-lg shadow-green-500/50" />
                         </div>
                         <div className="flex items-center gap-3">
-                            <span className="text-slate-400 text-xs">📟 System Logs</span>
-                            {logs.length > 0 && (
+                            <span className="text-slate-400 text-xs">
+                                {isWatchingE2E ? '🎬 E2E Live View' : '📟 System Logs'}
+                            </span>
+                            {isWatchingE2E && (
+                                <span className="px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-xs animate-pulse">
+                                    ● REC
+                                </span>
+                            )}
+                            {logs.length > 0 && !isWatchingE2E && (
                                 <button
                                     onClick={handleCopy}
                                     className={`px-4 py-1.5 rounded-lg font-bold text-xs transition-all transform hover:scale-105 active:scale-95 ${copied
-                                            ? 'bg-green-500 text-white shadow-lg shadow-green-500/50'
-                                            : 'bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-lg shadow-orange-400/50 hover:from-amber-500 hover:to-orange-600'
+                                        ? 'bg-green-500 text-white shadow-lg shadow-green-500/50'
+                                        : 'bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-lg shadow-orange-400/50 hover:from-amber-500 hover:to-orange-600'
                                         }`}
                                 >
                                     {copied ? '✅ הועתק!' : '📋 העתק הכל'}
@@ -170,39 +239,91 @@ const SystemDiagnostics = ({ businessId }) => {
                         </div>
                     </div>
 
-                    {/* Console Body */}
-                    <div className="flex-1 p-4 overflow-y-auto space-y-1 text-slate-300 min-h-0">
-                        {logs.length === 0 && (
-                            <div className="h-full flex flex-col items-center justify-center text-slate-500">
-                                <div className="text-6xl mb-4 animate-pulse">🖥️</div>
-                                <p className="text-lg font-bold">מוכן לפקודות...</p>
-                                <p className="text-xs text-slate-600 mt-1">לחץ על אחד הכפתורים להתחלה</p>
+                    {/* Console Body - Switch between logs and E2E view */}
+                    <div className="flex-1 p-4 overflow-y-auto text-slate-300 min-h-0">
+                        {isWatchingE2E ? (
+                            /* E2E Live View */
+                            <div className="h-full flex flex-col lg:flex-row gap-4">
+                                {/* Screenshot */}
+                                <div className="flex-1 bg-slate-800 rounded-xl overflow-hidden flex items-center justify-center min-h-[200px]">
+                                    {liveScreenshot ? (
+                                        <img
+                                            src={liveScreenshot}
+                                            alt="Live Screenshot"
+                                            className="w-full h-full object-contain"
+                                            onError={(e) => {
+                                                e.target.src = '';
+                                                e.target.alt = 'ממתין לצילום...';
+                                            }}
+                                        />
+                                    ) : (
+                                        <div className="text-slate-500 text-center">
+                                            <div className="text-4xl mb-2">📸</div>
+                                            <p>ממתין לצילום מסך...</p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Live Log */}
+                                <div className="lg:w-64 shrink-0 bg-slate-800 rounded-xl p-3 overflow-y-auto font-mono text-xs max-h-[200px] lg:max-h-full">
+                                    <div className="text-slate-400 mb-2 text-[10px] uppercase tracking-wider">
+                                        📋 Log ({e2eLogs.length})
+                                    </div>
+                                    {e2eLogs.length === 0 ? (
+                                        <div className="text-slate-500 text-center py-4">
+                                            <p>הרץ: node tests/e2e-live.test.js</p>
+                                        </div>
+                                    ) : (
+                                        e2eLogs.slice(-15).map((log, idx) => (
+                                            <div
+                                                key={idx}
+                                                className={`py-0.5 ${log.type === 'success' ? 'text-emerald-400' :
+                                                    log.type === 'error' ? 'text-red-400' :
+                                                        'text-slate-300'
+                                                    }`}
+                                            >
+                                                {log.msg}
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            /* Regular Logs View */
+                            <div className="space-y-1">
+                                {logs.length === 0 && (
+                                    <div className="h-full flex flex-col items-center justify-center text-slate-500 py-12">
+                                        <div className="text-6xl mb-4 animate-pulse">🖥️</div>
+                                        <p className="text-lg font-bold">מוכן לפקודות...</p>
+                                        <p className="text-xs text-slate-600 mt-1">לחץ על אחד הכפתורים להתחלה</p>
+                                    </div>
+                                )}
+
+                                {logs.map((log, idx) => (
+                                    <motion.div
+                                        key={idx}
+                                        initial={{ opacity: 0, x: -10 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        className={`flex gap-3 py-1 px-2 rounded-lg ${log.msg.includes('📊') || log.msg.includes('====')
+                                            ? 'bg-purple-900/30 border-l-2 border-purple-400'
+                                            : 'hover:bg-slate-800/50'
+                                            }`}
+                                    >
+                                        <span className="text-slate-500 select-none text-xs">[{log.time}]</span>
+                                        <span className={`flex-1 ${log.msg.includes('❌') ? 'text-red-400 font-bold' :
+                                            log.msg.includes('✅') ? 'text-emerald-400' :
+                                                log.msg.includes('⚠️') ? 'text-amber-400' :
+                                                    log.msg.includes('📊') ? 'text-purple-300 font-bold' :
+                                                        log.msg.includes('🎉') ? 'text-pink-400 font-bold' :
+                                                            log.msg.includes('💡') ? 'text-yellow-300' :
+                                                                log.msg.includes('📱') ? 'text-cyan-300' :
+                                                                    'text-slate-300'
+                                            }`}>{log.msg}</span>
+                                    </motion.div>
+                                ))}
+                                <div ref={logsEndRef} />
                             </div>
                         )}
-
-                        {logs.map((log, idx) => (
-                            <motion.div
-                                key={idx}
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                className={`flex gap-3 py-1 px-2 rounded-lg ${log.msg.includes('📊') || log.msg.includes('====')
-                                        ? 'bg-purple-900/30 border-l-2 border-purple-400'
-                                        : 'hover:bg-slate-800/50'
-                                    }`}
-                            >
-                                <span className="text-slate-500 select-none text-xs">[{log.time}]</span>
-                                <span className={`flex-1 ${log.msg.includes('❌') ? 'text-red-400 font-bold' :
-                                        log.msg.includes('✅') ? 'text-emerald-400' :
-                                            log.msg.includes('⚠️') ? 'text-amber-400' :
-                                                log.msg.includes('📊') ? 'text-purple-300 font-bold' :
-                                                    log.msg.includes('🎉') ? 'text-pink-400 font-bold' :
-                                                        log.msg.includes('💡') ? 'text-yellow-300' :
-                                                            log.msg.includes('📱') ? 'text-cyan-300' :
-                                                                'text-slate-300'
-                                    }`}>{log.msg}</span>
-                            </motion.div>
-                        ))}
-                        <div ref={logsEndRef} />
                     </div>
                 </motion.div>
             </div>

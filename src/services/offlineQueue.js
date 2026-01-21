@@ -661,15 +661,32 @@ export const syncQueue = async () => {
                     return { synced: 0, failed: 0 };
                 }
 
-                // 🧼 CLEANUP: Clear stale _processing flags
+                // 🧼 CLEANUP: Clear stuck _processing flags AND stale queue actions (Grok Recommendation #2)
                 try {
+                    // 1. Clear stuck processing flags
                     const stuckOrders = await db.orders.filter(o => o._processing === true).toArray();
                     if (stuckOrders.length > 0) {
                         console.log(`🧼 Cleaning up ${stuckOrders.length} stuck processing flags...`);
                         await Promise.all(stuckOrders.map(o => db.orders.update(o.id, { _processing: false })));
                     }
+
+                    // 2. Clear stale/dead actions (older than 24 hours or max retries)
+                    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+                    const allQueue = await db.offline_queue_v3.toArray();
+                    const deadActions = allQueue.filter(a =>
+                        (a.status === 'pending' || a.status === 'failed') &&
+                        (a.createdAt < twentyFourHoursAgo || (a.retries || 0) >= MAX_RETRIES)
+                    );
+
+                    if (deadActions.length > 0) {
+                        console.warn(`🧹 Purging ${deadActions.length} dead/stale offline actions...`);
+                        await Promise.all(deadActions.map(a => db.offline_queue_v3.update(a.id, {
+                            status: 'permanently_failed',
+                            error: 'Action timed out (24h) or reached max retries'
+                        })));
+                    }
                 } catch (e) {
-                    console.warn('Failed to cleanup stuck orders:', e);
+                    console.warn('Failed to cleanup stuck actions:', e);
                 }
 
                 const pending = await getPendingActions();
@@ -684,13 +701,20 @@ export const syncQueue = async () => {
 
                 for (const action of pending) {
                     try {
-                        await processAction(action);
-                        await markActionComplete(action.id);
-                        synced++;
-                        console.log(`✅ Synced ${action.type}:`, action.id);
+                        const result = await processAction(action);
+
+                        if (result?.skipped) {
+                            console.log(`⏭️ Action ${action.id} skipped: ${result.reason}`);
+                            await markActionComplete(action.id); // Done because skipped
+                        } else {
+                            await markActionComplete(action.id);
+                            synced++;
+                            console.log(`✅ Synced ${action.type}:`, action.id);
+                        }
                     } catch (error) {
                         console.error(`❌ Failed to sync ${action.type}:`, error);
-                        await markActionFailed(action.id, error);
+                        // Use unified error handler for retries/backoff
+                        await handleSyncError(action, error);
                         failed++;
                     }
                 }

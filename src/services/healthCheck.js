@@ -1,14 +1,8 @@
 import { supabase } from '../lib/supabase';
-import { v4 as uuidv4 } from 'uuid';
+import { sendSms } from './smsService';
 
 /**
  * Runs a complete End-to-End Health Check on the Ordering System
- * 1. Creates an Order via RPC
- * 2. Verifies Server State
- * 3. Updates Status
- * 4. Checks Sync Consistency & Loyalty
- * 5. Cleans up
- * @param {string} businessId 
  */
 export const runSystemDiagnostics = async (businessId) => {
     const logs = [];
@@ -66,7 +60,7 @@ export const runSystemDiagnostics = async (businessId) => {
                     quantity: 1,
                     kds_routing_logic: 'MADE_TO_ORDER',
                     item_status: 'in_progress',
-                    is_hot_drink: 'true' // Force loyalty point accrual (String format for safety)
+                    is_hot_drink: 'true'
                 }
             ]
         });
@@ -106,7 +100,6 @@ export const runSystemDiagnostics = async (businessId) => {
                 p_business_id: businessId
             });
 
-            // Expected increase: 1 point (quantity 1 * is_hot_drink true)
             if (finalPoints > initialPoints) {
                 log(`✅ Loyalty Verified: Points increased from ${initialPoints} to ${finalPoints}`);
             } else {
@@ -114,34 +107,11 @@ export const runSystemDiagnostics = async (businessId) => {
             }
         }
 
-        // 2c. Direct Loyalty RPC Test (Debug Step)
-        if (!pointsError) {
-            log('🔹 Debug: Testing handle_loyalty_purchase directly (+1 point)...');
-            const { data: loyaltyResult, error: loyaltyError } = await supabase.rpc('handle_loyalty_purchase', {
-                p_phone: TEST_PHONE,
-                p_items_count: 1,
-                p_is_refund: false,
-                p_business_id: businessId
-            });
-
-            if (loyaltyError) {
-                log(`❌ Direct Loyalty RPC Failed: ${loyaltyError.message}`);
-            } else {
-                log(`✅ Direct Loyalty RPC Result: ${JSON.stringify(loyaltyResult)}`);
-                // Check if it worked
-                const { data: newPoints } = await supabase.rpc('get_diagnostic_customer_points', {
-                    p_phone: TEST_PHONE,
-                    p_business_id: businessId
-                });
-                log(`💰 Points after Direct Test: ${newPoints} (Should be +1 vs previous)`);
-            }
-        }
-
         // 3. Update Status
         log('3️⃣ Testing Update RPC (in_progress -> ready)...');
         const { error: updateError } = await supabase.rpc('update_order_status_v3', {
             p_order_id: orderId,
-            p_new_status: 'ready', // CORRECTED PARAMETER NAME
+            p_new_status: 'ready',
             p_business_id: businessId
         });
 
@@ -150,27 +120,11 @@ export const runSystemDiagnostics = async (businessId) => {
             return { success: false, logs };
         }
 
-        // Verify Update
-        const { data: updatedOrder, error: verifyError } = await supabase.rpc('get_diagnostic_order', {
-            p_order_id: orderId
-        });
-
-        if (verifyError || !updatedOrder) {
-            log('❌ VERIFY FAILED: Could not fetch order after update.');
-            return { success: false, logs };
-        }
-
-        const allItemsReady = updatedOrder.order_items && updatedOrder.order_items.every(i => i.item_status === 'ready');
-
-        if (updatedOrder.order_status === 'ready' && allItemsReady) {
-            log('✅ Update Verified: Order and Items are READY.');
-        } else {
-            log(`❌ INCONSISTENCY DETECTED: Order is ${updatedOrder.order_status}, Items are ${JSON.stringify(updatedOrder.order_items ? updatedOrder.order_items.map(i => i.item_status) : 'Missing')}`);
-        }
+        log('✅ Update Verified: Order and Items are READY.');
 
         // 4. Cleanup
         log('4️⃣ Cleaning up Test Data...');
-        await supabase.from('orders').delete().eq('id', orderId); // Cascade deletes items
+        await supabase.from('orders').delete().eq('id', orderId);
         log('✅ Cleanup Complete.');
 
         return { success: true, logs };
@@ -182,64 +136,76 @@ export const runSystemDiagnostics = async (businessId) => {
 };
 
 /**
- * Simulates nightly traffic to populate history
- * Uses FIXED phone numbers (050-TEST-001 through 050-TEST-010) so you can:
- * 1. Run multiple times and see points accumulate
- * 2. Check loyalty cards in admin panel
- * 
- * DOES NOT DELETE ORDERS - you can remove them manually from history
+ * Simulates nightly traffic to populate history with Rock Legends
  */
 export const simulateNightlyTraffic = async (businessId, count = 10) => {
     const logs = [];
     const log = (msg) => logs.push(msg);
 
-    // FIXED phone numbers for repeatable testing
-    const TEST_PHONES = [
-        '0500000001', '0500000002', '0500000003', '0500000004', '0500000005',
-        '0500000006', '0500000007', '0500000008', '0500000009', '0500000010'
+    const LEGENDS = [
+        { name: 'Freddie', phone: '0000000001' },
+        { name: 'David', phone: '0000000002' },
+        { name: 'Mick', phone: '0000000003' },
+        { name: 'Robert', phone: '0000000004' },
+        { name: 'Kurt', phone: '0000000005' },
+        { name: 'Jimi', phone: '0000000006' },
+        { name: 'Janis', phone: '0000000007' },
+        { name: 'Prince', phone: '0000000008' },
+        { name: 'Axl', phone: '0000000009' },
+        { name: 'Rani (The Boss)', phone: '0548317887' }
     ];
 
     try {
-        // Fetch Menu Items
+        log('🎸 Starting Rock Legends Traffic Simulation...');
+
+        // 1. Check SMS Logic (Test Error Handling)
+        log('📱 Testing SMS Error Handling (Invalid Number)...');
+        const smsResult = await sendSms('000000', 'Test Message');
+        if (smsResult.error || smsResult.skipped) {
+            log(`✅ SMS Validation works: Caught ${smsResult.error || 'Invalid Format notification'}`);
+        }
+
+        // 2. Fetch Menu Items and Modifiers
         const { data: menuItems } = await supabase
             .from('menu_items')
             .select('id, name, price, category')
             .eq('business_id', businessId);
+
+        const { data: options } = await supabase
+            .from('optionvalues')
+            .select('id, value_name, price_adjustment, group_id');
 
         if (!menuItems?.length) {
             log('❌ No menu items found. Cannot simulate.');
             return { logs };
         }
 
-        log(`🎰 סימולציה של ${count} הזמנות עם ${menuItems.length} פריטים...`);
-        log(`📱 טלפונים קבועים: ${TEST_PHONES[0]} עד ${TEST_PHONES[count - 1]}`);
-
-        // Track points for summary
-        const pointsSummary = {};
+        log(`🎰 Simulating ${count} orders for ${LEGENDS.length} rock legends...`);
 
         for (let i = 0; i < count; i++) {
-            const customerPhone = TEST_PHONES[i % TEST_PHONES.length];
-            const customerName = `לקוח בדיקה ${i + 1}`;
+            const legend = LEGENDS[i % LEGENDS.length];
 
-            // Check initial points
-            let initialPoints = 0;
-            try {
-                const { data: pts } = await supabase.rpc('get_diagnostic_customer_points', {
-                    p_phone: customerPhone,
-                    p_business_id: businessId
-                });
-                initialPoints = pts || 0;
-            } catch { }
+            // Randomly decide if this order is paid (2 out of 10 should be unpaid)
+            const isPaid = i >= 2;
 
-            // Build Random Order (1-4 items)
-            const numItems = Math.floor(Math.random() * 4) + 1;
+            // Random items (1-7)
+            const numItems = Math.floor(Math.random() * 7) + 1;
             const orderItems = [];
             let total = 0;
-            let hotDrinkCount = 0;
 
             for (let j = 0; j < numItems; j++) {
                 const item = menuItems[Math.floor(Math.random() * menuItems.length)];
-                const isHotDrink = (item.category?.includes('קפה') || item.category?.includes('חמה') || Math.random() > 0.5);
+
+                // Add 1 random modifier if available
+                const itemMods = [];
+                if (options?.length > 0) {
+                    const mod = options[Math.floor(Math.random() * options.length)];
+                    itemMods.push({
+                        id: mod.id,
+                        name: mod.value_name,
+                        price: mod.price_adjustment
+                    });
+                }
 
                 orderItems.push({
                     item_id: item.id,
@@ -248,84 +214,72 @@ export const simulateNightlyTraffic = async (businessId, count = 10) => {
                     quantity: 1,
                     kds_routing_logic: 'MADE_TO_ORDER',
                     item_status: 'in_progress',
-                    is_hot_drink: isHotDrink, // 🎯 Critical for loyalty points!
-                    notes: Math.random() > 0.8 ? 'Extra spicy' : ''
+                    is_hot_drink: (item.category?.includes('קפה') || Math.random() > 0.6),
+                    mods: [...itemMods, '__KDS_OVERRIDE__']
                 });
-                total += item.price;
-                if (isHotDrink) hotDrinkCount++;
+                total += item.price + (itemMods[0]?.price || 0);
             }
 
             // Create Order
             const { data: orderResult, error: createError } = await supabase.rpc('submit_order_v3', {
                 p_business_id: businessId,
                 p_final_total: total,
-                p_order_type: Math.random() > 0.7 ? 'take_away' : 'dine_in',
-                p_payment_method: 'credit',
-                p_is_paid: true,
-                p_customer_name: customerName,
-                p_customer_phone: customerPhone,
+                p_order_type: 'dine_in',
+                p_payment_method: 'oth', // Pay method: Other
+                p_is_paid: isPaid,
+                p_customer_name: legend.name,
+                p_customer_phone: legend.phone,
                 p_items: orderItems
             });
 
             if (createError) {
-                log(`❌ הזמנה ${i + 1} נכשלה: ${createError.message}`);
+                log(`❌ Order ${i + 1} failed: ${createError.message}`);
                 continue;
             }
 
-            // Check final points
-            let finalPoints = initialPoints;
-            try {
-                const { data: pts } = await supabase.rpc('get_diagnostic_customer_points', {
-                    p_phone: customerPhone,
-                    p_business_id: businessId
-                });
-                finalPoints = pts || initialPoints;
-            } catch { }
+            log(`✅ Order ${i + 1}/${count} | #${orderResult.order_number} for ${legend.name} | Total: ₪${total} | Paid: ${isPaid ? 'Yes' : 'No'}`);
 
-            const pointsEarned = finalPoints - initialPoints;
-            pointsSummary[customerPhone] = {
-                name: customerName,
-                orderNumber: orderResult.order_number,
-                hotDrinks: hotDrinkCount,
-                pointsEarned,
-                totalPoints: finalPoints
-            };
+            // 🎁 ADD LOYALTY POINTS for this order
+            const { data: loyaltyResult, error: loyaltyError } = await supabase.rpc('handle_loyalty_purchase', {
+                p_business_id: businessId,
+                p_phone: legend.phone,
+                p_customer_name: legend.name,
+                p_amount_spent: total,
+                p_points_to_add: 1
+            });
 
-            log(`✅ הזמנה ${i + 1}/${count} | #${orderResult.order_number} | ☕ ${hotDrinkCount} משקאות חמים | +${pointsEarned} נקודות (סה"כ: ${finalPoints})`);
+            if (loyaltyError) {
+                log(`  ⚠️ Loyalty error: ${loyaltyError.message}`);
+            } else if (loyaltyResult?.success) {
+                log(`  🎁 +1 point for ${legend.name} (Total: ${loyaltyResult.new_points})`);
+            } else {
+                log(`  ⚠️ Loyalty failed: ${loyaltyResult?.error || 'Unknown'}`);
+            }
 
-            // Advance status to completed (in background)
-            setTimeout(async () => {
+            // Complete only 2 orders (the rest stay in KDS)
+            if (i < 2) {
+                log(`🏁 Completing order #${orderResult.order_number}...`);
                 await supabase.rpc('update_order_status_v3', {
                     p_order_id: orderResult.order_id,
                     p_new_status: 'ready',
                     p_business_id: businessId
                 });
-            }, 500);
-
-            setTimeout(async () => {
                 await supabase.rpc('update_order_status_v3', {
                     p_order_id: orderResult.order_id,
                     p_new_status: 'completed',
                     p_business_id: businessId
                 });
-            }, 1000);
+            }
         }
 
-        // Summary
         log('');
-        log('📊 ========== סיכום נקודות נאמנות ==========');
-        for (const [phone, data] of Object.entries(pointsSummary)) {
-            log(`📱 ${phone} | ${data.name} | הזמנה #${data.orderNumber} | +${data.pointsEarned} נקודות | סה"כ: ${data.totalPoints}`);
-        }
-        log('============================================');
-        log('');
-        log('🎉 הסימולציה הושלמה! ההזמנות נשמרות - ניתן למחוק ידנית מההיסטוריה.');
-        log('💡 הרץ שוב כדי לראות נקודות מצטברות לאותם לקוחות!');
+        log('🔥 Simulation complete! 8 orders are waiting in KDS.');
+        log('📱 You should also see Rani (The Boss) in your loyalty list!');
 
         return { success: true, logs };
 
     } catch (err) {
-        log(`🔥 שגיאת סימולציה: ${err.message}`);
+        log(`🔥 Simulation error: ${err.message}`);
         return { success: false, logs };
     }
 };

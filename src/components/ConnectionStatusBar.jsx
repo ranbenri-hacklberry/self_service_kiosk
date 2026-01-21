@@ -57,11 +57,18 @@ const ConnectionStatusBar = ({ isIntegrated = false }) => {
         <div className={`flex flex-col items-center gap-0.5 ${isIntegrated ? '' : 'fixed top-3 left-3 z-[100] bg-white/80 backdrop-blur-md p-1.5 rounded-xl border shadow-sm'}`} dir="rtl">
             {/* Business Name Badge */}
             {isOnline ? (
-                <div className="flex items-center gap-1.5 px-3 py-1 bg-green-50 border border-green-200 rounded-full">
-                    <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]" />
-                    <span className="text-xs font-bold text-green-700 leading-none">
-                        {businessName || 'מחובר'}
-                    </span>
+                <div className="flex flex-col items-center">
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-green-50 border border-green-200 rounded-full">
+                        <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]" />
+                        <span className="text-xs font-bold text-green-700 leading-none">
+                            {businessName || 'מחובר'}
+                        </span>
+                    </div>
+                    {lastSyncTime && (
+                        <span className="text-[10px] font-black text-slate-400 mt-0.5">
+                            סונכרן: {formatSyncTime(lastSyncTime)}
+                        </span>
+                    )}
                 </div>
             ) : isChecking ? (
                 <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200 rounded-full">

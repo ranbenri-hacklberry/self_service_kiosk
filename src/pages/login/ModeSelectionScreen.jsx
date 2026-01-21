@@ -249,6 +249,35 @@ const ModeSelectionScreen = () => {
                         </button>
                     )}
 
+                    {/* 8. Menu Editor - Manager/Owner Only */}
+                    {isManager && (
+                        <button
+                            onClick={() => navigate('/menu-editor')}
+                            className="hidden md:block group relative bg-white rounded-2xl p-5 hover:bg-violet-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-violet-100"
+                        >
+                            {/* Decorative Background */}
+                            <div className="absolute top-0 left-0 w-24 h-24 bg-violet-100 rounded-br-full -translate-x-6 -translate-y-6 group-hover:scale-110 transition-transform" />
+
+                            <div className="relative z-10 flex flex-col items-end">
+                                {/* Icon Container with Badge */}
+                                <div className="relative mb-3 group-hover:rotate-6 transition-transform">
+                                    <div className="w-12 h-12 bg-gradient-to-br from-violet-600 to-fuchsia-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                                        <Coffee size={24} strokeWidth={2.5} />
+                                    </div>
+                                    {/* Suspended Badge on Icon */}
+                                    <div className="absolute -top-2 -right-2 bg-yellow-400 text-slate-900 text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm z-20 border border-white/50">
+                                        BETA
+                                    </div>
+                                </div>
+
+                                <h2 className="text-xl font-black text-slate-900 mb-1">עריכת תפריט</h2>
+                                <p className="text-slate-500 text-sm leading-relaxed font-medium">
+                                    עריכת מנות ויצירת תמונות AI
+                                </p>
+                            </div>
+                        </button>
+                    )}
+
                     {/* 4b. Driver Screen - Only for drivers */}
                     {isDriver && (
                         <button

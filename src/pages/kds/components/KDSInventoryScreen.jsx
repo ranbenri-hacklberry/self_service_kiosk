@@ -488,6 +488,7 @@ const KDSInventoryScreen = ({ onExit }) => {
                 .from('inventory_items')
                 .select(`*, supplier:suppliers(*)`)
                 .eq('business_id', currentUser.business_id)
+                .order('category', { ascending: true })
                 .order('name')
                 .range(0, 2000);
 
@@ -1513,7 +1514,7 @@ const KDSInventoryScreen = ({ onExit }) => {
                                     <div className="flex flex-col min-w-0">
                                         <div className="flex items-center gap-2">
                                             <h4 className="font-bold text-slate-800 text-sm leading-tight truncate">{item.name}</h4>
-                                            {wpu > 0 && (
+                                            {wpu > 0 && item.category === 'ירקות' && (
                                                 <button
                                                     onClick={() => setExpandedItems(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
                                                     className="bg-gray-100 hover:bg-gray-200 text-gray-500 text-[10px] px-1.5 py-0.5 rounded font-bold transition-colors"

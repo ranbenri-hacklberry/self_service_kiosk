@@ -25,12 +25,12 @@ import { useMenuItems, useLoyalty, useCart } from './hooks';
 const ORDER_ORIGIN_STORAGE_KEY = 'order_origin';
 
 const MenuOrderingInterface = () => {
-  console.log('🚀 MenuOrderingInterface component rendering...');
+  // [CLEANED] console.log('🚀 MenuOrderingInterface component rendering...');
   const { currentUser, deviceMode } = useAuth();
   const { isDarkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
-  console.log('📍 Location state received:', location.state);
+  // [CLEANED] console.log('📍 Location state received:', location.state);
 
   // ===== Menu Items Hook (replaces local state + fetch logic) =====
   const {
@@ -121,14 +121,14 @@ const MenuOrderingInterface = () => {
 
   useEffect(() => {
     if (fromKDSParam) {
-      console.log('📡 Detected from=kds in URL, setting session storage');
+      // [CLEANED] console.log('📡 Detected from=kds in URL, setting session storage');
       sessionStorage.setItem(ORDER_ORIGIN_STORAGE_KEY, 'kds');
     }
   }, [fromKDSParam]);
 
   // --- Edit Mode Logic ---
   useEffect(() => {
-    console.log('🔄 MenuOrderingInterface mounted, location:', location);
+    // [CLEANED] console.log('🔄 MenuOrderingInterface mounted, location:', location);
 
     // Check URL params first (prio 1), then location.state (prio 2)
     const params = new URLSearchParams(location.search);
@@ -137,7 +137,7 @@ const MenuOrderingInterface = () => {
     const targetOrderId = urlEditId || stateEditId;
 
     if (targetOrderId) {
-      console.log('✏️ Entering Edit Mode for Order:', targetOrderId);
+      // [CLEANED] console.log('✏️ Entering Edit Mode for Order:', targetOrderId);
       setIsEditMode(true);
       sessionStorage.setItem(ORDER_ORIGIN_STORAGE_KEY, 'kds'); // Ensure return to KDS
 
@@ -153,10 +153,10 @@ const MenuOrderingInterface = () => {
 
           if (storedIdBase === targetIdBase) {
             if (storedEditData.restrictedMode) {
-              console.log('🔒 Restricted Edit Mode Active (History - Paid Order)');
+              // [CLEANED] console.log('🔒 Restricted Edit Mode Active (History - Paid Order)');
               setIsRestrictedMode(true);
             } else {
-              console.log('✏️ Full Edit Mode Active (History - Unpaid Order)');
+              // [CLEANED] console.log('✏️ Full Edit Mode Active (History - Unpaid Order)');
               setIsRestrictedMode(false);
             }
           } else {
@@ -183,13 +183,13 @@ const MenuOrderingInterface = () => {
     const pendingCartStateRaw = sessionStorage.getItem('pendingCartState');
     if (pendingCartStateRaw) {
       try {
-        console.log('🔄 Restoring cart state after customer identification...');
+        // [CLEANED] console.log('🔄 Restoring cart state after customer identification...');
         const pendingCartState = JSON.parse(pendingCartStateRaw);
 
         // Restore cart items
         if (pendingCartState.cartItems && pendingCartState.cartItems.length > 0) {
           cartSetItems(pendingCartState.cartItems);
-          console.log('🛒 Restored cart items:', pendingCartState.cartItems.length);
+          // [CLEANED] console.log('🛒 Restored cart items:', pendingCartState.cartItems.length);
         }
 
         // Restore modifier options cache
@@ -203,14 +203,14 @@ const MenuOrderingInterface = () => {
 
         // Clear the pending state
         sessionStorage.removeItem('pendingCartState');
-        console.log('✅ Cart state restored successfully');
+        // [CLEANED] console.log('✅ Cart state restored successfully');
 
         // Update currentCustomer from localStorage (should be set by phone/name screens)
         const storedCustomer = localStorage.getItem('currentCustomer');
         if (storedCustomer) {
           const customer = JSON.parse(storedCustomer);
           setCurrentCustomer(customer);
-          console.log('👤 Updated customer:', customer.name);
+          // [CLEANED] console.log('👤 Updated customer:', customer.name);
         }
       } catch (error) {
         console.error('❌ Error restoring cart state:', error);
@@ -221,7 +221,7 @@ const MenuOrderingInterface = () => {
     // --- CLEANUP SCRIPT FOR DUPLICATE LINKS (ITEMS 7, 8, 9) ---
     const runCleanup = async () => {
       const targetIds = [7, 8, 9];
-      console.log('🧹 RUNNING DUPLICATE CHECK & CLEANUP FOR:', targetIds);
+      // [CLEANED] console.log('🧹 RUNNING DUPLICATE CHECK & CLEANUP FOR:', targetIds);
 
       for (const itemId of targetIds) {
         // 1. Get groups that are OWNED by this item
@@ -242,12 +242,12 @@ const MenuOrderingInterface = () => {
                 .delete()
                 .eq('item_id', itemId)
                 .eq('group_id', group.id);
-              console.log('✅ Link removed. Now strictly private.');
+              // [CLEANED] console.log('✅ Link removed. Now strictly private.');
             }
           }
         }
       }
-      console.log('🏁 Cleanup finished.');
+      // [CLEANED] console.log('🏁 Cleanup finished.');
     };
     runCleanup();
     // -------------------------------------------------------------
@@ -258,7 +258,7 @@ const MenuOrderingInterface = () => {
       setIsLoading(true);
 
       // Validate orderId format
-      console.log('🔍 Fetching order for editing, ID:', orderId, 'Type:', typeof orderId);
+      // [CLEANED] console.log('🔍 Fetching order for editing, ID:', orderId, 'Type:', typeof orderId);
 
       if (!orderId || typeof orderId !== 'string') {
         console.error('❌ Invalid orderId:', orderId);
@@ -274,23 +274,23 @@ const MenuOrderingInterface = () => {
       }
       // Also handle stage suffixes like "-stage-2-ready" or "-stage-2"
       cleanOrderId = cleanOrderId.replace(/-stage-\d+$/, '');
-      console.log('🧹 Clean order ID:', cleanOrderId, '(original:', orderId, ')');
+      // [CLEANED] console.log('🧹 Clean order ID:', cleanOrderId, '(original:', orderId, ')');
 
       // Use RPC function to bypass RLS (same approach as KDS)
       const { data: order, error } = await supabase
         .rpc('get_order_for_editing', { p_order_id: cleanOrderId });
 
-      console.log('📊 RPC result - order:', order ? 'found' : 'null', 'error:', error);
+      // [CLEANED] console.log('📊 RPC result - order:', order ? 'found' : 'null', 'error:', error);
 
       if (order?.order_items) {
-        console.log('📦 Fetched Order Items from DB:', order.order_items.length);
-        console.log('💰 Fetched Order Total:', order.total_amount);
-        console.log('📦 Items details:', order.order_items.map(i => ({
-          id: i.id,
-          name: i.menu_items?.name,
-          course_stage: i.course_stage,
-          item_status: i.item_status
-        })));
+        // [CLEANED] console.log('📦 Fetched Order Items from DB:', order.order_items.length);
+        // [CLEANED] console.log('💰 Fetched Order Total:', order.total_amount);
+        // [CLEANED] console.log('📦 Items details:', order.order_items.map(i => ({
+        // [CLEANED]       id: i.id,
+        // [CLEANED]       name: i.menu_items?.name,
+        // [CLEANED]       course_stage: i.course_stage,
+        // [CLEANED]       item_status: i.item_status
+        // [CLEANED]     })));
       }
 
       if (error) {
@@ -303,7 +303,7 @@ const MenuOrderingInterface = () => {
         throw new Error(`הזמנה ${cleanOrderId} לא נמצאה`);
       }
 
-      console.log('✅ Order fetched successfully:', order.id);
+      // [CLEANED] console.log('✅ Order fetched successfully:', order.id);
 
       // WORKAROUND: Fetch course_stage AND item_status directly from table because RPC likely misses it or returns stale data
       let itemsStageMap = {};
@@ -320,7 +320,7 @@ const MenuOrderingInterface = () => {
             itemsStageMap[item.id] = item.course_stage;
             itemsStatusMap[item.id] = item.item_status;
           });
-          console.log('Data fetched directly:', { stages: itemsStageMap, statuses: itemsStatusMap });
+          // [CLEANED] console.log('Data fetched directly:', { stages: itemsStageMap, statuses: itemsStatusMap });
         }
       } catch (e) {
         console.error('Failed to fetch stages directly:', e);
@@ -356,13 +356,13 @@ const MenuOrderingInterface = () => {
             } else {
               customer = customers[0];
             }
-            console.log('📴 Customer loaded from Dexie:', customer?.name);
+            // [CLEANED] console.log('📴 Customer loaded from Dexie:', customer?.name);
           } catch (e) {
             console.warn('Dexie customer lookup failed:', e);
           }
         } else {
           // ONLINE: Fetch from Supabase
-          console.log('🌐 Online: Fetching customer from Supabase for phone:', order.customer_phone);
+          // [CLEANED] console.log('🌐 Online: Fetching customer from Supabase for phone:', order.customer_phone);
           // 🛡️ SECURITY FIX: Use safe RPC to bypass RLS
           const { data: rpcData, error: rpcError } = await supabase.rpc('lookup_delivery_customer', {
             p_phone: order.customer_phone,
@@ -385,7 +385,7 @@ const MenuOrderingInterface = () => {
             try {
               const { db } = await import('../../db/database');
               await db.customers.put(customer);
-              console.log('💾 Customer cached to Dexie:', customer.name);
+              // [CLEANED] console.log('💾 Customer cached to Dexie:', customer.name);
             } catch (e) {
               // Ignore cache error
             }
@@ -410,7 +410,7 @@ const MenuOrderingInterface = () => {
           };
           setCurrentCustomer(tempCustomer);
           localStorage.setItem('currentCustomer', JSON.stringify(tempCustomer));
-          console.log('👤 Using order customer data (not in DB):', tempCustomer);
+          // [CLEANED] console.log('👤 Using order customer data (not in DB):', tempCustomer);
         }
       } else if (order.customer_name) {
         // No phone but has name - use it
@@ -421,7 +421,7 @@ const MenuOrderingInterface = () => {
         };
         setCurrentCustomer(tempCustomer);
         localStorage.setItem('currentCustomer', JSON.stringify(tempCustomer));
-        console.log('👤 Using anonymous customer from order:', tempCustomer);
+        // [CLEANED] console.log('👤 Using anonymous customer from order:', tempCustomer);
       }
 
       // Transform items to cart format, filtering out cancelled items
@@ -544,10 +544,10 @@ const MenuOrderingInterface = () => {
         originalLoyaltyDiscount: loyaltyDiscountApplied // Store the discount that was applied
       };
 
-      console.log('💾 Setting editingOrderData:', editDataToSet);
-      console.log('💰 Original Cart Total (from items):', originalCartTotal);
-      console.log('💰 DB Total (may include discount):', order.total_amount);
-      console.log('💰 Original Loyalty Discount Applied:', loyaltyDiscountApplied);
+      // [CLEANED] console.log('💾 Setting editingOrderData:', editDataToSet);
+      // [CLEANED] console.log('💰 Original Cart Total (from items):', originalCartTotal);
+      // [CLEANED] console.log('💰 DB Total (may include discount):', order.total_amount);
+      // [CLEANED] console.log('💰 Original Loyalty Discount Applied:', loyaltyDiscountApplied);
 
       setEditingOrderData(editDataToSet);
       cartSetItems(loadedCartItems);
@@ -565,7 +565,7 @@ const MenuOrderingInterface = () => {
 
       // Fallback: If RPC doesn't return discount info, fetch directly
       if (discountId === undefined && discountAmount === undefined) {
-        console.log('🔍 Discount info missing from RPC, fetching directly...');
+        // [CLEANED] console.log('🔍 Discount info missing from RPC, fetching directly...');
         const { data: discountData } = await supabase
           .from('orders')
           .select('discount_id, discount_amount')
@@ -575,22 +575,22 @@ const MenuOrderingInterface = () => {
         if (discountData) {
           discountId = discountData.discount_id;
           discountAmount = discountData.discount_amount;
-          console.log('✅ Discount info fetched directly:', discountData);
+          // [CLEANED] console.log('✅ Discount info fetched directly:', discountData);
         }
       }
 
       if (discountId || discountAmount > 0) {
-        console.log('🎖️ Order has discount - restoring:', {
-          discount_id: discountId,
-          discount_amount: discountAmount
-        });
+        // [CLEANED] console.log('🎖️ Order has discount - restoring:', {
+        // [CLEANED] discount_id: discountId,
+        // [CLEANED]   discount_amount: discountAmount
+        // [CLEANED] });
 
         // Enable soldier discount and set the ID
         setSoldierDiscountEnabled(true);
         if (discountId) {
           setSoldierDiscountId(discountId);
         }
-        console.log('🎖️ Soldier discount restored for editing');
+        // [CLEANED] console.log('🎖️ Soldier discount restored for editing');
       }
 
       // CRITICAL: After loading order, verify restriction based on actual payment status
@@ -601,7 +601,7 @@ const MenuOrderingInterface = () => {
 
       // If RPC results are missing critical fields, fetch them directly
       if (dbIsPaid === undefined || dbStatus === undefined || dbPaymentMethod === undefined) {
-        console.log('🔍 Critical fields missing from RPC, fetching directly from orders table...');
+        // [CLEANED] console.log('🔍 Critical fields missing from RPC, fetching directly from orders table...');
         const { data: directOrder } = await supabase
           .from('orders')
           .select('is_paid, order_status, payment_method')
@@ -612,7 +612,7 @@ const MenuOrderingInterface = () => {
           dbIsPaid = directOrder.is_paid;
           dbStatus = directOrder.order_status;
           dbPaymentMethod = directOrder.payment_method;
-          console.log('✅ Direct fetch result:', { dbIsPaid, dbStatus, dbPaymentMethod });
+          // [CLEANED] console.log('✅ Direct fetch result:', { dbIsPaid, dbStatus, dbPaymentMethod });
 
           // Update editing data with payment method and isPaid
           setEditingOrderData(prev => ({
@@ -629,19 +629,19 @@ const MenuOrderingInterface = () => {
       // - Unpaid orders (even in history) are EDITABLE
       const shouldBeRestricted = dbStatus === 'cancelled';
 
-      console.log('🛡️ Final Restriction Decision:', {
-        dbIsPaid,
-        dbStatus,
-        shouldBeRestricted,
-        orderId: cleanOrderId
-      });
+      // [CLEANED] console.log('🛡️ Final Restriction Decision:', {
+      // [CLEANED] dbIsPaid,
+      // [CLEANED]   dbStatus,
+      // [CLEANED]   shouldBeRestricted,
+      // [CLEANED]   orderId: cleanOrderId
+      // [CLEANED] });
 
       setIsRestrictedMode(shouldBeRestricted ? true : false);
 
       // 🔥 CRITICAL: Clear the query param after successful load to prevent re-triggering
       const newParams = new URLSearchParams(searchParams);
       if (newParams.has('editOrderId')) {
-        console.log('🧹 Cleaning editOrderId from URL');
+        // [CLEANED] console.log('🧹 Cleaning editOrderId from URL');
         newParams.delete('editOrderId');
         setSearchParams(newParams, { replace: true });
       }
@@ -665,7 +665,7 @@ const MenuOrderingInterface = () => {
 
   // Unified helper to clear all order-related session data
   const clearOrderSessionState = () => {
-    console.log('🧹 Clearing order session state (Cart & Customer)');
+    // [CLEANED] console.log('🧹 Clearing order session state (Cart & Customer)');
     cartClearCart();
     setCurrentCustomer(null);
     localStorage.removeItem('currentCustomer');
@@ -685,10 +685,10 @@ const MenuOrderingInterface = () => {
     const editDataRaw = sessionStorage.getItem('editOrderData');
     const editData = editDataRaw ? JSON.parse(editDataRaw) : null;
 
-    console.log('🔙 handleCloseConfirmation - origin:', origin, 'viewMode:', editData?.viewMode, 'navigationTarget:', navigationFromConfirmation);
+    // [CLEANED] console.log('🔙 handleCloseConfirmation - origin:', origin, 'viewMode:', editData?.viewMode, 'navigationTarget:', navigationFromConfirmation);
 
     if (origin === 'kds') {
-      console.log('✅ Navigating back to KDS');
+      // [CLEANED] console.log('✅ Navigating back to KDS');
 
       // Determine if changes were made (any ADD_ITEM or REMOVE_ITEM in cart history)
       const hadChanges = cartHistory.some(h =>
@@ -755,7 +755,7 @@ const MenuOrderingInterface = () => {
     }
 
     // NO CHANGES or Loading Error - Clean up and navigate
-    console.log('🔙 Header Back clicked - Cleaning up and returning to:', origin || 'mode-selection');
+    // [CLEANED] console.log('🔙 Header Back clicked - Cleaning up and returning to:', origin || 'mode-selection');
 
     // 🛡️ CRITICAL: Clear AFTER capturing origin
     clearOrderSessionState();
@@ -901,11 +901,11 @@ const MenuOrderingInterface = () => {
   };
 
   const handleAddItemWithModifiers = (modifiedItem) => {
-    console.log('🛒 handleAddItemWithModifiers called:', {
-      modifiedItem_keys: Object.keys(modifiedItem || {}),
-      modifiedItem_id: modifiedItem?.id,
-      originalItem: selectedItemForMod
-    });
+    // [CLEANED] console.log('🛒 handleAddItemWithModifiers called:', {
+    // [CLEANED] modifiedItem_keys: Object.keys(modifiedItem || {}),
+    // [CLEANED]   modifiedItem_id: modifiedItem?.id,
+    // [CLEANED]     originalItem: selectedItemForMod
+    // [CLEANED] });
 
     setShowModifierModal(false);
 
@@ -1083,18 +1083,18 @@ const MenuOrderingInterface = () => {
   };
 
   const handleEditCartItem = (cartItem) => {
-    console.log('✏️ handleEditCartItem called with:', cartItem);
+    // [CLEANED] console.log('✏️ handleEditCartItem called with:', cartItem);
 
     if (!cartItem) {
       console.warn('⚠️ No cart item provided to edit');
       return;
     }
 
-    console.log('✏️ Setting up edit for item:', {
-      name: cartItem.name,
-      menu_item_id: cartItem.menu_item_id,
-      selectedOptions: cartItem.selectedOptions
-    });
+    // [CLEANED] console.log('✏️ Setting up edit for item:', {
+    // [CLEANED] name: cartItem.name,
+    // [CLEANED]   menu_item_id: cartItem.menu_item_id,
+    // [CLEANED]     selectedOptions: cartItem.selectedOptions
+    // [CLEANED] });
 
     setEditingCartItem(cartItem);
     setSelectedItemForMod({
@@ -1116,7 +1116,7 @@ const MenuOrderingInterface = () => {
 
     updateCartWithHistory((prevItems) => {
       if (!prevItems || prevItems.length === 0) {
-        console.log('🛒 Cart is already empty');
+        // [CLEANED] console.log('🛒 Cart is already empty');
         return prevItems;
       }
 
@@ -1164,14 +1164,14 @@ const MenuOrderingInterface = () => {
         return true;
       });
 
-      console.log('🛒 Cart after removal:', { before: prevItems.length, after: newItems.length });
+      // [CLEANED] console.log('🛒 Cart after removal:', { before: prevItems.length, after: newItems.length });
       return newItems || [];
     });
   };
 
   // Handle clearing entire cart - use hook function
   const handleClearCart = () => {
-    console.log('🧹 Clearing cart');
+    // [CLEANED] console.log('🧹 Clearing cart');
     cartClearCart();
   };
 
@@ -1183,13 +1183,13 @@ const MenuOrderingInterface = () => {
 
   // Calculate Loyalty Discount
   useEffect(() => {
-    console.log('🔄 Loyalty useEffect triggered:', {
-      hasCustomer: !!currentCustomer,
-      isEditMode,
-      hasEditData: !!editingOrderData,
-      loyaltyPoints,
-      cartItemsCount: cartItems.length
-    });
+    // [CLEANED] console.log('🔄 Loyalty useEffect triggered:', {
+    // [CLEANED] hasCustomer: !!currentCustomer,
+    // [CLEANED]   isEditMode,
+    // [CLEANED]   hasEditData: !!editingOrderData,
+    // [CLEANED]     loyaltyPoints,
+    // [CLEANED]     cartItemsCount: cartItems.length
+    // [CLEANED] });
 
     const isAnonymous = !currentCustomer ||
       String(currentCustomer.name).includes('אורח אנונימי') ||
@@ -1242,13 +1242,13 @@ const MenuOrderingInterface = () => {
 
     // Debug log for edit mode
     if (isEditMode && editingOrderData) {
-      console.log('🔍 Loyalty Debug (Edit Mode):', {
-        isEditMode,
-        isPaid: editingOrderData.isPaid,
-        rawLoyaltyBalance: loyaltyPoints,
-        adjustedLoyaltyPoints,
-        startCountUsed: startCount
-      });
+      // [CLEANED] console.log('🔍 Loyalty Debug (Edit Mode):', {
+      // [CLEANED] isEditMode,
+      // [CLEANED]   isPaid: editingOrderData.isPaid,
+      // [CLEANED]     rawLoyaltyBalance: loyaltyPoints,
+      // [CLEANED]       adjustedLoyaltyPoints,
+      // [CLEANED]       startCountUsed: startCount
+      // [CLEANED] });
     }
 
     // Create a flat list of all coffee items in cart (expanding quantities)
@@ -1299,14 +1299,15 @@ const MenuOrderingInterface = () => {
       }
     }
 
-    const freeItemsCount = freeCount;
+    // FIX: Add existing free coffees from database (credits already earned)
+    const freeItemsCount = freeCount + loyaltyFreeCoffees;
 
-    console.log('💰 Loyalty Calculation (Simple):', {
-      startPoints,
-      cartCoffeeCount,
-      freeItemsCount,
-      finalSimPoints: simPoints
-    });
+    // [CLEANED] console.log('💰 Loyalty Calculation (Simple):', {
+    // [CLEANED] startPoints,
+    // [CLEANED]   cartCoffeeCount,
+    // [CLEANED]   freeItemsCount,
+    // [CLEANED]   finalSimPoints: simPoints
+    // [CLEANED]     });
 
     let discount = 0;
 
@@ -1367,7 +1368,7 @@ const MenuOrderingInterface = () => {
 
         if (data && data.length > 0) {
           setSoldierDiscountId(data[0].id);
-          console.log('🎖️ Soldier discount enabled from DB:', data[0].id);
+          // [CLEANED] console.log('🎖️ Soldier discount enabled from DB:', data[0].id);
         } else {
           // Fallback: find any discount with "חייל" in name for this business
           const { data: fallback } = await supabase
@@ -1380,10 +1381,10 @@ const MenuOrderingInterface = () => {
 
           if (fallback && fallback.length > 0) {
             setSoldierDiscountId(fallback[0].id);
-            console.log('🎖️ Soldier discount enabled (fallback):', fallback[0].id);
+            // [CLEANED] console.log('🎖️ Soldier discount enabled (fallback):', fallback[0].id);
           } else {
             // No DB record - that's OK, we calculate 10% inline
-            console.log('🎖️ Soldier discount enabled (no DB record, using 10% inline)');
+            // [CLEANED] console.log('🎖️ Soldier discount enabled (no DB record, using 10% inline)');
           }
         }
       } catch (err) {
@@ -1439,7 +1440,7 @@ const MenuOrderingInterface = () => {
             if (deleteError) throw deleteError;
           }
 
-          console.log('✅ Order cancelled/deleted successfully');
+          // [CLEANED] console.log('✅ Order cancelled/deleted successfully');
           handleCloseConfirmation(); // Clears cart and navigates back
         } catch (err) {
           console.error('❌ Failed to cancel order:', err);
@@ -1460,7 +1461,7 @@ const MenuOrderingInterface = () => {
       const hasAddedItems = cartHistory.some(h => h.type === 'ADD_ITEM');
 
       if (Math.abs(priceDifference) === 0 && !hasAddedItems && editingOrderData?.isPaid) {
-        console.log('✏️ No price change and no new items, updating directly (skip confirmation)...');
+        // [CLEANED] console.log('✏️ No price change and no new items, updating directly (skip confirmation)...');
         handlePaymentSelect({
           paymentMethod: editingOrderData?.paymentMethod || 'cash',
           is_paid: editingOrderData?.isPaid,
@@ -1485,7 +1486,7 @@ const MenuOrderingInterface = () => {
 
   // Handler for adding customer details mid-order
   const handleAddCustomerDetails = (mode = 'phone-then-name') => {
-    console.log('👤 Opening customer info modal with mode:', mode);
+    // [CLEANED] console.log('👤 Opening customer info modal with mode:', mode);
     setCustomerInfoModalMode(mode);
     setShowCustomerInfoModal(true);
   };
@@ -1560,7 +1561,7 @@ const MenuOrderingInterface = () => {
               name: deliveryData.customerName || currentCustomer?.name
             })
             .eq('id', customerId);
-          console.log('✅ Customer address saved to database');
+          // [CLEANED] console.log('✅ Customer address saved to database');
         } catch (err) {
           console.error('Failed to save customer address:', err);
         }
@@ -1584,12 +1585,12 @@ const MenuOrderingInterface = () => {
 
   // Handle payment selection and order creation
   const handlePaymentSelect = async (orderData) => {
-    console.log('🚀 ========== START handlePaymentSelect ==========');
-    console.log('📦 Order Data:', orderData);
-    console.log('🛒 Cart Items:', cartItems);
-    console.log('💰 Cart Total:', cartTotal);
-    console.log('✏️ Is Edit Mode:', isEditMode);
-    console.log('📋 Editing Order Data:', editingOrderData);
+    // [CLEANED] console.log('🚀 ========== START handlePaymentSelect ==========');
+    // [CLEANED] console.log('📦 Order Data:', orderData);
+    // [CLEANED] console.log('🛒 Cart Items:', cartItems);
+    // [CLEANED] console.log('💰 Cart Total:', cartTotal);
+    // [CLEANED] console.log('✏️ Is Edit Mode:', isEditMode);
+    // [CLEANED] console.log('📋 Editing Order Data:', editingOrderData);
 
     // ⛔ CRITICAL GUARD: Prevent empty orders from being created
     if (!cartItems || cartItems.length === 0) {
@@ -1658,12 +1659,12 @@ const MenuOrderingInterface = () => {
       let cancelledItems = [];
 
       // Debug: בדיקת selectedOptions לפני המרה
-      console.log('🔍 Cart items before preparation:', cartItems.map(item => ({
-        id: item.id,
-        name: item.name,
-        selectedOptions: item.selectedOptions,
-        selectedOptions_type: Array.isArray(item.selectedOptions) ? 'array' : typeof item.selectedOptions
-      })));
+      // [CLEANED] console.log('🔍 Cart items before preparation:', cartItems.map(item => ({
+      // [CLEANED] id: item.id,
+      // [CLEANED]   name: item.name,
+      // [CLEANED]     selectedOptions: item.selectedOptions,
+      // [CLEANED]       selectedOptions_type: Array.isArray(item.selectedOptions) ? 'array' : typeof item.selectedOptions
+      // [CLEANED] })));
 
       if (isEditMode && editingOrderData?.originalItems) {
         const currentOrderItemIds = new Set(cartItems.map(item => item.id).filter(Boolean));
@@ -1680,7 +1681,7 @@ const MenuOrderingInterface = () => {
           const options = Array.isArray(item.selectedOptions)
             ? item.selectedOptions
               .filter(opt => {
-                console.log('🔍 Filtering option:', opt);
+                // [CLEANED] console.log('🔍 Filtering option:', opt);
                 // FIX: Allow strings (loaded from DB) to pass!
                 if (typeof opt === 'string') return true;
                 return opt?.valueId && !opt.valueName?.includes('רגיל');
@@ -1689,7 +1690,7 @@ const MenuOrderingInterface = () => {
                 // Use Name for KDS display, not UUID
                 // Handle case where opt is already a string (from DB load)
                 if (typeof opt === 'string') return opt;
-                console.log('🔍 Keeping option Name:', opt.valueName);
+                // [CLEANED] console.log('🔍 Keeping option Name:', opt.valueName);
                 return opt.valueName || opt.name;
               })
             : [];
@@ -1703,12 +1704,12 @@ const MenuOrderingInterface = () => {
             throw new Error(`Invalid item ID: ${item.name} has temporary ID but no menu_item_id`);
           }
 
-          console.log('🔍 Item ID extraction:', {
-            name: item.name,
-            menu_item_id: item.menu_item_id,
-            id: item.id,
-            final_item_id: itemId
-          });
+          // [CLEANED] console.log('🔍 Item ID extraction:', {
+          // [CLEANED] name: item.name,
+          // [CLEANED]   menu_item_id: item.menu_item_id,
+          // [CLEANED]     id: item.id,
+          // [CLEANED]       final_item_id: itemId
+          // [CLEANED]     });
 
           // Check if item.id is a valid UUID (existing item) or a temporary ID (new item)
           // Simple UUID regex check
@@ -1737,12 +1738,12 @@ const MenuOrderingInterface = () => {
             }
           }
 
-          console.log('🛡️ Save Status Check:', {
-            name: item.name,
-            isDelayed: item.isDelayed,
-            originalStatus: item.originalStatus,
-            finalStatus
-          });
+          // [CLEANED] console.log('🛡️ Save Status Check:', {
+          // [CLEANED] name: item.name,
+          // [CLEANED]   isDelayed: item.isDelayed,
+          // [CLEANED]     originalStatus: item.originalStatus,
+          // [CLEANED]       finalStatus
+          // [CLEANED]   });
 
           // Calculate discount per item if soldier discount is enabled
           const itemPrice = item.price || item.unit_price;
@@ -1808,12 +1809,12 @@ const MenuOrderingInterface = () => {
               throw new Error(`Invalid item: ${item.name} has no valid menu_item_id (got: ${itemId})`);
             }
 
-            console.log('🔍 Item ID extraction:', {
-              name: item.name,
-              menu_item_id: item.menu_item_id,
-              id: item.id,
-              final_item_id: itemId
-            });
+            // [CLEANED] console.log('🔍 Item ID extraction:', {
+            // [CLEANED] name: item.name,
+            // [CLEANED]   menu_item_id: item.menu_item_id,
+            // [CLEANED]     id: item.id,
+            // [CLEANED]       final_item_id: itemId
+            // [CLEANED]     });
 
             // Calculate discount per item if soldier discount is enabled
             const itemPrice = item.price || item.unit_price;
@@ -1882,7 +1883,7 @@ const MenuOrderingInterface = () => {
           if (custError) {
             console.warn('⚠️ Failed to auto-create customer record:', custError);
           } else if (guaranteedId) {
-            console.log('✅ Customer record secured:', guaranteedId);
+            // [CLEANED] console.log('✅ Customer record secured:', guaranteedId);
             finalCustomerId = guaranteedId;
 
             // 2. Save Address to Customer Record (if provided)
@@ -1896,7 +1897,7 @@ const MenuOrderingInterface = () => {
                 .eq('id', guaranteedId);
 
               if (addrError) console.warn('⚠️ Failed to save address to customer:', addrError);
-              else console.log('✅ Address saved to customer record');
+              // [CLEANED] else console.log('✅ Address saved to customer record');
             }
           }
         } catch (err) {
@@ -1933,16 +1934,16 @@ const MenuOrderingInterface = () => {
         p_delivery_notes: typeof deliveryNotes === 'string' ? deliveryNotes : null
       };
 
-      console.log('📦 DELIVERY DEBUG:', {
-        type: orderPayload.p_order_type,
-        addressInState: deliveryAddress,
-        addressInPayload: orderPayload.p_delivery_address,
-        hasRealPhone: !!realPhone,
-        customerName: customerNameForOrder
-      });
+      // [CLEANED] console.log('📦 DELIVERY DEBUG:', {
+      // [CLEANED] type: orderPayload.p_order_type,
+      // [CLEANED]   addressInState: deliveryAddress,
+      // [CLEANED]     addressInPayload: orderPayload.p_delivery_address,
+      // [CLEANED]       hasRealPhone: !!realPhone,
+      // [CLEANED]         customerName: customerNameForOrder
+      // [CLEANED]       });
 
       console.log('📤 Sending Order Payload:', JSON.stringify(orderPayload, null, 2));
-      console.log('💰 p_final_total sent:', orderPayload.p_final_total); // <--- בדיקה קריטית
+      // [CLEANED] console.log('💰 p_final_total sent:', orderPayload.p_final_total); // <--- בדיקה קריטית
       console.log('  - Items count:', orderPayload.p_items?.length || 0);
       console.log('  - Cancelled items count:', orderPayload.p_cancelled_items?.length || 0);
       console.log('  - Edit mode:', orderPayload.edit_mode || false);
@@ -1950,10 +1951,10 @@ const MenuOrderingInterface = () => {
 
 
       console.log('📤 Calling submit_order_v3 with payload');
-      console.log('🔍 User Context for RPC:', {
-        phone: currentUser?.whatsapp_phone,
-        isDemo: currentUser?.whatsapp_phone === '0500000000' || currentUser?.whatsapp_phone === '0501111111'
-      });
+      // [CLEANED] console.log('🔍 User Context for RPC:', {
+      // [CLEANED] phone: currentUser?.whatsapp_phone,
+      // [CLEANED]   isDemo: currentUser?.whatsapp_phone === '0500000000' || currentUser?.whatsapp_phone === '0501111111'
+      // [CLEANED]       });
 
       // OFFLINE-FIRST: Check if we're online before attempting to submit
       let orderResult = null;
@@ -1970,7 +1971,7 @@ const MenuOrderingInterface = () => {
         // This prevents duplicate items when editing orders
       } else {
         // OFFLINE: Save locally and queue for sync
-        console.log('📴 Offline: Saving order locally...');
+        // [CLEANED] console.log('📴 Offline: Saving order locally...');
 
         try {
           const { db } = await import('../../db/database');
@@ -2030,7 +2031,7 @@ const MenuOrderingInterface = () => {
             offline: true
           };
 
-          console.log('✅ Order saved locally:', localOrderId);
+          // [CLEANED] console.log('✅ Order saved locally:', localOrderId);
         } catch (offlineErr) {
           console.error('❌ Failed to save order offline:', offlineErr);
           orderError = { message: 'לא ניתן לשמור הזמנה אופליין. נסה שוב.' };
@@ -2054,7 +2055,7 @@ const MenuOrderingInterface = () => {
         const hasNewItems = cartItems.some(item => !item.id || item.id.toString().includes('temp'));
 
         if (hasNewItems) {
-          console.log('🔄 New items added to completed order. Resetting status to in_progress...');
+          // [CLEANED] console.log('🔄 New items added to completed order. Resetting status to in_progress...');
           const { error: statusError } = await supabase
             .from('orders')
             .update({ order_status: 'in_progress', updated_at: new Date().toISOString() })
@@ -2063,14 +2064,14 @@ const MenuOrderingInterface = () => {
           if (statusError) {
             console.error('Failed to reset order status:', statusError);
           } else {
-            console.log('✅ Order status reset to in_progress');
+            // [CLEANED] console.log('✅ Order status reset to in_progress');
           }
         } else {
           console.log('📝 Editing completed order (no new items) - keeping completed status');
         }
       }
       const orderNumber = orderResult?.order_number;
-      console.log('✅ Order created/updated successfully!');
+      // [CLEANED] console.log('✅ Order created/updated successfully!');
       console.log('  - Order ID:', orderId);
       console.log('  - Order Number:', orderNumber);
 
@@ -2091,11 +2092,11 @@ const MenuOrderingInterface = () => {
       // OFFLINE FIX: Only fetch if online
       if (loyaltyPointsForConfirmation === 0 && customerId && realPhone && isOnline) {
         try {
-          console.log('🔄 Loyalty count is 0, fetching fresh count for confirmation modal...');
+          // [CLEANED] console.log('🔄 Loyalty count is 0, fetching fresh count for confirmation modal...');
           const freshCount = await getLoyaltyCount(realPhone, currentUser);
           if (typeof freshCount === 'number') {
             loyaltyPointsForConfirmation = freshCount;
-            console.log('✅ Fetched fresh loyalty count:', freshCount);
+            // [CLEANED] console.log('✅ Fetched fresh loyalty count:', freshCount);
           }
         } catch (lError) {
           console.warn('Loyalty fetch failed in confirmation background:', lError);
@@ -2107,7 +2108,7 @@ const MenuOrderingInterface = () => {
       const paymentStatus = isRefund ? 'זיכוי' : (orderData?.is_paid ? 'שולם' : 'טרם שולם');
       const refundAmount = isRefund ? Math.abs(cartTotal - originalTotalForRefund) : 0;
 
-      console.log('📋 Confirmation Modal Data:');
+      // [CLEANED] console.log('📋 Confirmation Modal Data:');
       console.log('  - Order ID:', orderId);
       console.log('  - Order Number:', orderNumber);
       console.log('  - Customer Name:', customerNameForOrder || 'אורח');
@@ -2335,7 +2336,7 @@ const MenuOrderingInterface = () => {
           {/* Sync Button */}
           <button
             onClick={async (e) => {
-              console.log('🔄 Sync button clicked!');
+              // [CLEANED] console.log('🔄 Sync button clicked!');
               const btn = e.currentTarget;
               btn.classList.add('animate-spin');
               btn.disabled = true;
@@ -2344,7 +2345,7 @@ const MenuOrderingInterface = () => {
                 console.log('📥 Starting sync...');
                 const { initialLoad } = await import('../../services/syncService');
                 const result = await initialLoad(currentUser?.business_id);
-                console.log('✅ Sync result:', result);
+                // [CLEANED] console.log('✅ Sync result:', result);
                 alert('✅ סנכרון הושלם! רענן את הדף.');
               } catch (err) {
                 console.error('❌ Sync error:', err);
@@ -2441,7 +2442,7 @@ const MenuOrderingInterface = () => {
         </div>
 
         {/* Cart Panel - Second in DOM = Left in RTL */}
-        <div className={`lg:w-96 lg:border-r ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200'} shadow-sm z-10 compact-sidebar-w`}>
+        <div className={`lg:w-[420px] lg:border-r ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200'} shadow-sm z-10 compact-sidebar-w`}>
           <div className="sticky top-16 h-[calc(100vh-64px)] flex flex-col">
             <SmartCart
               cartItems={cartItems}

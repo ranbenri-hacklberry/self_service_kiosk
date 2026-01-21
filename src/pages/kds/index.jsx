@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, LayoutGroup } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutGrid, Package, Plus, RotateCcw,
@@ -159,6 +159,47 @@ transform: scale(1.02);
     width: 100%;
   }
 
+  /* Linear Progress Loader */
+  .kds-loader-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: #e2e8f0;
+    overflow: hidden;
+    z-index: 50;
+    border-radius: 4px 4px 0 0;
+  }
+  .kds-loader-progress {
+    width: 30%;
+    height: 100%;
+    background: #3b82f6;
+    animation: kds-loading 1.5s infinite ease-in-out;
+  }
+  @keyframes kds-loading {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+  }
+
+  /* 🕒 Aging Order States */
+  .aging-warn {
+    background-color: #fffbeb !important; /* amber-50 */
+    border: 2px solid #fbbf24 !important; /* amber-400 */
+    box-shadow: 0 0 15px rgba(251, 191, 36, 0.2);
+  }
+
+  .aging-critical {
+    background-color: #fef2f2 !important; /* red-50 */
+    border: 3px solid #ef4444 !important; /* red-500 */
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+    animation: aging-pulse 2s infinite ease-in-out;
+  }
+
+  @keyframes aging-pulse {
+    0%, 100% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.3); border-color: #ef4444; background-color: #fef2f2 !important; }
+    50% { box-shadow: 0 0 30px rgba(239, 68, 68, 0.6); border-color: #dc2626; transform: scale(1.01); background-color: #fee2e2 !important; }
+  }
   .scroll-btn-pulse {
     animation: btn-pulse 1.2s ease-in-out infinite;
     border-color: #3b82f6;
@@ -486,6 +527,8 @@ const Header = ({
 
 const KdsScreen = () => {
   const { currentUser } = useAuth();
+  const isLiteMode = React.useMemo(() => localStorage.getItem('lite_mode') === 'true', []);
+
   const {
     currentOrders,
     completedOrders,
@@ -509,6 +552,16 @@ const KdsScreen = () => {
     handleConfirmPayment,
     handleCancelOrder
   } = useKDSData();
+
+  // 🟣 DIAGNOSTIC LOGGING - Moved after initialization
+  useEffect(() => {
+    console.log('%c[KDS-UI] 🖥️ Rendering KDS Screen...', 'color: #8b5cf6; font-weight: bold;', {
+      current: currentOrders ? currentOrders.length : 0,
+      completed: completedOrders ? completedOrders.length : 0,
+      isLoading,
+      businessId: currentUser?.business_id
+    });
+  }, [currentOrders?.length, completedOrders?.length, isLoading, currentUser?.business_id]);
 
   const [newOrderIds, setNewOrderIds] = useState(new Set());
   // Toggle to show/hide pending orders (e.g., delivery orders awaiting acknowledgment)
@@ -588,6 +641,10 @@ const KdsScreen = () => {
   // Persistence Effects
   useEffect(() => {
     localStorage.setItem('kds_viewMode', viewMode);
+    // Reset date to today whenever switching to history
+    if (viewMode === 'history') {
+      setSelectedDate(new Date());
+    }
   }, [viewMode]);
 
   useEffect(() => {
@@ -693,7 +750,7 @@ const KdsScreen = () => {
         } catch (err) {
           if (err.name !== 'AbortError') console.error("History load error", err);
         } finally {
-          if (!controller.signal.aborted) setIsHistoryLoading(false);
+          setIsHistoryLoading(false);
         }
       };
 
@@ -736,6 +793,11 @@ const KdsScreen = () => {
 
       {/* מסגרת מלאה */}
       <div className="bg-slate-50 w-full h-full rounded-[24px] overflow-hidden shadow-2xl flex flex-col relative ring-4 ring-gray-800">
+        {isLoading && (
+          <div className="kds-loader-bar">
+            <div className="kds-loader-progress" />
+          </div>
+        )}
         <Header
           onRefresh={handleRefresh}
           isLoading={isLoading || isHistoryLoading}
@@ -759,178 +821,214 @@ const KdsScreen = () => {
               : currentOrders.filter(o => o.orderStatus !== 'pending');
 
             return (
-              <div className="flex-1 flex flex-col overflow-hidden">
-                <KDSScrollContainer
-                  title="בטיפול"
-                  orders={filteredCurrentOrders}
-                  colorClass="border-b-4 border-gray-200 bg-slate-100/50"
-                  badgeClass="bg-white/90 border border-gray-200 text-slate-600"
-                >
-                  {filteredCurrentOrders.map(order => (
-                    <motion.div
-                      key={order.id}
-                      layout="position"
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{
-                        layout: { type: "spring", stiffness: 300, damping: 30 },
-                        opacity: { duration: 0.2 },
-                        scale: { duration: 0.2 }
-                      }}
-                      className="flex-shrink-0 kds-card-item"
-                    >
-                      <OrderCard
-                        key={order.id} // RELIABLE STABLE KEY
-                        order={order}
-                        glowClass={newOrderIds.has(order.id) ? 'glow-active' : ''}
-                        onOrderStatusUpdate={handleStatusUpdate}
-                        onPaymentCollected={handlePaymentCollected}
-                        onFireItems={handleFireItems}
-                        onToggleEarlyDelivered={handleToggleEarlyDelivered}
-                        onEditOrder={handleEditOrder}
-                        onCancelOrder={handleCancelOrder}
-                        onRefresh={forceRefresh}
-                      />
-                    </motion.div>
-                  ))}
-                </KDSScrollContainer>
+              <LayoutGroup>
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  <KDSScrollContainer
+                    title="בטיפול"
+                    orders={filteredCurrentOrders}
+                    colorClass="border-b-4 border-gray-200 bg-slate-100/50"
+                    badgeClass="bg-white/90 border border-gray-200 text-slate-600"
+                  >
+                    {filteredCurrentOrders.map(order => {
+                      const CardWrapper = isLiteMode ? 'div' : motion.div;
+                      const wrapperProps = isLiteMode ? { className: "flex-shrink-0 kds-card-item" } : {
+                        layoutId: `order-${order.id}`,
+                        initial: { opacity: 0.8, scale: 0.98 },
+                        animate: { opacity: 1, scale: 1 },
+                        exit: { opacity: 0, scale: 0.95, transition: { duration: 0.15 } },
+                        transition: {
+                          layout: { type: "spring", stiffness: 400, damping: 35 },
+                          opacity: { duration: 0.15 },
+                          scale: { duration: 0.15 }
+                        },
+                        className: "flex-shrink-0 kds-card-item"
+                      };
 
-                <KDSScrollContainer
-                  title="מוכן למסירה"
-                  orders={completedOrders}
-                  colorClass="bg-green-50/30"
-                  badgeClass="bg-green-100 border border-green-200 text-green-700"
-                >
-                  {completedOrders.map(order => (
-                    <motion.div
-                      key={order.id}
-                      layout="position"
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{
-                        layout: { type: "spring", stiffness: 300, damping: 30 },
-                        opacity: { duration: 0.2 },
-                        scale: { duration: 0.2 }
-                      }}
-                      className="flex-shrink-0 kds-card-item"
-                    >
-                      <OrderCard
-                        key={order.id} // RELIABLE STABLE KEY
-                        order={order} isReady={true}
-                        glowClass={newOrderIds.has(order.id) ? 'glow-ready' : ''}
-                        onOrderStatusUpdate={handleStatusUpdate}
-                        onPaymentCollected={handlePaymentCollected}
-                        onToggleEarlyDelivered={handleToggleEarlyDelivered}
-                        onEditOrder={handleEditOrder}
-                        onCancelOrder={handleCancelOrder}
-                        onRefresh={forceRefresh}
-                      />
-                    </motion.div>
-                  ))}
-                </KDSScrollContainer>
-              </div>
+                      return (
+                        <CardWrapper key={order.id} {...wrapperProps}>
+                          <OrderCard
+                            key={order.id} // RELIABLE STABLE KEY
+                            order={order}
+                            glowClass={newOrderIds.has(order.id) ? (isLiteMode ? 'border-2 border-orange-400' : 'glow-active') : ''}
+                            onOrderStatusUpdate={handleStatusUpdate}
+                            onPaymentCollected={handlePaymentCollected}
+                            onFireItems={handleFireItems}
+                            onReadyItems={handleReadyItems}
+                            onEditOrder={handleEditOrder}
+                            onCancelOrder={handleCancelOrder}
+                            onRefresh={forceRefresh}
+                          />
+                        </CardWrapper>
+                      );
+                    })}
+                  </KDSScrollContainer>
+
+                  <KDSScrollContainer
+                    title="מוכן למסירה"
+                    orders={completedOrders}
+                    colorClass="bg-white"
+                    badgeClass="bg-green-100 border border-green-200 text-green-700"
+                  >
+                    {completedOrders.map(order => {
+                      const CardWrapper = isLiteMode ? 'div' : motion.div;
+                      const wrapperProps = isLiteMode ? { className: "flex-shrink-0 kds-card-item" } : {
+                        layoutId: `order-${order.id}`,
+                        initial: { opacity: 0.8, scale: 0.98 },
+                        animate: { opacity: 1, scale: 1 },
+                        exit: { opacity: 0, scale: 0.95, transition: { duration: 0.15 } },
+                        transition: {
+                          layout: { type: "spring", stiffness: 400, damping: 35 },
+                          opacity: { duration: 0.15 },
+                          scale: { duration: 0.15 }
+                        },
+                        className: "flex-shrink-0 kds-card-item"
+                      };
+
+                      return (
+                        <CardWrapper key={order.id} {...wrapperProps}>
+                          <OrderCard
+                            key={order.id} // RELIABLE STABLE KEY
+                            order={order}
+                            isReady={true}
+                            glowClass={newOrderIds.has(order.id) ? (isLiteMode ? 'border-2 border-green-400' : 'glow-ready') : ''}
+                            onOrderStatusUpdate={handleStatusUpdate}
+                            onPaymentCollected={handlePaymentCollected}
+                            onToggleEarlyDelivered={handleToggleEarlyDelivered}
+                            onEditOrder={handleEditOrder}
+                            onCancelOrder={handleCancelOrder}
+                            onRefresh={forceRefresh}
+                          />
+                        </CardWrapper>
+                      );
+                    })}
+                  </KDSScrollContainer>
+                </div>
+              </LayoutGroup>
             );
           })() : (
-            <div className="flex-1 relative bg-purple-50/30 flex flex-col min-h-0 pb-safe">
-              {/* History List - Horizontal Scroll similar to active */}
-              <div className="flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap p-2 pt-2 pb-2 custom-scrollbar">
-                {isHistoryLoading ? (
-                  <div className="h-full w-full flex items-center justify-center text-purple-400 gap-2">
-                    <RefreshCw className="animate-spin" /> טוען היסטוריה...
-                  </div>
-                ) : (
-                  <div className="flex h-full flex-row justify-start gap-1 items-stretch">
-                    {historyOrders.length === 0 ? (
-                      <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 opacity-60 ml-20">
-                        <History size={48} className="mb-2" />
-                        <p>אין הזמנות לתאריך זה</p>
-                      </div>
-                    ) : (
-                      historyOrders.map(order => (
-                        <OrderCard
-                          key={`${order.id}-${order.created_at || order.timestamp}-${selectedDate.toISOString().split('T')[0]}`} // Robust Unique Mapping Key
-                          order={order}
-                          isHistory={true} // New Prop
-                          isReady={order.order_status === 'completed'} // Reuse styling
-                          onOrderStatusUpdate={() => { }} // No Action
-                          onPaymentCollected={(o) => handlePaymentCollected(o, true)} // From history
-                          onFireItems={() => { }} // No Action
-                          onToggleEarlyDelivered={handleToggleEarlyDelivered}
-                          onEditOrder={handleEditOrder} // Allow Edit (Restricted)
-                          onCancelOrder={() => { }} // No Action
-                          onRefresh={() => { }}
-                        />
-                      ))
-                    )}
+            <div className="flex-1 flex flex-col overflow-hidden bg-slate-100">
+              {/* History Orders Grid */}
+              <div className="flex-1 overflow-x-auto p-6 scroll-smooth custom-scrollbar">
+                <div className="flex h-full flex-row justify-start gap-4 items-stretch">
+                  <AnimatePresence initial={false}>
+                    {historyOrders.map(order => {
+                      const CardWrapper = isLiteMode ? 'div' : motion.div;
+                      const wrapperProps = isLiteMode ? { className: "flex-shrink-0 kds-card-item" } : {
+                        layout: "position",
+                        initial: { opacity: 0, scale: 0.95 },
+                        animate: { opacity: 1, scale: 1 },
+                        exit: { opacity: 0, scale: 0.95 },
+                        transition: {
+                          layout: { type: "spring", stiffness: 300, damping: 30 },
+                          opacity: { duration: 0.2 },
+                          scale: { duration: 0.2 }
+                        },
+                        className: "flex-shrink-0 kds-card-item"
+                      };
 
+                      return (
+                        <CardWrapper key={order.id} {...wrapperProps}>
+                          <OrderCard
+                            order={order}
+                            isHistory={true}
+                            onPaymentCollected={handlePaymentCollected}
+                            onEditOrder={handleEditOrder}
+                          />
+                        </CardWrapper>
+                      );
+                    })}
+                  </AnimatePresence>
+
+                  {!isHistoryLoading && historyOrders.length === 0 && (
+                    <div className="w-full flex flex-col items-center justify-center text-slate-400 gap-4 opacity-50">
+                      <div className="w-20 h-20 bg-slate-200 rounded-full flex items-center justify-center">
+                        <History size={40} />
+                      </div>
+                      <div className="text-center">
+                        <p className="font-bold text-lg">אין הזמנות לתאריך זה</p>
+                        <p className="text-sm">היסטוריית ההזמנות תופיע כאן</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Date Bar - MOVED TO BOTTOM */}
+              <div className="bg-white border-t border-gray-200 px-6 py-3 flex items-center justify-between shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
+                <DateScroller
+                  selectedDate={selectedDate}
+                  onDateChange={setSelectedDate}
+                />
+
+                {isHistoryLoading && (
+                  <div className="flex items-center gap-2 text-blue-600 font-bold text-sm animate-pulse">
+                    <RefreshCw size={14} className="animate-spin" />
+                    טוען היסטוריה...
                   </div>
                 )}
               </div>
-
-              {/* New Animated Date Scroller */}
-              <div className={isHistoryLoading ? 'pointer-events-none opacity-50' : ''}>
-                <DateScroller selectedDate={selectedDate} onSelectDate={setSelectedDate} />
-              </div>
             </div>
           )}
-        </KDSErrorBoundary>
+        </KDSErrorBoundary >
 
 
         {/* SMS Toast Notification */}
-        {smsToast && (
-          <div className={`absolute top-20 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300 ${smsToast.isError ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
-            {smsToast.isError ? <AlertTriangle size={24} /> : <Check size={24} />}
-            <span className="text-xl font-bold">{smsToast.message}</span>
-          </div>
-        )}
+        {
+          smsToast && (
+            <div className={`absolute top-20 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300 ${smsToast.isError ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
+              {smsToast.isError ? <AlertTriangle size={24} /> : <Check size={24} />}
+              <span className="text-xl font-bold">{smsToast.message}</span>
+            </div>
+          )
+        }
 
         {/* Error / Retry Modal (SMS or Network) */}
-        {errorModal && (
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
-              <div className="p-6 bg-red-50 border-b border-red-100 flex items-center gap-4">
-                <div className="bg-red-100 p-3 rounded-full text-red-600">
-                  <AlertTriangle size={32} />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-black text-red-900">{errorModal.title}</h3>
-                  <p className="text-red-700 font-medium">{errorModal.message}</p>
-                </div>
-              </div>
-
-              <div className="p-6 space-y-4">
-                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 font-mono text-sm text-gray-600 dir-ltr">
-                  {errorModal.details || 'Unknown Error'}
+        {
+          errorModal && (
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+              <div className="bg-white rounded-2xl shadow-2xl w-[500px] overflow-hidden">
+                <div className="p-6 bg-red-50 border-b border-red-100 flex items-center gap-4">
+                  <div className="bg-red-100 p-3 rounded-full text-red-600">
+                    <AlertTriangle size={32} />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black text-red-900">{errorModal.title}</h3>
+                    <p className="text-red-700 font-medium">{errorModal.message}</p>
+                  </div>
                 </div>
 
-                <div className="flex gap-3 mt-4">
-                  <button
-                    onClick={() => setErrorModal(null)}
-                    className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-xl hover:bg-gray-300 transition"
-                  >
-                    ביטול
-                  </button>
-                  <button
-                    onClick={errorModal.onRetry}
-                    disabled={isSendingSms}
-                    className="flex-1 py-4 bg-slate-900 text-white rounded-xl font-bold text-xl hover:bg-slate-800 transition flex items-center justify-center gap-2"
-                  >
-                    {isSendingSms ? (
-                      <RefreshCw className="animate-spin" />
-                    ) : (
-                      <>
-                        <RefreshCw />
-                        {errorModal.retryLabel}
-                      </>
-                    )}
-                  </button>
+                <div className="p-6 space-y-4">
+                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 font-mono text-sm text-gray-600 dir-ltr">
+                    {errorModal.details || 'Unknown Error'}
+                  </div>
+
+                  <div className="flex gap-3 mt-4">
+                    <button
+                      onClick={() => setErrorModal(null)}
+                      className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-bold text-xl hover:bg-gray-300 transition"
+                    >
+                      ביטול
+                    </button>
+                    <button
+                      onClick={errorModal.onRetry}
+                      disabled={isSendingSms}
+                      className="flex-1 py-4 bg-slate-900 text-white rounded-xl font-bold text-xl hover:bg-slate-800 transition flex items-center justify-center gap-2"
+                    >
+                      {isSendingSms ? (
+                        <RefreshCw className="animate-spin" />
+                      ) : (
+                        <>
+                          <RefreshCw />
+                          {errorModal.retryLabel}
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )
+        }
 
         {/* Payment Selection Modal */}
         <KDSPaymentModal
@@ -985,8 +1083,8 @@ const KdsScreen = () => {
           onClose={handleCloseEditModal}
           onRefresh={forceRefresh}
         />
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };
 

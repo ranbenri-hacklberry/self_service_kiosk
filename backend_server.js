@@ -2,10 +2,21 @@ import 'dotenv/config';
 import express from "express";
 import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
+import { exec } from 'child_process';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(cors());
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // === HYBRID SUPABASE SETUP ===
@@ -1068,9 +1079,6 @@ app.post("/customers/identify-and-greet", ensureSupabase, async (req, res) => {
 // === 12. MUSIC API ROUTES ===
 // ------------------------------------------------------------------
 
-import fs from 'fs';
-import path from 'path';
-
 // Stream audio file from disk
 app.get("/music/stream", (req, res) => {
     try {
@@ -1914,38 +1922,72 @@ app.get("/music/volumes", (req, res) => {
 // Import DriveSync using dynamic import since it's an ES module (assuming package.json type="module", otherwise require)
 // import DriveSync from './src/lib/driveSync.js';
 
-app.post("/music/sync-drive", async (req, res) => {
-    res.status(501).json({ error: "Sync not implemented - driveSync.js is missing in repository" });
-    /*
-        try {
-            const serviceAccountPath = path.join(process.cwd(), 'service-account.json');
-    
-            // Target: Use user's Music folder by default for download destination
-            const localMusicDir = path.join(process.env.HOME || '/Users', 'Music', 'SyncedFromDrive');
-    
-            if (!fs.existsSync(serviceAccountPath)) {
-                return res.status(400).json({
-                    error: 'Configuration missing',
-                    message: 'Please upload service-account.json to server root.'
-                });
-            }
-    
-            const syncer = new DriveSync(serviceAccountPath, localMusicDir);
-            const result = await syncer.performSync();
-    
-            res.json({ success: true, message: 'Sync initiated', details: result });
-    
-        } catch (err) {
-            console.error('Drive Sync Error:', err);
-            res.status(500).json({ error: err.message });
+// ------------------------------------------------------------------
+// === E2E TEST AUTOMATION ===
+// ------------------------------------------------------------------
+let e2eProcess = null;
+
+app.post("/api/run-e2e", (req, res) => {
+    if (e2eProcess) {
+        return res.status(409).json({ error: "E2E Test already running" });
+    }
+
+    const scriptPath = path.join(process.cwd(), 'tests', 'e2e-live.test.cjs');
+
+    console.log('🚀 Triggering E2E Test...');
+
+    // Safety timeout: if it doesn't finish in 3 minutes, kill it
+    const timeout = setTimeout(() => {
+        if (e2eProcess) {
+            console.log('⚠️ E2E Test timed out. Killing process.');
+            e2eProcess.kill();
+            e2eProcess = null;
         }
-    */
+    }, 180000);
+
+    try {
+        e2eProcess = exec(`node "${scriptPath}"`, {
+            cwd: process.cwd(),
+            env: { ...process.env, BASE_URL: `http://localhost:${PORT}` }
+        }, (error, stdout, stderr) => {
+            clearTimeout(timeout);
+            e2eProcess = null;
+            if (error) {
+                console.error(`❌ E2E process finished with error: ${error.message}`);
+            } else {
+                console.log('🏁 E2E Test finished successfully.');
+            }
+        });
+
+        res.json({ message: "E2E Test started" });
+    } catch (err) {
+        clearTimeout(timeout);
+        e2eProcess = null;
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post("/api/e2e/reset", (req, res) => {
+    if (e2eProcess) {
+        e2eProcess.kill();
+        e2eProcess = null;
+        return res.json({ message: "E2E process killed and status reset" });
+    }
+    res.json({ message: "No E2E process was running" });
+});
+
+app.get("/api/e2e/status", (req, res) => {
+    res.json({ running: !!e2eProcess });
+});
+
+app.post("/api/music/sync-drive", async (req, res) => {
+    res.status(501).json({ error: "Sync not implemented" });
 });
 
 // ------------------------------------------------------------------
 // === CLOUD RUN PORT ===
 // ------------------------------------------------------------------
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 8081;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
 });

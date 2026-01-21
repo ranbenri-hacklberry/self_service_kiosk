@@ -359,10 +359,20 @@ export const syncOrders = async (businessId) => {
             if (orders.length > 0) {
                 for (const order of orders) {
                     const existing = await db.orders.get(order.id);
-                    if (existing?.pending_sync) {
-                        const serverTime = new Date(order.updated_at || 0).getTime();
-                        const localTime = new Date(existing.updated_at || 0).getTime();
-                        if (serverTime <= localTime) continue;
+
+                    // 🛡️ CONFLICT RESOLUTION (Recommendation #2)
+                    // If we have a local record with pending_sync, we only overwrite it 
+                    // if the server has a STRICTLY NEWER update.
+                    if (existing) {
+                        const serverTime = new Date(order.server_updated_at || order.updated_at || 0).getTime();
+                        const localTime = new Date(existing._localUpdatedAt || existing.updated_at || 0).getTime();
+
+                        // If local is currently being synced (pending) and server is not newer, skip it.
+                        // This prevents server from reverting a status change we just made locally.
+                        if (existing.pending_sync && serverTime <= localTime) {
+                            console.log(`⏳ [syncOrders] Skipping stale server update for ${order.id} (Local is newer or pending)`);
+                            continue;
+                        }
                     }
 
                     const orderItems = order.order_items || order.items_detail || [];
@@ -382,6 +392,8 @@ export const syncOrders = async (businessId) => {
                         delivery_notes: order.delivery_notes,
                         created_at: order.created_at,
                         updated_at: order.updated_at || new Date().toISOString(),
+                        server_updated_at: order.server_updated_at || order.updated_at,
+                        _localUpdatedAt: new Date().toISOString(), // Track when we last saw this on the client
                         pending_sync: false,
                         payment_screenshot_url: order.payment_screenshot_url,
                         payment_method: order.payment_method,
@@ -412,6 +424,7 @@ export const syncOrders = async (businessId) => {
                 }
             }
 
+
             // 2. AGGRESSIVE PRUNING: Find local records in this window that are NOT in the cloud response
             // We fetch ALL local orders to ensure legacy/demo data (possibly with wrong business_id) is cleared.
             const allLocalOrders = await db.orders.toArray();
@@ -430,6 +443,17 @@ export const syncOrders = async (businessId) => {
                 await db.orders.bulkDelete(idsToDelete);
                 // Clean up orphaned items
                 await db.order_items.where('order_id').anyOf(idsToDelete).delete();
+            }
+
+            // 3. DEEP CLEANUP: Remove ANY orders older than 60 days to keep Dexie fresh (Recommendation #4)
+            const sixtyDaysAgo = new Date();
+            sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+            const staleOrders = allLocalOrders.filter(o => new Date(o.created_at) < sixtyDaysAgo);
+            if (staleOrders.length > 0) {
+                const staleIds = staleOrders.map(o => o.id);
+                console.log(`🧹 [syncOrders] DEEP CLEANUP: Removing ${staleIds.length} orders older than 60 days`);
+                await db.orders.bulkDelete(staleIds);
+                await db.order_items.where('order_id').anyOf(staleIds).delete();
             }
         });
 
@@ -504,6 +528,9 @@ export const initialLoad = async (businessId, onProgress = null) => {
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`🎉 Initial load complete in ${duration}s`, results);
+
+    // Update last sync time for UI indicators (e.g., ConnectionStatusBar)
+    localStorage.setItem('last_sync_time', Date.now().toString());
 
     return { success: true, results, duration };
 };

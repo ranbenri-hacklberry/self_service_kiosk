@@ -40,11 +40,76 @@ const DexieAdminPanel = () => {
     const [syncResult, setSyncResult] = useState(null);
     const [speedTest, setSpeedTest] = useState(null);
 
+    // PERFORMANCE: Virtualization states for long lists
+    const [visibleItemsCount, setVisibleItemsCount] = useState({
+        customers: 50,
+        transactions: 100,
+        orders: 100
+    });
+
+    // Reset visible counts when tab changes or search query changes
+    useEffect(() => {
+        setVisibleItemsCount({
+            customers: 50,
+            transactions: 100,
+            orders: 100
+        });
+    }, [activeTab, debouncedQuery, exactMatchQuery]);
+
     useEffect(() => {
         if (currentUser?.business_id) {
             loadData();
         }
     }, [currentUser?.business_id]); // Re-load when business identity is confirmed
+
+    // 🔄 AUTO-SYNC: Sync loyalty data when entering the 'transactions' tab
+    useEffect(() => {
+        const syncLoyaltyOnTabEnter = async () => {
+            if (activeTab !== 'transactions' || !currentUser?.business_id) return;
+
+            try {
+                console.log('🔄 Auto-syncing loyalty data...');
+
+                // Use get_all_loyalty_cards which returns ALL cards
+                const { data: cards, error: cardsErr } = await supabase.rpc('get_all_loyalty_cards', {
+                    p_business_id: currentUser.business_id
+                });
+
+                if (cardsErr) {
+                    console.warn('❌ get_all_loyalty_cards error:', cardsErr.message);
+                } else {
+                    console.log(`📊 Found ${cards?.length || 0} loyalty cards`);
+                    if (cards?.length > 0) {
+                        await db.loyalty_cards.clear();
+                        await db.loyalty_cards.bulkPut(cards);
+                    }
+                }
+
+                // Sync loyalty transactions
+                const { data: txs, error: txErr } = await supabase.rpc('get_loyalty_transactions_for_sync', {
+                    p_business_id: currentUser.business_id
+                });
+
+                if (txErr) {
+                    console.warn('❌ get_loyalty_transactions_for_sync error:', txErr.message);
+                } else {
+                    console.log(`📊 Found ${txs?.length || 0} transactions`);
+                    if (txs?.length > 0) {
+                        await db.loyalty_transactions.clear();
+                        await db.loyalty_transactions.bulkPut(txs);
+                    }
+                }
+
+                console.log('✅ Loyalty data synced');
+                loadData();
+            } catch (err) {
+                console.warn('Loyalty auto-sync failed:', err);
+            }
+        };
+        syncLoyaltyOnTabEnter();
+    }, [activeTab, currentUser?.business_id]);
+
+
 
     const loadData = async () => {
         setLoading(true);
@@ -52,13 +117,31 @@ const DexieAdminPanel = () => {
             const businessId = currentUser?.business_id;
             if (!businessId) return;
 
-            // 1. Load Customers (Resilient Loading - avoiding flaky indexes)
-            const allLocalCustomers = await db.customers.toArray();
-            const customersData = allLocalCustomers.filter(c => c.business_id === businessId || !c.business_id);
-            console.log(`📊 Loaded ${customersData.length} customers from Dexie (out of ${allLocalCustomers.length} total)`);
+            // 0. SYNC CUSTOMERS from Supabase first (to get new customers from simulation)
+            try {
+                const { data: cloudCustomers, error: custErr } = await supabase
+                    .from('customers')
+                    .select('*')
+                    .eq('business_id', businessId);
 
-            const allLoyaltyCards = await db.loyalty_cards.toArray();
-            const loyaltyCards = allLoyaltyCards.filter(c => c.business_id === businessId || !c.business_id);
+                if (!custErr && cloudCustomers?.length > 0) {
+                    console.log(`☁️ Syncing ${cloudCustomers.length} customers from Supabase...`);
+                    await db.customers.bulkPut(cloudCustomers);
+                }
+            } catch (syncErr) {
+                console.warn('Customer sync failed:', syncErr);
+            }
+
+            // 1. Load Customers (Optimized indexed query)
+            const customersData = await db.customers
+                .where('business_id')
+                .equals(businessId)
+                .toArray();
+
+            const loyaltyCards = await db.loyalty_cards
+                .where('business_id')
+                .equals(businessId)
+                .toArray();
 
             const loyaltyMap = new Map();
             loyaltyCards.forEach(card => {
@@ -100,12 +183,14 @@ const DexieAdminPanel = () => {
             }));
             setCustomers(customersWithHistory);
 
-            // 2. Load ALL Transactions (last 30 days) - resilient loading
+            // 2. Load ALL Transactions (last 30 days) - Optimized indexed query
             const thirtyDaysAgo = new Date();
             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-            const txDataRaw = await db.loyalty_transactions.toArray();
-            const txData = txDataRaw.filter(tx => tx.business_id === businessId);
+            const txData = await db.loyalty_transactions
+                .where('business_id')
+                .equals(businessId)
+                .toArray();
             console.log(`📊 Loaded ${txData.length} transactions for sync check`);
 
             // Filter to last 30 days and sort newest first
@@ -132,12 +217,14 @@ const DexieAdminPanel = () => {
             });
             setTransactions(txWithNames);
 
-            // 3. Load ALL Orders (last 14 days) - resilient loading
+            // 3. Load ALL Orders (last 14 days) - Optimized indexed query
             const fourteenDaysAgo = new Date();
             fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
 
-            const allOrdersDataRaw = await db.orders.toArray();
-            const allOrdersData = allOrdersDataRaw.filter(o => o.business_id === businessId);
+            const allOrdersData = await db.orders
+                .where('business_id')
+                .equals(businessId)
+                .toArray();
             console.log(`📊 Loaded ${allOrdersData.length} total orders for this business`);
 
             const recentOrders = allOrdersData
@@ -500,7 +587,7 @@ const DexieAdminPanel = () => {
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100">
-                                                    {group.items.map(cust => {
+                                                    {group.items.slice(0, visibleItemsCount.customers).map(cust => {
                                                         const shoeSize = getShoeSize(cust.id);
                                                         return (
                                                             <tr key={cust.id} className="hover:bg-slate-50/50 transition-colors group">
@@ -540,6 +627,18 @@ const DexieAdminPanel = () => {
                                         </div>
                                     </div>
                                 ))}
+
+                                {filteredContent.customers.reduce((acc, g) => acc + g.items.length, 0) > visibleItemsCount.customers && (
+                                    <div className="flex justify-center pt-8">
+                                        <button
+                                            onClick={() => setVisibleItemsCount(prev => ({ ...prev, customers: prev.customers + 100 }))}
+                                            className="px-8 py-4 bg-white border border-slate-200 rounded-3xl font-black text-slate-500 hover:text-orange-500 hover:border-orange-200 transition-all shadow-sm hover:shadow-md flex items-center gap-2 group"
+                                        >
+                                            <Icon name="ArrowDown" size={18} className="group-hover:translate-y-0.5 transition-transform" />
+                                            טען עוד לקוחות
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -569,7 +668,7 @@ const DexieAdminPanel = () => {
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-50">
-                                                    {group.items.map(tx => (
+                                                    {group.items.slice(0, visibleItemsCount.transactions).map(tx => (
                                                         <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
                                                             <td className="px-6 py-4 text-sm font-bold text-slate-500">{new Date(tx.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</td>
                                                             <td className="px-6 py-4 font-black text-slate-800">{tx.customerName}</td>
@@ -601,6 +700,18 @@ const DexieAdminPanel = () => {
                                         </div>
                                     </div>
                                 ))}
+
+                                {filteredContent.transactions.reduce((acc, g) => acc + g.items.length, 0) > visibleItemsCount.transactions && (
+                                    <div className="flex justify-center pt-8">
+                                        <button
+                                            onClick={() => setVisibleItemsCount(prev => ({ ...prev, transactions: prev.transactions + 100 }))}
+                                            className="px-8 py-4 bg-white border border-slate-200 rounded-3xl font-black text-slate-500 hover:text-orange-500 hover:border-orange-200 transition-all shadow-sm hover:shadow-md flex items-center gap-2 group"
+                                        >
+                                            <Icon name="ArrowDown" size={18} className="group-hover:translate-y-0.5 transition-transform" />
+                                            טען עוד פעולות
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -617,7 +728,7 @@ const DexieAdminPanel = () => {
                                             <div className="h-[1px] flex-1 bg-slate-200"></div>
                                         </div>
 
-                                        {group.items.map(order => {
+                                        {group.items.slice(0, visibleItemsCount.orders).map(order => {
                                             const prepTime = order.updated_at && order.created_at ? Math.round((new Date(order.updated_at) - new Date(order.created_at)) / 60000) : 0;
                                             const paymentMethod = order.payment_method === 'cash' ? 'מזומן' : order.payment_method === 'credit_card' ? 'אשראי' : order.payment_method === 'bis' ? 'תן ביס' : order.payment_method === 'cibus' ? 'סיבוס' : order.payment_method || '?';
                                             const relatedCustomer = customers.find(c => c.name === order.customer_name || c.id === order.customer_id);
@@ -665,6 +776,17 @@ const DexieAdminPanel = () => {
                                                             <span className="text-xs font-bold font-mono">{prepTime > 0 ? `${prepTime}'` : '--'}</span>
                                                         </div>
                                                     </div>
+                                                    {/* Points Added Column */}
+                                                    <div className="w-[60px] flex justify-center shrink-0">
+                                                        {order.points_added > 0 ? (
+                                                            <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 text-blue-600 border border-blue-100">
+                                                                <Icon name="Coffee" size={12} />
+                                                                <span className="text-xs font-black">+{order.points_added}</span>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-slate-300 text-xs">-</span>
+                                                        )}
+                                                    </div>
                                                     <div className="w-[90px] flex justify-end shrink-0">
                                                         <div className={`w-full py-1.5 rounded-xl text-xs font-black text-center shadow-sm ${order.order_status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                                                             {order.order_status === 'completed' ? 'הושלם' : 'בתהליך'}
@@ -675,6 +797,18 @@ const DexieAdminPanel = () => {
                                         })}
                                     </div>
                                 ))}
+
+                                {filteredContent.orders.reduce((acc, g) => acc + g.items.length, 0) > visibleItemsCount.orders && (
+                                    <div className="flex justify-center pt-8">
+                                        <button
+                                            onClick={() => setVisibleItemsCount(prev => ({ ...prev, orders: prev.orders + 100 }))}
+                                            className="px-8 py-4 bg-white border border-slate-200 rounded-3xl font-black text-slate-500 hover:text-orange-500 hover:border-orange-200 transition-all shadow-sm hover:shadow-md flex items-center gap-2 group"
+                                        >
+                                            <Icon name="ArrowDown" size={18} className="group-hover:translate-y-0.5 transition-transform" />
+                                            טען עוד הזמנות
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
 

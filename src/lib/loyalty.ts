@@ -76,7 +76,13 @@ export async function addCoffeePurchase(customerPhone, orderId, itemsCount = 1, 
   }
 
   // 🔒 Client-side validation: Only allow Israeli mobile phones (05...)
-  const cleanPhone = customerPhone.replace(/\D/g, '');
+  let cleanPhone = customerPhone.replace(/\D/g, '');
+
+  // Normalize Israeli international format (9725...) -> (05...)
+  if (cleanPhone.startsWith('9725')) {
+    cleanPhone = '0' + cleanPhone.slice(3);
+  }
+
   if (!cleanPhone.startsWith('05') || cleanPhone.length < 10) {
     console.warn('⚠️ [Loyalty] Invalid phone for loyalty (must be 05...):', cleanPhone);
     return { success: false, newCount: 0, addedPoints: 0, error: 'invalid_phone' };
@@ -84,11 +90,13 @@ export async function addCoffeePurchase(customerPhone, orderId, itemsCount = 1, 
 
   try {
     const client = getSupabase(user);
+    console.log('📞 [Loyalty] Calling handle_loyalty_purchase with:', { cleanPhone, orderId, itemsCount, redeemedCount, businessId: user?.business_id });
     const { data, error } = await client.rpc('handle_loyalty_purchase', {
-      p_phone: customerPhone,
+      p_phone: cleanPhone, // FIX: Use cleaned phone, not original!
       p_order_id: orderId,
       p_items_count: itemsCount,
-      p_redeemed_count: redeemedCount
+      p_redeemed_count: redeemedCount,
+      p_business_id: user?.business_id // Pass business_id to fix multi-tenancy
     });
 
     if (error) throw error;
@@ -124,7 +132,7 @@ export async function addCoffeePurchase(customerPhone, orderId, itemsCount = 1, 
           });
         }
 
-        console.log('✅ [Loyalty] Local Dexie updated immediately:', { phone: cleanPhone, balance: data.new_balance });
+    // [CLEANED] console.log('✅ [Loyalty] Local Dexie updated immediately:', { phone: cleanPhone, balance: data.new_balance });
       } catch (dexieError) {
         console.warn('⚠️ [Loyalty] Failed to update local Dexie (will sync later):', dexieError);
       }

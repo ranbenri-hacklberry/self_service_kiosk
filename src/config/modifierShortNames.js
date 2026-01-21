@@ -105,9 +105,19 @@ export const getShortName = (nameInput) => {
     if (!nameInput) return null;
 
     // Robustness: Handle objects if they leak through
-    const fullName = (typeof nameInput === 'object')
-        ? (nameInput.he || nameInput.name || nameInput.text || JSON.stringify(nameInput))
-        : String(nameInput);
+    let fullName = '';
+    if (typeof nameInput === 'object' && nameInput !== null) {
+        // Try to find a string property that represents the name
+        fullName = nameInput.he || nameInput.name || nameInput.text || nameInput.value || nameInput.valueName || '';
+
+        // If still empty, try to get the first string property or just stringify
+        if (!fullName) {
+            const firstString = Object.values(nameInput).find(v => typeof v === 'string');
+            fullName = firstString || JSON.stringify(nameInput);
+        }
+    } else {
+        fullName = String(nameInput);
+    }
 
     const trimmed = fullName.trim();
 
@@ -115,7 +125,11 @@ export const getShortName = (nameInput) => {
     if (HIDDEN_MODS.includes(trimmed)) return null;
 
     // החזרת שם קצר אם קיים, אחרת השם המקורי
-    return SHORT_NAMES[fullName] || SHORT_NAMES[trimmed] || trimmed;
+    const result = SHORT_NAMES[fullName] || SHORT_NAMES[trimmed] || trimmed;
+
+    // Final safety: ensure we never return an object to React render
+    if (typeof result === 'object') return JSON.stringify(result);
+    return result;
 };
 
 /**

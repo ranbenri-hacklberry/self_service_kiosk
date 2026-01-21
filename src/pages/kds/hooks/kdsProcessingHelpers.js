@@ -74,17 +74,24 @@ export const parseModifiers = (mods) => {
     try {
         const parsed = typeof mods === 'string' ? JSON.parse(mods) : mods;
         if (Array.isArray(parsed)) {
-            return parsed.map(m => extractString(m)).filter(Boolean);
+            return parsed
+                .map(m => extractString(m))
+                .filter(Boolean)
+                // 🛡️ HIDE INTERNAL FLAGS: Filter out __KDS_OVERRIDE__ from display
+                .filter(m => !m.includes('__KDS_OVERRIDE__') && !m.includes('KDS_OVERRIDE'));
         }
         return [];
     } catch (e) {
         // If JSON parse fails, try to extract as-is
         if (typeof mods === 'string' && mods.length > 0) {
+            // Also filter here just in case
+            if (mods.includes('__KDS_OVERRIDE__')) return [];
             return [mods];
         }
         return [];
     }
 };
+
 
 /**
  * Apply color coding to modifiers based on Hebrew keywords.
@@ -200,7 +207,7 @@ export const processOrderItems = (order, menuMap) => {
             return {
                 id: item.id,
                 menuItemId: item.menu_items?.id || item.menu_item_id || item.id,
-                name: extractString(item.menu_items?.name || item.name || menuItem?.name || 'פריט'),
+                name: extractString(item.name || item.menu_items?.name || menuItem?.name || 'פריט מהתפריט'),
                 modifiers: structuredModifiers,
                 modsKey, // 🔑 Key for groupOrderItems to distinguish items by modifiers
                 quantity: item.quantity,
@@ -232,8 +239,11 @@ export const groupItemsByStatus = (items) => {
             groupKey = 'delayed';
         } else if (item.item_status === 'new' || item.item_status === 'pending') {
             groupKey = 'new';
-        } else if (item.item_status === 'ready' || item.item_status === 'completed') {
+        } else if (item.item_status === 'ready') {
             groupKey = 'ready';
+        } else if (item.item_status === 'completed') {
+            // Already finished, don't show on active board
+            return acc;
         } else {
             groupKey = 'active'; // in_progress
         }
@@ -286,9 +296,19 @@ export const buildBaseOrder = (order) => {
     const paidAmount = order.paid_amount || 0;
     const unpaidAmount = totalOrderAmount - paidAmount;
 
+    // 🕒 DATE PROTECTION: Ensure we have a valid created_at date
+    const createdAtDate = (order.created_at && !isNaN(new Date(order.created_at).getTime()))
+        ? new Date(order.created_at)
+        : new Date(); // Fallback to current time if missing/invalid
+
+    // 🔢 ORDER NUMBER: Use order_number if exists, otherwise friendlier local label
+    const isLocal = !order.order_number || String(order.id).length > 20;
+    const orderNum = order.order_number || (order.id ? `${String(order.id).slice(0, 4)}` : '???');
+
     return {
         id: order.id,
-        orderNumber: order.order_number || (order.id ? String(order.id).slice(-4) : 'PENDING'),
+        orderNumber: orderNum,
+        isLocal,
         customerName: order.customer_name || 'אורח',
         customerPhone: order.customer_phone,
         customerId: order.customer_id,
@@ -296,7 +316,8 @@ export const buildBaseOrder = (order) => {
         totalAmount: unpaidAmount > 0 ? unpaidAmount : totalOrderAmount,
         paidAmount: paidAmount,
         fullTotalAmount: totalOrderAmount,
-        timestamp: new Date(order.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: createdAtDate.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+        created_at: createdAtDate.toISOString(), // 👈 ADDED FOR AGING LOGIC
         fired_at: order.fired_at,
         ready_at: order.ready_at,
         updated_at: order.updated_at,

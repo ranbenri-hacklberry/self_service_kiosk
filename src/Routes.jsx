@@ -32,6 +32,7 @@ import OrderTrackingPage from './pages/order-tracking';
 import CompleteProfile from './pages/login/CompleteProfile';
 import GoogleCallback from '@/pages/auth/GoogleCallback';
 import OwnerSettings from './pages/owner-settings';
+import IPadMenuEditor from './pages/ipad-menu-editor';
 
 // Animation variants for page transitions
 const pageVariants = {
@@ -241,6 +242,14 @@ const AppRoutes = () => {
       <Route path="/owner-settings" element={
         <ProtectedRoute>
           <OwnerSettings />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/menu-editor" element={
+        <ProtectedRoute>
+          <ErrorBoundary>
+            <IPadMenuEditor />
+          </ErrorBoundary>
         </ProtectedRoute>
       } />
 

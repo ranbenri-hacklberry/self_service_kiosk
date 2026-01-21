@@ -95,6 +95,34 @@ const OrderCard = memo(({
 }) => {
   const [isUpdating, setIsUpdating] = useState(false);
 
+  // --- 🔋 LITE MODE SUPPORT ---
+  const isLiteMode = useMemo(() => localStorage.getItem('lite_mode') === 'true', []);
+
+  // --- 🕒 AGING LOGIC ---
+  const [agingMinutes, setAgingMinutes] = useState(0);
+
+  useEffect(() => {
+    if (isHistory || isReady) return;
+
+    const calculateAging = () => {
+      const start = new Date(order.created_at).getTime();
+      const now = Date.now();
+      const diff = Math.max(0, now - start);
+      setAgingMinutes(Math.floor(diff / 60000));
+    };
+
+    calculateAging();
+    const interval = setInterval(calculateAging, 30000); // Check every 30s
+    return () => clearInterval(interval);
+  }, [order.created_at, isHistory, isReady]);
+
+  const agingClass = useMemo(() => {
+    if (isHistory || isReady) return '';
+    if (agingMinutes >= 30) return 'aging-critical';
+    if (agingMinutes >= 15) return 'aging-warn';
+    return '';
+  }, [agingMinutes, isHistory, isReady]);
+
   // Memoize status styles to avoid recalculating classes
   const statusStyles = useMemo(() => {
     const statusLower = (order.orderStatus || '').toLowerCase();
@@ -102,9 +130,23 @@ const OrderCard = memo(({
     const isDelayedCard = order.type === 'delayed';
     const isUnpaidDelivered = order.type === 'unpaid_delivered';
 
+    if (isLiteMode) {
+      // Optimized for weak tablets
+      if (isUnpaid && !isHistory) {
+        return `border-t-[6px] border-gray-400 border-x border-b border-gray-300`;
+      }
+      if (isHistory && isUnpaid) return 'border-t-[6px] border-amber-500 border-x border-b border-gray-300';
+      if (isDelayedCard) return 'border-t-[6px] border-slate-400 bg-slate-100 opacity-90';
+      if (isUnpaidDelivered) return 'border-t-[6px] border-blue-500 bg-blue-50/30';
+      if (statusLower === 'pending') return 'border-t-[6px] border-amber-500 bg-amber-50/30';
+      if (statusLower === 'new') return 'border-t-[6px] border-green-500';
+      if (statusLower === 'in_progress' || statusLower === 'in_prep') return 'border-t-[6px] border-yellow-500';
+      return 'border-gray-300';
+    }
+
     if (isUnpaid && !isHistory) {
-      if (statusLower === 'ready') return 'border-t-[6px] border-red-600 shadow-md ring-2 ring-red-100 animate-pulse';
-      return 'border-t-[6px] border-red-500 shadow-sm';
+      if (statusLower === 'ready') return 'border-t-[6px] border-slate-700 shadow-md ring-2 ring-slate-100 animate-pulse';
+      return 'border-t-[6px] border-slate-400 shadow-sm';
     }
     if (isHistory && isUnpaid) return 'border-t-[6px] border-amber-500 shadow-sm';
 
@@ -116,7 +158,7 @@ const OrderCard = memo(({
     if (statusLower === 'in_progress' || statusLower === 'in_prep') return 'border-t-[6px] border-yellow-500 shadow-lg ring-1 ring-yellow-100';
 
     return 'border-gray-200 shadow-sm';
-  }, [order.type, order.orderStatus, isHistory, order.isPaid]);
+  }, [order.type, order.orderStatus, isHistory, order.isPaid, isLiteMode]);
 
   const { isLargeOrder, rightColItems, leftColItems, unifiedItems } = useMemo(() => {
     // ⚠️ CRITICAL: NO sortItems here!
@@ -131,7 +173,8 @@ const OrderCard = memo(({
     };
 
     const totalRows = items.reduce((acc, item) => acc + getItemRows(item), 0);
-    const splitNeeded = totalRows > 5 && !isHistory;
+    // 🔋 LITE MODE: Disable complex split column logic to save CPU
+    const splitNeeded = !isLiteMode && totalRows > 5 && !isHistory;
 
     const rCol = [];
     const lCol = [];
@@ -203,31 +246,27 @@ const OrderCard = memo(({
     const modSizeClass = isHistory ? 'text-[10px]' : 'text-xs';
 
     return (
-      <div key={`${item.menuItemId}-${item.modsKey || item.id || idx}`} className={`flex flex-col transition-colors duration-300 ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered ? '-mx-1 px-1 rounded-md mb-1 bg-gray-50/50' : ''} ${isEarlyDelivered && !isKanban ? 'opacity-40' : ''}`}>
+      <div key={`${item.menuItemId}-${item.modsKey || item.id || idx}`} className={`flex flex-col ${!isLiteMode ? 'transition-colors duration-300' : ''} ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered ? '-mx-1 px-1 rounded-md mb-1 bg-gray-50/50' : ''} ${isEarlyDelivered && !isKanban ? 'opacity-40' : ''}`}>
         <div className="flex items-start gap-[5px] relative">
 
-          {/* KDS: Early Delivery Indicator Line */}
-          {isEarlyDelivered && !isKanban && (
+          {/* KDS: Early Delivery Indicator Line - DISABLED in Lite Mode */}
+          {isEarlyDelivered && !isKanban && !isLiteMode && (
             <div className="absolute top-[13px] right-7 left-1 flex items-center pointer-events-none z-10">
               <div className="w-full h-[3px] bg-green-600/30 rounded-full" />
             </div>
           )}
 
           <div
-            className={`flex items-start gap-[5px] flex-1 min-w-0 tracking-tight cursor-pointer active:scale-[0.98] transition-all p-1 -m-1 rounded-lg hover:bg-black/5`}
+            className={`flex items-start gap-[5px] flex-1 min-w-0 tracking-tight cursor-pointer ${!isLiteMode ? 'active:scale-[0.98] transition-all hover:bg-black/5' : ''} p-1 -m-1 rounded-lg`}
             onClick={(e) => {
               e.stopPropagation();
-              // Only allow toggling if NOT history and NOT ready
-              // Behavior differs by view:
-              // Kanban: Toggles packed/ready status
-              // KDS: Toggles early_delivered (if implemented upstream)
               if (onReadyItems && !isReady && !isHistory) {
                 onReadyItems(order.id, [item]);
               }
             }}
           >
             {/* Quantity Badge */}
-            <span className={`flex items-center justify-center rounded-lg font-black shadow-sm shrink-0 mt-0 ${badgeSizeClass} ${isPackedItem
+            <span className={`flex items-center justify-center rounded-lg font-black shrink-0 mt-0 ${badgeSizeClass} ${!isLiteMode ? 'shadow-sm' : ''} ${isPackedItem
               ? 'bg-green-600 text-white ring-2 ring-green-200'
               : (item.quantity > 1 ? 'bg-orange-600 text-white ring-2 ring-orange-200' : (order.type === 'delayed' ? 'bg-gray-300 text-gray-600' : 'bg-slate-900 text-white'))
               }`}>
@@ -306,7 +345,7 @@ const OrderCard = memo(({
   }, [order.items?.length]);
 
   return (
-    <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl px-[5px] pt-1.5 pb-2.5 ${isHistory ? 'mx-[2px]' : 'mx-2'} flex flex-col h-full font-heebo ${(order.type === 'delayed' || orderStatusLower === 'new') ? 'bg-gray-100' : 'bg-white'} ${statusStyles} border-x border-b border-gray-100 ${glowClass} ${shouldFlash ? 'animate-pulse ring-4 ring-orange-400 z-20' : ''} relative overflow-hidden`}>
+    <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl px-[5px] pt-1.5 pb-2.5 ${isHistory ? 'mx-[2px]' : 'mx-2'} flex flex-col h-full font-heebo ${(order.type === 'delayed' || orderStatusLower === 'new') ? 'bg-gray-100' : 'bg-white'} ${statusStyles} ${agingClass} border-x border-b border-gray-100 ${glowClass} ${shouldFlash ? 'animate-pulse ring-4 ring-orange-400 z-20' : ''} relative overflow-hidden`}>
 
       {/* Header */}
       <div className="z-0 flex justify-between items-start mb-0.5 border-b border-gray-50 pb-0.5">
@@ -342,15 +381,14 @@ const OrderCard = memo(({
             {!isHistory && onEditOrder && (
               <button
                 onClick={(e) => { e.stopPropagation(); onEditOrder(order); }}
-                className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-bold text-xs transition-all flex items-center gap-1 border border-blue-100 h-6"
+                className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                title="עריכת הזמנה"
               >
-                <Edit size={12} strokeWidth={2.5} />
-                <span className="font-mono">#{order.orderNumber}</span>
+                <Edit size={14} />
               </button>
             )}
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-bold h-6 transition-colors bg-gray-50 border-gray-200 text-gray-500">
-              <Clock size={12} />
-              <span className="font-mono dir-ltr text-[10px]">{order.timestamp}</span>
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-black transition-colors bg-gray-50 border-gray-200 text-gray-500">
+              <span className="font-mono dir-ltr">{order.timestamp}</span>
             </div>
           </div>
         </div>
