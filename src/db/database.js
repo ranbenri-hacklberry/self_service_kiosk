@@ -302,6 +302,36 @@ db.version(15).stores({
     menu_cache: 'business_id, updated_at'
 });
 
+// Version 16: Add onboarding_sessions for the Menu Wizard
+db.version(16).stores({
+    active_order_items: 'id, order_id, menu_item_id, item_status, created_at',
+    businesses: 'id, name',
+    catalog_items: 'id, name, category, created_at',
+    customers: 'id, phone_number, phone, name, business_id, updated_at',
+    device_sessions: 'id, business_id, device_id, employee_id, last_seen_at',
+    discounts: 'id, name, business_id, is_active, discount_code',
+    employees: 'id, name, nfc_id, pin_code, business_id, auth_user_id, is_driver',
+    ingredients: 'id, name, supplier_id',
+    orders: 'id, order_number, order_status, order_type, order_origin, is_paid, customer_id, business_id, created_at, updated_at, server_updated_at, seen_at, _processing, [business_id+created_at], [business_id+order_status]',
+    order_items: 'id, order_id, menu_item_id, item_status, course_stage, created_at',
+    menu_items: 'id, name, category, business_id, is_active, kds_routing_logic',
+    sync_meta: 'table_name, last_synced_at, record_count',
+    optiongroups: 'id, name, menu_item_id, business_id',
+    optionvalues: 'id, group_id, value_name, price_adjustment',
+    menuitemoptions: 'id, item_id, group_id',
+    loyalty_cards: 'id, customer_id, customer_phone, business_id, points_balance, created_at, last_updated',
+    loyalty_transactions: 'id, card_id, order_id, business_id, transaction_type, created_at',
+    cached_images: 'url, cached_at',
+    offline_queue: null,
+    offline_queue_v2: null,
+    offline_queue_v3: '++id, type, status, createdAt, table, recordId',
+    sync_status: 'id, table, recordId, status, updated_at',
+    delivery_settings: 'id, business_id',
+    menu_cache: 'business_id, updated_at',
+    // NEW: Onboarding Sessions
+    onboarding_sessions: '++id, business_id, step, updated_at'
+});
+
 // Export table references for easy access
 export const {
     active_order_items,
@@ -319,7 +349,8 @@ export const {
     cached_images,
     loyalty_cards,
     loyalty_transactions,
-    menu_cache
+    menu_cache,
+    onboarding_sessions
 } = db;
 
 

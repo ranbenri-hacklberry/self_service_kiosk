@@ -3,7 +3,7 @@
  * Routes OCR requests through the backend to keep API keys secure
  */
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
 
 /**
  * Process an invoice image through the secure backend OCR endpoint

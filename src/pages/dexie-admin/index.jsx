@@ -40,6 +40,12 @@ const DexieAdminPanel = () => {
     const [syncResult, setSyncResult] = useState(null);
     const [speedTest, setSpeedTest] = useState(null);
 
+    // 🆕 Sync Modal State
+    const [showSyncModal, setShowSyncModal] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncLogs, setSyncLogs] = useState([]);
+    const [syncComplete, setSyncComplete] = useState(false);
+
     // PERFORMANCE: Virtualization states for long lists
     const [visibleItemsCount, setVisibleItemsCount] = useState({
         customers: 50,
@@ -476,10 +482,224 @@ const DexieAdminPanel = () => {
         { id: 'sync', label: 'סנכרון', icon: 'Database' },
     ];
 
+    // 🆕 Full Sync Function with Terminal-like Logs
+    const runFullSync = async () => {
+        setIsSyncing(true);
+        setSyncComplete(false);
+        setSyncLogs([]);
+        const log = (msg) => setSyncLogs(prev => [...prev, { time: new Date().toLocaleTimeString('he-IL'), msg }]);
+
+        const businessId = currentUser?.business_id;
+        if (!businessId) {
+            log('❌ שגיאה: לא נמצא עסק');
+            setIsSyncing(false);
+            return;
+        }
+
+        try {
+            log('🚀 מתחיל סנכרון מלא...');
+
+            // 1. Sync Orders
+            log('📦 מסנכרן הזמנות...');
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const { data: ordersData, error: ordersErr } = await supabase.rpc('get_orders_history', {
+                p_business_id: businessId,
+                p_from_date: thirtyDaysAgo.toISOString(),
+                p_to_date: new Date().toISOString()
+            });
+            if (ordersErr) {
+                log(`⚠️ שגיאה בהזמנות: ${ordersErr.message}`);
+            } else if (ordersData?.length > 0) {
+                await db.orders.bulkPut(ordersData);
+                log(`✅ ${ordersData.length} הזמנות סונכרנו`);
+            } else {
+                log('📭 אין הזמנות חדשות');
+            }
+
+            // 2. Sync Customers
+            log('👥 מסנכרן לקוחות...');
+            const { data: customersData, error: custErr } = await supabase
+                .from('customers')
+                .select('*')
+                .eq('business_id', businessId);
+            if (custErr) {
+                log(`⚠️ שגיאה בלקוחות: ${custErr.message}`);
+            } else if (customersData?.length > 0) {
+                await db.customers.bulkPut(customersData);
+                log(`✅ ${customersData.length} לקוחות סונכרנו`);
+            }
+
+            // 3. Sync Loyalty Cards
+            log('💳 מסנכרן כרטיסי נאמנות...');
+            const { data: cards, error: cardsErr } = await supabase.rpc('get_all_loyalty_cards', {
+                p_business_id: businessId
+            });
+            if (cardsErr) {
+                log(`⚠️ שגיאה בכרטיסי נאמנות: ${cardsErr.message}`);
+            } else if (cards?.length > 0) {
+                await db.loyalty_cards.clear();
+                await db.loyalty_cards.bulkPut(cards);
+                log(`✅ ${cards.length} כרטיסי נאמנות סונכרנו`);
+            }
+
+            // 4. Sync Loyalty Transactions
+            log('☕ מסנכרן נקודות נאמנות...');
+            const { data: txs, error: txErr } = await supabase.rpc('get_loyalty_transactions_for_sync', {
+                p_business_id: businessId
+            });
+            if (txErr) {
+                log(`⚠️ שגיאה בנקודות: ${txErr.message}`);
+            } else if (txs?.length > 0) {
+                await db.loyalty_transactions.clear();
+                await db.loyalty_transactions.bulkPut(txs);
+                log(`✅ ${txs.length} פעולות נאמנות סונכרנו`);
+            }
+
+            // 5. Sync Menu Items
+            log('🍕 מסנכרן תפריט...');
+            const { data: menuData, error: menuErr } = await supabase
+                .from('menu_items')
+                .select('*')
+                .eq('business_id', businessId);
+            if (menuErr) {
+                log(`⚠️ שגיאה בתפריט: ${menuErr.message}`);
+            } else if (menuData?.length > 0) {
+                await db.menu_items.bulkPut(menuData);
+                log(`✅ ${menuData.length} פריטי תפריט סונכרנו`);
+            }
+
+            log('');
+            log('🎉 הסנכרון הושלם בהצלחה!');
+            setSyncComplete(true);
+
+            // Reload data after sync
+            setTimeout(() => {
+                loadData();
+            }, 1500);
+
+            // Auto-close modal after success
+            setTimeout(() => {
+                setShowSyncModal(false);
+                setSyncLogs([]);
+                setSyncComplete(false);
+            }, 3000);
+
+        } catch (err) {
+            log(`🔥 שגיאה קריטית: ${err.message}`);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    // 🆕 Check sync status on load and prompt if needed
+    useEffect(() => {
+        const checkSyncStatus = async () => {
+            if (!currentUser?.business_id) return;
+
+            // Quick check: compare local orders count vs cloud
+            const localOrdersCount = await db.orders.where('business_id').equals(currentUser.business_id).count();
+
+            // If local is empty, definitely need sync
+            if (localOrdersCount === 0) {
+                setShowSyncModal(true);
+            }
+        };
+
+        // Run after initial load completes
+        if (!loading && currentUser?.business_id) {
+            checkSyncStatus();
+        }
+    }, [loading, currentUser?.business_id]);
+
 
 
     return (
         <div className="min-h-screen bg-[#F8FAFC] font-heebo" dir="rtl">
+            {/* 🆕 Sync Modal */}
+            {showSyncModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-300">
+                        {/* Modal Header */}
+                        <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-5 text-white">
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center">
+                                    <Icon name="RefreshCw" size={24} className={isSyncing ? 'animate-spin' : ''} />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-black">סנכרון נתונים</h2>
+                                    <p className="text-sm text-white/70">המידע המקומי לא מעודכן</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-6">
+                            {!isSyncing && !syncComplete && syncLogs.length === 0 && (
+                                <div className="text-center py-8">
+                                    <div className="text-6xl mb-4">🔄</div>
+                                    <p className="text-lg font-bold text-slate-700 mb-2">המערכת זיהתה שהנתונים לא מסונכרנים</p>
+                                    <p className="text-sm text-slate-500 mb-6">לחץ על הכפתור כדי לסנכרן את כל הנתונים מהענן</p>
+                                    <button
+                                        onClick={runFullSync}
+                                        className="px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-black text-lg rounded-2xl hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95"
+                                    >
+                                        🚀 התחל סנכרון
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Terminal-like Log Display */}
+                            {syncLogs.length > 0 && (
+                                <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-xl">
+                                    <div className="bg-slate-800 px-4 py-2 flex items-center gap-2">
+                                        <div className="w-3 h-3 rounded-full bg-red-500" />
+                                        <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                                        <div className="w-3 h-3 rounded-full bg-green-500" />
+                                        <span className="text-xs text-slate-400 mr-4">Terminal - Sync</span>
+                                        {isSyncing && <span className="text-xs text-blue-400 animate-pulse">● מסנכרן...</span>}
+                                    </div>
+                                    <div className="p-4 h-64 overflow-y-auto font-mono text-sm space-y-1">
+                                        {syncLogs.map((log, idx) => (
+                                            <div key={idx} className={`flex gap-3 ${log.msg.includes('✅') ? 'text-green-400' :
+                                                log.msg.includes('❌') || log.msg.includes('🔥') ? 'text-red-400' :
+                                                    log.msg.includes('⚠️') ? 'text-yellow-400' :
+                                                        log.msg.includes('🎉') ? 'text-purple-400 font-bold text-base' :
+                                                            'text-slate-300'
+                                                }`}>
+                                                <span className="text-slate-500 text-xs">[{log.time}]</span>
+                                                <span>{log.msg}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Success State */}
+                            {syncComplete && (
+                                <div className="text-center py-4 animate-in fade-in duration-500">
+                                    <div className="text-5xl mb-2">✅</div>
+                                    <p className="text-lg font-black text-green-600">הסנכרון הושלם בהצלחה!</p>
+                                    <p className="text-sm text-slate-500">החלון ייסגר אוטומטית...</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modal Footer - Close button if not syncing */}
+                        {!isSyncing && !syncComplete && (
+                            <div className="px-6 pb-6">
+                                <button
+                                    onClick={() => setShowSyncModal(false)}
+                                    className="w-full py-3 text-slate-500 hover:text-slate-700 font-bold transition-colors"
+                                >
+                                    סגור ללא סנכרון
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Header Redesign: Tabs Moved to Header */}
             <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
                 <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between gap-8">
@@ -730,9 +950,28 @@ const DexieAdminPanel = () => {
 
                                         {group.items.slice(0, visibleItemsCount.orders).map(order => {
                                             const prepTime = order.updated_at && order.created_at ? Math.round((new Date(order.updated_at) - new Date(order.created_at)) / 60000) : 0;
-                                            const paymentMethod = order.payment_method === 'cash' ? 'מזומן' : order.payment_method === 'credit_card' ? 'אשראי' : order.payment_method === 'bis' ? 'תן ביס' : order.payment_method === 'cibus' ? 'סיבוס' : order.payment_method || '?';
+
+                                            // 🆕 Enhanced payment method display
+                                            const PAYMENT_METHOD_LABELS = {
+                                                'cash': 'מזומן',
+                                                'credit_card': 'אשראי',
+                                                'bit': 'ביט',
+                                                'paybox': 'פייבוקס',
+                                                'gift_card': 'שובר',
+                                                'oth': 'OTH',
+                                                'cibus': 'סיבוס',
+                                                'bis': 'תן ביס'
+                                            };
+                                            const paymentMethod = PAYMENT_METHOD_LABELS[order.payment_method] || order.payment_method || null;
+
+                                            // 🆕 Check if actually paid
+                                            const isPaid = order.is_paid === true;
+
                                             const relatedCustomer = customers.find(c => c.name === order.customer_name || c.id === order.customer_id);
                                             const displayPhone = order.customer_phone || relatedCustomer?.phone || relatedCustomer?.phone_number;
+
+                                            // 🆕 Get loyalty points info for this customer
+                                            const customerPoints = relatedCustomer?.points || 0;
 
                                             return (
                                                 <div key={order.id} className="bg-white rounded-xl px-4 py-3 border border-slate-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4 group w-full text-slate-800 h-[72px]">
@@ -766,9 +1005,14 @@ const DexieAdminPanel = () => {
                                                             ))}
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center gap-4 w-[140px] justify-between shrink-0 pl-2">
+                                                    <div className="flex items-center gap-4 w-[160px] justify-between shrink-0 pl-2">
                                                         <span className="block font-black text-xl">₪{order.total_amount}</span>
-                                                        <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">{paymentMethod !== '?' ? paymentMethod : 'שולם'}</span>
+                                                        {/* 🆕 Payment Status - Shows method OR unpaid badge */}
+                                                        {isPaid ? (
+                                                            <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">{paymentMethod || 'שולם'}</span>
+                                                        ) : (
+                                                            <span className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-md animate-pulse">לא שולם</span>
+                                                        )}
                                                     </div>
                                                     <div className="w-[70px] flex justify-center shrink-0">
                                                         <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-slate-100 text-slate-400 bg-white">
@@ -776,12 +1020,15 @@ const DexieAdminPanel = () => {
                                                             <span className="text-xs font-bold font-mono">{prepTime > 0 ? `${prepTime}'` : '--'}</span>
                                                         </div>
                                                     </div>
-                                                    {/* Points Added Column */}
-                                                    <div className="w-[60px] flex justify-center shrink-0">
-                                                        {order.points_added > 0 ? (
-                                                            <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 text-blue-600 border border-blue-100">
-                                                                <Icon name="Coffee" size={12} />
-                                                                <span className="text-xs font-black">+{order.points_added}</span>
+                                                    {/* 🆕 Points Column - Shows ☕ total (+ earned) */}
+                                                    <div className="w-[90px] flex justify-center shrink-0">
+                                                        {customerPoints > 0 || order.points_added > 0 ? (
+                                                            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-orange-50 text-orange-700 border border-orange-100">
+                                                                <Icon name="Coffee" size={14} />
+                                                                <span className="text-sm font-black">{customerPoints}</span>
+                                                                {order.points_added > 0 && (
+                                                                    <span className="text-[10px] font-bold text-orange-500">(+{order.points_added})</span>
+                                                                )}
                                                             </div>
                                                         ) : (
                                                             <span className="text-slate-300 text-xs">-</span>

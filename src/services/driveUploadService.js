@@ -3,7 +3,7 @@
  * Uploads scanned invoices to Google Drive for backup
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 /**
  * Uploads an invoice image to Google Drive

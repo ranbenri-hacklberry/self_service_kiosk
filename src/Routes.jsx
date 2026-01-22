@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { MusicProvider } from "@/context/MusicContext";
 import SyncStatusModal from "@/components/SyncStatusModal";
 import MiniMusicBar from './components/music/MiniMusicBar';
+import SyncManager from '@/components/SyncManager';
 
 // Pages
 import LoginScreen from "@/pages/login/LoginScreen";
@@ -33,6 +34,7 @@ import CompleteProfile from './pages/login/CompleteProfile';
 import GoogleCallback from '@/pages/auth/GoogleCallback';
 import OwnerSettings from './pages/owner-settings';
 import IPadMenuEditor from './pages/ipad-menu-editor';
+import WizardLayout from './pages/onboarding/components/WizardLayout';
 
 // Animation variants for page transitions
 const pageVariants = {
@@ -245,6 +247,12 @@ const AppRoutes = () => {
         </ProtectedRoute>
       } />
 
+      <Route path="/onboarding" element={
+        <ProtectedRoute>
+          <WizardLayout />
+        </ProtectedRoute>
+      } />
+
       <Route path="/menu-editor" element={
         <ProtectedRoute>
           <ErrorBoundary>
@@ -281,6 +289,7 @@ const Routes = () => {
       <ErrorBoundary>
         <AuthProvider>
           <SyncStatusModal />
+          <SyncManager />
           <MusicProvider>
             {/* <MiniMusicBar /> */}
             <ScrollToTop />

@@ -3,156 +3,330 @@
 > vite --host --port 4028
 
 
-  VITE v5.0.0  ready in 328 ms
+  VITE v5.0.0  ready in 361 ms
 
   ➜  Local:   http://localhost:4028/
-  ➜  Network: http://10.39.127.3:4028/
-10:44:04 AM [vite] hmr update /src/context/ConnectionContext.jsx, /src/styles/tailwind.css
-10:44:04 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-10:44:04 AM [vite] hmr invalidate /src/context/ConnectionContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-10:44:04 AM [vite] page reload src/context/ConnectionContext.jsx (circular imports)
-10:44:04 AM [vite] hmr invalidate /src/context/ConnectionContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-10:44:04 AM [vite] page reload src/context/ConnectionContext.jsx (circular imports)
-10:48:56 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-10:49:29 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-11:15:23 AM [vite] hmr update /src/context/MusicContext.jsx, /src/styles/tailwind.css
-11:15:24 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-11:15:24 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
-11:15:24 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-11:15:24 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
-11:15:37 AM [vite] hmr update /src/context/MusicContext.jsx, /src/styles/tailwind.css
-11:15:37 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-11:15:37 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
-11:15:37 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-11:15:37 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
-11:16:59 AM [vite] hmr update /src/context/MusicContext.jsx, /src/styles/tailwind.css
-11:16:59 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-11:16:59 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
-11:16:59 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-11:16:59 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
-11:17:11 AM [vite] hmr update /src/context/MusicContext.jsx, /src/styles/tailwind.css
-11:17:11 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-11:17:11 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
-11:17:11 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-11:17:11 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
-11:17:39 AM [vite] hmr update /src/context/MusicContext.jsx, /src/styles/tailwind.css
-11:17:39 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-11:17:39 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
-11:17:39 AM [vite] hmr invalidate /src/context/MusicContext.jsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
-11:17:39 AM [vite] page reload src/context/MusicContext.jsx (circular imports)
-11:23:57 AM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
-11:24:04 AM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
-11:24:30 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-11:24:46 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-11:27:28 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
-11:27:40 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
-11:28:04 AM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
-11:28:04 AM [vite] hmr update /src/pages/kds/components/KDSMusicPlayer.jsx, /src/styles/tailwind.css
-11:28:04 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-11:28:04 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
-11:41:19 AM [vite] hmr update /src/pages/kds/components/KDSMusicPlayer.jsx, /src/styles/tailwind.css
-11:41:59 AM [vite] page reload src/components/music/MiniMusicPlayer.jsx
-11:41:59 AM [vite] Pre-transform error: Failed to resolve import "./components/KDSMusicPlayer" from "src/pages/kds/index.jsx". Does the file exist?
-11:41:59 AM [vite] Pre-transform error: Failed to resolve import "./components/KDSMusicPlayer" from "src/pages/kds/index.jsx". Does the file exist?
-11:41:59 AM [vite] Internal server error: Failed to resolve import "./components/KDSMusicPlayer" from "src/pages/kds/index.jsx". Does the file exist?
-  Plugin: vite:import-analysis
-  File: /Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/src/pages/kds/index.jsx:19:27
-  50 |  import OrderEditModal from "./components/OrderEditModal";
-  51 |  import DateScroller from "./components/DateScroller";
-  52 |  import KDSMusicPlayer from "./components/KDSMusicPlayer";
-     |                              ^
-  53 |  import { useKDSData } from "./hooks/useKDSData";
-  54 |  class KDSErrorBoundary extends React.Component {
-      at formatError (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:61701:46)
-      at TransformContext.error (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:61695:19)
-      at normalizeUrl (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:59988:33)
-      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-      at async file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:60138:47
-      at async Promise.all (index 16)
-      at async TransformContext.transform (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:60059:13)
-      at async Object.transform (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:61996:30)
-      at async loadAndTransform (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:47780:29)
-      at async viteTransformMiddleware (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:57379:32)
-11:42:00 AM [vite] Internal server error: Failed to resolve import "./components/KDSMusicPlayer" from "src/pages/kds/index.jsx". Does the file exist?
-  Plugin: vite:import-analysis
-  File: /Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/src/pages/kds/index.jsx:19:27
-  50 |  import OrderEditModal from "./components/OrderEditModal";
-  51 |  import DateScroller from "./components/DateScroller";
-  52 |  import KDSMusicPlayer from "./components/KDSMusicPlayer";
-     |                              ^
-  53 |  import { useKDSData } from "./hooks/useKDSData";
-  54 |  class KDSErrorBoundary extends React.Component {
-      at formatError (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:61701:46)
-      at TransformContext.error (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:61695:19)
-      at normalizeUrl (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:59988:33)
-      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-      at async file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:60138:47
-      at async Promise.all (index 16)
-      at async TransformContext.transform (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:60059:13)
-      at async Object.transform (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:61996:30)
-      at async loadAndTransform (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:47780:29)
-      at async viteTransformMiddleware (file:///Users/user/.cursor/worktrees/self_service_kiosk-develop/yiu/node_modules/vite/dist/node/chunks/dep-T98iZFpD.js:57379:32)
-11:42:07 AM [vite] page reload src/pages/kds/index.jsx
-11:42:14 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
-11:42:42 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-11:43:09 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-11:43:49 AM [vite] hmr update /src/styles/music.css
-11:44:05 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
-11:44:05 AM [vite] hmr update /src/components/music/MiniMusicPlayer.jsx, /src/styles/tailwind.css
-11:44:05 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-11:44:05 AM [vite] hmr update /src/styles/music.css
-11:46:40 AM [vite] hmr update /src/components/ConnectionStatusBar.jsx, /src/styles/tailwind.css
-11:46:53 AM [vite] hmr update /src/components/ConnectionStatusBar.jsx, /src/styles/tailwind.css
-11:47:18 AM [vite] hmr update /src/App.jsx, /src/styles/tailwind.css
-11:47:44 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
-11:47:58 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
-11:48:05 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-11:48:14 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-11:48:43 AM [vite] hmr update /src/components/music/MiniMusicPlayer.jsx, /src/styles/tailwind.css
-11:49:11 AM [vite] hmr update /src/pages/data-manager-interface/index.jsx, /src/styles/tailwind.css
-11:49:35 AM [vite] hmr update /src/pages/data-manager-interface/index.jsx, /src/styles/tailwind.css
-11:50:08 AM [vite] hmr update /src/pages/kds/components/KDSInventoryScreen.jsx, /src/styles/tailwind.css
-11:50:16 AM [vite] hmr update /src/pages/kds/components/KDSInventoryScreen.jsx, /src/styles/tailwind.css
-11:52:02 AM [vite] hmr update /src/pages/prep/index.jsx, /src/styles/tailwind.css
-11:52:09 AM [vite] hmr update /src/pages/prep/index.jsx, /src/styles/tailwind.css
-11:52:27 AM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
-11:52:46 AM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
-11:53:36 AM [vite] hmr update /src/components/music/MiniMusicPlayer.jsx, /src/styles/tailwind.css
-11:54:03 AM [vite] hmr update /src/components/ConnectionStatusBar.jsx, /src/styles/tailwind.css
-11:54:47 AM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
-11:55:29 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-11:56:09 AM [vite] hmr update /src/pages/data-manager-interface/index.jsx, /src/styles/tailwind.css
-11:56:44 AM [vite] hmr update /src/pages/data-manager-interface/index.jsx, /src/styles/tailwind.css
-11:56:53 AM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-11:57:24 AM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
-11:57:53 AM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
-11:58:01 AM [vite] hmr update /src/pages/kds/components/KDSInventoryScreen.jsx, /src/styles/tailwind.css
-11:58:36 AM [vite] hmr update /src/pages/kds/components/KDSInventoryScreen.jsx, /src/styles/tailwind.css
-11:59:12 AM [vite] hmr update /src/pages/prep/index.jsx, /src/styles/tailwind.css
-11:59:44 AM [vite] hmr update /src/pages/prep/index.jsx, /src/styles/tailwind.css
-12:02:32 PM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
-12:03:09 PM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
-12:03:48 PM [vite] hmr update /src/pages/data-manager-interface/index.jsx, /src/styles/tailwind.css
-12:04:30 PM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-12:04:53 PM [vite] hmr update /src/pages/kds/components/KDSInventoryScreen.jsx, /src/styles/tailwind.css
-12:05:16 PM [vite] hmr update /src/pages/prep/index.jsx, /src/styles/tailwind.css
-12:05:34 PM [vite] hmr update /src/components/ConnectionStatusBar.jsx, /src/styles/tailwind.css
-12:05:34 PM [vite] hmr update /src/components/music/MiniMusicPlayer.jsx, /src/styles/tailwind.css
-12:05:34 PM [vite] hmr update /src/pages/kds/index.jsx, /src/styles/tailwind.css
-12:05:34 PM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
-12:05:34 PM [vite] hmr update /src/pages/data-manager-interface/index.jsx, /src/styles/tailwind.css
-12:05:34 PM [vite] hmr update /src/pages/music/index.jsx, /src/styles/tailwind.css
-12:05:34 PM [vite] hmr update /src/pages/kds/components/KDSInventoryScreen.jsx, /src/styles/tailwind.css
-12:05:34 PM [vite] hmr update /src/pages/prep/index.jsx, /src/styles/tailwind.css
-12:27:36 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
-12:30:22 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
-12:30:59 PM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
-12:32:02 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
-12:32:39 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
-12:33:19 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
-12:34:07 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
-12:35:10 PM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
-12:36:04 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
-12:36:45 PM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
-12:37:03 PM [vite] hmr update /src/pages/menu-ordering-interface/index.jsx, /src/styles/tailwind.css
-12:37:03 PM [vite] hmr update /src/Routes.jsx, /src/styles/tailwind.css
+  ➜  Network: http://10.115.220.88:4028/
+  ➜  press h + enter to show help
+(node:14606) Warning: Failed to load the ES module: /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/tailwind.config.cjs. Make sure to set "type": "module" in the nearest package.json file or use the .mjs extension.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14606) Warning: Failed to load the ES module: /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/tailwind.config.cjs. Make sure to set "type": "module" in the nearest package.json file or use the .mjs extension.
+(node:14606) [DEP0060] DeprecationWarning: The `util._extend` API is deprecated. Please use Object.assign() instead.
+6:33:50 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+6:34:39 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+6:34:40 AM [vite] Internal server error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/components/Step3_ReviewAI.tsx:624:7: ERROR: Multiple exports with the same name "default"
+  Plugin: vite:esbuild
+  File: /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/components/Step3_ReviewAI.tsx:624:0
+  
+  Multiple exports with the same name "default"
+  622|  
+  623|  
+  624|  export default Step3_ReviewAI;var _c, _c2, _c3;$RefreshReg$(_c, "POSPreviewModal");$RefreshReg$(_c2, "AtmosphereSelectionModal");$RefreshReg$(_c3, "Step3_ReviewAI");
+     |         ^
+  625|  if (import.meta.hot && !inWebWorker) {
+  626|    window.$RefreshReg$ = prevRefreshReg;
+  
+      at failureErrorWithLog (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:1651:15)
+      at /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:849:29
+      at responseCallbacks.<computed> (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:704:9)
+      at handleIncomingPacket (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:764:9)
+      at Socket.readFromStdout (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:680:7)
+      at Socket.emit (node:events:508:28)
+      at addChunk (node:internal/streams/readable:559:12)
+      at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)
+      at Readable.push (node:internal/streams/readable:390:5)
+      at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
+6:35:16 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+6:35:23 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+6:45:20 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+6:45:34 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+6:45:46 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+6:45:59 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+6:50:18 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+6:50:28 AM [vite] hmr update /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/styles/tailwind.css
+6:50:37 AM [vite] hmr update /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/styles/tailwind.css
+6:50:46 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+6:50:55 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+6:53:24 AM [vite] hmr update /src/pages/kds/components/KDSInventoryScreen.jsx, /src/styles/tailwind.css, /src/components/manager/InventoryScreen.jsx, /src/pages/ipad-menu-editor/EditPanel.jsx
+6:53:35 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+6:54:50 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+6:59:33 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+6:59:44 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:03:36 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:05:59 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:10:23 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:12:32 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:13:11 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:13:23 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:15:28 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:15:49 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:16:12 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:16:31 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:16:31 AM [vite] Pre-transform error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+7:16:31 AM [vite] Pre-transform error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+7:16:31 AM [vite] Pre-transform error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+7:16:31 AM [vite] Pre-transform error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+7:16:31 AM [vite] Pre-transform error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+7:16:31 AM [vite] Pre-transform error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+7:16:31 AM [vite] Internal server error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+  Plugin: vite:esbuild
+  File: /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63
+  
+  Expected ";" but found "Modifier"
+  123|              const basicErrors = validateMenuRow(row, index);
+  124|              const modifierErrors = validateModifierGroups(item.modifiers || []);
+  125|              const modifierMsgErrors = modifierErrors.map(e => `Modifier Error[${ e.groupName }]: ${ e.message } `);
+     |                                                                 ^
+  126|              const allErrors = [...basicErrors, ...modifierMsgErrors];
+  127|  
+  
+      at failureErrorWithLog (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:1651:15)
+      at /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:849:29
+      at responseCallbacks.<computed> (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:704:9)
+      at handleIncomingPacket (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:764:9)
+      at Socket.readFromStdout (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:680:7)
+      at Socket.emit (node:events:508:28)
+      at addChunk (node:internal/streams/readable:559:12)
+      at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)
+      at Readable.push (node:internal/streams/readable:390:5)
+      at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
+7:17:44 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:17:44 AM [vite] Pre-transform error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+7:17:44 AM [vite] Pre-transform error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+7:17:44 AM [vite] Pre-transform error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+7:17:44 AM [vite] Pre-transform error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+7:17:44 AM [vite] Pre-transform error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+7:17:44 AM [vite] Pre-transform error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+7:17:44 AM [vite] Internal server error: Transform failed with 1 error:
+/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63: ERROR: Expected ";" but found "Modifier"
+  Plugin: vite:esbuild
+  File: /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/store/useOnboardingStore.ts:125:63
+  
+  Expected ";" but found "Modifier"
+  123|              const basicErrors = validateMenuRow(row, index);
+  124|              const modifierErrors = validateModifierGroups(item.modifiers || []);
+  125|              const modifierMsgErrors = modifierErrors.map(e => `Modifier Error[${ e.groupName }]: ${ e.message } `);
+     |                                                                 ^
+  126|              const allErrors = [...basicErrors, ...modifierMsgErrors];
+  127|  
+  
+      at failureErrorWithLog (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:1651:15)
+      at /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:849:29
+      at responseCallbacks.<computed> (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:704:9)
+      at handleIncomingPacket (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:764:9)
+      at Socket.readFromStdout (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/esbuild/lib/main.js:680:7)
+      at Socket.emit (node:events:508:28)
+      at addChunk (node:internal/streams/readable:559:12)
+      at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)
+      at Readable.push (node:internal/streams/readable:390:5)
+      at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
+7:18:12 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:18:48 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:19:47 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:21:55 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:23:47 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:25:42 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:33:41 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:33:50 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:35:18 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:37:33 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:37:41 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:37:51 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:38:58 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:38:58 AM [vite] Internal server error: /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/components/Step3_ReviewAI.tsx: Adjacent JSX elements must be wrapped in an enclosing tag. Did you want a JSX fragment <>...</>? (241:16)
+
+  239 |                 </div>
+  240 |
+> 241 |                 <div className="p-10 space-y-8 overflow-y-auto max-h-[70vh]">
+      |                 ^
+  242 |                     {/* Visual Anchor (Hebrew) */}
+  243 |                     <div>
+  244 |                         <label className="text-[10px] font-black uppercase text-slate-500 mb-2 block tracking-widest text-right">תיאור ויזואלי (מוצג בכרטיסייה)</label>
+  Plugin: vite:react-babel
+  File: /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/components/Step3_ReviewAI.tsx:241:16
+  239|                  </div>
+  240|  
+  241|                  <div className="p-10 space-y-8 overflow-y-auto max-h-[70vh]">
+     |                  ^
+  242|                      {/* Visual Anchor (Hebrew) */}
+  243|                      <div>
+      at constructor (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:367:19)
+      at TypeScriptParserMixin.raise (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:6624:19)
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:4771:18)
+      at TypeScriptParserMixin.jsxParseElement (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:4778:17)
+      at TypeScriptParserMixin.parseExprAtom (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:4788:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:11145:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:11130:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:11110:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:9890:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10963:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10968:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10945:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10895:21)
+      at /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:9828:39
+      at TypeScriptParserMixin.tryParse (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:6932:20)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:9828:18)
+      at TypeScriptParserMixin.parseExpressionBase (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10848:23)
+      at /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10844:39
+      at TypeScriptParserMixin.allowInAnd (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12495:16)
+      at TypeScriptParserMixin.parseExpression (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10844:17)
+      at TypeScriptParserMixin.parseStatementContent (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12971:23)
+      at TypeScriptParserMixin.parseStatementContent (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:9569:18)
+      at TypeScriptParserMixin.parseStatementLike (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12843:17)
+      at TypeScriptParserMixin.parseStatementListItem (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12823:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:13392:61)
+      at TypeScriptParserMixin.parseBlockBody (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:13385:10)
+      at TypeScriptParserMixin.parseBlock (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:13373:10)
+      at TypeScriptParserMixin.parseFunctionBody (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12174:24)
+      at TypeScriptParserMixin.parseArrowExpression (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12149:10)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:11759:12)
+      at TypeScriptParserMixin.parseExprAtom (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:11395:23)
+      at TypeScriptParserMixin.parseExprAtom (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:4793:20)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:11145:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:11130:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:11110:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:9890:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10963:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10968:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10945:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10895:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:9839:20)
+      at /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10864:39
+      at TypeScriptParserMixin.allowInAnd (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12495:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10864:17)
+      at TypeScriptParserMixin.parseVar (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:13460:91)
+      at TypeScriptParserMixin.parseVarStatement (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:13306:10)
+      at TypeScriptParserMixin.parseVarStatement (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:9469:31)
+      at TypeScriptParserMixin.parseStatementContent (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12927:23)
+      at TypeScriptParserMixin.parseStatementContent (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:9569:18)
+      at TypeScriptParserMixin.parseStatementLike (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12843:17)
+7:39:18 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:39:18 AM [vite] Internal server error: /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/components/Step3_ReviewAI.tsx: 'import' and 'export' may only appear at the top level. (1167:4)
+
+  1165 |     };
+  1166 |
+> 1167 |     export default Step3_ReviewAI;
+       |     ^
+  1168 |
+  Plugin: vite:react-babel
+  File: /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/onboarding/components/Step3_ReviewAI.tsx:1167:4
+  1165|      };
+  1166|  
+  1167|      export default Step3_ReviewAI;
+     |      ^
+  1168|  
+      at constructor (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:367:19)
+      at TypeScriptParserMixin.raise (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:6624:19)
+      at TypeScriptParserMixin.parseStatementContent (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12947:18)
+      at TypeScriptParserMixin.parseStatementContent (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:9569:18)
+      at TypeScriptParserMixin.parseStatementLike (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12843:17)
+      at TypeScriptParserMixin.parseStatementListItem (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12823:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:13392:61)
+      at TypeScriptParserMixin.parseBlockBody (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:13385:10)
+      at TypeScriptParserMixin.parseBlock (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:13373:10)
+      at TypeScriptParserMixin.parseFunctionBody (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12174:24)
+      at TypeScriptParserMixin.parseArrowExpression (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12149:10)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:11759:12)
+      at TypeScriptParserMixin.parseExprAtom (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:11395:23)
+      at TypeScriptParserMixin.parseExprAtom (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:4793:20)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:11145:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:11130:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:11110:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:9890:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10963:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10968:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10945:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10895:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:9839:20)
+      at /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10864:39
+      at TypeScriptParserMixin.allowInAnd (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12495:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10864:17)
+      at TypeScriptParserMixin.parseVar (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:13460:91)
+      at TypeScriptParserMixin.parseVarStatement (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:13306:10)
+      at TypeScriptParserMixin.parseVarStatement (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:9469:31)
+      at TypeScriptParserMixin.parseStatementContent (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12927:23)
+      at TypeScriptParserMixin.parseStatementContent (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:9569:18)
+      at TypeScriptParserMixin.parseStatementLike (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12843:17)
+      at TypeScriptParserMixin.parseModuleItem (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12820:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:13392:36)
+      at TypeScriptParserMixin.parseBlockBody (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:13385:10)
+      at TypeScriptParserMixin.parseProgram (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12698:10)
+      at TypeScriptParserMixin.parseTopLevel (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:12688:25)
+      at TypeScriptParserMixin.parse (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:14568:25)
+      at TypeScriptParserMixin.parse (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:10183:18)
+      at parse (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/parser/lib/index.js:14602:38)
+      at parser (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/core/lib/parser/index.js:41:34)
+      at parser.next (<anonymous>)
+      at normalizeFile (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/core/lib/transformation/normalize-file.js:64:37)
+      at normalizeFile.next (<anonymous>)
+      at run (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/core/lib/transformation/index.js:22:50)
+      at run.next (<anonymous>)
+      at transform (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@babel/core/lib/transform.js:22:33)
+      at transform.next (<anonymous>)
+      at step (/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/gensync/index.js:261:32)
+      at /Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/gensync/index.js:273:13
+7:39:37 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:41:11 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:41:44 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:45:15 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:52:14 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:52:34 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:53:11 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:54:30 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:55:07 AM [vite] hmr update /src/pages/owner-settings/index.jsx, /src/styles/tailwind.css
+7:55:20 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:55:34 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+7:55:58 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+7:59:57 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:00:54 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:01:06 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:01:31 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:06:30 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:06:55 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:07:12 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+8:07:24 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:32:42 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:33:02 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:33:15 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:36:30 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:39:34 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:39:49 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:43:09 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:45:39 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:52:44 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:53:56 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:54:26 AM [vite] hmr update /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/styles/tailwind.css
+8:54:37 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+8:55:00 AM [vite] hmr update /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/styles/tailwind.css
+8:55:00 AM [vite] hmr update /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/styles/tailwind.css
+8:55:11 AM [vite] hmr update /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/styles/tailwind.css
+8:58:07 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+8:59:13 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+9:01:42 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+9:02:06 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+9:02:14 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+9:06:24 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+9:06:32 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+9:09:27 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+9:09:35 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+9:12:35 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+9:13:12 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+9:17:20 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+9:17:30 AM [vite] hmr update /src/pages/onboarding/components/WizardLayout.tsx, /src/styles/tailwind.css, /src/pages/onboarding/components/Step4_Generation.tsx, /src/pages/onboarding/components/Step1_Atmosphere.tsx, /src/pages/onboarding/components/Step5_Finish.tsx, /src/pages/onboarding/components/Step2_MenuUpload.tsx, /src/pages/onboarding/components/Step3_ReviewAI.tsx
+9:18:12 AM [vite] hmr update /src/pages/onboarding/components/Step3_ReviewAI.tsx, /src/styles/tailwind.css
+9:20:45 AM [vite] hmr update /src/pages/menu-ordering-interface/components/ModifierModal.jsx, /src/styles/tailwind.css
+9:20:59 AM [vite] hmr update /src/pages/menu-ordering-interface/components/ModifierModal.jsx, /src/styles/tailwind.css

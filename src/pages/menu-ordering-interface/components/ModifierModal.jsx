@@ -174,7 +174,7 @@ const ModifierModal = (props) => {
   const targetItemId = useMemo(() => {
     if (!selectedItem) return null;
     const rawId = selectedItem.menu_item_id || selectedItem.menuItemId || selectedItem.id;
-    return rawId ? Number(rawId) : null;
+    return rawId;
   }, [selectedItem]);
 
   // DEBUG: Check Dexie data on mount
@@ -356,7 +356,7 @@ const ModifierModal = (props) => {
       };
 
       try {
-        const tId = Number(targetItemId);
+        const tId = targetItemId;
 
         // A. FETCH GROUPS
         updateStep('FETCH_GROUPS');

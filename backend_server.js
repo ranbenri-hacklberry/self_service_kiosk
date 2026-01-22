@@ -6,6 +6,7 @@ import { exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,6 +19,9 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
+
+// Configure multer for file uploads (memory storage)
+const upload = multer({ storage: multer.memoryStorage() });
 
 // === HYBRID SUPABASE SETUP ===
 // Remote (Cloud) - for Auth verification and initial sync
@@ -151,11 +155,20 @@ const SYNC_TABLES = [
     { name: 'employees', key: 'id' },
     { name: 'menu_items', key: 'id' },
     { name: 'customers', key: 'id' },
-    { name: 'orders', key: 'id', limit: 500 }, // Limit recent orders
-    { name: 'order_items', key: 'id', limit: 2000 },
+    { name: 'orders', key: 'id', limit: 1000 },
+    { name: 'order_items', key: 'id', limit: 5000 },
     { name: 'optiongroups', key: 'id' },
     { name: 'optionvalues', key: 'id' },
-    { name: 'menuitemoptions', key: 'id' },
+    { name: 'menuitemoptions', key: ['item_id', 'group_id'] },
+    { name: 'ingredients', key: 'id' },
+    { name: 'suppliers', key: 'id' },
+    { name: 'supplier_orders', key: 'id' },
+    { name: 'supplier_order_items', key: 'id' },
+    { name: 'loyalty_cards', key: 'id' },
+    { name: 'loyalty_transactions', key: 'id' },
+    { name: 'tasks', key: 'id' },
+    { name: 'recipes', key: 'id' },
+    { name: 'recipe_ingredients', key: 'id' },
     { name: 'music_artists', key: 'id' },
     { name: 'music_albums', key: 'id' },
     { name: 'music_songs', key: 'id' },
@@ -225,7 +238,14 @@ app.post("/api/sync-cloud-to-local", ensureSupabase, async (req, res) => {
                     let query = remoteSupabase.from(tableName).select('*');
 
                     // Apply business filter if applicable
-                    if (businessId && ['employees', 'menu_items', 'customers', 'orders', 'order_items'].includes(tableName)) {
+                    const multiTenantTables = [
+                        'employees', 'menu_items', 'customers', 'orders', 'order_items',
+                        'optiongroups', 'optionvalues', 'suppliers', 'supplier_orders',
+                        'supplier_order_items', 'loyalty_cards', 'loyalty_transactions',
+                        'tasks', 'recipes', 'music_artists', 'music_albums', 'music_songs', 'music_playlists'
+                    ];
+
+                    if (businessId && multiTenantTables.includes(tableName)) {
                         query = query.eq('business_id', businessId);
                     }
 
@@ -254,7 +274,10 @@ app.post("/api/sync-cloud-to-local", ensureSupabase, async (req, res) => {
                         const batch = cloudData.slice(i, i + batchSize);
                         const { error: upsertError } = await localSupabase
                             .from(tableName)
-                            .upsert(batch, { onConflict: key, ignoreDuplicates: false });
+                            .upsert(batch, {
+                                onConflict: Array.isArray(key) ? key.join(',') : key,
+                                ignoreDuplicates: false
+                            });
 
                         if (upsertError) {
                             console.warn(`⚠️ Upsert error on ${tableName} batch ${i}: ${upsertError.message}`);
@@ -1990,4 +2013,497 @@ app.post("/api/music/sync-drive", async (req, res) => {
 const PORT = process.env.PORT || 8081;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
+});
+
+// ------------------------------------------------------------------
+// === 8. AI ONBOARDING: LIVE GENERATION (COMFYUI BRIDGE) ===
+// ------------------------------------------------------------------
+import WebSocket from 'ws';
+import fetch from 'node-fetch';
+import { randomUUID } from 'crypto';
+
+const COMFYUI_URL = 'http://127.0.0.1:8188';
+const ONBOARDING_OUTPUT_DIR = path.resolve(__dirname, 'public/assets/generated');
+
+if (!fs.existsSync(ONBOARDING_OUTPUT_DIR)) {
+    fs.mkdirSync(ONBOARDING_OUTPUT_DIR, { recursive: true });
+}
+
+// Active generation jobs to allow cancellation
+let activeJobs = new Map();
+// Temporarily store items for generation to avoid URL length limits
+let pendingGenerationData = new Map();
+
+app.post('/api/onboarding/prepare-generate', (req, res) => {
+    const { businessId, items } = req.body;
+    if (!businessId || !items) {
+        return res.status(400).json({ error: 'Missing businessId or items' });
+    }
+    const jobId = randomUUID();
+    pendingGenerationData.set(jobId, { businessId, items, createdAt: Date.now() });
+
+    // Auto-cleanup stale data after 10 minutes
+    setTimeout(() => {
+        pendingGenerationData.delete(jobId);
+    }, 10 * 60 * 1000);
+
+    res.json({ jobId });
+});
+
+app.get('/api/onboarding/generate', async (req, res) => {
+    const { jobId } = req.query;
+    if (!jobId) {
+        return res.status(400).json({ error: 'Missing jobId' });
+    }
+
+    const jobData = pendingGenerationData.get(jobId);
+    if (!jobData) {
+        return res.status(404).json({ error: 'Generation data not found or expired' });
+    }
+
+    const { businessId, items } = jobData;
+    // Remove from map now that we have the data
+    pendingGenerationData.delete(jobId);
+
+    // Set up SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const clientId = randomUUID();
+    activeJobs.set(businessId, { clientId, cancelled: false });
+
+    const sendEvent = (data) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+        console.log(`🚀 Starting Live Generation for Business: ${businessId}`);
+        sendEvent({ type: 'start', total: items.length });
+
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+
+            // Check for cancellation
+            const job = activeJobs.get(businessId);
+            if (!job || job.cancelled) {
+                console.log(`🛑 Generation cancelled for ${businessId}`);
+                sendEvent({ type: 'cancelled', message: 'User stopped generation' });
+                break;
+            }
+
+            console.log(`🎨 [${i + 1}/${items.length}] Generating: ${item.name}`);
+            sendEvent({ type: 'progress', index: i, item: item.name, status: 'generating' });
+
+            const seed = Math.floor(Math.random() * 1000000000);
+
+            // COMFYUI WORKFLOW (SIMPLIFIED & LOW RES)
+            const workflow = {
+                "3": {
+                    "inputs": {
+                        "seed": seed,
+                        "steps": 20, // Faster steps
+                        "cfg": 7,
+                        "sampler_name": "dpmpp_2m",
+                        "scheduler": "karras",
+                        "denoise": 1,
+                        "model": ["4", 0],
+                        "positive": ["6", 0],
+                        "negative": ["7", 0],
+                        "latent_image": ["5", 0]
+                    },
+                    "class_type": "KSampler"
+                },
+                "4": {
+                    "inputs": { "ckpt_name": "dreamshaper_8.safetensors" },
+                    "class_type": "CheckpointLoaderSimple"
+                },
+                "5": {
+                    "inputs": {
+                        "width": 512, // LOW RES FOR SPEED
+                        "height": 512,
+                        "batch_size": 1
+                    },
+                    "class_type": "EmptyLatentImage"
+                },
+                "6": {
+                    "inputs": {
+                        "text": item.prompt,
+                        "clip": ["4", 1]
+                    },
+                    "class_type": "CLIPTextEncode"
+                },
+                "7": {
+                    "inputs": {
+                        "text": item.negativePrompt || "text, watermark, logo, blurry, low quality, distorted, bad hands, mutated, people, hands",
+                        "clip": ["4", 1]
+                    },
+                    "class_type": "CLIPTextEncode"
+                },
+                "8": {
+                    "inputs": {
+                        "samples": ["3", 0],
+                        "vae": ["4", 2]
+                    },
+                    "class_type": "VAEDecode"
+                },
+                "9": {
+                    "inputs": {
+                        "filename_prefix": `onboarding_${businessId}_${item.id}`,
+                        "images": ["8", 0]
+                    },
+                    "class_type": "SaveImage"
+                }
+            };
+
+            // Queue Prompt
+            const promptResp = await fetch(`${COMFYUI_URL}/prompt`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: workflow, client_id: clientId })
+            });
+
+            if (!promptResp.ok) throw new Error('Failed to queue prompt');
+            const { prompt_id } = await promptResp.json();
+
+            // Wait for completion via WebSocket or History Polling
+            // For SSE simplicity, we'll use polling history for this MVP
+            let finished = false;
+            while (!finished && !activeJobs.get(businessId).cancelled) {
+                const histResp = await fetch(`${COMFYUI_URL}/history/${prompt_id}`);
+                const history = await histResp.json();
+
+                if (history[prompt_id]) {
+                    const outputs = history[prompt_id].outputs;
+                    if (outputs && outputs["9"]) {
+                        const filename = outputs["9"].images[0].filename;
+
+                        // Download and save locally
+                        const viewUrl = `${COMFYUI_URL}/view?filename=${encodeURIComponent(filename)}&subfolder=&type=output`;
+                        const imgBuffer = await fetch(viewUrl).then(r => r.arrayBuffer());
+
+                        const businessDir = path.join(ONBOARDING_OUTPUT_DIR, String(businessId));
+                        if (!fs.existsSync(businessDir)) fs.mkdirSync(businessDir, { recursive: true });
+
+                        const localFilename = `item_${item.id}_${Date.now()}.png`;
+                        const localPath = path.join(businessDir, localFilename);
+                        fs.writeFileSync(localPath, Buffer.from(imgBuffer));
+
+                        const publicUrl = `/assets/generated/${businessId}/${localFilename}`;
+                        sendEvent({ type: 'success', index: i, id: item.id, url: publicUrl });
+                        finished = true;
+                    }
+                }
+                if (!finished) await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+
+        sendEvent({ type: 'complete' });
+        console.log(`✅ Generation completed for ${businessId}`);
+    } catch (err) {
+        console.error('Generation Error:', err.message);
+        sendEvent({ type: 'error', message: err.message });
+    } finally {
+        activeJobs.delete(businessId);
+        res.end();
+    }
+});
+
+app.post('/api/onboarding/cancel', (req, res) => {
+    const { businessId } = req.body;
+    if (activeJobs.has(businessId)) {
+        activeJobs.get(businessId).cancelled = true;
+        res.json({ success: true, message: 'Cancellation signal sent' });
+    } else {
+        res.status(404).json({ error: 'No active generation for this business' });
+    }
+});
+
+// ---------------------------------------------------------
+// 🆕 MENU ONBOARDING: IMPORT TO SUPABASE
+// ---------------------------------------------------------
+app.post('/api/onboarding/import', async (req, res) => {
+    const { businessId, items } = req.body;
+
+    if (!businessId || !items || !Array.isArray(items)) {
+        return res.status(400).json({ error: 'Missing businessId or items' });
+    }
+
+    console.log(`🚀 Finalizing Import for Business: ${businessId} (${items.length} items)`);
+
+    try {
+        for (const item of items) {
+            // A. Insert Menu Item
+            const { data: menuData, error: menuError } = await supabase
+                .from('menu_items')
+                .insert([{
+                    business_id: businessId,
+                    name: item.name,
+                    price: item.price,
+                    category: item.category,
+                    description: item.description,
+                    image_url: item.imageUrl,
+                    production_area: item.productionArea || 'Kitchen',
+                    is_in_stock: true
+                }])
+                .select()
+                .single();
+
+            if (menuError) throw menuError;
+
+            // B. Insert Modifiers
+            if (item.modifiers && item.modifiers.length > 0) {
+                for (const group of item.modifiers) {
+                    const { data: groupData, error: groupError } = await supabase
+                        .from('optiongroups')
+                        .insert([{
+                            business_id: businessId,
+                            name: group.name,
+                            is_required: group.requirement === 'M',
+                            is_multiple_select: group.maxSelection > 1,
+                            menu_item_id: menuData.id
+                        }])
+                        .select()
+                        .single();
+
+                    if (groupError) throw groupError;
+
+                    const valuesToInsert = group.items.map(v => ({
+                        business_id: businessId,
+                        group_id: groupData.id,
+                        value_name: v.name,
+                        price_adjustment: v.price,
+                        is_default: !!v.isDefault
+                    }));
+
+                    const { error: valError } = await supabase
+                        .from('optionvalues')
+                        .insert(valuesToInsert);
+
+                    if (valError) throw valError;
+                }
+            }
+        }
+
+        res.json({ success: true, message: 'Menu imported successfully' });
+
+    } catch (error) {
+        console.error('Import failed:', error);
+        res.status(500).json({ error: 'Failed to import menu data', details: error.message });
+    }
+});
+
+// ---------------------------------------------------------
+// 🆕 SINGLE ITEM REGENERATION (Per-Item)
+// ---------------------------------------------------------
+app.post('/api/onboarding/generate-single', async (req, res) => {
+    const { businessId, itemId, prompt, negativePrompt, originalImageUrl } = req.body;
+    if (!businessId || !itemId || !prompt) {
+        return res.status(400).json({ error: 'Missing businessId, itemId, or prompt' });
+    }
+
+    const defaultNegative = "text, watermark, logo, blurry, low quality, distorted, bad hands, mutated, people, hands";
+    const finalNegative = negativePrompt || defaultNegative;
+
+    console.log(`🎨 Single Regeneration for Item: ${itemId} (Business: ${businessId})`);
+
+    try {
+        const seed = Math.floor(Math.random() * 1000000000);
+        const clientId = randomUUID();
+
+        // Build ComfyUI Workflow - Support both txt2img and img2img
+        let workflow;
+
+        if (originalImageUrl) {
+            // 🆕 IMAGE-TO-IMAGE WORKFLOW (with seed image)
+            console.log(`🖼️  Using img2img with seed: ${originalImageUrl}`);
+
+            // ComfyUI requires images to be in its input directory
+            // Copy seed image from our public folder to ComfyUI's input folder
+            const seedFilename = originalImageUrl.split('/').pop();
+            const seedLocalPath = path.join(__dirname, 'public', originalImageUrl.replace(/^\//, ''));
+            const comfyInputPath = '/Users/user/AI/ComfyUI/input';
+            const comfyInputFile = path.join(comfyInputPath, seedFilename);
+
+            if (fs.existsSync(seedLocalPath)) {
+                fs.copyFileSync(seedLocalPath, comfyInputFile);
+                console.log(`✅ Copied seed image to ComfyUI input: ${seedFilename}`);
+            } else {
+                console.warn(`⚠️  Seed image not found at ${seedLocalPath}, falling back to txt2img`);
+                // Fall through to txt2img workflow below
+            }
+
+            workflow = {
+                "3": {
+                    "inputs": {
+                        "seed": seed,
+                        "steps": 25,
+                        "cfg": 7.5,
+                        "sampler_name": "dpmpp_2m",
+                        "scheduler": "karras",
+                        "denoise": 0.75, // 75% denoise for img2img - preserves structure
+                        "model": ["4", 0],
+                        "positive": ["6", 0],
+                        "negative": ["7", 0],
+                        "latent_image": ["10", 0] // From VAE Encode
+                    },
+                    "class_type": "KSampler"
+                },
+                "4": {
+                    "inputs": { "ckpt_name": "dreamshaper_8.safetensors" },
+                    "class_type": "CheckpointLoaderSimple"
+                },
+                "6": {
+                    "inputs": { "text": prompt, "clip": ["4", 1] },
+                    "class_type": "CLIPTextEncode"
+                },
+                "7": {
+                    "inputs": {
+                        "text": finalNegative,
+                        "clip": ["4", 1]
+                    },
+                    "class_type": "CLIPTextEncode"
+                },
+                "8": {
+                    "inputs": { "samples": ["3", 0], "vae": ["4", 2] },
+                    "class_type": "VAEDecode"
+                },
+                "9": {
+                    "inputs": { "filename_prefix": `single_${businessId}_${itemId}`, "images": ["8", 0] },
+                    "class_type": "SaveImage"
+                },
+                "10": {
+                    "inputs": { "pixels": ["11", 0], "vae": ["4", 2] },
+                    "class_type": "VAEEncode"
+                },
+                "11": {
+                    "inputs": {
+                        "image": seedFilename,
+                        "upload": "image"
+                    },
+                    "class_type": "LoadImage"
+                }
+            };
+        } else {
+            // TEXT-TO-IMAGE WORKFLOW (original)
+            console.log(`📝 Using txt2img (no seed image)`);
+
+            workflow = {
+                "3": {
+                    "inputs": {
+                        "seed": seed,
+                        "steps": 20,
+                        "cfg": 7,
+                        "sampler_name": "dpmpp_2m",
+                        "scheduler": "karras",
+                        "denoise": 1,
+                        "model": ["4", 0],
+                        "positive": ["6", 0],
+                        "negative": ["7", 0],
+                        "latent_image": ["5", 0]
+                    },
+                    "class_type": "KSampler"
+                },
+                "4": {
+                    "inputs": { "ckpt_name": "dreamshaper_8.safetensors" },
+                    "class_type": "CheckpointLoaderSimple"
+                },
+                "5": {
+                    "inputs": { "width": 512, "height": 512, "batch_size": 1 },
+                    "class_type": "EmptyLatentImage"
+                },
+                "6": {
+                    "inputs": { "text": prompt, "clip": ["4", 1] },
+                    "class_type": "CLIPTextEncode"
+                },
+                "7": {
+                    "inputs": {
+                        "text": finalNegative,
+                        "clip": ["4", 1]
+                    },
+                    "class_type": "CLIPTextEncode"
+                },
+                "8": {
+                    "inputs": { "samples": ["3", 0], "vae": ["4", 2] },
+                    "class_type": "VAEDecode"
+                },
+                "9": {
+                    "inputs": { "filename_prefix": `single_${businessId}_${itemId}`, "images": ["8", 0] },
+                    "class_type": "SaveImage"
+                }
+            };
+        }
+
+        const promptResp = await fetch(`${COMFYUI_URL}/prompt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: workflow, client_id: clientId })
+        });
+
+        if (!promptResp.ok) throw new Error('Failed to queue prompt');
+        const { prompt_id } = await promptResp.json();
+
+        // Poll history for result
+        let finished = false;
+        let resultUrl = null;
+
+        while (!finished) {
+            const histResp = await fetch(`${COMFYUI_URL}/history/${prompt_id}`);
+            const history = await histResp.json();
+
+            if (history[prompt_id]) {
+                const outputs = history[prompt_id].outputs;
+                if (outputs && outputs["9"]) {
+                    const filename = outputs["9"].images[0].filename;
+
+                    const viewUrl = `${COMFYUI_URL}/view?filename=${encodeURIComponent(filename)}&subfolder=&type=output`;
+                    const imgBuffer = await fetch(viewUrl).then(r => r.arrayBuffer());
+
+                    const businessDir = path.join(ONBOARDING_OUTPUT_DIR, String(businessId));
+                    if (!fs.existsSync(businessDir)) fs.mkdirSync(businessDir, { recursive: true });
+
+                    const localFilename = `item_${itemId}_${Date.now()}.png`;
+                    const localPath = path.join(businessDir, localFilename);
+                    fs.writeFileSync(localPath, Buffer.from(imgBuffer));
+
+                    resultUrl = `/assets/generated/${businessId}/${localFilename}`;
+                    finished = true;
+                }
+            }
+            if (!finished) await new Promise(r => setTimeout(r, 1000));
+        }
+
+        res.json({ success: true, url: resultUrl });
+
+    } catch (error) {
+        console.error('Single generation failed:', error.message);
+        res.status(500).json({ error: 'Generation failed', details: error.message });
+    }
+});
+
+// ---------------------------------------------------------
+// 🆕 UPLOAD SEED IMAGE FOR ITEM (For i2i)
+// ---------------------------------------------------------
+app.post('/api/onboarding/upload-seed', upload.single('image'), async (req, res) => {
+    try {
+        const { businessId, itemId } = req.body;
+        if (!req.file || !businessId || !itemId) {
+            return res.status(400).json({ error: 'Missing file, businessId, or itemId' });
+        }
+
+        const businessDir = path.join(ONBOARDING_OUTPUT_DIR, String(businessId), 'seeds');
+        if (!fs.existsSync(businessDir)) fs.mkdirSync(businessDir, { recursive: true });
+
+        const filename = `seed_${itemId}_${Date.now()}.png`;
+        const localPath = path.join(businessDir, filename);
+        fs.writeFileSync(localPath, req.file.buffer);
+
+        const publicUrl = `/assets/generated/${businessId}/seeds/${filename}`;
+        res.json({ success: true, url: publicUrl });
+
+    } catch (error) {
+        console.error('Seed upload failed:', error.message);
+        res.status(500).json({ error: 'Upload failed', details: error.message });
+    }
 });

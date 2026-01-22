@@ -137,6 +137,7 @@ export const runSystemDiagnostics = async (businessId) => {
 
 /**
  * Simulates nightly traffic to populate history with Rock Legends
+ * Now with different payment methods for testing!
  */
 export const simulateNightlyTraffic = async (businessId, count = 10) => {
     const logs = [];
@@ -155,8 +156,33 @@ export const simulateNightlyTraffic = async (businessId, count = 10) => {
         { name: 'Rani (The Boss)', phone: '0548317887' }
     ];
 
+    // 🆕 Payment methods matching PaymentSelectionModal
+    // We have 8 entries so that with 10 orders: 2 will be "pay_later" (unpaid)
+    const PAYMENT_METHODS = [
+        { id: 'cash', name: 'מזומן' },
+        { id: 'credit_card', name: 'אשראי' },
+        { id: 'bit', name: 'ביט' },
+        { id: 'paybox', name: 'פייבוקס' },
+        { id: 'gift_card', name: 'שובר' },
+        { id: 'oth', name: 'על חשבון הבית' },
+        { id: null, name: 'תשלום אחר כך' }, // Pay Later - is_paid = false
+        { id: null, name: 'תשלום אחר כך' }  // 🆕 Second unpaid order
+    ];
+
+    // 📊 Summary tracking
+    const summary = {
+        created: 0,
+        failed: 0,
+        byPaymentMethod: {},
+        totalRevenue: 0,
+        paidRevenue: 0,
+        unpaidRevenue: 0
+    };
+
     try {
         log('🎸 Starting Rock Legends Traffic Simulation...');
+        log('💳 Payment Methods: cash, credit_card, bit, paybox, gift_card, oth, null (pay later)');
+        log('');
 
         // 1. Check SMS Logic (Test Error Handling)
         log('📱 Testing SMS Error Handling (Invalid Number)...');
@@ -181,12 +207,16 @@ export const simulateNightlyTraffic = async (businessId, count = 10) => {
         }
 
         log(`🎰 Simulating ${count} orders for ${LEGENDS.length} rock legends...`);
+        log('');
 
         for (let i = 0; i < count; i++) {
             const legend = LEGENDS[i % LEGENDS.length];
 
-            // Randomly decide if this order is paid (2 out of 10 should be unpaid)
-            const isPaid = i >= 2;
+            // 🆕 Cycle through payment methods
+            const paymentMethod = PAYMENT_METHODS[i % PAYMENT_METHODS.length];
+
+            // is_paid is true unless payment_method is null (Pay Later)
+            const isPaid = paymentMethod.id !== null;
 
             // Random items (1-7)
             const numItems = Math.floor(Math.random() * 7) + 1;
@@ -225,7 +255,7 @@ export const simulateNightlyTraffic = async (businessId, count = 10) => {
                 p_business_id: businessId,
                 p_final_total: total,
                 p_order_type: 'dine_in',
-                p_payment_method: 'oth', // Pay method: Other
+                p_payment_method: paymentMethod.id,
                 p_is_paid: isPaid,
                 p_customer_name: legend.name,
                 p_customer_phone: legend.phone,
@@ -234,10 +264,24 @@ export const simulateNightlyTraffic = async (businessId, count = 10) => {
 
             if (createError) {
                 log(`❌ Order ${i + 1} failed: ${createError.message}`);
+                summary.failed++;
                 continue;
             }
 
-            log(`✅ Order ${i + 1}/${count} | #${orderResult.order_number} for ${legend.name} | Total: ₪${total} | Paid: ${isPaid ? 'Yes' : 'No'}`);
+            // Track summary
+            summary.created++;
+            summary.totalRevenue += total;
+            const methodKey = paymentMethod.id || 'pay_later';
+            summary.byPaymentMethod[methodKey] = (summary.byPaymentMethod[methodKey] || 0) + 1;
+
+            if (isPaid) {
+                summary.paidRevenue += total;
+            } else {
+                summary.unpaidRevenue += total;
+            }
+
+            const paidEmoji = isPaid ? '💳' : '⏳';
+            log(`${paidEmoji} Order ${i + 1}/${count} | #${orderResult.order_number} | ${legend.name} | ₪${total.toFixed(0)} | ${paymentMethod.name} | ${isPaid ? 'שולם' : 'לא שולם'}`);
 
             // 🎁 ADD LOYALTY POINTS for this order
             const { data: loyaltyResult, error: loyaltyError } = await supabase.rpc('handle_loyalty_purchase', {
@@ -252,13 +296,11 @@ export const simulateNightlyTraffic = async (businessId, count = 10) => {
                 log(`  ⚠️ Loyalty error: ${loyaltyError.message}`);
             } else if (loyaltyResult?.success) {
                 log(`  🎁 +1 point for ${legend.name} (Total: ${loyaltyResult.new_points})`);
-            } else {
-                log(`  ⚠️ Loyalty failed: ${loyaltyResult?.error || 'Unknown'}`);
             }
 
-            // Complete only 2 orders (the rest stay in KDS)
+            // Complete only first 2 orders (the rest stay in KDS)
             if (i < 2) {
-                log(`🏁 Completing order #${orderResult.order_number}...`);
+                log(`  🏁 Completing order #${orderResult.order_number}...`);
                 await supabase.rpc('update_order_status_v3', {
                     p_order_id: orderResult.order_id,
                     p_new_status: 'ready',
@@ -272,14 +314,32 @@ export const simulateNightlyTraffic = async (businessId, count = 10) => {
             }
         }
 
+        // 📊 SUMMARY
         log('');
-        log('🔥 Simulation complete! 8 orders are waiting in KDS.');
-        log('📱 You should also see Rani (The Boss) in your loyalty list!');
+        log('════════════════════════════════════════');
+        log('📊 סיכום הסימולציה:');
+        log('════════════════════════════════════════');
+        log(`✅ נוצרו: ${summary.created} הזמנות`);
+        log(`❌ נכשלו: ${summary.failed} הזמנות`);
+        log(`💰 סה"כ הכנסות: ₪${summary.totalRevenue.toFixed(0)}`);
+        log(`💳 שולמו: ₪${summary.paidRevenue.toFixed(0)}`);
+        log(`⏳ לא שולמו: ₪${summary.unpaidRevenue.toFixed(0)}`);
+        log('');
+        log('📋 פילוח לפי שיטת תשלום:');
+        Object.entries(summary.byPaymentMethod).forEach(([method, count]) => {
+            const methodName = PAYMENT_METHODS.find(m => (m.id || 'pay_later') === method)?.name || method;
+            log(`   • ${methodName}: ${count} הזמנות`);
+        });
+        log('════════════════════════════════════════');
+        log('');
+        log('🔥 סימולציה הושלמה! 8 הזמנות ממתינות ב-KDS.');
+        log('📱 Rani (The Boss) צריך להופיע ברשימת הנאמנות!');
 
-        return { success: true, logs };
+        return { success: true, logs, summary };
 
     } catch (err) {
         log(`🔥 Simulation error: ${err.message}`);
         return { success: false, logs };
     }
 };
+
