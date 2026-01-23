@@ -139,118 +139,87 @@ export const processInvoiceWithGemini = async (base64String, retryCount = 0) => 
  * Generate Menu Item Image with Gemini Pro Image
  * Style: "Desert Edge" - professional cafe product photography
  */
-export const generateMenuImage = async (itemName, seedHint = '', backgroundHint = '', itemInfo = {}, base64Seed = null) => {
+export const generateMenuImage = async (itemName, seedHint = '', backgroundHint = '', itemInfo = {}, base64Seed = null, aiSettings = null, backgroundSeed = null) => {
     if (!genAI) {
         throw new Error('Gemini API Key missing. Set VITE_GEMINI_API_KEY in .env');
     }
 
     const { description = '' } = itemInfo;
     const name = itemName.toLowerCase();
-    const isLarge = name.includes('גדול') || name.includes('כפול');
 
-    // Detect type for container
+    // Detect type for internallyDetectedDescription (Internal fallback logic)
     const isCoffee = ['קפה', 'אספרסו', 'הפוך', 'קפוצ', 'לאטה', 'מוקה', 'מקיאטו', 'שחור'].some(k => name.includes(k));
     const isColdDrink = ['קר', 'אייס', 'מיץ', 'לימונדה', 'שייק', 'סמוזי'].some(k => name.includes(k));
     const isSalad = name.includes('סלט');
     const isPastry = ['מאפה', 'קרואסון', 'דניש', 'עוגה', 'בורקס', 'רוגלך'].some(k => name.includes(k));
-    const isSandwich = ['כריך', 'טוסט', 'באגט', 'טורטייה', 'פיתה'].some(k => name.includes(k));
-    const isPizza = name.includes('פיצה');
     const isTea = ['תה', 'חליטה', 'סחלב', 'שוקו'].some(k => name.includes(k));
 
-    // Default presentation based on type - ONLY if user selected a container seed
-    let presentation = '';
-    let noContainerMode = !seedHint; // Track if no container was selected
-
-    if (seedHint) {
-        // User selected a container - use their choice
-        presentation = `Container style: ${seedHint}.`;
-    } else {
-        // NO CONTAINER SELECTED - the item will be placed based on background
-        if (backgroundHint && (backgroundHint.includes('table') || backgroundHint.includes('cafe') || backgroundHint.includes('wooden'))) {
-            // Background has a surface like a table - place it there without a container
-            presentation = `⚠️ NO CONTAINER! The ${itemName} is placed DIRECTLY on the table/surface without any cup, plate, or bowl. 
-            It sits bare on the wooden table, which looks casual but unprofessional.`;
-        } else if (backgroundHint) {
-            // Background exists but has no clear surface (like desert/garden) - on the ground
-            presentation = `⚠️ NO CONTAINER! The ${itemName} is placed DIRECTLY ON THE GROUND! 
-            No cup, no plate, no bowl - just the raw food/drink sitting awkwardly on the bare earth/floor. 
-            This looks WRONG and UNPROFESSIONAL on purpose!`;
-        } else {
-            presentation = `⚠️ NO CONTAINER! The item appears without any serving vessel.`;
-        }
-    }
-
-    // Background style
-    let background = '';
-    if (backgroundHint) {
-        // User selected a background
-        background = backgroundHint;
-    } else if (noContainerMode) {
-        // 🤣 NO CONTAINER + NO BACKGROUND = The item is FLOATING IN EMPTY SPACE!
-        background = `The item is FLOATING IN THE AIR against a pure white/gray empty void! 
-        STRICT ANTI-GRAVITY DECONSTRUCTED VIEW: 
-        - SHOW ONLY ONE SINGLE UNIT OF "${itemName}". No duplicates.
-        - VERTICAL LAYERING: The ingredients are neatly separated and hovering in a VERTICAL STACK, one ABOVE the other.
-        - ATOMIC LAYERS: For a coffee, show the liquid coffee at the bottom, a layer of milk hovering above it, milk foam above that, and the latte art hovering at the very top.
-        - For a sandwich or pastry, show the base, then the filling, then the top crust/bread, all hovering vertically.
-        - This is a clean, professional, high-end deconstructed artistic view.
-        - The components must be close enough to be recognized as one "${itemName}" but separated enough to see each ingredient clearly.`;
-    } else {
-        // Has container but no background - use nice desert default
-        background = `A breathtaking, extremely blurred (bokeh) panoramic vista of the Jordan Valley desert. Distant desert mountains, soft golden sunrise light, sparse desert flora.`;
-    }
-
-    // Build internal item description for the AI
     let internallyDetectedDescription = '';
     if (isCoffee) {
         if (name.includes('אמריקנו')) internallyDetectedDescription = 'Americano - a light, smooth coffee with a thin crema layer';
         else if (name.includes('הפוך')) internallyDetectedDescription = 'Israeli Hafuch (Latte) - creamy milk coffee with beautiful latte art';
         else if (name.includes('קפוצ')) internallyDetectedDescription = 'Cappuccino - rich espresso with thick foamy milk crown';
         else if (name.includes('לאטה')) internallyDetectedDescription = 'Café Latte - smooth steamed milk with espresso, latte art on top';
-        else if (name.includes('מוקה')) internallyDetectedDescription = 'Café Mocha - chocolate espresso drink with whipped cream';
-        else if (name.includes('מקיאטו')) internallyDetectedDescription = 'Macchiato - espresso "stained" with a dollop of milk foam';
-        else if (name.includes('שחור')) internallyDetectedDescription = 'Black Coffee / Filter Coffee - rich dark brew';
         else if (name.includes('אספרסו')) internallyDetectedDescription = 'Espresso shot - intense, dark, with golden crema';
         else internallyDetectedDescription = 'Premium coffee beverage';
     } else if (isTea) {
         if (name.includes('סחלב')) internallyDetectedDescription = 'Sahlab - creamy warm Middle Eastern orchid root drink with cinnamon';
         else if (name.includes('שוקו')) internallyDetectedDescription = 'Hot Chocolate - rich, creamy chocolate drink';
         else internallyDetectedDescription = 'Hot tea with herbs or classic blend';
-    } else if (isColdDrink) {
-        if (name.includes('לימונדה')) internallyDetectedDescription = 'Fresh lemonade with ice, mint leaves visible';
-        else if (name.includes('שייק')) internallyDetectedDescription = 'Thick creamy milkshake';
-        else internallyDetectedDescription = 'Refreshing cold beverage with ice';
     } else if (isSalad) {
         internallyDetectedDescription = 'Fresh Israeli salad with vibrant vegetables, herbs, olive oil drizzle';
     } else if (isPastry) {
         internallyDetectedDescription = 'Freshly baked pastry with golden crust';
     }
 
-    const finalPrompt = `PRODUCT PHOTOGRAPHY for Israeli boutique cafe menu.
-**ESTABLISHMENT TYPE:** DAIRY & VEGETARIAN CAFE (כשר חלבי צמחוני). 
-**STRICT RULES:** 
-- NO MEAT! No sausages, no bacon, no pepperoni, no beef. 
-- USE ONLY dairy, vegetarian, or vegan ingredients.
+    // Determine final prompt
+    let finalPrompt = '';
 
+    if (aiSettings?.ai_prompt_template) {
+        // USE BUSINESS SPECIFIC TEMPLATE
+        finalPrompt = aiSettings.ai_prompt_template
+            .replace(/{{itemName}}/g, itemName)
+            .replace(/{{description}}/g, description || internallyDetectedDescription)
+            .replace(/{{container}}/g, seedHint || 'no container')
+            .replace(/{{background}}/g, backgroundHint || 'default desert background')
+            .replace(/{{composition_style}}/g, aiSettings.composition_style || 'professional product photography')
+            .replace(/{{blur}}/g, aiSettings.background_blur_radius ? `${aiSettings.background_blur_radius}px` : 'high bokeh');
+    } else {
+        // FALLBACK TO ORIGINAL LOGIC
+        let presentation = '';
+        let noContainerMode = !seedHint;
+
+        if (seedHint) {
+            presentation = `Container style: ${seedHint}.`;
+        } else {
+            presentation = `⚠️ NO CONTAINER! The item appears without any serving vessel.`;
+        }
+
+        let background = backgroundHint || `A breathtaking, extremely blurred (bokeh) panoramic vista of the Jordan Valley desert. Distant desert mountains, soft golden sunrise light, sparse desert flora.`;
+
+        finalPrompt = `PRODUCT PHOTOGRAPHY for Israeli boutique cafe menu.
+**ESTABLISHMENT TYPE:** DAIRY & VEGETARIAN CAFE. 
+**STRICT RULES:** NO MEAT!
 **CRITICAL - THE MAIN SUBJECT IS:** "${itemName}"
 ${description ? `**USER DESCRIPTION:** ${description}` : ''}
 **PRODUCT DETAILS:** ${internallyDetectedDescription}
-
 **CONTAINER/PRESENTATION:**
 ${presentation}
-
+- The container/packaging must be BRAND NEW, perfectly symmetric, and flawless.
+- NO DENTS, no warping, no deformation. Perfectly straight edges.
 **PHOTOGRAPHIC GUIDELINES:**
 - Background: ${background}
 - Composition: THE "${itemName}" IS PERFECTLY CENTERED AND FILLS 75-80% OF THE FRAME.
-- Focus: RAZOR-SHARP FOCUS on the ${itemName}. The item MUST match its name exactly.
-- Lighting: Professional studio lighting, soft shadows, highlights on the drink/food.
+- Focus: RAZOR-SHARP FOCUS on the ${itemName}.
 - Aesthetic: "Desert Edge" (שפת המדבר) Israeli boutique cafe style.
-- Resolution: 4K, professional food/beverage photography.
-- STRICT: No text, no watermarks, no logos. The product must look EXACTLY like "${itemName}".
-- AUTHENTICITY: The drink/food must be visually identifiable as "${itemName}" - not just any coffee/food.`;
+- Resolution: 4K.
+- STRICT: No text, no watermarks, no logos.`;
+    }
 
     try {
-        console.log(`🎨 [AI Image] Generating image for: ${itemName}...`);
+        console.log(`🎨 [AI Image] Generating image for: ${itemName} using ${aiSettings ? 'Business Settings' : 'Default Settings'}...`);
+
+        const timeout = (aiSettings?.generation_timeout_seconds || 30) * 1000;
 
         const model = genAI.getGenerativeModel({
             model: "gemini-3-pro-image-preview",
@@ -259,7 +228,6 @@ ${presentation}
 
         const contents = [];
 
-        // If we have a base64 seed image, we use it for image-to-image guidance
         if (base64Seed) {
             const mimeMatch = base64Seed.match(/^data:([^;]+);base64,(.+)$/);
             const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
@@ -271,26 +239,43 @@ ${presentation}
                     mimeType: mimeType
                 }
             });
+            contents.push({ text: `REFERENCE PHOTO (ITEM): Use this image for subject guidance. ${finalPrompt}` });
+        }
 
-            contents.push({ text: `REFERENCE PHOTO: Use this image for subject guidance. Improve the visual quality, lighting, and apply the specified container (${seedHint}) and background (${backgroundHint}). ${finalPrompt}` });
-        } else {
+        if (backgroundSeed) {
+            const bMimeMatch = backgroundSeed.match(/^data:([^;]+);base64,(.+)$/);
+            const bMimeType = bMimeMatch ? bMimeMatch[1] : 'image/jpeg';
+            const bBase64Data = bMimeMatch ? bMimeMatch[2] : backgroundSeed;
+
+            contents.push({
+                inlineData: {
+                    data: bBase64Data,
+                    mimeType: bMimeType
+                }
+            });
+            contents.push({ text: `REFERENCE PHOTO (BACKGROUND/ATMOSPHERE): Use this image for background style guidance. Apply blur/bokeh as requested. ${finalPrompt}` });
+        }
+
+        if (!base64Seed && !backgroundSeed) {
             contents.push({ text: finalPrompt });
         }
 
-        const result = await model.generateContent(contents);
+        // Implementation of timeout if needed (though Gemini SDK might not have it directly on the call, 
+        // we can wrap it in a Promise.race if we want strict enforcement)
+        const generatePromise = model.generateContent(contents);
+
+        const result = await Promise.race([
+            generatePromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('AI Generation Timeout')), timeout))
+        ]);
+
         const response = await result.response;
 
         if (!response.candidates || response.candidates.length === 0) {
-            console.error("❌ [AI Image] No candidates returned from model.");
             throw new Error('No image candidates returned');
         }
 
         const candidate = response.candidates[0];
-        if (!candidate.content || !candidate.content.parts) {
-            console.error("❌ [AI Image] Candidate has no content or parts.");
-            throw new Error('Image generation candidate is empty');
-        }
-
         for (const part of candidate.content.parts) {
             if (part && part.inlineData) {
                 console.log("✅ [AI Image] Image generated successfully!");

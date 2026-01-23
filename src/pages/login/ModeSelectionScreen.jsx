@@ -190,8 +190,8 @@ const ModeSelectionScreen = () => {
                         </div>
                     </button>
 
-                    {/* 3b. Mobile KDS - Only visible on mobile */}
-                    <button
+                    {/* 3b. Mobile KDS - HIDDEN REQUESTED */}
+                    {/* <button
                         onClick={() => handleModeSelect('mobile-kds')}
                         className="md:hidden group relative bg-white rounded-2xl p-5 hover:bg-emerald-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-emerald-100"
                     >
@@ -205,7 +205,7 @@ const ModeSelectionScreen = () => {
                                 מעקב הזמנות מהטלפון
                             </p>
                         </div>
-                    </button>
+                    </button> */}
 
                     {/* 4. Kanban - Order Management Board */}
                     <button

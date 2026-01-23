@@ -976,14 +976,14 @@ const DexieAdminPanel = () => {
                                             return (
                                                 <div key={order.id} className="bg-white rounded-xl px-4 py-3 border border-slate-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4 group w-full text-slate-800 h-[72px]">
                                                     <div className="flex flex-col justify-center w-[180px] shrink-0 border-l border-slate-50 pl-4">
-                                                        <div className="font-black text-lg leading-tight text-slate-800 truncate text-right" title={order.customer_name}>
-                                                            {order.customer_name || `#${order.order_number}`}
+                                                        <div className="font-black text-lg leading-tight text-slate-800 truncate text-right" title={order.customer_name || relatedCustomer?.name}>
+                                                            {order.customer_name || relatedCustomer?.name || `#${order.order_number}`}
                                                         </div>
                                                         <div className="text-xs font-bold text-slate-400 flex items-center gap-2 mt-0.5 h-4">
-                                                            {order.customer_name && <span>#{order.order_number}</span>}
+                                                            {(order.customer_name || relatedCustomer?.name) && <span>#{order.order_number}</span>}
                                                             {displayPhone && displayPhone !== '0500000000' && (
                                                                 <>
-                                                                    {order.customer_name && <span className="text-slate-300">|</span>}
+                                                                    {(order.customer_name || relatedCustomer?.name) && <span className="text-slate-300">|</span>}
                                                                     <span className="truncate" dir="ltr">{displayPhone}</span>
                                                                 </>
                                                             )}

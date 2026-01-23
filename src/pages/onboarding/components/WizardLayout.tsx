@@ -9,17 +9,19 @@ import Step5_Finish from './Step5_Finish';
 import { useTheme } from '../../../context/ThemeContext';
 import { ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../context/AuthContext';
 
 const WizardLayout = () => {
     const { step, setStep, initSession } = useOnboardingStore();
     const { isDarkMode } = useTheme();
+    const { currentUser } = useAuth();
     const navigate = useNavigate();
 
     // Init session for resuming data
     useEffect(() => {
-        // Use the exact UUID provided by the user for testing
-        initSession('22222222-2222-2222-2222-222222222222');
-    }, [initSession]);
+        if (!currentUser?.business_id) return;
+        initSession(currentUser.business_id);
+    }, [currentUser?.business_id, initSession]);
 
     const variants = {
         enter: { opacity: 0, x: 20 },

@@ -1,168 +1,84 @@
-/**
- * מיפוי שמות קצרים למודיפיירים - לתצוגה בקדס ובעגלה
- * השמות המלאים נשמרים בבסיס הנתונים, כאן רק קיצורים לתצוגה
- * 
- * 🎨 צבעים מותאמים לזיהוי מהיר:
- *   - חלב חלופי: שיבולת=חום, סויה=ירוק, שקדים=צהוב
- *   - קצף: הרבה=סגול↑, מעט=כחול↓, בלי=אדום✕
- *   - נטול קפאין: סגול
- *   - טמפרטורה: רותח=אדום, פושר=כחול
- */
 
-// מודים שלא צריך להציג (ברירת מחדל)
-export const HIDDEN_MODS = [
-    'רגיל',
-    'חלב רגיל',
-    'ללא חלב',
-    'רותח (ברירת מחדל)',
-];
+// Map of common modifier names to short 2-3 char abbreviations
+// Colors: 'blue', 'green', 'red', 'yellow', 'purple', 'gray', 'pink', 'indigo'
 
-// מיפוי שם מלא -> שם קצר (קצר אבל ברור!)
-export const SHORT_NAMES = {
-    // סוג חלב
-    'חלב שיבולת שועל': 'שיבולת',
-    'שיבולת שועל': 'שיבולת',
-    'חלב סויה': 'סויה',
-    'חלב שקדים': 'שקדים',
+export const modifierAliases = {
+    // Milk Types
+    "חלב רגיל": "רגיל",
+    "חלב דל שומן": "דל",
+    "חלב סויה": "סויה",
+    "חלב שקדים": "שקד",
+    "חלב שיבולת שועל": "ש״ש",
+    "חלב אורז": "אורז",
+    "בלי חלב": "בלי",
+    "מעט חלב": "מעט",
+    "חלב בצד": "בצד",
 
-    // בסיס משקה
-    'חצי חלב חצי מים': 'חצי-חצי',
-    'על בסיס מים': 'בסיס מים',
+    // Coffee/Drink Specs
+    "חזק": "חזק",
+    "חלש": "חלש",
+    "בלי קצף": "בלי קצף",
+    "הרבה קצף": "הרבה",
+    "פושר": "פושר",
+    "רותח": "רותח",
+    "קר": "קר",
+    "בלי קרח": "בלי קרח",
 
-    // קצף (עם סימנים ויזואליים)
-    'בלי קצף': '✕קצף',
-    'הרבה קצף': '↑קצף',
-    'מעט קצף': '↓קצף',
+    // Extras
+    "תוספת קצפת": "קצפת",
+    "בלי סוכר": "בלי סוכר",
+    "סוכר חום": "חום",
+    "סליל": "סליל",
 
-    // טמפרטורה
-    'רותח (ברירת מחדל)': 'רותח',
-
-    // אפשרויות מיוחדות
-    'נטול קפאין': 'נטול',
-    'מפורק (הפוך)': 'מפורק',
-    'מפורק ': 'מפורק', // יש רווח בסוף בDB
-
-    // חלב בצד
-    'חלב חם בצד': 'חם בצד',
-    'חלב קר בצד': 'קר בצד',
-    'חלב סויה בצד': 'סויה בצד',
-    'חלב שיבולת בצד': 'שיבולת בצד',
-
-    // תוספות מזון - שמות מלאים
-    'מיץ תפוזים': 'מיץ',
+    // Food
+    "בלי בצל": "בלי בצל",
+    "בלי עגבניה": "בלי עגבניה",
+    "תוספת גבינה": "גבינה",
+    "לחם בצד": "לחם",
+    "חיטה מלאה": "מלאה",
+    "ללא גלוטן": "לל״ג"
 };
 
-// צבעים לפי סוג מוד - יפים וצבעוניים!
-export const MOD_COLORS = {
-    // קצף
-    'הרבה קצף': 'bg-purple-100 text-purple-700 border-purple-300',
-    'מעט קצף': 'bg-blue-100 text-blue-600 border-blue-300',
-    'בלי קצף': 'bg-red-100 text-red-600 border-red-300',
+export const modifierColors = {
+    // Milk -> Blue/Cyan variations
+    "רגיל": "bg-blue-100 text-blue-800 border-blue-200",
+    "דל": "bg-cyan-100 text-cyan-800 border-cyan-200",
+    "סויה": "bg-orange-100 text-orange-800 border-orange-200", // Soy = Orange usually
+    "שקד": "bg-amber-100 text-amber-800 border-amber-200",
+    "ש״ש": "bg-yellow-100 text-yellow-800 border-yellow-200", // Oat = Yellow/Wheat
 
-    // חלב חלופי - צבעים ייחודיים לכל סוג
-    'סויה': 'bg-green-100 text-green-700 border-green-300',
-    'חלב סויה': 'bg-green-100 text-green-700 border-green-300',
-    'שיבולת שועל': 'bg-amber-100 text-amber-800 border-amber-300',
-    'חלב שיבולת שועל': 'bg-amber-100 text-amber-800 border-amber-300',
-    'שקדים': 'bg-yellow-100 text-yellow-800 border-yellow-300',
-    'חלב שקדים': 'bg-yellow-100 text-yellow-800 border-yellow-300',
+    // Temp/Strength -> Red/Gray
+    "רותח": "bg-red-100 text-red-800 border-red-200",
+    "חזק": "bg-slate-800 text-white border-slate-900",
+    "חלש": "bg-gray-100 text-gray-600 border-gray-200",
 
-    // חלב בצד
-    'חלב סויה בצד': 'bg-green-100 text-green-700 border-green-300',
-    'חלב שיבולת בצד': 'bg-amber-100 text-amber-800 border-amber-300',
-    'חלב חם בצד': 'bg-orange-100 text-orange-700 border-orange-300',
-    'חלב קר בצד': 'bg-blue-100 text-blue-600 border-blue-300',
-
-    // נטול - סגול בולט
-    'נטול קפאין': 'bg-purple-100 text-purple-700 border-purple-300',
-
-    // חוזק
-    'חזק': 'bg-orange-100 text-orange-700 border-orange-300',
-    'חלש': 'bg-green-100 text-green-700 border-green-300',
-
-    // טמפרטורה
-    'רותח': 'bg-red-100 text-red-600 border-red-300',
-    'פושר': 'bg-blue-100 text-blue-600 border-blue-300',
-
-    // בסיס
-    'חצי חלב חצי מים': 'bg-slate-100 text-slate-700 border-slate-300',
-    'על בסיס מים': 'bg-blue-100 text-blue-600 border-blue-300',
-
-    // תוספות מזון
-    'עגבניה': 'bg-red-100 text-red-600 border-red-300',
-    'בצל': 'bg-purple-100 text-purple-700 border-purple-300',
-    'זיתים': 'bg-emerald-100 text-emerald-700 border-emerald-300',
-    'בולגרית': 'bg-white text-slate-700 border-slate-300',
-    'מיץ תפוזים': 'bg-orange-100 text-orange-700 border-orange-300',
+    // Default
+    "default": "bg-slate-100 text-slate-700 border-slate-200"
 };
 
-/**
- * קבלת שם קצר למוד
- * @param {string} fullName - השם המלא מהDB
- * @returns {string|null} - השם הקצר, או null אם צריך להסתיר
- */
-export const getShortName = (nameInput) => {
-    if (!nameInput) return null;
+export const getShortName = (fullName) => {
+    if (!fullName) return '';
+    // Direct aliasing
+    if (modifierAliases[fullName]) return modifierAliases[fullName];
 
-    // Robustness: Handle objects if they leak through
-    let fullName = '';
-    if (typeof nameInput === 'object' && nameInput !== null) {
-        // Try to find a string property that represents the name
-        fullName = nameInput.he || nameInput.name || nameInput.text || nameInput.value || nameInput.valueName || '';
+    // If simplified/aliased name is passed directly
+    const reversed = Object.entries(modifierAliases).find(([k, v]) => v === fullName);
+    if (reversed) return fullName;
 
-        // If still empty, try to get the first string property or just stringify
-        if (!fullName) {
-            const firstString = Object.values(nameInput).find(v => typeof v === 'string');
-            fullName = firstString || JSON.stringify(nameInput);
-        }
-    } else {
-        fullName = String(nameInput);
-    }
-
-    const trimmed = fullName.trim();
-
-    // בדיקה אם צריך להסתיר
-    if (HIDDEN_MODS.includes(trimmed)) return null;
-
-    // החזרת שם קצר אם קיים, אחרת השם המקורי
-    const result = SHORT_NAMES[fullName] || SHORT_NAMES[trimmed] || trimmed;
-
-    // Final safety: ensure we never return an object to React render
-    if (typeof result === 'object') return JSON.stringify(result);
-    return result;
+    // Fallback: If short enough, use it. Else truncate.
+    if (fullName.length <= 4) return fullName;
+    return fullName.slice(0, 4) + "..";
 };
 
-/**
- * קבלת צבע למוד
- * @param {string} fullName - השם המלא מה-DB (כדי לדעת איזה חץ לשים)
- * @param {string} displayName - השם שמוצג (לגיבוי)
- * @returns {string} - class name לצבע
- */
-export const getModColorClass = (fullName, displayName) => {
-    if (!fullName) return 'bg-slate-100 text-slate-700 border-slate-200';
-    const trimmed = fullName.trim();
+export const getModColorClass = (fullName, shortName) => {
+    // Priority 1: Check full name map
+    // Priority 2: Check short name map
+    const key = shortName || fullName;
+    if (modifierColors[key]) return modifierColors[key];
 
-    // נסה להתאים לפי שם מלא, אז לפי trimmed, אז לפי displayName
-    // ואז נסה התאמה חלקית לפי מילות מפתח
-    if (MOD_COLORS[fullName]) return MOD_COLORS[fullName];
-    if (MOD_COLORS[trimmed]) return MOD_COLORS[trimmed];
-    if (MOD_COLORS[displayName]) return MOD_COLORS[displayName];
+    // Heuristic coloring
+    if (key.includes('חלב')) return modifierColors["רגיל"];
+    if (key.includes('בלי')) return "bg-red-50 text-red-600 border-red-100 line-through decoration-red-400";
 
-    // התאמה חלקית לפי מילות מפתח
-    const lower = trimmed.toLowerCase();
-    if (lower.includes('שיבולת')) return 'bg-amber-100 text-amber-800 border-amber-300';
-    if (lower.includes('סויה')) return 'bg-green-100 text-green-700 border-green-300';
-    if (lower.includes('שקדים')) return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-    if (lower.includes('נטול')) return 'bg-purple-100 text-purple-700 border-purple-300';
-    if (lower.includes('קצף')) {
-        if (lower.includes('בלי') || lower.includes('ללא')) return 'bg-red-100 text-red-600 border-red-300';
-        if (lower.includes('הרבה')) return 'bg-purple-100 text-purple-700 border-purple-300';
-        if (lower.includes('מעט')) return 'bg-blue-100 text-blue-600 border-blue-300';
-    }
-    if (lower.includes('רותח') || lower.includes('חם מאוד')) return 'bg-red-100 text-red-600 border-red-300';
-    if (lower.includes('פושר') || lower.includes('קר')) return 'bg-blue-100 text-blue-600 border-blue-300';
-    if (lower.includes('חזק') || lower.includes('כפול')) return 'bg-orange-100 text-orange-700 border-orange-300';
-
-    // ברירת מחדל - אפור נעים
-    return 'bg-slate-100 text-slate-700 border-slate-200';
+    return modifierColors["default"];
 };

@@ -1,24 +1,31 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Check, X, Coffee, Salad, Sandwich, Mountain, Sparkles, Upload } from 'lucide-react';
+import { Plus, Check, X, Coffee, Salad, Sandwich, Mountain, Sparkles, Upload, Loader2 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { supabase } from '../lib/supabase';
 
 /**
  * SeedContainerPicker - Two sections: Containers & Backgrounds
  * Allows selecting ONE from EACH category.
+ * Supports business-specific seeds stored in Supabase.
  */
 const SeedContainerPicker = ({
     selectedContainer,
     onSelectContainer,
     selectedBackground,
-    onSelectBackground
+    onSelectBackground,
+    businessSeeds = [],
+    onAddSeed,
+    onDeleteSeed,
+    isLoading = false
 }) => {
     const { isDarkMode } = useTheme();
     const [activeTab, setActiveTab] = useState('containers');
+    const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef(null);
 
-    // Initial seeds
-    const [seeds, setSeeds] = useState({
+    // Initial default seeds
+    const defaultSeeds = {
         containers: [
             { id: 'seed_cup_white_plain', name: 'כוס לבנה', category: 'container', image_url: null, prompt_hint: 'PREMIUM PLAIN WHITE disposable paper coffee cup, no logos, minimalist' },
             { id: 'seed_cup_white', name: 'קפוצ׳ינו', category: 'container', image_url: '/cafe-images/item_84_קפוצ׳ינו.png', prompt_hint: 'white paper coffee cup with latte art' },
@@ -32,9 +39,15 @@ const SeedContainerPicker = ({
             { id: 'bg_garden', name: 'גינה', category: 'background', image_url: '/cafe-images/item_224_סלט_ירקות_קצוץ_טרי.png', prompt_hint: 'fresh garden with green plants and natural light', icon: Salad },
             { id: 'bg_minimal', name: 'מינימלי', category: 'background', image_url: null, prompt_hint: 'clean white background, minimal, studio lighting', icon: Sparkles }
         ]
-    });
+    };
 
-    const currentSeeds = activeTab === 'containers' ? seeds.containers : seeds.backgrounds;
+    // Combine defaults with business-specific seeds
+    const currentSeeds = useMemo(() => {
+        const category = activeTab === 'containers' ? 'container' : 'background';
+        const defaults = activeTab === 'containers' ? defaultSeeds.containers : defaultSeeds.backgrounds;
+        const customs = Array.isArray(businessSeeds) ? businessSeeds.filter(s => s.category === category) : [];
+        return [...defaults, ...customs];
+    }, [activeTab, businessSeeds]);
 
     const handleSelect = (seed) => {
         if (activeTab === 'containers') {
@@ -44,35 +57,51 @@ const SeedContainerPicker = ({
         }
     };
 
-    const handleDeleteSeed = (e, seedToDelete) => {
+    const handleDeleteSeed = async (e, seedToDelete) => {
         e.stopPropagation();
-        setSeeds(prev => ({
-            ...prev,
-            [activeTab]: prev[activeTab].filter(s => s.id !== seedToDelete.id)
-        }));
+        if (onDeleteSeed) {
+            onDeleteSeed(seedToDelete.id);
+        }
         if (selectedContainer?.id === seedToDelete.id) onSelectContainer(null);
         if (selectedBackground?.id === seedToDelete.id) onSelectBackground(null);
     };
 
-    const handleAddSeed = (e) => {
+    const handleAddSeed = async (e) => {
         const file = e.target.files?.[0];
-        if (!file) return;
+        if (!file || !onAddSeed) return;
 
-        const reader = new FileReader();
-        reader.onload = () => {
+        setIsUploading(true);
+        try {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `seed_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('menu-images')
+                .upload(fileName, file);
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('menu-images')
+                .getPublicUrl(fileName);
+
             const newSeed = {
                 id: `user_seed_${Date.now()}`,
-                name: 'חדש',
+                name: 'העלאה',
                 category: activeTab === 'containers' ? 'container' : 'background',
-                image_url: reader.result,
-                prompt_hint: activeTab === 'containers' ? 'user provided container style' : 'user provided background style'
+                image_url: publicUrl,
+                prompt_hint: activeTab === 'containers' ? 'user provided container style' : 'user provided background style',
+                is_custom: true
             };
-            setSeeds(prev => ({
-                ...prev,
-                [activeTab]: [...prev[activeTab], newSeed]
-            }));
-        };
-        reader.readAsDataURL(file);
+
+            onAddSeed(newSeed);
+        } catch (error) {
+            console.error('Error uploading seed:', error);
+            alert('שגיאה בהעלאת הסיד');
+        } finally {
+            setIsUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
     };
 
     return (
@@ -120,6 +149,7 @@ const SeedContainerPicker = ({
                 {currentSeeds.map((seed) => {
                     const isSelected = (activeTab === 'containers' ? selectedContainer?.id : selectedBackground?.id) === seed.id;
                     const SeedIcon = seed.icon;
+                    const isCustom = seed.is_custom || seed.id.toString().startsWith('user_seed');
 
                     return (
                         <motion.div
@@ -128,9 +158,11 @@ const SeedContainerPicker = ({
                             onClick={() => handleSelect(seed)}
                             className={`group relative rounded-xl overflow-hidden cursor-pointer aspect-square border-2 transition-all ${isSelected ? (activeTab === 'containers' ? 'border-orange-500' : 'border-purple-500') : 'border-transparent bg-slate-800'}`}
                         >
-                            <button onClick={(e) => handleDeleteSeed(e, seed)} className="absolute top-1 left-1 z-20 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-                                <X size={8} strokeWidth={4} />
-                            </button>
+                            {isCustom && (
+                                <button onClick={(e) => handleDeleteSeed(e, seed)} className="absolute top-1 left-1 z-20 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <X size={8} strokeWidth={4} />
+                                </button>
+                            )}
 
                             {seed.image_url ? (
                                 <img src={seed.image_url} alt={seed.name} className="w-full h-full object-cover" />
@@ -153,18 +185,28 @@ const SeedContainerPicker = ({
                     );
                 })}
 
-                <input type="file" ref={fileInputRef} onChange={handleAddSeed} accept="image/*" className="hidden" />
-                <motion.div
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${isDarkMode
-                        ? 'border-slate-600 hover:bg-slate-700/50 hover:border-orange-500'
-                        : 'border-slate-300 hover:bg-slate-50 hover:border-orange-400'
-                        }`}
-                >
-                    <Plus size={16} className={isDarkMode ? 'text-slate-500' : 'text-slate-400'} />
-                    <span className={`text-[10px] font-bold ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>הוסף</span>
-                </motion.div>
+                {isLoading ? (
+                    <div className="aspect-square rounded-xl bg-slate-800/50 flex items-center justify-center order-last">
+                        <Loader2 className="animate-spin text-slate-500" size={16} />
+                    </div>
+                ) : (
+                    <>
+                        <input type="file" ref={fileInputRef} onChange={handleAddSeed} accept="image/*" className="hidden" />
+                        <motion.div
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => !isUploading && fileInputRef.current?.click()}
+                            className={`aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${isDarkMode
+                                ? 'border-slate-600 hover:bg-slate-700/50 hover:border-orange-500'
+                                : 'border-slate-300 hover:bg-slate-50 hover:border-orange-400'
+                                } ${isUploading ? 'opacity-50 cursor-wait' : ''}`}
+                        >
+                            {isUploading ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} className={isDarkMode ? 'text-slate-500' : 'text-slate-400'} />}
+                            <span className={`text-[10px] font-bold ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                {isUploading ? 'מעלה...' : 'הוסף'}
+                            </span>
+                        </motion.div>
+                    </>
+                )}
             </div>
         </div>
     );

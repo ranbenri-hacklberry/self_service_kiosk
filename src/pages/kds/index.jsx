@@ -832,12 +832,12 @@ const KdsScreen = () => {
                     {filteredCurrentOrders.map(order => {
                       const CardWrapper = isLiteMode ? 'div' : motion.div;
                       const wrapperProps = isLiteMode ? { className: "flex-shrink-0 kds-card-item" } : {
-                        layoutId: `order-${order.id}`,
+                        // REMOVED layoutId to prevent flying
+                        layout: false, // 🔒 DISABLE REORDERING ANIMATION
                         initial: { opacity: 0.8, scale: 0.98 },
                         animate: { opacity: 1, scale: 1 },
                         exit: { opacity: 0, scale: 0.95, transition: { duration: 0.15 } },
                         transition: {
-                          layout: { type: "spring", stiffness: 400, damping: 35 },
                           opacity: { duration: 0.15 },
                           scale: { duration: 0.15 }
                         },
@@ -872,12 +872,12 @@ const KdsScreen = () => {
                     {completedOrders.map(order => {
                       const CardWrapper = isLiteMode ? 'div' : motion.div;
                       const wrapperProps = isLiteMode ? { className: "flex-shrink-0 kds-card-item" } : {
-                        layoutId: `order-${order.id}`,
+                        // REMOVED layoutId to prevent flying
+                        layout: false, // 🔒 DISABLE REORDERING ANIMATION
                         initial: { opacity: 0.8, scale: 0.98 },
                         animate: { opacity: 1, scale: 1 },
                         exit: { opacity: 0, scale: 0.95, transition: { duration: 0.15 } },
                         transition: {
-                          layout: { type: "spring", stiffness: 400, damping: 35 },
                           opacity: { duration: 0.15 },
                           scale: { duration: 0.15 }
                         },

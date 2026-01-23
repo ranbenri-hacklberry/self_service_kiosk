@@ -74,8 +74,17 @@ export interface OnboardingItem {
     selectedBackgroundId?: string; // ID of chosen background from atmosphereSeeds
     selectedContainerId?: string;  // ID of chosen container/serving dish from atmosphereSeeds
 
+    // 🆕 Advanced Manager Fields
+    saleStartDate?: string;
+    saleEndDate?: string;
+    preparationMode?: 'ready' | 'requires_prep' | 'cashier_choice';
+    displayKDS?: string[];
+    recipe?: { ingredient: string; quantity: string }[];
+    productionSchedule?: { day: string; quantity: number }[];
+
     // AI & App State
     prompt?: string;
+    negativePrompt?: string;
     imageUrl?: string;        // AI generated image URL (Supabase)
     originalImageUrl?: string; // User uploaded "seed" image for i2i
     manualImage?: Blob | string; // User override
@@ -89,6 +98,7 @@ export interface OnboardingItem {
     generationTime?: number; // In seconds
     powerSource?: string;    // e.g., "Apple Silicon"
     error?: string;          // 🆕 Per-item error message
+    seeds?: { type: string, data: string }[]; // 🆕 Visual references for i2i
 }
 
 export interface OnboardingSession {

@@ -87,7 +87,7 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
 
     const fetchMenuItems = useCallback(async () => {
         if (!businessId) return;
-        const CACHE_VERSION = 'v5';
+        const CACHE_VERSION = 'v6';
         const targetBusinessId = businessId + '_' + CACHE_VERSION;
 
         // 1. Load from Dexie cache first

@@ -11,7 +11,20 @@ const MenuItemCard = ({ item, onAddToCart }) => {
 
   // Fallback for missing/broken image
   const fallbackImage = '/api/placeholder/400/300';
-  const bgImage = imageError ? fallbackImage : (item?.image || fallbackImage);
+
+  // OPTIMIZATION: Resize heavy images for tablet performance
+  // Transform Supabase Storage URLs to 300x300 webp
+  const getOptimizedImage = (url) => {
+    if (!url) return fallbackImage;
+    if (url.includes('supabase') && url.includes('/storage/v1/object/public/')) {
+      // Append transformation params if not already present
+      const separator = url.includes('?') ? '&' : '?';
+      return `${url}${separator}width=300&height=300&resize=cover&quality=60&format=webp`;
+    }
+    return url;
+  };
+
+  const bgImage = imageError ? fallbackImage : getOptimizedImage(item?.image || fallbackImage);
 
   // Handler for click - memoized to prevent unnecessary re-renders
   const handleClick = useCallback(() => {
@@ -60,7 +73,7 @@ const MenuItemCard = ({ item, onAddToCart }) => {
           <div className={`w-full h-full animate-pulse ${isDarkMode ? 'bg-slate-800' : 'bg-slate-200'}`} />
         )}
         <img
-          src={item?.image}
+          src={bgImage}
           alt={item?.name}
           loading="lazy"
           className={`w-full h-full object-cover transition-transform duration-700 ease-out 

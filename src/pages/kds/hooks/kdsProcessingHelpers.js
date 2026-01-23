@@ -232,16 +232,15 @@ export const groupItemsByStatus = (items) => {
     return items.reduce((acc, item) => {
         let groupKey;
 
-        // CRITICAL FIX: Separate ready items from in_progress!
-        // This prevents "merged card" issue where firing second course
-        // would pull ready items back to in_progress display.
-        if (item.item_status === 'held') {
+        // CRITICAL: Use the normalized 'status' field (which might be overridden by anti-flicker)
+        // instead of the raw 'item_status' from the server.
+        if (item.status === 'held') {
             groupKey = 'delayed';
-        } else if (item.item_status === 'new' || item.item_status === 'pending') {
+        } else if (item.status === 'new' || item.status === 'pending') {
             groupKey = 'new';
-        } else if (item.item_status === 'ready') {
+        } else if (item.status === 'ready') {
             groupKey = 'ready';
-        } else if (item.item_status === 'completed') {
+        } else if (item.status === 'completed') {
             // Already finished, don't show on active board
             return acc;
         } else {

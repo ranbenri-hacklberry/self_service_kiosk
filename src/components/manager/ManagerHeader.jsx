@@ -60,7 +60,17 @@ const ManagerHeader = ({ activeTab, onTabChange, currentUser, isImpersonating, o
                 <div className="flex-1 relative flex justify-center px-1">
                     <nav className="w-full max-w-lg">
                         <div className="flex items-center bg-slate-800/30 p-1 rounded-xl border border-slate-700/30 shadow-inner gap-1">
-                            {navItems.map((item) => {
+                            {navItems.filter(item => {
+                                // Default allowed/base features
+                                if (['sales', 'menu'].includes(item.id)) return true;
+
+                                // Restricted features - only for Owner or Admin
+                                const role = (currentUser?.role || '').toLowerCase();
+                                const access = (currentUser?.access_level || '').toLowerCase();
+                                const isPrivileged = role === 'owner' || role === 'admin' || access === 'owner' || access === 'admin' || currentUser?.is_admin;
+
+                                return isPrivileged;
+                            }).map((item) => {
                                 const isActive = activeTab === item.id;
 
                                 return (

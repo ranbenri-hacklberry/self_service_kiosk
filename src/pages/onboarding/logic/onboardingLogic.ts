@@ -233,6 +233,76 @@ export const validateModifierGroups = (groups: ModifierGroup[]): ModifierValidat
 
 
 /**
+ * 🆕 Robust Image Compression
+ * Prevents 400 errors from Gemini by ensuring images are reasonable size.
+ */
+const compressImage = async (blob: Blob, maxDim = 1024): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > maxDim) {
+                    height *= maxDim / width;
+                    width = maxDim;
+                }
+            } else {
+                if (height > maxDim) {
+                    width *= maxDim / height;
+                    height = maxDim;
+                }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx?.drawImage(img, 0, 0, width, height);
+
+            // Return base64 without the prefix
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            resolve(dataUrl.split(',')[1]);
+        };
+        img.onerror = reject;
+        img.src = URL.createObjectURL(blob);
+    });
+};
+
+/**
+ * 🆕 Resizes a base64 image URL to a target dimension
+ */
+const resizeBase64 = async (base64Url: string, maxDim = 512): Promise<string> => {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            if (width > height) {
+                if (width > maxDim) {
+                    height *= maxDim / width;
+                    width = maxDim;
+                }
+            } else {
+                if (height > maxDim) {
+                    width *= maxDim / height;
+                    height = maxDim;
+                }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx?.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.85)); // 85% quality is plenty
+        };
+        img.src = base64Url;
+    });
+};
+
+/**
  * 2.6 Visual Seed Analysis (Gemini Vision)
  * Analyzes uploaded seeds to extract precise material, angle, and style details.
  */
@@ -241,21 +311,16 @@ export const analyzeVisualSeed = async (imageUrl: string, type: 'container' | 'b
         const apiKey = apiKeyPassed || import.meta.env.VITE_GEMINI_API_KEY;
         if (!apiKey) return `User uploaded ${type}`;
 
-        const prompt = type === 'container'
-            ? "Describe ONLY the empty serving dish, plate, or glass. Mention material (ceramic, wood, transparent glass), texture, and color. DO NOT mention any food or liquid inside. Focus on the object itself as a template. Be very concise."
-            : "Describe ONLY the environment/background. Mention the table surface (wood, marble, cloth), lighting, and overall style. DO NOT mention plates, cutlery, food, or people. Focus on the vibes and materials of the space. Be very concise.";
+        // Detect MIME type but fallback to image/png
+        const blobObj = await (await fetch(imageUrl)).blob();
+        const base64Data = await compressImage(blobObj);
 
-        // Safer and faster buffer to base64
-        const arrayBuffer = await (await fetch(imageUrl)).blob().then(b => b.arrayBuffer());
-        const bytes = new Uint8Array(arrayBuffer);
-        let binary = '';
-        for (let i = 0; i < bytes.length; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        const base64Data = btoa(binary);
+        const prompt = type === 'container'
+            ? "Describe ONLY the empty serving dish, plate, glass, or plant pot. Mention material (ceramic, wood, transparent glass, terracotta, plastic), texture, and color. DO NOT mention any food or liquid. Focus on the object itself as a template. Be very concise."
+            : "Describe ONLY the environment/background. Mention the table surface (wood, marble, cloth, soil), lighting, and overall style. DO NOT mention plates, cutlery, food, or people. Focus on the vibes and materials of the space. Be very concise.";
 
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${apiKey}`,
+            `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -263,7 +328,7 @@ export const analyzeVisualSeed = async (imageUrl: string, type: 'container' | 'b
                     contents: [{
                         parts: [
                             { text: prompt },
-                            { inline_data: { mime_type: "image/png", data: base64Data } }
+                            { inline_data: { mime_type: "image/jpeg", data: base64Data } }
                         ]
                     }],
                     generationConfig: { temperature: 0.2, maxOutputTokens: 100 }
@@ -271,7 +336,11 @@ export const analyzeVisualSeed = async (imageUrl: string, type: 'container' | 'b
             }
         );
 
-        if (!response.ok) throw new Error('Vision API failed');
+        if (!response.ok) {
+            const errBody = await response.json();
+            console.error('Vision API Error Body:', errBody);
+            throw new Error(`Vision API failed: ${response.status}`);
+        }
         const data = await response.json();
         return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || `User uploaded ${type}`;
 
@@ -288,7 +357,8 @@ export const analyzeVisualSeed = async (imageUrl: string, type: 'container' | 'b
 export const generateImageGemini = async (
     prompt: string,
     apiKey: string,
-    negativePrompt?: string
+    negativePrompt?: string,
+    seeds?: { type: string, data: string }[]
 ): Promise<{ url: string; timeTaken: number; powerSource: string } | null> => {
     try {
         const startTime = Date.now();
@@ -298,9 +368,31 @@ export const generateImageGemini = async (
             ? `${prompt}\n\nSTRICT VISUAL CONSTRAINTS (DO NOT INCLUDE): ${negativePrompt}`
             : prompt;
 
-        console.log('🎨 Starting Gemini Image Gen for prompt:', finalPrompt.substring(0, 50) + '...');
+        const parts: any[] = [];
+
+        // 🆕 Pass images FIRST to establish visual context
+        if (seeds && seeds.length > 0) {
+            seeds.forEach(s => {
+                parts.push({ text: `INPUT_${s.type.toUpperCase()}_IMAGE (Follow these pixels exactly):` });
+                parts.push({ inline_data: { mime_type: "image/jpeg", data: s.data } });
+            });
+        }
+
+        // Then add the prompt as an instruction on how to combine them
+        parts.push({
+            text: `INSTRUCTION: You are a professional image compositor. 
+        Your task is to take the EXACT object from the 'INPUT_REFERENCE_IMAGE' and place it perfectly into the environment shown in 'INPUT_BACKGROUND_IMAGE'. 
+        RETAIN the exact colors, shape, and pot from the reference. 
+        RETAIN the exact landscape from the background.
+        
+        FINAL TASK: ${finalPrompt}`
+        });
+
+        console.log('%c🚀 FINAL AI PROMPT:', 'color: #8b5cf6; font-weight: bold; font-size: 12px;', finalPrompt);
+        console.log('%c🚫 NEGATIVE PROMPT:', 'color: #ef4444; font-weight: bold; font-size: 12px;', negativePrompt);
+
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout (2 minutes)
+        const timeoutId = setTimeout(() => controller.abort(), 180000); // 180s timeout (3 minutes)
 
         try {
             const response = await fetch(
@@ -309,7 +401,7 @@ export const generateImageGemini = async (
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        contents: [{ parts: [{ text: finalPrompt }] }],
+                        contents: [{ parts }],
                         generationConfig: {
                             responseModalities: ["image"]
                         }
@@ -334,11 +426,14 @@ export const generateImageGemini = async (
             if (part && part.inlineData) {
                 const base64 = part.inlineData.data;
                 const mimeType = part.inlineData.mimeType || 'image/png';
-                const url = `data:${mimeType};base64,${base64}`;
-                const timeTaken = ((Date.now() - startTime) / 1000).toFixed(1);
+                const fullResUrl = `data:${mimeType};base64,${base64}`;
 
+                // 🆕 Shrink image to 512px to save browser memory and storage
+                const shrunkUrl = await resizeBase64(fullResUrl, 512);
+
+                const timeTaken = ((Date.now() - startTime) / 1000).toFixed(1);
                 return {
-                    url,
+                    url: shrunkUrl,
                     timeTaken: parseFloat(timeTaken),
                     powerSource: 'Gemini 3 Pro (Image)'
                 };
@@ -349,7 +444,7 @@ export const generateImageGemini = async (
         } catch (err: any) {
             clearTimeout(timeoutId);
             if (err.name === 'AbortError') {
-                throw new Error('Generation timed out (120s limit). Please try again.');
+                throw new Error('Generation timed out (180s limit). Please try again.');
             }
             throw err;
         }
@@ -362,8 +457,9 @@ export const generateImageGemini = async (
 export const generateImagePrompt = async (
     item: OnboardingItem,
     atmosphereSeeds: AtmosphereSeed[],
-    apiKeyPassed?: string
-): Promise<{ prompt: string; negativePrompt: string }> => {
+    apiKeyPassed?: string,
+    businessContext?: string | null
+): Promise<{ prompt: string; negativePrompt: string; seeds?: { type: string, data: string }[] }> => {
     try {
         const apiKey = apiKeyPassed || import.meta.env.VITE_GEMINI_API_KEY;
         if (!apiKey) return { prompt: item.name, negativePrompt: "low quality" };
@@ -372,90 +468,139 @@ export const generateImagePrompt = async (
         const container = item.selectedContainerId ? atmosphereSeeds.find(s => s.id === item.selectedContainerId) : null;
 
         const subjectDescription = item.visualDescription || item.name;
+        const subjectName = item.name.toLowerCase();
+        const subjectCategory = (item.category || "").toLowerCase();
 
-        // Helper to convert array buffer to base64 safely
-        const bufferToBase64 = (buffer: ArrayBuffer) => {
-            let binary = '';
-            const bytes = new Uint8Array(buffer);
-            const len = bytes.byteLength;
-            for (let i = 0; i < len; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            return btoa(binary);
+        // 🌿 Map tricky Hebrew plant names to clear English botanical names
+        const plantNameMap: Record<string, string> = {
+            'אמנון ותמר': 'Viola tricolor pansy flower plant',
+            'ביצן': 'Alternanthera plant',
+            'לוע הארי': 'Snapdragon Antirrhinum flower',
+            'פטוניה': 'Petunia flower',
+            'ניצנית': 'Kalanchoe succulent plant',
+            'סלסילי כסף': 'Lobularia maritima Alyssum',
+            'לובליה': 'Lobelia flower',
+            'בידנס': 'Bidens ferulifolia flower',
+            'לנטנה': 'Lantana camara flower',
+            'חמניה': 'Sunflowers plant',
+            'אלוורה': 'Aloe Vera succulent plant',
         };
+
+        let botanicalEnrichment = "";
+        for (const [heb, eng] of Object.entries(plantNameMap)) {
+            if (subjectName.includes(heb)) {
+                botanicalEnrichment = `(This is a ${eng}, NOT a person or biblical character)`;
+                break;
+            }
+        }
+
+        const isPlant = (businessContext?.includes('Nursery') ||
+            subjectCategory.includes('plant') ||
+            subjectCategory.includes('flower') ||
+            subjectCategory.includes('succulent') ||
+            subjectCategory.includes('צמח') ||
+            subjectCategory.includes('פרח') ||
+            subjectCategory.includes('משתלה') ||
+            subjectCategory.includes('עונתי') ||
+            subjectCategory.includes('גינה') ||
+            subjectName.includes('plant') ||
+            subjectName.includes('flower') ||
+            subjectName.includes('אמנון ותמר') ||
+            subjectName.includes('שתיל') ||
+            subjectName.includes('עציץ'));
+
 
         const parts: any[] = [
             {
-                text: `You are a Professional Food Photography Stylist and AI Prompt Architect.
+                text: `You are a Professional ${isPlant ? 'Botanical and Nursery' : 'Food'} Photography Stylist and AI Prompt Architect.
+                ${businessContext ? `CONTEXT: This is a ${businessContext}.` : ''}
                 Your task is to create a masterpiece-level description for a high-end AI image generator.
                 STRICT RULE: YOUR OUTPUT MUST BE 100% IN ENGLISH. NO HEBREW.
+                ${isPlant ? 'CRITICAL: THIS IS A NURSERY/PLANT SHOP (משתלה). THE SUBJECT IS ALWAYS A PLANT. NEVER GENERATE PEOPLE, HUMANS, OR RELIGIOUS/MYTHICAL FIGURES.' : ''}
                 
-                SUBJECT: ${subjectDescription}
+                SUBJECT: ${subjectName} (Description: ${subjectDescription}) ${botanicalEnrichment}
                 CATEGORY: ${item.category}
+                CONTEXT: This is a botanical product for a nursery.
                 
                 MISSION:
-                1. Analyze the 'CONTAINER SEED' image (if provided). You MUST describe the exact dish/plate/glass type, material, and color shown in that image. Use the same camera angle.
-                2. Analyze the 'BACKGROUND SEED' image (if provided). You MUST describe the environment, surface, and lighting exactly as shown in that image.
-                3. Describe the 'SUBJECT' being served in that container, on that surface, in that environment.
+                1. ANALYZE REFERENCE: Look at 'REFERENCE IMAGE'. Describe its specific features (exact flower colors, pot material/shape, unique growth patterns). Your generated prompt MUST include these details to ensure 1:1 fidelity.
+                2. SCENE COMPOSITION: You MUST place this exact object onto the edge of the rustic wooden deck shown/described in the 'BACKGROUND SEED' or environment seeds.
+                3. BACKGROUND REPLACEMENT: The background from the 'REFERENCE IMAGE' must be totally deleted. Replace it with the SOLE environment from the background seeds, but apply a heavy, cinematic blur (bokeh).
+                4. CINEMATIC LIGHTING: Match the lighting from the background seeds onto the object. Foreground (object) is sharp, background is blurry.
+
+                STRICT PROMPT TEMPLATE:
+                "Macro cinematic photoreal product photography of [DETAILED DESCRIPTION OF REFERENCE OBJECT] sitting on the edge of a rustic wooden deck, overlooking a blurred [DESCRIPTION OF BACKGROUND ENVIRONMENT], professional bokeh, high-end commercial aesthetic, 8k resolution, extreme detail."
                 
-                PROMPT STYLE (Natural Language):
-                - Start with: "A high-end, professional food photography shot of [SUBJECT]..."
-                - Specify lighting: Match the background seed's lighting.
-                - Detail textures: Describe the food's texture (crispy, creamy, etc.).
-                - Background: Match the background seed precisely.
-                - Camera Specs: Describe the angle from the container seed (e.g., "top-down view", "45-degree side angle").
-                
-                NEGATIVE PROMPT: Mention what to avoid: "people, hands, fingers, text, letters, watermarks, blurry, low quality, mess, straws, plastic, messy, distorted, generic".
+                STRICT RULES:
+                - ALWAYS English.
+                - NEVER generate people/hands.
+                - IGNORE the original background in the reference image completely.
                 
                 RETURN FORMAT: JSON object {"prompt": "...", "negativePrompt": "..."}`
             }
         ];
 
+        const seeds: { type: string, data: string }[] = [];
+
         if (item.originalImageUrl) {
             try {
-                const refData = await (await fetch(item.originalImageUrl)).blob().then(b => b.arrayBuffer()).then(a => bufferToBase64(a));
+                const b = await (await fetch(item.originalImageUrl)).blob();
+                const refData = await compressImage(b);
                 parts.push({ text: "REFERENCE IMAGE (Match this object's appearance):" });
-                parts.push({ inline_data: { mime_type: "image/png", data: refData } });
+                parts.push({ inline_data: { mime_type: "image/jpeg", data: refData } });
+                seeds.push({ type: 'reference', data: refData });
             } catch (e) { console.warn("Failed to load reference image seed", e); }
         }
         if (container) {
             try {
-                const containerData = await (await fetch(container.blob as string)).blob().then(b => b.arrayBuffer()).then(a => bufferToBase64(a));
+                const b = await (await fetch(container.blob as string)).blob();
+                const containerData = await compressImage(b);
                 parts.push({ text: "CONTAINER SEED (Use this dish/cup shape, angle and material):" });
-                parts.push({ inline_data: { mime_type: "image/png", data: containerData } });
+                parts.push({ inline_data: { mime_type: "image/jpeg", data: containerData } });
+                seeds.push({ type: 'container', data: containerData });
             } catch (e) { console.warn("Failed to load container seed", e); }
         }
         if (background) {
             try {
-                const backgroundData = await (await fetch(background.blob as string)).blob().then(b => b.arrayBuffer()).then(a => bufferToBase64(a));
+                const b = await (await fetch(background.blob as string)).blob();
+                const backgroundData = await compressImage(b);
                 parts.push({ text: "BACKGROUND SEED (Use this environment and lighting):" });
-                parts.push({ inline_data: { mime_type: "image/png", data: backgroundData } });
+                parts.push({ inline_data: { mime_type: "image/jpeg", data: backgroundData } });
+                seeds.push({ type: 'background', data: backgroundData });
             } catch (e) { console.warn("Failed to load background seed", e); }
         }
 
-        console.log('🧠 Synthesizing AI Prompt using Gemini 3 Pro...');
+        console.log('🧠 Synthesizing AI Prompt using Gemini 3 Flash (The Architect)...');
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${apiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     contents: [{ parts }],
-                    generationConfig: { temperature: 0.2, response_mime_type: "application/json" }
+                    generationConfig: { temperature: 0, response_mime_type: "application/json" }
                 })
             }
         );
 
+        if (!response.ok) {
+            const errData = await response.json();
+            console.error('Gemini Prompt Gen API Error:', errData);
+            throw new Error(`Cloud AI Error: ${response.status}`);
+        }
+
         const data = await response.json();
-        const result = JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
+        const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        const result = JSON.parse(resultText);
 
         return {
             prompt: result.prompt || subjectDescription,
-            negativePrompt: result.negativePrompt || "people, blurry, candles, straws"
+            negativePrompt: result.negativePrompt || "people, blurry, candles, straws",
+            seeds: seeds // 🆕 Pass the raw image data forward
         };
     } catch (err) {
         console.error('Prompt gen failed:', err);
-        return { prompt: item.name, negativePrompt: "low quality" };
+        return { prompt: item.name, negativePrompt: "low quality", seeds: [] };
     }
 };
 
@@ -467,26 +612,48 @@ export const enrichItemVisually = async (item: OnboardingItem, apiKeyPassed?: st
         const apiKey = apiKeyPassed || import.meta.env.VITE_GEMINI_API_KEY;
         if (!apiKey) return item.description || item.name;
 
-        const prompt = `You are a culinary art director for a high-end restaurant. 
-        Create a concise VISUAL description (3-5 words) in HEBREW for this menu item.
-        Focus ONLY on the physical appearance of the final dish/drink. 
-        Exclude terms like "beans" or "ingredients" if they aren't part of the final visual presentation.
-        The goal is to describe what the customer sees on the plate/in the glass.
-        
-        ITEM name: ${item.name}
-        Description: ${item.description}
-        Category: ${item.category}
-        
-        Examples: 
-        - "שוט אספרסו בודד, קרמה זהובה, נוזל כהה"
-        - "קרואסון חמאה פריך ושחום"
-        - "לאטה קרמי עם לאטה ארט בצורת לב"
-        
-        Visual Description (Hebrew):`;
+        const subjectName = item.name.toLowerCase();
+        const subjectCategory = (item.category || "").toLowerCase();
 
-        console.log('✍️ Generating Visual Description in Hebrew...');
+        const isPlant = subjectCategory.includes('plant') ||
+            subjectCategory.includes('flower') ||
+            subjectCategory.includes('succulent') ||
+            subjectCategory.includes('צמח') ||
+            subjectCategory.includes('פרח') ||
+            subjectCategory.includes('משתלה') ||
+            subjectCategory.includes('עונתי') ||
+            subjectName.includes('plant') ||
+            subjectName.includes('flower') ||
+            subjectName.includes('אמנון ותמר') ||
+            subjectName.includes('שתיל');
+
+        const persona = isPlant ? "botanical and nursery art director" : "culinary art director";
+        const examples = isPlant
+            ? `- "שתיל אמנון ותמר עם פרחים סגולים וצהובים בעציץ פלסטיק חום"
+- "סקולנט ירוק בשרני בתוך כלי קרמיקה קטן"
+- "זר פרחי חמניה צהובים וגבוהים"`
+            : `- "שוט אספרסו בודד, קרמה זהובה, נוזל כהה"
+- "קרואסון חמאה פריך ושחום"
+- "לאטה קרמי עם לאטה ארט בצורת לב"`;
+
+        const prompt = `You are a professional ${persona} for a high-end business. 
+Create a concise VISUAL description (3-5 words) in HEBREW for this item.
+Focus ONLY on the physical appearance of the final object/plant. 
+${isPlant ? 'DO NOT mention people or religious figures. Focus on the plant\'s color, shape, and pot.' : 'Exclude terms like "beans" or "ingredients" if they aren\'t part of the final visual presentation.'}
+The goal is to describe what the customer sees.
+
+ITEM name: ${item.name}
+Description: ${item.description}
+Category: ${item.category}
+
+Examples: 
+${examples}
+
+Visual Description (Hebrew):`;
+
+        console.log(`✍️ Generating Visual Description in Hebrew (${isPlant ? 'Plant' : 'Food'} context)...`);
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${apiKey}`,
+            `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -496,6 +663,12 @@ export const enrichItemVisually = async (item: OnboardingItem, apiKeyPassed?: st
                 })
             }
         );
+
+        if (!response.ok) {
+            const err = await response.json();
+            console.error('Visual description API error:', err);
+            return item.name;
+        }
 
         const data = await response.json();
         return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || item.name;

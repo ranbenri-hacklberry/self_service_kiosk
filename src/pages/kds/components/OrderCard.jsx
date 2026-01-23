@@ -96,7 +96,12 @@ const OrderCard = memo(({
   const [isUpdating, setIsUpdating] = useState(false);
 
   // --- 🔋 LITE MODE SUPPORT ---
-  const isLiteMode = useMemo(() => localStorage.getItem('lite_mode') === 'true', []);
+  // Force Lite Mode optimizations if we are on a tablet-sized screen (width <= 1280px) OR if explicitly set
+  const isLiteMode = useMemo(() => {
+    const stored = localStorage.getItem('lite_mode') === 'true';
+    const isTablet = window.innerWidth <= 1280;
+    return stored || isTablet;
+  }, []);
 
   // --- 🕒 AGING LOGIC ---
   const [agingMinutes, setAgingMinutes] = useState(0);
@@ -118,10 +123,15 @@ const OrderCard = memo(({
 
   const agingClass = useMemo(() => {
     if (isHistory || isReady) return '';
+    if (isLiteMode) { // No animation for Lite Mode
+      if (agingMinutes >= 30) return 'aging-critical border-red-500 bg-red-50';
+      if (agingMinutes >= 15) return 'aging-warn border-amber-400 bg-amber-50';
+      return '';
+    }
     if (agingMinutes >= 30) return 'aging-critical';
     if (agingMinutes >= 15) return 'aging-warn';
     return '';
-  }, [agingMinutes, isHistory, isReady]);
+  }, [agingMinutes, isHistory, isReady, isLiteMode]);
 
   // Memoize status styles to avoid recalculating classes
   const statusStyles = useMemo(() => {
@@ -173,8 +183,8 @@ const OrderCard = memo(({
     };
 
     const totalRows = items.reduce((acc, item) => acc + getItemRows(item), 0);
-    // 🔋 LITE MODE: Disable complex split column logic to save CPU
-    const splitNeeded = !isLiteMode && totalRows > 5 && !isHistory;
+    // 🔋 LITE MODE: Maintain split logic for large orders to avoid bad scrolling
+    const splitNeeded = totalRows > 5 && !isHistory;
 
     const rCol = [];
     const lCol = [];
@@ -226,6 +236,7 @@ const OrderCard = memo(({
 
   const cardWidthClass = isHistory
     ? (isLargeOrder ? 'w-[294px]' : 'w-[200px]')
+    // 🎨 DESIGN SYSTEM MARKER [DO NOT TOUCH]: widths must be 420px (double) and 280px (single)
     : (isDriverView ? 'w-full' : (isLargeOrder ? 'w-[420px]' : 'w-[280px]'));
 
   const deliveryInfo = useMemo(() => {
@@ -246,7 +257,7 @@ const OrderCard = memo(({
     const modSizeClass = isHistory ? 'text-[10px]' : 'text-xs';
 
     return (
-      <div key={`${item.menuItemId}-${item.modsKey || item.id || idx}`} className={`flex flex-col ${!isLiteMode ? 'transition-colors duration-300' : ''} ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered ? '-mx-1 px-1 rounded-md mb-1 bg-gray-50/50' : ''} ${isEarlyDelivered && !isKanban ? 'opacity-40' : ''}`}>
+      <div key={`${item.menuItemId}-${item.modsKey || item.id || idx}`} className={`flex flex-col ${!isLiteMode ? 'transition-colors duration-300' : ''} ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered ? '-mx-1 px-1 rounded-md mb-1 bg-gray-50/50' : ''} ${isEarlyDelivered && !isKanban ? 'opacity-60' : ''}`}>
         <div className="flex items-start gap-[5px] relative">
 
           {/* KDS: Early Delivery Indicator Line - DISABLED in Lite Mode */}
@@ -279,7 +290,7 @@ const OrderCard = memo(({
                   return (
                     <div className="flex flex-col">
                       <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
-                        <span className={`font-bold ${isEarlyDelivered ? 'text-gray-500' : (item.quantity > 1 ? 'text-orange-700' : 'text-gray-900')} ${nameSizeClass}`}>
+                        <span className={`font-bold ${isEarlyDelivered ? 'text-slate-600 line-through' : (item.quantity > 1 ? 'text-orange-700' : 'text-gray-900')} ${nameSizeClass}`}>
                           {item.name}
                         </span>
                         {isPackedItem && <Check size={14} className="text-green-600 stroke-[3]" />}
@@ -297,7 +308,7 @@ const OrderCard = memo(({
                   return (
                     <div className="flex flex-col">
                       <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
-                        <span className={`font-bold ${isEarlyDelivered ? 'text-gray-500' : (item.quantity > 1 ? 'text-orange-700' : 'text-gray-900')} ${nameSizeClass}`}>
+                        <span className={`font-bold ${isEarlyDelivered ? 'text-slate-600 line-through' : (item.quantity > 1 ? 'text-orange-700' : 'text-gray-900')} ${nameSizeClass}`}>
                           {item.name}
                         </span>
                         {isPackedItem && <Check size={14} className="text-green-600 stroke-[3]" />}
@@ -309,7 +320,7 @@ const OrderCard = memo(({
                 return (
                   <div className="flex flex-col">
                     <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
-                      <span className={`font-bold ${isEarlyDelivered ? 'text-gray-500' : (item.quantity > 1 ? 'text-orange-700' : 'text-gray-900')} ${nameSizeClass}`}>
+                      <span className={`font-bold ${isEarlyDelivered ? 'text-slate-600 line-through' : (item.quantity > 1 ? 'text-orange-700' : 'text-gray-900')} ${nameSizeClass}`}>
                         {item.name}
                       </span>
                       {isPackedItem && <Check size={14} className="text-green-600 stroke-[3]" />}
@@ -345,7 +356,7 @@ const OrderCard = memo(({
   }, [order.items?.length]);
 
   return (
-    <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl px-[5px] pt-1.5 pb-2.5 ${isHistory ? 'mx-[2px]' : 'mx-2'} flex flex-col h-full font-heebo ${(order.type === 'delayed' || orderStatusLower === 'new') ? 'bg-gray-100' : 'bg-white'} ${statusStyles} ${agingClass} border-x border-b border-gray-100 ${glowClass} ${shouldFlash ? 'animate-pulse ring-4 ring-orange-400 z-20' : ''} relative overflow-hidden`}>
+    <div className={`kds-card ${cardWidthClass} flex-shrink-0 rounded-2xl px-[5px] pt-1.5 pb-2.5 ${isHistory ? 'mx-[2px]' : 'mx-2'} flex flex-col h-full font-heebo ${(order.type === 'delayed' || orderStatusLower === 'new') ? 'bg-gray-100' : 'bg-white'} ${statusStyles} ${agingClass} border-x border-b border-gray-100 ${glowClass} ${shouldFlash && !isLiteMode ? 'animate-pulse ring-4 ring-orange-400 z-20' : ''} relative overflow-hidden`}>
 
       {/* Header */}
       <div className="z-0 flex justify-between items-start mb-0.5 border-b border-gray-50 pb-0.5">

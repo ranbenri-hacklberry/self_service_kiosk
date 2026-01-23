@@ -5,11 +5,12 @@ import { useTheme } from '../../context/ThemeContext';
 import SeedContainerPicker from '../../components/SeedContainerPicker';
 import { supabase } from '../../lib/supabase';
 import { generateMenuImage } from '../../services/geminiService';
+import { fetchBusinessSeeds, saveBusinessSeed, deleteBusinessSeed } from '../../services/aiSettingsService';
 
 /**
  * EditPanel - Left side panel for editing menu items
  */
-const EditPanel = ({ item, onItemChange, onSave, onClose, authMode, onAuthModeChange }) => {
+const EditPanel = ({ item, onItemChange, onSave, onClose, authMode, onAuthModeChange, aiSettings, businessId }) => {
     const { isDarkMode } = useTheme();
     const fileInputRef = useRef(null);
     const [isUploading, setIsUploading] = useState(false);
@@ -19,6 +20,36 @@ const EditPanel = ({ item, onItemChange, onSave, onClose, authMode, onAuthModeCh
     const [selectedBackground, setSelectedBackground] = useState(null);
     const [generationStatus, setGenerationStatus] = useState('');
     const [userSeedImage, setUserSeedImage] = useState(null);
+
+    // Business Seeds
+    const [businessSeeds, setBusinessSeeds] = useState([]);
+    const [isLoadingSeeds, setIsLoadingSeeds] = useState(false);
+
+    useEffect(() => {
+        if (businessId) {
+            setIsLoadingSeeds(true);
+            fetchBusinessSeeds(businessId).then(seeds => {
+                setBusinessSeeds(seeds);
+                setIsLoadingSeeds(false);
+            });
+        }
+    }, [businessId]);
+
+    const handleAddBusinessSeed = async (newSeed) => {
+        if (!businessId) return;
+
+        // Optimistic update
+        setBusinessSeeds(prev => [...prev, newSeed]);
+        await saveBusinessSeed(businessId, newSeed);
+    };
+
+    const handleDeleteBusinessSeed = async (seedId) => {
+        if (!businessId) return;
+
+        // Optimistic update
+        setBusinessSeeds(prev => prev.filter(s => s.id !== seedId));
+        await deleteBusinessSeed(businessId, seedId);
+    };
 
     // Handle input changes
     const handleChange = (field, value) => {
@@ -84,7 +115,9 @@ const EditPanel = ({ item, onItemChange, onSave, onClose, authMode, onAuthModeCh
                 containerHint,
                 backgroundHint,
                 { description: item.description },
-                userSeedImage
+                userSeedImage,
+                aiSettings,
+                selectedBackground?.image_url // Pass the background seed URL
             );
 
             if (imageUrl) {
@@ -214,6 +247,10 @@ const EditPanel = ({ item, onItemChange, onSave, onClose, authMode, onAuthModeCh
                         onSelectContainer={setSelectedContainer}
                         selectedBackground={selectedBackground}
                         onSelectBackground={setSelectedBackground}
+                        businessSeeds={businessSeeds}
+                        onAddSeed={handleAddBusinessSeed}
+                        onDeleteSeed={handleDeleteBusinessSeed}
+                        isLoading={isLoadingSeeds}
                     />
                 </div>
 
@@ -243,12 +280,17 @@ const EditPanel = ({ item, onItemChange, onSave, onClose, authMode, onAuthModeCh
                     </div>
                 </div>
             </div>
-
+            {/* Footer */}
             <div className={`p-4 border-t ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-white'}`}>
-                <motion.button whileTap={{ scale: 0.98 }} onClick={handleSave} className="w-full py-4 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-black text-lg flex items-center justify-center gap-2 shadow-lg">
+                <button
+                    onClick={handleSave}
+                    disabled={isGenerating || isUploading}
+                    className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl shadow-orange-500/20 flex items-center justify-center gap-2 transition-all active:scale-95 ${isGenerating || isUploading ? 'bg-slate-700 text-slate-500' : 'bg-orange-500 text-white'
+                        }`}
+                >
                     <Save size={20} />
-                    שמור שינויים
-                </motion.button>
+                    שמור שינויים לתפריט
+                </button>
             </div>
         </div>
     );

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Monitor, Gift, Cpu, ArrowLeft, Package, Maximize } from 'lucide-react';
+import { Sparkles, Monitor, Smartphone, CheckCircle, ArrowLeft, Package, Ghost, Maximize } from 'lucide-react';
 import { APP_VERSION } from '../version';
 
 /**
@@ -55,68 +55,45 @@ const WhatsNewModal = ({ onClose }) => {
                     {/* Feature 1: KDS Stability */}
                     <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-indigo-50 to-blue-50 rounded-2xl border border-blue-100 shadow-sm transition-transform hover:scale-[1.01]">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <Monitor className="w-6 h-6 text-white" />
+                            <Ghost className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                            <h3 className="font-black text-slate-800 text-base">מסך ההזמנות נרגע 🧘‍♂️</h3>
+                            <h3 className="font-black text-slate-800 text-base">הרוחות רפאים עזבו את המטבח! 👻</h3>
                             <p className="text-slate-600 text-xs mt-0.5 leading-snug">
-                                ההזמנות הפסיקו לשחק תופסת, נעלמו הרוחות שאיחדו שולחנות ואין יותר "קפיצות" מוזרות. בקיצור, הסרוויס חוזר להיות משעמם (בקטע טוב).
+                                סוף סוף אפשר לסמוך על המסך. ההזמנות הפסיקו לשחק מחבואים, ה"רוחות" שגרמו להן לזוז לבד או להיעלם פוטרו, והכל נשאר בדיוק איפה ששמתם אותו.
                             </p>
                         </div>
                     </div>
 
-                    {/* Feature 2: Loyalty Fix */}
+                    {/* Feature 2: SMS Fix */}
                     <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-orange-50 to-amber-50 rounded-2xl border border-orange-100 shadow-sm transition-transform hover:scale-[1.01]">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <Gift className="w-6 h-6 text-white" />
+                            <Smartphone className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                            <h3 className="font-black text-slate-800 text-base">המועדון *באמת* סודר 💎</h3>
+                            <h3 className="font-black text-slate-800 text-base">הסמסים חזרו לחיים! 📱</h3>
                             <p className="text-slate-600 text-xs mt-0.5 leading-snug">
-                                כן, אמרנו את זה כבר, אבל הפעם זה עובד על אמת. הנקודות נצברות כמו שצריך (טפו טפו טפו). בלי עין הרע 🧿
+                                השלום והשלווה חזרו למטבח. כבר לא צריך לצאת ולצרוח שמות של לקוחות - הסמס נשלח בכיף שלו והלקוח מגיע ישר אליכם. בלי צעקות, בלי כאבי גרון.
                             </p>
                         </div>
                     </div>
 
-                    {/* Feature 3: Testing Bot */}
+                    {/* Feature 3: Smooth marking */}
                     <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-emerald-50 to-green-50 rounded-2xl border border-emerald-100 shadow-sm transition-transform hover:scale-[1.01]">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <Cpu className="w-6 h-6 text-white" />
+                            <CheckCircle className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                            <h3 className="font-black text-slate-800 text-base">הרובוט החדש שלנו 🤖</h3>
+                            <h3 className="font-black text-slate-800 text-base">סימון מנות בסטייל 🍦</h3>
                             <p className="text-slate-600 text-xs mt-0.5 leading-snug">
-                                לאור בקשת הקהל (אלה 😉) גייסנו בוט בדיקות חרוץ. הוא מפציץ ב-10 הזמנות בשנייה ולא מבקש הפסקות סיגריה.
+                                שיפרנו את סימון המנות כ"מוכנות" - עכשיו זה רץ חלק יותר, בלי באגים מעצבנים ובלי לעכב אתכם באמצע הלחץ. הכל פיקס.
                             </p>
                         </div>
                     </div>
 
-                    {/* Feature 4: Inventory & WhatsApp */}
-                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-purple-50 to-fuchsia-50 rounded-2xl border border-purple-100 shadow-sm transition-transform hover:scale-[1.01]">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-fuchsia-600 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <Package className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                            <h3 className="font-black text-slate-800 text-base">מלאי, הזמנות, ווטסאפ 📦</h3>
-                            <p className="text-slate-600 text-xs mt-0.5 leading-snug">
-                                מערכת המלאי נכנסה לפעולה! עושים ספירה, מקבלים רשימת הזמנות מדויקת וישר שולחים לספק בווטסאפ. בלי בלאגן.
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Feature 5: Layout Fix */}
-                    <div className="flex gap-4 items-center p-3.5 bg-gradient-to-l from-cyan-50 to-sky-50 rounded-2xl border border-cyan-100 shadow-sm transition-transform hover:scale-[1.01]">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-sky-600 flex items-center justify-center flex-shrink-0 shadow-lg">
-                            <Maximize className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                            <h3 className="font-black text-slate-800 text-base">הרחבנו את הקופה 📏</h3>
-                            <p className="text-slate-600 text-xs mt-0.5 leading-snug">
-                                צפוף לכם בעיניים? הרחבנו את תצוגת הקופה בטאבלטים וסידרנו את הכפתורים שלא יברחו מהמסך. תנו לכפתור "חייל" לנשום!
-                            </p>
-                        </div>
-                    </div>
                 </div>
+
+                {/* Footer - Tightened button & padding */}
 
                 {/* Footer - Tightened button & padding */}
                 <div className="px-5 pb-6">

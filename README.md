@@ -1,107 +1,137 @@
-# React
+# iCaffe Self-Service Kiosk & POS System ☕
 
-A modern React-based project utilizing the latest frontend technologies and tools for building responsive web applications.
+A comprehensive, offline-first Point of Sale (POS) and self-service kiosk application designed for modern cafes and restaurants. Built with high performance and reliability in mind, handling everything from customer orders to kitchen management and inventory control.
 
-## 🚀 Features
+![iCaffe Kiosk](public/og-image.png)
 
-- **React 18** - React version with improved rendering and concurrent features
-- **Vite** - Lightning-fast build tool and development server
-- **Redux Toolkit** - State management with simplified Redux setup
-- **TailwindCSS** - Utility-first CSS framework with extensive customization
-- **React Router v6** - Declarative routing for React applications
-- **Data Visualization** - Integrated D3.js and Recharts for powerful data visualization
-- **Form Management** - React Hook Form for efficient form handling
-- **Animation** - Framer Motion for smooth UI animations
-- **Testing** - Jest and React Testing Library setup
+---
 
-## 📋 Prerequisites
+## 🚀 Key Features
 
-- Node.js (v14.x or higher)
-- npm or yarn
+### 🖥️ Terminals & Interfaces
 
-## 🛠️ Installation
+* **Self-Service Kiosk:** A beautiful, customer-facing interface for browsing menus, customizing items, and paying independently.
+* **POS (Point of Sale):** A fast cashier interface for staff to take orders, handle cash/card payments, and manage tables.
+* **KDS (Kitchen Display System):** Real-time order routing to kitchen stations (Bar, Kitchen, Pass) with course timing management.
+* **Admin Dashboard:** Comprehensive back-office for menu editing, employee timesheets, inventory management, and business analytics.
 
-1. Install dependencies:
-   ```bash
-   npm install
-   # or
-   yarn install
-   ```
-   
-2. Start the development server:
-   ```bash
-   npm start
-   # or
-   yarn start
-   ```
+### ⚙️ Core Capabilities
 
-## 📁 Project Structure
+* **Offline-First Architecture:** Built on top of **Dexie.js** (IndexedDB). The system continues to function seamlessly without internet, syncing data to the cloud when connectivity returns.
+* **Inventory Tracking:** Real-time stock deduction based on recipes (e.g., a "Cappuccino" order deducts 18g coffee beans and 200ml milk).
+* **Loyalty System:** Built-in customer retention program (Buy 10, get 1 free) with phone number lookup.
+* **Printer Integration:** Support for thermal receipt printers (Star/Epson) via raw TCP/network commands.
+* **Music Player:** Integrated mini-player for controlling venue ambience.
 
-```
-react_app/
-├── public/             # Static assets
-├── src/
-│   ├── components/     # Reusable UI components
-│   ├── pages/          # Page components
-│   ├── styles/         # Global styles and Tailwind configuration
-│   ├── App.jsx         # Main application component
-│   ├── Routes.jsx      # Application routes
-│   └── index.jsx       # Application entry point
-├── .env                # Environment variables
-├── index.html          # HTML template
-├── package.json        # Project dependencies and scripts
-├── tailwind.config.js  # Tailwind CSS configuration
-└── vite.config.js      # Vite configuration
-```
+---
 
-## 🧩 Adding Routes
+## 🛠️ Tech Stack
 
-To add new routes to the application, update the `Routes.jsx` file:
+### Frontend
 
-```jsx
-import { useRoutes } from "react-router-dom";
-import HomePage from "pages/HomePage";
-import AboutPage from "pages/AboutPage";
+- **Framework:** [React 18](https://react.dev/)
+* **Build Tool:** [Vite](https://vitejs.dev/)
+* **Styling:** [Tailwind CSS](https://tailwindcss.com/) + [Framer Motion](https://www.framer.com/motion/) for animations.
+* **State Management:** Redux Toolkit + React Context.
+* **Local Database:** [Dexie.js](https://dexie.org/) (IndexedDB wrapper).
 
-const ProjectRoutes = () => {
-  let element = useRoutes([
-    { path: "/", element: <HomePage /> },
-    { path: "/about", element: <AboutPage /> },
-    // Add more routes as needed
-  ]);
+### Backend (BaaS)
 
-  return element;
-};
-```
+- **Database:** PostgreSQL (via [Supabase](https://supabase.com/)).
+* **Business Logic:** Extensive use of PostgreSQL **RPCs** (Remote Procedure Calls) for critical operations like `submit_order` to simplify frontend logic and ensure ACID transactions.
+* **Real-time:** Supabase Realtime for instant KDS updates.
 
-## 🎨 Styling
+---
 
-This project uses Tailwind CSS for styling. The configuration includes:
-
-- Forms plugin for form styling
-- Typography plugin for text styling
-- Aspect ratio plugin for responsive elements
-- Container queries for component-specific responsive design
-- Fluid typography for responsive text
-- Animation utilities
-
-## 📱 Responsive Design
-
-The app is built with responsive design using Tailwind CSS breakpoints.
-
-
-## 📦 Deployment
-
-Build the application for production:
+## 📂 Project Structure
 
 ```bash
-npm run build
+src/
+├── api/                # API service layers
+├── assets/             # Images and fonts
+├── components/         # Reusable UI components (Buttons, Modals, Cards)
+├── context/            # React Contexts (Auth, Theme, Toast)
+├── db/                 # Dexie database schema and configuration
+├── hooks/              # Custom React hooks (useCart, useLoyalty)
+├── layouts/            # Page layouts (Main, Admin, Kiosk)
+├── lib/                # Utilities and libraries (Supabase client, formatting)
+├── pages/              # Main Route Views
+│   ├── dashboard/      # Admin Dashboard view
+│   ├── dexie-admin/    # Local DB debugger
+│   ├── kds/            # Kitchen Display System
+│   ├── menu-ordering/  # The main Ordering Interface
+│   ├── mode-selection/ # Terminal mode selector (Home)
+│   └── login/          # Auth screens
+├── services/           # Background services (Sync, Printers, Queue)
+└── store/              # Redux store configuration
 ```
 
-## 🙏 Acknowledgments
+---
 
-- Built with [Rocket.new](https://rocket.new)
-- Powered by React and Vite
-- Styled with Tailwind CSS
+## 🚦 Getting Started
 
-Built with ❤️ on Rocket.new
+### Prerequisites
+
+* Node.js (v18+)
+* npm or yarn
+
+### Installation
+
+1. **Clone the repository**
+
+    ```bash
+    git clone https://github.com/your-org/self-service-kiosk.git
+    cd self-service-kiosk
+    ```
+
+2. **Install Dependencies**
+
+    ```bash
+    npm install
+    ```
+
+3. **Environment Setup**
+    Create a `.env` file based on `.env.example`:
+
+    ```bash
+    VITE_SUPABASE_URL=your_project_url
+    VITE_SUPABASE_ANON_KEY=your_anon_key
+    ```
+
+4. **Run Development Server**
+
+    ```bash
+    npm run dev
+    ```
+
+    The app will start on port `4028` (or as configured).
+
+---
+
+## 🔄 Sync & Offline Logic
+
+The application uses a **Queue-Based Sync System**:
+
+1. **Action:** User places an order.
+2. **Local Save:** Order is effectively "saved" instantly to Dexie (IndexedDB).
+3. **Queue:** A sync task is added to `offlineQueue`.
+4. **Background Worker:** The `syncService` monitors the queue and network status.
+    * *If Online:* Pushes data to Supabase immediately using RPCs.
+    * *If Offline:* Retries later when connection is restored.
+
+---
+
+## 🛡️ Security
+
+* **RLS (Row Level Security):** Supabase policies ensure data isolation between tenants (businesses).
+* **Employee Roles:** Role-based access control (Admin, Manager, Shift Leader, Staff) effectively manages access to sensitive areas like Sales Reports and Inventory settings.
+
+---
+
+## 🎨 Theme
+
+The application supports a robust theming system (Light/Dark mode) with consistent design tokens, ensuring high visibility in high-paced kitchen environments and elegant aesthetics for customer Kiosks.
+
+---
+
+*Powered by iCaffe* ☕

@@ -168,6 +168,31 @@ const CustomerInfoModal = ({
                     throw lookupError;
                 }
                 console.log('📡 RPC Lookup result:', data);
+
+                // FALLBACK: If RPC says "New Customer" (or returns nothing), check the `customers` table directly.
+                // The RPC might rely on a JOIN with loyalty_cards which could be missing.
+                if (!data || data.isNewCustomer) {
+                    console.log('🔍 RPC indicated new customer, checking direct `customers` table fallback...');
+                    const { data: directCustomer } = await supabase
+                        .from('customers')
+                        .select('id, name, phone, loyalty_coffee_count')
+                        .eq('business_id', currentUser?.business_id)
+                        .eq('phone', cleanPhone)
+                        .maybeSingle();
+
+                    if (directCustomer) {
+                        console.log('✅ Found customer via direct lookup (RPC missed it):', directCustomer);
+                        data = {
+                            success: true,
+                            isNewCustomer: false,
+                            customer: {
+                                id: directCustomer.id,
+                                name: directCustomer.name,
+                                loyalty_coffee_count: directCustomer.loyalty_coffee_count || 0
+                            }
+                        };
+                    }
+                }
             }
 
             setLookupResult(data);
