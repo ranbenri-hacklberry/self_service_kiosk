@@ -17,21 +17,37 @@ const SyncManager = () => {
 
     const businessId = currentUser?.business_id;
 
+    const [errorCount, setErrorCount] = useState(0);
+
     const fetchStatus = async () => {
         try {
             const resp = await fetch('/api/sync/status');
+            if (!resp.ok) {
+                throw new Error(`Server returned ${resp.status}`);
+            }
+            const contentType = resp.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                throw new Error('Not a JSON response');
+            }
             const data = await resp.json();
-            setStatus(prev => ({ ...prev, ...data }));
+            setStatus(prev => ({ ...prev, ...data, error: null }));
+            setErrorCount(0); // Reset on success
         } catch (err) {
-            console.error('Failed to fetch sync status:', err);
+            setErrorCount(prev => prev + 1);
+            // Only log every 5th error to avoid flooding
+            if (errorCount % 5 === 0) {
+                console.warn('Sync status check failed (local backend might be down):', err.message);
+            }
         }
     };
 
     useEffect(() => {
         fetchStatus();
-        const interval = setInterval(fetchStatus, 3000);
+        // Dynamic interval: 3s normally, 30s if persistent errors
+        const pollInterval = errorCount > 3 ? 30000 : 3000;
+        const interval = setInterval(fetchStatus, pollInterval);
         return () => clearInterval(interval);
-    }, []);
+    }, [errorCount]);
 
     const triggerSync = async () => {
         if (status.inProgress || !businessId) return;
@@ -120,8 +136,8 @@ const SyncManager = () => {
                                 onClick={(e) => { e.stopPropagation(); triggerSync(); }}
                                 disabled={status.inProgress}
                                 className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${status.inProgress
-                                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                        : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200 active:scale-[0.98]'
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200 active:scale-[0.98]'
                                     }`}
                             >
                                 <RefreshCw className={`w-4 h-4 ${status.inProgress ? 'animate-spin' : ''}`} />

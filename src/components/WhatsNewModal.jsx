@@ -90,10 +90,7 @@ const WhatsNewModal = ({ onClose }) => {
                             </p>
                         </div>
                     </div>
-
                 </div>
-
-                {/* Footer - Tightened button & padding */}
 
                 {/* Footer - Tightened button & padding */}
                 <div className="px-5 pb-6">
