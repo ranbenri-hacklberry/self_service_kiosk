@@ -29,7 +29,8 @@ A comprehensive, offline-first Point of Sale (POS) and self-service kiosk applic
 
 ### Frontend
 
-- **Framework:** [React 18](https://react.dev/)
+* **Framework:** [React 18](https://react.dev/)
+
 * **Build Tool:** [Vite](https://vitejs.dev/)
 * **Styling:** [Tailwind CSS](https://tailwindcss.com/) + [Framer Motion](https://www.framer.com/motion/) for animations.
 * **State Management:** Redux Toolkit + React Context.
@@ -37,7 +38,8 @@ A comprehensive, offline-first Point of Sale (POS) and self-service kiosk applic
 
 ### Backend (BaaS)
 
-- **Database:** PostgreSQL (via [Supabase](https://supabase.com/)).
+* **Database:** PostgreSQL (via [Supabase](https://supabase.com/)).
+
 * **Business Logic:** Extensive use of PostgreSQL **RPCs** (Remote Procedure Calls) for critical operations like `submit_order` to simplify frontend logic and ensure ACID transactions.
 * **Real-time:** Supabase Realtime for instant KDS updates.
 
@@ -133,5 +135,12 @@ The application uses a **Queue-Based Sync System**:
 The application supports a robust theming system (Light/Dark mode) with consistent design tokens, ensuring high visibility in high-paced kitchen environments and elegant aesthetics for customer Kiosks.
 
 ---
+
+## 💾 Database Backups
+
+The project includes tools for generating database dumps from the remote Supabase production environment.
+
+* **Latest Dump:** `remote_db_dump.sql` (Generated on 2026-01-27)
+* **Status:** Contains 119 tables and 169 functions from the `public`, `auth`, `storage`, and `realtime` schemas.
 
 *Powered by iCaffe* ☕

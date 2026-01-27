@@ -131,10 +131,31 @@ git checkout -b feature/new-feature
 
 ### הרצת SQL Migration
 
-1. פתח: https://supabase.com/dashboard
+1. פתח: <https://supabase.com/dashboard>
 2. לך לפרויקט → **SQL Editor**
 3. העתק את תוכן קובץ ה-`.sql` מתיקיית `migrations/`
 4. לחץ **Run**
+
+---
+
+## 🗃️ ניהול מסד נתונים (Database Management)
+
+### יצירת Dump מהפרודקשן (Supabase)
+
+```bash
+# פקודה ליצירת Dump מלא (מבנה + נתונים) מהשרת המרוחק
+PGPASSWORD='your_password' pg_dump -h aws-1-eu-central-1.pooler.supabase.com \
+  -p 5432 -U postgres.gxzsxvbercpkgxraiaex -d postgres \
+  -F p -f remote_db_dump.sql --no-owner --no-privileges
+```
+
+### סנכרון נתונים (Remote to Local)
+
+ניתן להשתמש בסקריפט הסנכרון הקיים:
+
+```bash
+node scripts/sync-remote-to-local.mjs
+```
 
 ### Migrations קיימים
 
@@ -269,4 +290,3 @@ node scripts/encrypt_upload.js /Volumes/Ran1/Music "/Volumes/GoogleDrive/My Driv
 ```
 
 *הערה: הסקריפט מדלג אוטומטית על קבצים שכבר הוצפנו.*
-
