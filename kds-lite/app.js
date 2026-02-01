@@ -58,12 +58,42 @@ const iconMap = {
 
 // Image Icon mapping (filename in assets/icons/)
 const assetMap = {
+    // Hot Drinks
     'אספרסו': 'espresso.png',
-    'הפוך': 'cappuccino.png',
+    'הפוך': 'cappuccino.png', 'קפוצ\'ינו': 'cappuccino.png', 'לאטה': 'latte.png',
     'אמריקנו': 'americano.png',
     'שוקו': 'cocoa.png',
     'סחלב': 'sahlab.png',
-    'תה': 'tea.png'
+    'תה': 'tea.png', 'חליטה': 'tea.png',
+    'מוקה': 'mocha.png',
+    'נס': 'instant_coffee.png', 'שחור': 'black_coffee.png',
+
+    // Cold Drinks
+    'אייסקפה': 'iced_coffee.png', 'קפה קר': 'iced_latte.png',
+    'לימונדה': 'lemonade.png', 'תפוזים': 'orange_juice.png', 'גזר': 'carrot_juice.png',
+    'שייק': 'smoothie.png', 'מילקשייק': 'milkshake.png',
+    'קולה': 'cola.png', 'זירו': 'cola.png', 'ספרייט': 'soda.png',
+    'מים': 'water_bottle.png', 'סודה': 'soda_bottle.png',
+
+    // Bakery & Desserts
+    'קרואסון': 'croissant.png', 'רוגלך': 'rugelach.png',
+    'עוגה': 'cake.png', 'פס': 'cake.png',
+    'בראוניז': 'brownie.png',
+    'עוגייה': 'cookie.png', 'עוגיות': 'cookie.png', 'אלפחורס': 'alfajores.png',
+    'כדור שוקולד': 'chocolate_ball.png',
+    'פאי': 'pie.png',
+    'קינמון': 'cinnamon_roll.png',
+
+    // Food
+    'כריך': 'sandwich.png', 'סנדוויץ': 'sandwich.png',
+    'טוסט': 'toast.png',
+    'סלט': 'salad.png',
+    'פיצה': 'pizza.png',
+    'פסטה': 'pasta.png', 'רביולי': 'pasta.png',
+    'קיש': 'quiche.png',
+    'בורקס': 'bourekas.png',
+    'שקשוקה': 'shakshuka.png',
+    'מוזלי': 'muesli.png'
 };
 
 function getIcon(name) {
