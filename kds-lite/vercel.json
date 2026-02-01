@@ -1,6 +1,7 @@
 {
     "version": 2,
     "name": "kds-lite",
+    "outputDirectory": ".",
     "cleanUrls": true,
     "headers": [
         {
