@@ -11,7 +11,9 @@ const SUPABASE_URL = 'https://gxzsxvbercpkgxraiaex.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4enN4dmJlcmNwa2d4cmFpYWV4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1NjMyNzAsImV4cCI6MjA3NzEzOTI3MH0.6sJ7PJ2imo9-mzuYdqRlhQty7PCQAzpSKfcQ5ve571g';
 // 🌐 Dynamic Config from URL
 const urlParams = new URLSearchParams(window.location.search);
-const BUSINESS_ID = localStorage.getItem('businessId') || localStorage.getItem('business_id') || '22222222-2222-2222-2222-222222222222';
+let BUSINESS_ID = localStorage.getItem('kds_business_id') || '22222222-2222-2222-2222-222222222222';
+let currentUser = null;
+let currentPin = '';
 const STATION_KEY = 'kds_selected_station';
 const ACTIVE_ORDER_STATUSES = ['pending', 'in_progress'];
 const ACTIVE_ITEM_STATUSES = ['new', 'in_progress'];
@@ -152,62 +154,186 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// AUTH FUNCTIONS
+function switchAuthTab(tab) {
+    document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.auth-view').forEach(v => v.classList.remove('active'));
+
+    document.getElementById(`tab${tab.charAt(0).toUpperCase() + tab.slice(1)}`).classList.add('active');
+    document.getElementById(`${tab}View`).classList.add('active');
+    document.getElementById('loginError').textContent = '';
+}
+
+function appendPin(num) {
+    if (currentPin.length < 4) {
+        currentPin += num;
+        updatePinDisplay();
+        if (currentPin.length === 4) {
+            setTimeout(() => submitLogin('pin'), 300);
+        }
+    }
+}
+
+function clearPin() {
+    currentPin = '';
+    updatePinDisplay();
+    document.getElementById('loginError').textContent = '';
+}
+
+function updatePinDisplay() {
+    const dots = document.getElementById('pinDots').querySelectorAll('span');
+    dots.forEach((dot, i) => {
+        dot.className = i < currentPin.length ? 'filled' : '';
+    });
+}
+
+async function submitLogin(method) {
+    const errorEl = document.getElementById('loginError');
+    errorEl.textContent = '';
+
+    try {
+        let employee = null;
+
+        if (method === 'pin') {
+            console.log('🔐 Attempting PIN login...');
+            const { data, error } = await supabaseClient
+                .from('employees')
+                .select('*')
+                .eq('pin_code', currentPin)
+                .single();
+
+            if (error || !data) throw new Error('PIN שגוי או עובד לא נמצא');
+            employee = data;
+        } else {
+            const identifier = document.getElementById('loginIdentifier').value;
+            const password = document.getElementById('loginPassword').value;
+
+            if (!identifier || !password) throw new Error('נא להזין פרטי התחברות');
+
+            console.log('🔐 Attempting Password login...');
+            const { data, error } = await supabaseClient
+                .from('employees')
+                .select('*')
+                .or(`phone.eq.${identifier},email.eq.${identifier},whatsapp_phone.eq.${identifier}`)
+                .eq('pin_code', password) // Using pin_code as password for simplicity if password_hash not set, or we can check both
+                .single();
+
+            if (error || !data) throw new Error('פרטים שגויים');
+            employee = data;
+        }
+
+        console.log('✅ Login successful:', employee.name);
+        handleLoginSuccess(employee);
+
+    } catch (err) {
+        console.error('❌ Login failed:', err.message);
+        errorEl.textContent = err.message;
+        if (method === 'pin') clearPin();
+    }
+}
+
+function handleLoginSuccess(employee) {
+    currentUser = employee;
+    localStorage.setItem('kds_user', JSON.stringify(employee));
+
+    // Set business context
+    if (employee.business_id) {
+        BUSINESS_ID = employee.business_id;
+        localStorage.setItem('kds_business_id', BUSINESS_ID);
+    }
+
+    // Show app
+    document.getElementById('loginScreen').classList.add('hidden');
+
+    // Check for Super Admin
+    if (employee.is_super_admin) {
+        setupSuperAdmin();
+    }
+
+    initApp();
+}
+
+async function setupSuperAdmin() {
+    const container = document.getElementById('superAdminContainer');
+    const select = document.getElementById('superBusinessSelect');
+
+    container.style.display = 'flex';
+
+    // Fetch all businesses
+    const { data: businesses } = await supabaseClient
+        .from('businesses')
+        .select('id, name')
+        .order('name');
+
+    if (businesses) {
+        select.innerHTML = '<option value="">🔄 החלף עסק...</option>' +
+            businesses.map(b => `<option value="${b.id}" ${b.id === BUSINESS_ID ? 'selected' : ''}>${b.name}</option>`).join('');
+    }
+}
+
+function switchBusiness(newId) {
+    if (!newId) return;
+    console.log('🏢 Switching to business:', newId);
+    BUSINESS_ID = newId;
+    localStorage.setItem('kds_business_id', BUSINESS_ID);
+    loadOrders();
+    setupRealtime();
+}
+
+function handleLogout() {
+    console.log('🚪 Logging out...');
+    localStorage.removeItem('kds_user');
+    currentUser = null;
+    location.reload();
+}
+
 async function init() {
     try {
-        console.log('');
         console.log('🚀 INIT START');
-        console.log('→ URL:', SUPABASE_URL);
-        console.log('→ Key length:', SUPABASE_ANON_KEY.length, 'chars');
-        console.log('→ Business ID:', BUSINESS_ID);
-        console.log('→ Station:', currentStation);
-        console.log('→ Debug Mode:', debugMode);
-
-        // Create client
-        console.log('→ Creating Supabase client...');
         supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        console.log('✅ Supabase client created');
 
-        // Update UI
-        console.log('→ Updating UI...');
-        document.getElementById('stationName').textContent =
-            `${getStationIcon(currentStation)} ${getStationName(currentStation)}`;
-        document.getElementById('stationSelect').value = currentStation;
-        document.getElementById('businessSelect').value = BUSINESS_ID;
-        document.getElementById('debugModeSelect').value = debugMode;
-        console.log('✅ UI updated');
-
-        // Request wake lock
-        console.log('→ Requesting wake lock...');
-        await requestWakeLock();
-        console.log('✅ Wake lock handled');
-
-        // Load orders
-        console.log('→ Loading orders...');
-        await loadOrders();
-
-        // Auto refresh (fallback) - Start with 5s
-        console.log('→ Setting up auto-refresh (Initial 5s)...');
-        updateInterval = setInterval(loadOrders, 5000);
-
-        // Setup realtime (this will reduce polling to 60s once active)
-        console.log('→ Setting up real-time...');
-        setupRealtime();
-        console.log('✅ Real-time setup');
-
-        console.log('🚀 INIT END (success)');
-        console.log('');
-
-        // Hide splash screen after initialization
-        setTimeout(hideSplash, 1500);
-
+        // Check session
+        const storedUser = localStorage.getItem('kds_user');
+        if (storedUser) {
+            currentUser = JSON.parse(storedUser);
+            if (currentUser.business_id) {
+                BUSINESS_ID = currentUser.business_id;
+            }
+            document.getElementById('loginScreen').classList.add('hidden');
+            if (currentUser.is_super_admin) setupSuperAdmin();
+            initApp();
+        } else {
+            document.getElementById('loginScreen').classList.remove('hidden');
+            setTimeout(hideSplash, 1000);
+        }
     } catch (error) {
-        console.error('');
-        console.error('❌ INIT ERROR:');
-        console.error('→ Error:', error);
-        console.error('→ Message:', error.message);
-        console.error('');
-        document.getElementById('status').textContent = '❌ שגיאה: ' + error.message;
+        console.error('❌ INIT ERROR:', error);
     }
+}
+
+async function initApp() {
+    // Update UI
+    document.getElementById('stationName').textContent =
+        `${getStationIcon(currentStation)} ${getStationName(currentStation)}`;
+    document.getElementById('stationSelect').value = currentStation;
+    document.getElementById('businessSelect').value = BUSINESS_ID;
+    document.getElementById('debugModeSelect').value = debugMode;
+
+    // Request wake lock
+    await requestWakeLock();
+
+    // Load orders
+    await loadOrders();
+
+    // Auto refresh
+    if (updateInterval) clearInterval(updateInterval);
+    updateInterval = setInterval(loadOrders, 5000);
+
+    // Setup realtime
+    setupRealtime();
+
+    // Hide splash screen
+    setTimeout(hideSplash, 1500);
 }
 
 async function loadOrders() {

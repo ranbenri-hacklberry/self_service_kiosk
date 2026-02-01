@@ -22,13 +22,23 @@
 
     <!-- Header -->
     <div class="header">
-        <div class="header-left">
+        <div class="header-right">
             <div class="station-name" id="stationName">🌐 כל התחנות</div>
             <div class="order-count" id="orderCount">0</div>
         </div>
-        <div>
+
+        <div class="header-center" id="superAdminContainer" style="display: none;">
+            <select id="superBusinessSelect" class="business-switcher" onchange="switchBusiness(this.value)">
+                <option value="">🔄 בחר עסק...</option>
+            </select>
+        </div>
+
+        <div class="header-left">
             <div class="status" id="status">מתחבר...</div>
-            <button class="settings-btn" onclick="openSettings()">⚙️ הגדרות</button>
+            <div class="header-actions">
+                <button class="settings-btn" onclick="openSettings()">⚙️</button>
+                <button class="logout-btn" onclick="handleLogout()">🚪 יציאה</button>
+            </div>
         </div>
     </div>
 
@@ -49,6 +59,61 @@
             <div style="grid-column: 1/-1; text-align: center; color: #00AA00; padding: 20px;">
                 טוען סיכום...
             </div>
+        </div>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-card">
+            <img src="logo.png" alt="Logo" class="login-logo">
+            <h1 class="login-title">כניסת עובד</h1>
+
+            <div class="auth-tabs">
+                <button id="tabPin" class="auth-tab active" onclick="switchAuthTab('pin')">📌 קוד PIN</button>
+                <button id="tabPass" class="auth-tab" onclick="switchAuthTab('pass')">🔐 סיסמה</button>
+            </div>
+
+            <!-- PIN Login View -->
+            <div id="pinView" class="auth-view active">
+                <p class="login-subtitle">הכנס PIN כדי להתחיל</p>
+                <div class="login-form">
+                    <div class="pin-display">
+                        <div id="pinDots" class="pin-dots">
+                            <span></span><span></span><span></span><span></span>
+                        </div>
+                    </div>
+                    <div class="numpad">
+                        <button onclick="appendPin('1')">1</button>
+                        <button onclick="appendPin('2')">2</button>
+                        <button onclick="appendPin('3')">3</button>
+                        <button onclick="appendPin('4')">4</button>
+                        <button onclick="appendPin('5')">5</button>
+                        <button onclick="appendPin('6')">6</button>
+                        <button onclick="appendPin('7')">7</button>
+                        <button onclick="appendPin('8')">8</button>
+                        <button onclick="appendPin('9')">9</button>
+                        <button onclick="clearPin()" class="btn-clear">C</button>
+                        <button onclick="appendPin('0')">0</button>
+                        <button id="loginSubmitBtn" onclick="submitLogin('pin')" class="btn-submit">➜</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Password Login View -->
+            <div id="passView" class="auth-view">
+                <p class="login-subtitle">הכנס טלפון/מייל וסיסמה</p>
+                <div class="login-form-fields">
+                    <div class="form-group">
+                        <input type="text" id="loginIdentifier" placeholder="טלפון או אימייל" class="auth-input">
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="loginPassword" placeholder="סיסמה" class="auth-input">
+                    </div>
+                    <button onclick="submitLogin('pass')" class="btn-full-width">כניסה</button>
+                </div>
+            </div>
+
+            <div id="loginError" class="login-error"></div>
         </div>
     </div>
 
