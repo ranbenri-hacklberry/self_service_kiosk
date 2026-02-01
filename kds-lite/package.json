@@ -1,0 +1,9 @@
+{
+    "name": "kds-lite",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "build": "echo 'Built Lite Version'",
+        "start": "echo 'Serving Lite Version'"
+    }
+}
