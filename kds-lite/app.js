@@ -11,7 +11,10 @@ const SUPABASE_URL = 'https://gxzsxvbercpkgxraiaex.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4enN4dmJlcmNwa2d4cmFpYWV4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1NjMyNzAsImV4cCI6MjA3NzEzOTI3MH0.6sJ7PJ2imo9-mzuYdqRlhQty7PCQAzpSKfcQ5ve571g';
 // 🌐 Dynamic Config from URL
 const urlParams = new URLSearchParams(window.location.search);
-let BUSINESS_ID = urlParams.get('bid') || localStorage.getItem('kds_business_id') || '11111111-1111-1111-1111-111111111111';
+const BUSINESS_ID = localStorage.getItem('businessId') || localStorage.getItem('business_id') || '22222222-2222-2222-2222-222222222222';
+const STATION_KEY = 'kds_selected_station';
+const ACTIVE_ORDER_STATUSES = ['pending', 'in_progress'];
+const ACTIVE_ITEM_STATUSES = ['new', 'in_progress'];
 let currentStation = urlParams.get('station') || localStorage.getItem('kds_station') || 'ALL';
 let debugMode = urlParams.get('debug') || localStorage.getItem('kds_debug_mode') || 'in_progress';
 
@@ -219,8 +222,8 @@ async function loadOrders() {
         console.log('═══════════════════════════════════════');
 
         // Step 1: Optimized query with inner joins
-        // 1. Order status must be 'in_progress'
-        // 2. Order date must be from today
+        // 1. Order status can be 'pending' or 'in_progress'
+        // 2. Order date must be from today (or last 24h)
         // 3. Item status must be 'new' or 'in_progress'
         const { data: items, error: itemsError } = await supabaseClient
             .from('order_items')
@@ -230,8 +233,8 @@ async function loadOrders() {
                 order:orders!inner(id, order_number, customer_name, customer_phone, order_status, created_at)
             `)
             .eq('business_id', BUSINESS_ID)
-            .in('item_status', ['new', 'in_progress'])
-            .eq('orders.order_status', 'in_progress')
+            .in('item_status', ACTIVE_ITEM_STATUSES)
+            .in('orders.order_status', ACTIVE_ORDER_STATUSES)
             .gte('orders.created_at', today.toISOString())
             .order('created_at', { ascending: true });
 
@@ -244,15 +247,21 @@ async function loadOrders() {
             return;
         }
 
-        // Step 2: Apply station & grab-and-go filtering in-memory
+        // Step 2: Apply station & prep filtering in-memory
         const filteredItems = items.filter(item => {
             const menu = item.menu_item;
 
             // ❌ Skip if explicitly NOT requiring preparation (Grab & Go)
             if (menu.is_prep_required === false) return false;
 
-            // ❌ Skip if never intended for KDS
-            if (menu.kds_routing_logic === 'NEVER_SHOW') return false;
+            // 📍 If we have an explicit TRUE, we show it
+            if (menu.is_prep_required === true) {
+                // ... continue to station check
+            } else {
+                // 📍 Otherwise, check routing logic
+                if (menu.kds_routing_logic === 'GRAB_AND_GO') return false;
+                if (menu.kds_routing_logic === 'NEVER_SHOW') return false;
+            }
 
             // 📍 Station filtering
             if (currentStation !== 'ALL') {
