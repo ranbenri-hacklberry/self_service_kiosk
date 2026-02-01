@@ -455,6 +455,21 @@ body {
     font-size: 42px;
     filter: drop-shadow(0 0 10px #00FF00);
     margin-bottom: 6px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.item-asset-icon {
+    width: 60px;
+    height: 60px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 15px rgba(0, 255, 0, 0.5));
+}
+
+.emoji-icon {
+    display: inline-block;
 }
 
 .item-name {

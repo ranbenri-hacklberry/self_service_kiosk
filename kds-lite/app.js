@@ -56,12 +56,31 @@ const iconMap = {
     'פלאפל': '🧆', 'חומוס': '🫘', 'שווארמה': '🌯'
 };
 
+// Image Icon mapping (filename in assets/icons/)
+const assetMap = {
+    'אספרסו': 'espresso.png',
+    'הפוך': 'cappuccino.png',
+    'אמריקנו': 'americano.png',
+    'שוקו': 'cocoa.png',
+    'סחלב': 'sahlab.png',
+    'תה': 'tea.png'
+};
+
 function getIcon(name) {
     if (!name) return '🍽️';
     const lower = name.toLowerCase();
+
+    // 1. Check for custom assets first
+    for (const [key, filename] of Object.entries(assetMap)) {
+        if (lower.includes(key.toLowerCase())) {
+            return `<img src="assets/icons/${filename}" class="item-asset-icon" onerror="this.style.display='none'">`;
+        }
+    }
+
+    // 2. Fallback to emoji mapping
     for (const [key, icon] of Object.entries(iconMap)) {
         if (lower.includes(key.toLowerCase())) {
-            return icon;
+            return `<span class="emoji-icon">${icon}</span>`;
         }
     }
     return '🍽️';
