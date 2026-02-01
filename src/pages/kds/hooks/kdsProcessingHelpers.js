@@ -1,3 +1,48 @@
+const MAX_ACTIVE_ORDER_AGE_MS = 3 * 60 * 60 * 1000; // 3 hours
+
+/**
+ * Check if an order is stale (too old to be in active state).
+ * Orders older than MAX_ACTIVE_ORDER_AGE_MS should be treated as completed.
+ * @param {object} order - Order object
+ * @returns {boolean} - True if order is stale
+ */
+export const isStaleActiveOrder = (order) => {
+    if (!order.created_at) return false;
+
+    const activeStatuses = ['new', 'pending', 'in_progress', 'ready', 'held'];
+    if (!activeStatuses.includes(order.order_status)) return false;
+
+    const orderAge = Date.now() - new Date(order.created_at).getTime();
+    return orderAge > MAX_ACTIVE_ORDER_AGE_MS;
+};
+
+/**
+ * Filter out stale orders from an array.
+ * Use this before processing orders for display.
+ * @param {array} orders - Array of orders
+ * @returns {array} - Filtered orders (non-stale only)
+ */
+export const filterStaleOrders = (orders) => {
+    const validOrders = [];
+    const staleOrders = [];
+
+    for (const order of orders) {
+        if (isStaleActiveOrder(order)) {
+            staleOrders.push(order);
+        } else {
+            validOrders.push(order);
+        }
+    }
+
+    if (staleOrders.length > 0) {
+        console.warn(`⚠️ [KDS] Filtered out ${staleOrders.length} stale orders:`,
+            staleOrders.map(o => ({ id: o.id, status: o.order_status, created: o.created_at }))
+        );
+    }
+
+    return validOrders;
+};
+
 /**
  * 🌸 KDS Processing Helpers - Pure, Testable Functions
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -137,34 +182,11 @@ export const buildStructuredModifiers = (modsArray, notes = null) => {
 /**
  * Check if item should be included based on KDS routing logic.
  * @param {object} item - Order item
+ * @param {object} fallbackMenuItem - Fresh menu item data from local cache
  * @returns {boolean} - True if item should be displayed in KDS
  */
-export const shouldIncludeItem = (item) => {
+export const shouldIncludeItem = (item, fallbackMenuItem = null) => {
     if (item.item_status === 'cancelled') return false;
-
-    const kdsLogic = item.menu_items?.kds_routing_logic;
-
-    // Check for KDS override in modifiers
-    let hasOverride = false;
-    const mods = item.mods;
-
-    try {
-        if (typeof mods === 'string' && mods.includes('__KDS_OVERRIDE__')) {
-            hasOverride = true;
-        } else {
-            const parsed = typeof mods === 'string' ? JSON.parse(mods) : mods;
-            if (Array.isArray(parsed) && parsed.includes('__KDS_OVERRIDE__')) hasOverride = true;
-            else if (typeof parsed === 'object' && parsed?.kds_override) hasOverride = true;
-        }
-    } catch (e) {
-        if (typeof mods === 'string' && mods.includes('__KDS_OVERRIDE__')) hasOverride = true;
-    }
-
-    // Grab & Go items only show if they have override
-    if ((kdsLogic === 'GRAB_AND_GO' || kdsLogic === 'CONDITIONAL') && !hasOverride) {
-        return false;
-    }
-
     return true;
 };
 
@@ -176,6 +198,12 @@ export const shouldIncludeItem = (item) => {
  * @returns {array} - Processed items ready for display
  */
 export const processOrderItems = (order, menuMap) => {
+    // 🛡️ STALE ORDER PROTECTION: Skip orders that are too old to be "active"
+    if (isStaleActiveOrder(order)) {
+        console.warn(`⚠️ [KDS] Skipping stale order ${order.id} (status: ${order.order_status}, age: ${Math.round((Date.now() - new Date(order.created_at).getTime()) / 3600000)}h)`);
+        return []; // Return empty - don't display this order
+    }
+
     const isLocalInProgress = (order._useLocalStatus || order.pending_sync) && order.order_status === 'in_progress';
 
     return (order.order_items || [])
@@ -185,7 +213,9 @@ export const processOrderItems = (order, menuMap) => {
             // Nuclear Bypass: Keep everything if locally in progress (offline/undo scenario)
             if (isLocalInProgress) return true;
 
-            return shouldIncludeItem(item);
+            // 🔍 LOOKUP FRESH ITEM DATA
+            const freshMenuItem = menuMap?.get(item.menu_item_id);
+            return shouldIncludeItem(item, freshMenuItem);
         })
         .map(item => {
             // Visual Status Normalization
@@ -217,7 +247,7 @@ export const processOrderItems = (order, menuMap) => {
                 category: item.menu_items?.category || menuItem?.category || '',
                 course_stage: item.course_stage || 1,
                 item_fired_at: item.item_fired_at,
-                is_early_delivered: item.is_early_delivered || (item.item_status === 'ready' && !['ready', 'completed'].includes(order.order_status))
+                is_early_delivered: item.is_early_delivered || (['ready', 'completed'].includes(item.item_status) && !['ready', 'completed'].includes(order.order_status))
             };
         });
 };
@@ -238,13 +268,11 @@ export const groupItemsByStatus = (items) => {
             groupKey = 'delayed';
         } else if (item.status === 'new' || item.status === 'pending') {
             groupKey = 'new';
-        } else if (item.status === 'ready') {
+        } else if (item.status === 'ready' || item.status === 'completed') {
             groupKey = 'ready';
-        } else if (item.status === 'completed') {
-            // Already finished, don't show on active board
-            return acc;
         } else {
-            groupKey = 'active'; // in_progress
+            // covers: in_progress, prep_started, etc.
+            groupKey = 'active';
         }
 
         if (!acc[groupKey]) acc[groupKey] = [];
@@ -338,7 +366,7 @@ export const buildBaseOrder = (order) => {
  * @returns {boolean} - True if order has active items
  */
 export const hasActiveItems = (items) => {
-    const activeStatuses = ['in_progress', 'new', 'pending', 'ready', 'held'];
+    const activeStatuses = ['in_progress', 'prep_started', 'new', 'pending', 'ready', 'held'];
     return items.some(item => activeStatuses.includes(item.item_status));
 };
 
@@ -428,6 +456,11 @@ export const mapStatusForView = (internalStatus, orderType = 'dine_in') => {
         'new': {
             status: 'preparing',
             displayText: 'בהכנה',
+            color: 'blue'
+        },
+        'prep_started': {
+            status: 'preparing',
+            displayText: 'בתהליך הכנה',
             color: 'blue'
         },
         'in_progress': {

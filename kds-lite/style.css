@@ -345,6 +345,11 @@ body {
     }
 }
 
+.order-card.prep_started {
+    border-color: #00D4FF;
+    background: rgba(0, 212, 255, 0.05);
+}
+
 .order-card.in_progress {
     border-color: #00AA00;
 }
@@ -437,6 +442,13 @@ body {
     text-align: center;
     background: rgba(0, 170, 0, 0.05);
     border-radius: 8px;
+    transition: all 0.3s;
+}
+
+.item.prep_started {
+    background: rgba(0, 255, 0, 0.15);
+    border-color: #00FF00;
+    box-shadow: inset 0 0 15px rgba(0, 255, 0, 0.1);
 }
 
 .item-icon {
@@ -490,6 +502,11 @@ body {
 
 .status-badge.new {
     background: #9FE747;
+    color: #000;
+}
+
+.status-badge.prep_started {
+    background: #00D4FF;
     color: #000;
 }
 

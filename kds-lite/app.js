@@ -16,7 +16,7 @@ let currentUser = null;
 let currentPin = '';
 const STATION_KEY = 'kds_selected_station';
 const ACTIVE_ORDER_STATUSES = ['pending', 'in_progress'];
-const ACTIVE_ITEM_STATUSES = ['new', 'in_progress'];
+const ACTIVE_ITEM_STATUSES = ['new', 'in_progress', 'prep_started'];
 let currentStation = urlParams.get('station') || localStorage.getItem('kds_station') || 'ALL';
 let debugMode = urlParams.get('debug') || localStorage.getItem('kds_debug_mode') || 'in_progress';
 
@@ -74,6 +74,7 @@ function getStatusText(status) {
     const map = {
         'new': 'חדש',
         'in_progress': 'בהכנה',
+        'prep_started': 'בתהליך',
         'held': 'מוחזק',
         'ready': 'מוכן'
     };
@@ -114,6 +115,38 @@ function getStationName(station) {
 }
 
 // Keyboard Navigation
+// Keyboard Navigation
+async function startPrep(order) {
+    if (!order || !order.items) return;
+
+    // Filter items that are in 'new' status
+    const itemsToStart = order.items.filter(item => item.item_status === 'new');
+    if (itemsToStart.length === 0) return;
+
+    console.log('🧑‍🍳 Starting prep for order:', order.order_number, 'items:', itemsToStart.length);
+
+    try {
+        const itemIds = itemsToStart.map(i => i.id);
+
+        const { error } = await supabaseClient
+            .from('order_items')
+            .update({
+                item_status: 'prep_started',
+                updated_at: new Date().toISOString() // Use updated_at as start time
+            })
+            .in('id', itemIds);
+
+        if (error) throw error;
+
+        // Optimistic UI update
+        itemsToStart.forEach(i => i.item_status = 'prep_started');
+        render();
+
+    } catch (err) {
+        console.error('❌ Error starting prep:', err);
+    }
+}
+
 function highlightSelectedOrder() {
     // Remove previous highlights
     document.querySelectorAll('.order-card').forEach(card => {
@@ -145,12 +178,12 @@ document.addEventListener('keydown', (e) => {
         console.log('◀️ Selected order:', selectedOrderIndex + 1, '/', ordersData.length);
     } else if (e.key === 'ArrowRight') {  // ▶️ חץ ימינה = הזמנה קודמת (שמאלה)
         e.preventDefault();
-        // Move to previous order (LEFT)
-        selectedOrderIndex = selectedOrderIndex <= 0
-            ? ordersData.length - 1
-            : selectedOrderIndex - 1;
+        selectedOrderIndex = selectedOrderIndex <= 0 ? ordersData.length - 1 : selectedOrderIndex - 1;
         highlightSelectedOrder();
-        console.log('▶️ Selected order:', selectedOrderIndex + 1, '/', ordersData.length);
+    } else if (e.key === 'Enter') {
+        if (selectedOrderIndex >= 0 && ordersData[selectedOrderIndex]) {
+            startPrep(ordersData[selectedOrderIndex]);
+        }
     }
 });
 
@@ -414,6 +447,30 @@ async function loadOrders() {
         });
 
         ordersData = Object.values(orderMap);
+
+        // 🧠 SORTING LOGIC:
+        // 1. Orders with 'prep_started' items come FIRST.
+        // 2. High priority: 'prep_started' orders sorted by earliest preparation start (updated_at).
+        // 3. Followed by: 'new' orders sorted by creation time (created_at).
+        ordersData.sort((a, b) => {
+            const aHasPrep = a.items.some(i => i.item_status === 'prep_started');
+            const bHasPrep = b.items.some(i => i.item_status === 'prep_started');
+
+            if (aHasPrep && !bHasPrep) return -1;
+            if (!aHasPrep && bHasPrep) return 1;
+
+            if (aHasPrep && bHasPrep) {
+                // Both are in prep - sort by preparation start time (updated_at)
+                // We take the MAX of updated_at among prep_started items
+                const aTime = Math.max(...a.items.filter(i => i.item_status === 'prep_started').map(i => new Date(i.updated_at || i.created_at).getTime()));
+                const bTime = Math.max(...b.items.filter(i => i.item_status === 'prep_started').map(i => new Date(i.updated_at || i.created_at).getTime()));
+                return aTime - bTime;
+            }
+
+            // Both are new - sort by original created_at
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        });
+
         render();
 
         document.getElementById('status').textContent =
@@ -460,6 +517,7 @@ function getOrderStatus(order) {
     const statuses = order.items.map(i => i.item_status);
     if (statuses.includes('held')) return 'held';
     if (statuses.includes('new')) return 'new';
+    if (statuses.includes('prep_started')) return 'prep_started';
     if (statuses.includes('in_progress')) return 'in_progress';
     if (statuses.includes('ready')) return 'ready';
     return 'new';
@@ -490,6 +548,12 @@ function render() {
         card.className = `order-card ${cardClass}`;
         if (idx === selectedOrderIndex) card.classList.add('selected');
 
+        card.onclick = () => {
+            selectedOrderIndex = idx;
+            highlightSelectedOrder();
+            startPrep(order);
+        };
+
         card.innerHTML = `
             <div class="order-header">
                 <div class="order-number">${order.order_number || '#' + order.id}</div>
@@ -500,9 +564,9 @@ function render() {
                 ${order.items.map(item => {
             const mods = parseMods(item.mods);
             return `
-                        <div class="item">
+                        <div class="item ${item.item_status === 'prep_started' ? 'prep_started' : ''}">
                             <div class="item-icon">${getIcon(item.item_name)}</div>
-                            <div class="item-name">${item.item_name}</div>
+                            <div class="item-name">${item.item_status === 'prep_started' ? '🧑‍🍳 ' : ''}${item.item_name}</div>
                             ${item.quantity > 1 ? `<div class="item-qty">✕ ${item.quantity}</div>` : ''}
                             ${mods.length > 0 ? `<div class="item-mods">🔹 ${mods.join(' • ')}</div>` : ''}
                             ${item.notes ? `<div class="item-mods">💬 ${item.notes}</div>` : ''}

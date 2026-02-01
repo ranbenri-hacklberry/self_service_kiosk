@@ -150,6 +150,7 @@ const OrderCard = memo(({
       if (isUnpaidDelivered) return 'border-t-[6px] border-blue-500 bg-blue-50/30';
       if (statusLower === 'pending') return 'border-t-[6px] border-amber-500 bg-amber-50/30';
       if (statusLower === 'new') return 'border-t-[6px] border-green-500';
+      if (statusLower === 'prep_started') return 'border-t-[6px] border-blue-400 bg-blue-50/10';
       if (statusLower === 'in_progress' || statusLower === 'in_prep') return 'border-t-[6px] border-yellow-500';
       return 'border-gray-300';
     }
@@ -165,6 +166,7 @@ const OrderCard = memo(({
 
     if (statusLower === 'pending') return 'border-t-[6px] border-amber-500 shadow-md animate-pulse bg-amber-50/30';
     if (statusLower === 'new') return 'border-t-[6px] border-green-500 shadow-md';
+    if (statusLower === 'prep_started') return 'border-t-[6px] border-blue-400 shadow-md bg-blue-50/20';
     if (statusLower === 'in_progress' || statusLower === 'in_prep') return 'border-t-[6px] border-yellow-500 shadow-lg ring-1 ring-yellow-100';
 
     return 'border-gray-200 shadow-sm';
@@ -256,8 +258,10 @@ const OrderCard = memo(({
     const badgeSizeClass = isHistory ? 'w-5 h-5 text-xs' : 'w-6 h-6 text-base';
     const modSizeClass = isHistory ? 'text-[10px]' : 'text-xs';
 
+    const isPrepStarted = item.item_status === 'prep_started';
+
     return (
-      <div key={`${item.menuItemId}-${item.modsKey || item.id || idx}`} className={`flex flex-col ${!isLiteMode ? 'transition-colors duration-300' : ''} ${isLarge ? 'border-b border-gray-50 pb-0.5' : 'border-b border-dashed border-gray-100 pb-0.5 last:border-0'} ${isEarlyDelivered ? '-mx-1 px-1 rounded-md mb-1 bg-gray-50/50' : ''} ${isEarlyDelivered && !isKanban ? 'opacity-60' : ''}`}>
+      <div key={`${item.menuItemId}-${item.modsKey || item.id || idx}`} className={`flex flex-col ${!isLiteMode ? 'transition-colors duration-300' : ''} ${isLarge ? 'border-b border-gray-50 pb-1.5' : 'border-b border-dashed border-gray-100 pb-1.5 last:border-0'} ${isEarlyDelivered ? '-mx-1 px-1 rounded-md mb-1 bg-gray-50/50' : ''} ${isEarlyDelivered && !isKanban ? 'opacity-60' : ''} ${isPrepStarted ? 'bg-green-100/40 rounded-md -mx-1 px-1' : ''}`}>
         <div className="flex items-start gap-[5px] relative">
 
           {/* KDS: Early Delivery Indicator Line - DISABLED in Lite Mode */}
@@ -268,7 +272,7 @@ const OrderCard = memo(({
           )}
 
           <div
-            className={`flex items-start gap-[5px] flex-1 min-w-0 tracking-tight cursor-pointer ${!isLiteMode ? 'active:scale-[0.98] transition-all hover:bg-black/5' : ''} p-1 -m-1 rounded-lg`}
+            className={`flex items-start gap-[5px] flex-1 min-w-0 tracking-tight cursor-pointer ${!isLiteMode ? 'active:scale-[0.98] transition-all hover:bg-black/5' : ''} p-1.5 -m-1.5 rounded-lg`}
             onClick={(e) => {
               e.stopPropagation();
               if (onReadyItems && !isReady && !isHistory) {
@@ -277,19 +281,19 @@ const OrderCard = memo(({
             }}
           >
             {/* Quantity Badge */}
-            <span className={`flex items-center justify-center rounded-lg font-black shrink-0 mt-0 ${badgeSizeClass} ${!isLiteMode ? 'shadow-sm' : ''} ${isPackedItem
+            <span className={`flex items-center justify-center rounded-lg font-black shrink-0 mt-0.5 ${badgeSizeClass} ${!isLiteMode ? 'shadow-sm' : ''} ${isPackedItem
               ? 'bg-green-600 text-white ring-2 ring-green-200'
               : (item.quantity > 1 ? 'bg-orange-600 text-white ring-2 ring-orange-200' : (order.type === 'delayed' ? 'bg-gray-300 text-gray-600' : 'bg-slate-900 text-white'))
               }`}>
               {item.quantity}
             </span>
 
-            <div className="flex-1 pt-0 min-w-0 pr-0">
+            <div className="flex-1 pt-0.5 min-w-0 pr-0">
               {(() => {
                 if (!item.modifiers || item.modifiers.length === 0) {
                   return (
                     <div className="flex flex-col">
-                      <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
+                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-right leading-normal whitespace-normal break-words">
                         <span className={`font-bold ${isEarlyDelivered ? 'text-slate-600 line-through' : (item.quantity > 1 ? 'text-orange-700' : 'text-gray-900')} ${nameSizeClass}`}>
                           {item.name}
                         </span>
@@ -300,34 +304,24 @@ const OrderCard = memo(({
                 }
 
                 const visibleMods = item.modifiers
-                  .map(mod => ({ ...mod, shortName: getShortName(mod.text || mod.valueName || mod) }))
-                  .filter(mod => mod.shortName !== null);
-
-                // If no shortnames found, standard render
-                if (visibleMods.length === 0) {
-                  return (
-                    <div className="flex flex-col">
-                      <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
-                        <span className={`font-bold ${isEarlyDelivered ? 'text-slate-600 line-through' : (item.quantity > 1 ? 'text-orange-700' : 'text-gray-900')} ${nameSizeClass}`}>
-                          {item.name}
-                        </span>
-                        {isPackedItem && <Check size={14} className="text-green-600 stroke-[3]" />}
-                      </div>
-                    </div>
-                  );
-                }
+                  .map(mod => ({
+                    ...mod,
+                    fullName: mod.text || mod.valueName || mod,
+                    shortName: getShortName(mod.text || mod.valueName || mod)
+                  }))
+                  .filter(mod => mod.fullName);
 
                 return (
                   <div className="flex flex-col">
-                    <div className="flex flex-wrap items-center gap-1 text-right leading-snug">
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 text-right leading-normal whitespace-normal break-words">
                       <span className={`font-bold ${isEarlyDelivered ? 'text-slate-600 line-through' : (item.quantity > 1 ? 'text-orange-700' : 'text-gray-900')} ${nameSizeClass}`}>
                         {item.name}
                       </span>
                       {isPackedItem && <Check size={14} className="text-green-600 stroke-[3]" />}
 
                       {visibleMods.map((mod, i) => (
-                        <span key={i} className={`mod-label ${getModColorClass(mod.text || mod.valueName || mod, mod.shortName)} ${modSizeClass}`}>
-                          {mod.shortName}
+                        <span key={i} className={`mod-label inline-block ${getModColorClass(mod.fullName, mod.shortName)} ${modSizeClass} px-2 py-1 rounded leading-relaxed min-h-[auto] max-w-full text-right whitespace-pre-wrap break-words`}>
+                          {mod.fullName}
                         </span>
                       ))}
                     </div>
