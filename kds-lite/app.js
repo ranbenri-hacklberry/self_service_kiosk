@@ -210,99 +210,58 @@ async function init() {
 async function loadOrders() {
     try {
         console.log('═══════════════════════════════════════');
-        console.log('🔄 Loading orders - START');
+        console.log('🔄 Loading orders (Filtered) - START');
         console.log('📍 Business ID:', BUSINESS_ID);
         console.log('📍 Station:', currentStation);
-        console.log('📍 Debug Mode:', debugMode);
         console.log('═══════════════════════════════════════');
 
-        // Step 1: Get order_items
-        const query = supabaseClient
+        // Step 1: Optimized query with inner joins for mandatory filtering
+        // We only want order_items that are 'in_progress'
+        // AND belong to orders that are 'in_progress'
+        // AND require preparation (excluding Grab & Go)
+        const { data: items, error: itemsError } = await supabaseClient
             .from('order_items')
-            .select('*')
-            .eq('business_id', BUSINESS_ID);
-
-        // Filter by status based on debug mode
-        if (debugMode === 'in_progress') {
-            query.eq('item_status', 'in_progress');
-        } else {
-            query.in('item_status', ['new', 'in_progress', 'held', 'ready']);
-        }
-
-        const { data: items, error: itemsError } = await query.order('created_at', { ascending: true });
+            .select(`
+                *,
+                menu_item:menu_items!inner(id, name, kds_station, production_area, is_prep_required),
+                order:orders!inner(id, order_number, customer_name, customer_phone, order_status, created_at)
+            `)
+            .eq('business_id', BUSINESS_ID)
+            .eq('item_status', 'in_progress')
+            .eq('orders.order_status', 'in_progress')
+            .eq('menu_items.is_prep_required', true)
+            .order('created_at', { ascending: true });
 
         if (itemsError) throw itemsError;
 
         if (!items || items.length === 0) {
             ordersData = [];
             render();
-            document.getElementById('status').textContent = `ℹ️ אין פריטים בהכנה (in_progress)`;
+            document.getElementById('status').textContent = `ℹ️ אין הזמנות רלוונטיות (בסטטוס בהכנה)`;
             return;
         }
 
-        const orderIds = [...new Set(items.map(i => i.order_id).filter(Boolean))];
-        const menuItemIds = [...new Set(items.map(i => i.menu_item_id).filter(Boolean))];
-
-        // Step 3: Fetch orders
-        const { data: orders, error: ordersError } = await supabaseClient
-            .from('orders')
-            .select('*')
-            .in('id', orderIds);
-
-        if (ordersError) throw ordersError;
-
-        // Step 4: Fetch menu_items
-        const { data: menuItems, error: menuError } = await supabaseClient
-            .from('menu_items')
-            .select('*')
-            .in('id', menuItemIds);
-
-        if (menuError) throw menuError;
-
-        const ordersMap = new Map(orders?.map(o => [o.id, o]) || []);
-        const menuMap = new Map(menuItems?.map(m => [m.id, m]) || []);
-
-        const combinedItems = items.map(item => ({
-            ...item,
-            order: ordersMap.get(item.order_id),
-            menu_item: menuMap.get(item.menu_item_id)
-        }));
-
-        let filteredItems = combinedItems;
+        // Step 2: Apply station filtering in-memory
+        let filteredItems = items;
         if (currentStation !== 'ALL') {
-            filteredItems = combinedItems.filter(item => {
+            filteredItems = items.filter(item => {
                 const station = item.menu_item?.kds_station || item.menu_item?.production_area;
                 return station === currentStation;
             });
         }
 
+        // Step 3: Group filtered items by order
         const orderMap = {};
         filteredItems.forEach(item => {
             const order = item.order;
-            if (!order) {
-                const placeholderOrderId = `NO_ORDER_${item.order_id || 'UNKNOWN'}`;
-                if (!orderMap[placeholderOrderId]) {
-                    orderMap[placeholderOrderId] = {
-                        id: placeholderOrderId,
-                        order_number: `#${item.order_id || 'לא ידוע'}`,
-                        customer_name: 'לא ידוע (אין הזמנה)',
-                        customer_phone: '',
-                        created_at: item.created_at,
-                        items: []
-                    };
-                }
-                orderMap[placeholderOrderId].items.push({
-                    ...item,
-                    item_name: item.menu_item?.name || 'לא ידוע'
-                });
-                return;
-            }
+            if (!order) return;
+
             if (!orderMap[order.id]) {
                 orderMap[order.id] = { ...order, items: [] };
             }
             orderMap[order.id].items.push({
                 ...item,
-                item_name: item.menu_item?.name || 'לא ידוע'
+                item_name: item.menu_item?.name || item.name || 'לא ידוע'
             });
         });
 
@@ -310,7 +269,7 @@ async function loadOrders() {
         render();
 
         document.getElementById('status').textContent =
-            `✅ ${ordersData.length} הזמנות • ${filteredItems.length} פריטים בהכנה • ${getStationName(currentStation)} • Real-time`;
+            `✅ ${ordersData.length} הזמנות • ${filteredItems.length} פריטים • ${getStationName(currentStation)} • Real-time`;
 
     } catch (error) {
         console.error('❌ Error in loadOrders:', error);
