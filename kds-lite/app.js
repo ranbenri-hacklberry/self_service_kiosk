@@ -210,26 +210,29 @@ async function init() {
 async function loadOrders() {
     try {
         console.log('═══════════════════════════════════════');
-        console.log('🔄 Loading orders (Filtered) - START');
-        console.log('📍 Business ID:', BUSINESS_ID);
+        console.log('🔄 Loading orders (Robust Filter) - START');
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        console.log('📍 Date >=', today.toISOString());
+        console.log('📍 Business:', BUSINESS_ID);
         console.log('📍 Station:', currentStation);
         console.log('═══════════════════════════════════════');
 
-        // Step 1: Optimized query with inner joins for mandatory filtering
-        // We only want order_items that are 'in_progress'
-        // AND belong to orders that are 'in_progress'
-        // AND require preparation (excluding Grab & Go)
+        // Step 1: Optimized query with inner joins
+        // 1. Order status must be 'in_progress'
+        // 2. Order date must be from today
+        // 3. Item status must be 'new' or 'in_progress'
         const { data: items, error: itemsError } = await supabaseClient
             .from('order_items')
             .select(`
                 *,
-                menu_item:menu_items!inner(id, name, kds_station, production_area, is_prep_required),
+                menu_item:menu_items!inner(id, name, kds_station, production_area, is_prep_required, kds_routing_logic),
                 order:orders!inner(id, order_number, customer_name, customer_phone, order_status, created_at)
             `)
             .eq('business_id', BUSINESS_ID)
-            .eq('item_status', 'in_progress')
+            .in('item_status', ['new', 'in_progress'])
             .eq('orders.order_status', 'in_progress')
-            .eq('menu_items.is_prep_required', true)
+            .gte('orders.created_at', today.toISOString())
             .order('created_at', { ascending: true });
 
         if (itemsError) throw itemsError;
@@ -237,18 +240,28 @@ async function loadOrders() {
         if (!items || items.length === 0) {
             ordersData = [];
             render();
-            document.getElementById('status').textContent = `ℹ️ אין הזמנות רלוונטיות (בסטטוס בהכנה)`;
+            document.getElementById('status').textContent = `ℹ️ אין הזמנות פעילות להיום`;
             return;
         }
 
-        // Step 2: Apply station filtering in-memory
-        let filteredItems = items;
-        if (currentStation !== 'ALL') {
-            filteredItems = items.filter(item => {
-                const station = item.menu_item?.kds_station || item.menu_item?.production_area;
-                return station === currentStation;
-            });
-        }
+        // Step 2: Apply station & grab-and-go filtering in-memory
+        const filteredItems = items.filter(item => {
+            const menu = item.menu_item;
+
+            // ❌ Skip if explicitly NOT requiring preparation (Grab & Go)
+            if (menu.is_prep_required === false) return false;
+
+            // ❌ Skip if never intended for KDS
+            if (menu.kds_routing_logic === 'NEVER_SHOW') return false;
+
+            // 📍 Station filtering
+            if (currentStation !== 'ALL') {
+                const station = menu.kds_station || menu.production_area;
+                if (station !== currentStation) return false;
+            }
+
+            return true;
+        });
 
         // Step 3: Group filtered items by order
         const orderMap = {};
