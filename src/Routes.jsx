@@ -7,6 +7,7 @@ import NotFound from "@/pages/NotFound";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { MusicProvider } from "@/context/MusicContext";
 import SyncStatusModal from "@/components/SyncStatusModal";
+import ConnectivityStatus from "@/components/ConnectivityStatus";
 import MiniMusicBar from './components/music/MiniMusicBar';
 import SyncManager from '@/components/SyncManager';
 
@@ -35,13 +36,15 @@ import GoogleCallback from '@/pages/auth/GoogleCallback';
 import OwnerSettings from './pages/owner-settings';
 import IPadMenuEditor from './pages/ipad-menu-editor';
 import WizardLayout from './pages/onboarding/components/WizardLayout';
+import MenuReviewDashboard from './pages/onboarding/components/MenuReviewDashboard';
+import IPadInventoryPage from './pages/ipad_inventory/IPadInventoryPage';
 
 // Animation variants for page transitions
 const pageVariants = {
-  initial: { opacity: 0, y: 10 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -10 },
-  transition: { duration: 0.3, ease: "easeInOut" }
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 },
+  transition: { duration: 0.2, ease: "linear" }
 };
 
 const PageTransition = ({ children }) => (
@@ -56,6 +59,8 @@ const PageTransition = ({ children }) => (
   </motion.div>
 );
 
+import LoadingFallback from '@/components/LoadingFallback';
+
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
   const { currentUser, deviceMode: stateMode, isLoading } = useAuth();
@@ -64,24 +69,9 @@ const ProtectedRoute = ({ children }) => {
   // Use state mode or fallback to localStorage for immediate transitions
   const deviceMode = stateMode || localStorage.getItem('kiosk_mode');
 
-  // Show loading state with Framer Motion
+  // Show loading state with Framer Motion (Using new Fallback)
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white gap-4" dir="rtl">
-        <motion.div
-          className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full"
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-        />
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="text-lg font-bold"
-        >
-          טוען מערכת...
-        </motion.p>
-      </div>
-    );
+    return <LoadingFallback message="טוען מערכת..." />;
   }
 
   // CRITICAL: If no user, redirect to login
@@ -112,7 +102,8 @@ const ProtectedRoute = ({ children }) => {
     return children;
   }
 
-  // Handle root path redirect based on mode
+  // Handle root path redirect based on mode - DISABLED per user request to always allow Mode Selection
+  /*
   if (location.pathname === '/' && deviceMode) {
     const params = new URLSearchParams(location.search);
     const isNavigationFromKds = params.get('from') === 'kds' || params.has('editOrderId');
@@ -128,6 +119,7 @@ const ProtectedRoute = ({ children }) => {
     }
     // For 'kiosk' mode OR incoming KDS requests, let it fall through to MenuOrderingInterface
   }
+  */
 
   return <PageTransition>{children}</PageTransition>;
 };
@@ -196,6 +188,12 @@ const AppRoutes = () => {
         </ProtectedRoute>
       } />
 
+      <Route path="/ipad-inventory-test" element={
+        <ProtectedRoute>
+          <IPadInventoryPage />
+        </ProtectedRoute>
+      } />
+
       <Route path="/prep" element={
         <ProtectedRoute>
           <PrepPage />
@@ -256,7 +254,7 @@ const AppRoutes = () => {
       <Route path="/menu-editor" element={
         <ProtectedRoute>
           <ErrorBoundary>
-            <IPadMenuEditor />
+            <MenuReviewDashboard />
           </ErrorBoundary>
         </ProtectedRoute>
       } />
@@ -288,10 +286,10 @@ const Routes = () => {
     <BrowserRouter>
       <ErrorBoundary>
         <AuthProvider>
-          <SyncStatusModal />
+          <ConnectivityStatus />
+          {/* <SyncStatusModal /> - USER REQUESTED TO HIDE THIS MODAL */}
           <SyncManager />
           <MusicProvider>
-            {/* <MiniMusicBar /> */}
             <ScrollToTop />
             <AppRoutes />
           </MusicProvider>

@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
+import { db } from '@/db/database';
 import { useAuth } from '@/context/AuthContext';
 import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Calendar, BarChart3, PieChart, ChevronDown, ChevronUp, Package, X, Phone, User, Clock, Hash, Receipt, Info } from 'lucide-react';
+import { liveQuery } from 'dexie';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
 
@@ -154,49 +156,94 @@ const SalesDashboard = () => {
     try {
       const { currentStart, currentEnd, previousStart, previousEnd } = getDateRanges(viewMode, selectedDate);
 
-      const fetchPeriod = async (start, end) => {
-        console.log('🔍 Calling get_sales_data RPC:', {
-          business_id: currentUser?.business_id,
-          start_date: start.toISOString(),
-          end_date: end.toISOString(),
-          user: currentUser
-        });
+      const fetchPeriodLocal = async (start, end) => {
+        console.log(`🔍 [SalesDashboard] Fetching LOCAL data: ${start.toISOString()} - ${end.toISOString()}`);
 
-        // Use RPC function to bypass RLS
-        const { data, error } = await supabase.rpc('get_sales_data', {
-          p_business_id: currentUser?.business_id,
-          p_start_date: start.toISOString(),
-          p_end_date: end.toISOString()
-        });
+        // 1. Fetch orders in range
+        const orders = await db.orders
+          .where('created_at')
+          .between(start.toISOString(), end.toISOString(), true, true)
+          .toArray();
 
-        if (error) throw error;
+        // 2. Filter by business_id (Dexie index might not be perfect for this yet, so filter)
+        const businessOrders = orders.filter(o => String(o.business_id) === String(currentUser?.business_id));
 
         const flattened = [];
-        data?.forEach(order => {
-          order.order_items?.forEach(item => {
-            if (item.menu_items) {
+        const rawOrders = [];
+
+        for (const order of businessOrders) {
+          // 3. Fetch items for this order
+          const items = await db.order_items.where('order_id').equals(order.id).toArray();
+          const itemsWithMenu = [];
+
+          for (const item of items) {
+            // 4. Join with menu_items for category/name
+            const menuItem = await db.menu_items.get(item.menu_item_id);
+            if (menuItem) {
               flattened.push({
                 quantity: item.quantity || 0,
-                price: item.price || 0,
-                category: item.menu_items.category || 'אחר',
-                name: item.menu_items.name || 'לא ידוע',
+                price: item.price || menuItem.price || 0,
+                category: menuItem.category || 'אחר',
+                name: menuItem.name || 'לא ידוע',
                 date: order.created_at
               });
+              itemsWithMenu.push({ ...item, menu_items: menuItem });
             }
-          });
-        });
+          }
+          rawOrders.push({ ...order, order_items: itemsWithMenu });
+        }
 
-        return { flattened, raw: data };
+        return { flattened, raw: rawOrders };
       };
 
+      // Fallback to Supabase if local is empty (initial load not done)
+      const checkLocalCount = await db.orders.count();
+      if (checkLocalCount === 0 && navigator.onLine) {
+        console.log('⚠️ Local Sales cache empty, falling back to Supabase RPC...');
+        const fetchPeriodRemote = async (start, end) => {
+          const { data, error } = await supabase.rpc('get_sales_data', {
+            p_business_id: currentUser?.business_id,
+            p_start_date: start.toISOString(),
+            p_end_date: end.toISOString()
+          });
+          if (error) throw error;
+          const flattened = [];
+          data?.forEach(order => {
+            order.order_items?.forEach(item => {
+              if (item.menu_items) {
+                flattened.push({
+                  quantity: item.quantity || 0,
+                  price: item.price || 0,
+                  category: item.menu_items.category || 'אחר',
+                  name: item.menu_items.name || 'לא ידוע',
+                  date: order.created_at
+                });
+              }
+            });
+          });
+          return { flattened, raw: data };
+        };
+
+        const [curr, prev] = await Promise.all([
+          fetchPeriodRemote(currentStart, currentEnd),
+          fetchPeriodRemote(previousStart, previousEnd)
+        ]);
+
+        setCurrentSales(curr.flattened);
+        setCurrentRawOrders(curr.raw);
+        setPreviousSales(prev.flattened);
+        return;
+      }
+
+      // Main Logic: Use local data
       const [curr, prev] = await Promise.all([
-        fetchPeriod(currentStart, currentEnd),
-        fetchPeriod(previousStart, previousEnd)
+        fetchPeriodLocal(currentStart, currentEnd),
+        fetchPeriodLocal(previousStart, previousEnd)
       ]);
 
       setCurrentSales(curr.flattened);
       setCurrentRawOrders(curr.raw);
-      setPreviousSales(prev.flattened); // We only start flattened for prev comparison for now
+      setPreviousSales(prev.flattened);
 
     } catch (err) {
       console.error('Error fetching sales:', err);

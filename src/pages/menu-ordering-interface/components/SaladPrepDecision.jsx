@@ -65,6 +65,11 @@ const SaladPrepDecision = ({ selectedItem, onSubmitSelection, onClose }) => {
                             </button>
                         </div>
                         <h2 className="text-2xl font-black text-white tracking-tight">{selectedItem?.name}</h2>
+                        {selectedItem.current_stock !== undefined && selectedItem.current_stock !== null && (
+                            <p className="text-emerald-400 text-sm font-black mt-0.5">
+                                במלאי: {selectedItem.current_stock}
+                            </p>
+                        )}
                         <p className="text-white/60 text-sm font-medium">איך להגיש?</p>
                     </div>
                 </div>
@@ -91,6 +96,11 @@ const SaladPrepDecision = ({ selectedItem, onSubmitSelection, onClose }) => {
                                     קיבל מוכן
                                 </div>
                                 <div className="text-xs text-slate-400 mt-1">מהמדף</div>
+                                {selectedItem.current_stock !== undefined && selectedItem.current_stock !== null && (
+                                    <div className={`text-xs font-black mt-1 ${selectedItem.current_stock > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                        {selectedItem.current_stock > 0 ? `במלאי: ${selectedItem.current_stock}` : 'חסר במלאי'}
+                                    </div>
+                                )}
                             </div>
                             {prepMode === 'ready' && (
                                 <div className="absolute top-3 right-3 bg-green-500 rounded-full p-1">

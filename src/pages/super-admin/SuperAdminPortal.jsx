@@ -204,16 +204,17 @@ const SuperAdminPortal = () => {
                                                 {business.active_orders_count} פעילות
                                             </span>
                                         )}
-                                        <button
+                                        <div
+                                            role="button"
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 setDiagnosticsBusiness(business);
                                             }}
-                                            className="p-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg border border-indigo-500/20 transition-colors z-20 relative"
+                                            className="p-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg border border-indigo-500/20 transition-colors z-20 relative cursor-pointer"
                                             title="דיאגנוסטיקה"
                                         >
                                             <Activity size={14} />
-                                        </button>
+                                        </div>
                                     </div>
                                 </div>
                             </motion.button>

@@ -97,7 +97,7 @@ class ErrorBoundary extends React.Component {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => window.location.href = '/'}
+                  onClick={() => window.location.href = '/mode-selection'}
                   className={`w-full py-4 rounded-3xl font-bold text-base transition-all ${document.documentElement.classList.contains('dark')
                     ? 'text-slate-400 hover:text-white bg-slate-700/50'
                     : 'text-slate-500 hover:text-slate-800 bg-slate-100'

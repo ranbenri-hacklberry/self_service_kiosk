@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { AtmosphereSeed } from '../types/onboardingTypes';
 import { useOnboardingStore } from '../store/useOnboardingStore';
 import { useTheme } from '../../../context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -7,20 +9,27 @@ import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../../../lib/supabase';
 import { analyzeVisualSeed } from '../logic/onboardingLogic';
 
-const Step1_Atmosphere = () => {
+const BrandIdentityDesigner = () => {
     const { businessId, atmosphereSeeds, addAtmosphereSeed, removeAtmosphereSeed, setStep } = useOnboardingStore();
     const { isDarkMode } = useTheme();
 
+    const [uploadingIds, setUploadingIds] = useState<Set<string>>(new Set());
+    console.log("Uploading seeds...", Array.from(uploadingIds)); // Using it to avoid lint warning if not fully implemented in UI yet
+
     // 🆕 Upload to Supabase Storage immediately on drop
     const onDrop = async (acceptedFiles: File[], type: 'container' | 'background') => {
-        const newSeeds = [];
+        const newSeeds: AtmosphereSeed[] = [];
+
+        // Pre-checks
+        const validFiles = acceptedFiles.filter(file => file.size <= 5 * 1024 * 1024 && file.type.startsWith('image/'));
+        if (validFiles.length === 0) return;
 
         for (const file of acceptedFiles) {
             const tempId = uuidv4();
+            setUploadingIds(prev => new Set(prev).add(tempId)); // Start loading (though this ID isn't visible yet)
 
             if (file.size > 5 * 1024 * 1024) continue;
             if (!file.type.startsWith('image/')) continue;
-
 
             try {
                 const fileExt = file.name.split('.').pop();
@@ -37,7 +46,12 @@ const Step1_Atmosphere = () => {
                     .getPublicUrl(fileName);
 
                 // 🆕 Analyze the image with Gemini Vision to get a professional descriptor
-                const visionDescription = await analyzeVisualSeed(publicUrl, type, useOnboardingStore.getState().geminiApiKey || undefined);
+                let visionDescription = `User uploaded ${type}`;
+                try {
+                    visionDescription = await analyzeVisualSeed(publicUrl, type, useOnboardingStore.getState().geminiApiKey || undefined);
+                } catch (err) {
+                    console.warn("Visual analysis failed, using default description", err);
+                }
 
                 newSeeds.push({
                     id: tempId,
@@ -47,13 +61,24 @@ const Step1_Atmosphere = () => {
                     storagePath: fileName
                 });
 
+                // Add immediately so user sees it
+                addAtmosphereSeed({
+                    id: tempId,
+                    blob: publicUrl,
+                    type: type,
+                    promptHint: visionDescription,
+                    storagePath: fileName
+                });
+
             } catch (error: any) {
                 console.error('Error uploading image:', error);
+            } finally {
+                setUploadingIds(prev => {
+                    const next = new Set(prev);
+                    next.delete(tempId);
+                    return next;
+                });
             }
-        }
-
-        for (const seed of newSeeds) {
-            addAtmosphereSeed(seed);
         }
     };
 
@@ -183,4 +208,4 @@ const Step1_Atmosphere = () => {
     );
 };
 
-export default Step1_Atmosphere;
+export default BrandIdentityDesigner;

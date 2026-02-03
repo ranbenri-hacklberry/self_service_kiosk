@@ -16,7 +16,13 @@ const LiteMenuGrid = ({ items = [], onAddToCart, isLoading = false }) => {
     const [searchTerm, setSearchTerm] = useState('');
 
     const filteredItems = useMemo(() => {
-        let res = items;
+        let res = items.filter(i => {
+            // 🆕 Filter hidden POS items
+            // Check both snake_case (DB) and camelCase (Local)
+            const visible = (i.is_visible_pos !== false) && (i.isVisiblePos !== false);
+            return visible;
+        });
+
         if (activeCategory !== 'הכל') {
             res = res.filter(i => (i.category || 'כללי') === activeCategory);
         }
@@ -61,8 +67,8 @@ const LiteMenuGrid = ({ items = [], onAddToCart, isLoading = false }) => {
                             key={cat}
                             onClick={() => handleCategoryClick(cat)}
                             className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all border ${activeCategory === cat
-                                    ? 'bg-amber-500 text-white border-amber-600 shadow-amber-900/20 shadow-lg'
-                                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                                ? 'bg-amber-500 text-white border-amber-600 shadow-amber-900/20 shadow-lg'
+                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
                                 }`}
                         >
                             {cat}

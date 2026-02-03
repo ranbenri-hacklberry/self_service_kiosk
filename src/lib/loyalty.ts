@@ -33,16 +33,17 @@ export async function getLoyaltyCount(customerPhone, user) {
 
       const { data: directData, error: directError } = await client
         .from('loyalty_cards')
-        .select('points_balance, free_coffees')
+        .select('points_balance')
         .eq('customer_phone', cleanPhone)
         .eq('business_id', businessId)
         .maybeSingle();
 
       if (directError) throw directError;
 
+      const points = directData?.points_balance ?? 0;
       return {
-        points: directData?.points_balance ?? 0,
-        freeCoffees: directData?.free_coffees ?? 0
+        points: points,
+        freeCoffees: Math.floor(points / 10)
       };
     }
 
@@ -132,7 +133,7 @@ export async function addCoffeePurchase(customerPhone, orderId, itemsCount = 1, 
           });
         }
 
-    // [CLEANED] console.log('✅ [Loyalty] Local Dexie updated immediately:', { phone: cleanPhone, balance: data.new_balance });
+        // [CLEANED] console.log('✅ [Loyalty] Local Dexie updated immediately:', { phone: cleanPhone, balance: data.new_balance });
       } catch (dexieError) {
         console.warn('⚠️ [Loyalty] Failed to update local Dexie (will sync later):', dexieError);
       }

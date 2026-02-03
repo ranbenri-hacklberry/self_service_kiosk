@@ -27,7 +27,8 @@ import {
     Smartphone,
     Mail,
     Database,
-    ArrowRight
+    ArrowRight,
+    Clock // Added Clock
 } from 'lucide-react';
 import SystemDiagnostics from '@/components/manager/SystemDiagnostics';
 
@@ -255,6 +256,60 @@ const EmployeesView = ({ businessId }) => {
                     ))}
                 </div>
             )}
+        </div>
+    );
+};
+
+
+
+const BackupStatus = ({ businessId }) => {
+    const [status, setStatus] = useState({ loading: true, date: null, error: null });
+
+    useEffect(() => {
+        const checkBackup = async () => {
+            try {
+                // In production, use your actual API URL
+                const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8082';
+                const res = await fetch(`${API_URL}/api/admin/backup/status?businessId=${businessId}`);
+                if (!res.ok) throw new Error('Failed');
+                const data = await res.json();
+                setStatus({ loading: false, date: data.lastBackup, error: null });
+            } catch (e) {
+                setStatus({ loading: false, date: null, error: 'Error' });
+            }
+        };
+        checkBackup();
+    }, [businessId]);
+
+    if (status.loading) return <span className="text-[10px] text-slate-500 animate-pulse">בודק גיבוי...</span>;
+
+    const isToday = status.date && new Date(status.date).toDateString() === new Date().toDateString();
+    const isYesterday = status.date && new Date(status.date).toDateString() === new Date(Date.now() - 86400000).toDateString();
+
+    let displayDate = 'לא גובה מעולם';
+    let color = 'text-red-400 bg-red-400/10 border-red-400/20';
+    let icon = <X size={10} />;
+
+    if (status.date) {
+        if (isToday) {
+            displayDate = 'גובה היום';
+            color = 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
+            icon = <Check size={10} />;
+        } else if (isYesterday) {
+            displayDate = 'גובה אתמול';
+            color = 'text-blue-400 bg-blue-400/10 border-blue-400/20';
+            icon = <Check size={10} />;
+        } else {
+            displayDate = new Date(status.date).toLocaleDateString('he-IL');
+            color = 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20';
+            icon = <Clock size={10} />;
+        }
+    }
+
+    return (
+        <div className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-lg border ${color} whitespace-nowrap`}>
+            {icon}
+            GDrive: {displayDate}
         </div>
     );
 };
@@ -637,6 +692,11 @@ const SuperAdminDashboard = () => {
                                         <div className={`w-2 h-2 rounded-full ${business.is_online ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}`} />
                                         {business.is_online ? 'אונליין' : 'אופליין'}
                                     </div>
+
+                                    {/* Google Backup Status */}
+                                    <div className="mr-2">
+                                        <BackupStatus businessId={business.id} />
+                                    </div>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4 mb-4">
@@ -723,6 +783,16 @@ const SuperAdminDashboard = () => {
                                         <Activity className="w-3 h-3" />
                                         דיאגנוסטיקה וסימולציה
                                     </button>
+                                    <button
+                                        onClick={() => {
+                                            const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8082';
+                                            window.location.href = `${API_URL}/api/admin/backup/download?businessId=${business.id}`;
+                                        }}
+                                        className="col-span-2 flex items-center justify-center gap-2 bg-slate-800 text-slate-400 py-2 rounded-xl font-bold text-xs hover:bg-slate-700 hover:text-white transition-all border border-slate-700 active:scale-95"
+                                    >
+                                        <Database className="w-3 h-3" />
+                                        הורד גיבוי מקומי (חודשי)
+                                    </button>
                                 </div>
                             </div>
                         ))
@@ -731,15 +801,15 @@ const SuperAdminDashboard = () => {
             </main>
 
             {/* FAB - Add Business */}
-            <button
+            < button
                 onClick={() => { setFormData({}); setShowAddModal(true); }}
                 className="fixed bottom-8 left-8 w-16 h-16 bg-blue-600 rounded-full text-white shadow-2xl shadow-blue-600/40 flex items-center justify-center hover:scale-110 hover:bg-blue-500 active:scale-95 transition-all z-40 border-4 border-slate-950"
             >
                 <Plus className="w-8 h-8" />
-            </button>
+            </button >
 
             {/* ADD BUSINESS MODAL */}
-            <AnimatePresence>
+            < AnimatePresence >
                 {showAddModal && (
                     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                         <motion.div
@@ -788,10 +858,10 @@ const SuperAdminDashboard = () => {
                         </motion.div>
                     </div>
                 )}
-            </AnimatePresence>
+            </AnimatePresence >
 
             {/* SETTINGS MODAL */}
-            <AnimatePresence>
+            < AnimatePresence >
                 {showSettingsModal && (
                     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                         <motion.div
@@ -1099,10 +1169,10 @@ const SuperAdminDashboard = () => {
                         </motion.div>
                     </div>
                 )}
-            </AnimatePresence>
+            </AnimatePresence >
 
             {/* DIAGNOSTICS MODAL */}
-            <AnimatePresence>
+            < AnimatePresence >
                 {diagnosticsBusiness && (
                     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                         <motion.div
@@ -1123,9 +1193,9 @@ const SuperAdminDashboard = () => {
                         </motion.div>
                     </div>
                 )}
-            </AnimatePresence>
+            </AnimatePresence >
 
-        </div>
+        </div >
     );
 };
 

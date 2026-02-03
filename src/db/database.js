@@ -302,8 +302,8 @@ db.version(15).stores({
     menu_cache: 'business_id, updated_at'
 });
 
-// Version 16: Add onboarding_sessions for the Menu Wizard
-db.version(16).stores({
+// Version 19: Add prep-specific tables for offline management
+db.version(19).stores({
     active_order_items: 'id, order_id, menu_item_id, item_status, created_at',
     businesses: 'id, name',
     catalog_items: 'id, name, category, created_at',
@@ -328,8 +328,53 @@ db.version(16).stores({
     sync_status: 'id, table, recordId, status, updated_at',
     delivery_settings: 'id, business_id',
     menu_cache: 'business_id, updated_at',
-    // NEW: Onboarding Sessions
-    onboarding_sessions: '++id, business_id, step, updated_at'
+    onboarding_sessions: '++id, business_id, step, updated_at',
+    system_health_checks: 'id, business_id, status, created_at',
+    // NEW & REFINED for Prep/Inventory
+    recurring_tasks: 'id, business_id, category, menu_item_id, is_active',
+    task_completions: 'id, recurring_task_id, completion_date, business_id',
+    prepared_items_inventory: 'item_id, business_id',
+    suppliers: 'id, name, business_id',
+    inventory_items: 'id, business_id, item_name, current_stock, updated_at'
+});
+
+// Version 20: Add inventory_items (Promise)
+db.version(20).stores({
+    active_order_items: 'id, order_id, menu_item_id, item_status, created_at',
+    businesses: 'id, name',
+    catalog_items: 'id, name, category, created_at',
+    customers: 'id, phone_number, phone, name, business_id, updated_at',
+    device_sessions: 'id, business_id, device_id, employee_id, last_seen_at',
+    discounts: 'id, name, business_id, is_active, discount_code',
+    employees: 'id, name, nfc_id, pin_code, business_id, auth_user_id, is_driver',
+    orders: 'id, order_number, order_status, order_type, order_origin, is_paid, customer_id, business_id, created_at, updated_at, server_updated_at, seen_at, _processing, [business_id+created_at], [business_id+order_status]',
+    order_items: 'id, order_id, menu_item_id, item_status, course_stage, created_at',
+    menu_items: 'id, name, category, business_id, is_active, kds_routing_logic',
+    sync_meta: 'table_name, last_synced_at, record_count',
+    optiongroups: 'id, name, menu_item_id, business_id',
+    optionvalues: 'id, group_id, value_name, price_adjustment',
+    menuitemoptions: 'id, item_id, group_id',
+    loyalty_cards: 'id, customer_id, customer_phone, business_id, points_balance, created_at, last_updated',
+    loyalty_transactions: 'id, card_id, order_id, business_id, transaction_type, created_at',
+    cached_images: 'url, cached_at',
+    offline_queue: null,
+    offline_queue_v2: null,
+    offline_queue_v3: '++id, type, status, createdAt, table, recordId',
+    sync_status: 'id, table, recordId, status, updated_at',
+    delivery_settings: 'id, business_id',
+    menu_cache: 'business_id, updated_at',
+    onboarding_sessions: '++id, business_id, step, updated_at',
+    system_health_checks: 'id, business_id, status, created_at',
+    recurring_tasks: 'id, business_id, category, menu_item_id, is_active',
+    task_completions: 'id, recurring_task_id, completion_date, business_id',
+    prepared_items_inventory: 'item_id, business_id',
+    suppliers: 'id, name, business_id',
+    inventory_items: 'id, business_id, item_name, current_stock, updated_at'
+});
+
+// Version 21: Add item_category
+db.version(21).stores({
+    item_category: 'id, name, name_he, business_id, position'
 });
 
 // Export table references for easy access
@@ -341,7 +386,6 @@ export const {
     device_sessions,
     discounts,
     employees,
-    ingredients,
     orders,
     order_items,
     menu_items,
@@ -350,7 +394,14 @@ export const {
     loyalty_cards,
     loyalty_transactions,
     menu_cache,
-    onboarding_sessions
+    onboarding_sessions,
+    system_health_checks,
+    recurring_tasks,
+    task_completions,
+    prepared_items_inventory,
+    suppliers,
+    inventory_items,
+    item_category
 } = db;
 
 

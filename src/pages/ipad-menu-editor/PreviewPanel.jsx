@@ -10,13 +10,13 @@ import MenuItemCard from '../menu-ordering-interface/components/MenuItemCard';
  * PreviewPanel - Right side panel showing menu items grid
  */
 const MOCK_PLACEHOLDERS = [
-    { id: 'mock_1', name: 'הפוךגדול', price: 16, category: 'שתייה חמה', image: '/cafe-images/item_84_קפוצ׳ינו.png', description: 'קפה איכותי עם חלב מוקצף' },
-    { id: 'mock_2', name: 'אספרסו', price: 9, category: 'שתייה חמה', image: '/cafe-images/item_74_אספרסו_כפול.png', description: 'קצר וחזק' },
+    { id: 'mock_1', name: 'הפוךגדול', price: 16, category: 'שתיה חמה', image: '/cafe-images/item_84_קפוצ׳ינו.png', description: 'קפה איכותי עם חלב מוקצף' },
+    { id: 'mock_2', name: 'אספרסו', price: 9, category: 'שתיה חמה', image: '/cafe-images/item_74_אספרסו_כפול.png', description: 'קצר וחזק' },
     { id: 'mock_3', name: 'סלטיווני', price: 42, category: 'סלטים', image: '/cafe-images/item_3_סלט_חסלק.png', description: 'ירקות טריים עם גבינת פטה' },
     { id: 'mock_4', name: 'כריךסלק', price: 38, category: 'טוסטים וכריכים', image: '/cafe-images/item_5_כריך_סלק.png', description: 'לחם מחמצת עם סלק וגבינה' }
 ];
 
-const DEFAULT_CATEGORIES = ['שתייה חמה', 'שתייה קרה', 'מאפים', 'סלטים', 'טוסטים וכריכים'];
+const DEFAULT_CATEGORIES = ['שתיה חמה', 'שתיה קרה', 'מאפים', 'סלטים', 'טוסטים וכריכים'];
 
 /**
  * PreviewPanel - Local-First version for Editor

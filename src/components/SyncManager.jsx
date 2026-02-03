@@ -3,6 +3,12 @@ import { RefreshCw, CheckCircle, AlertCircle, Cloud, Database } from 'lucide-rea
 import { useAuth } from '@/context/AuthContext';
 
 const SyncManager = () => {
+    // 🛑 CRITICAL: RETURN NULL IMMEDIATELY IN LITE MODE
+    // This prevents ANY hooks (useEffect) from running and polling dead endpoints
+    if (import.meta.env.VITE_APP_MODE === 'lite') {
+        return null;
+    }
+
     const { currentUser } = useAuth();
     const [status, setStatus] = useState({
         inProgress: false,
@@ -35,18 +41,18 @@ const SyncManager = () => {
         } catch (err) {
             setErrorCount(prev => prev + 1);
             // Only log every 5th error to avoid flooding
-            if (errorCount % 5 === 0) {
-                console.warn('Sync status check failed (local backend might be down):', err.message);
-            }
+            // if (errorCount % 5 === 0) {
+            //     console.warn('Sync status check failed (local backend might be down):', err.message);
+            // }
         }
     };
 
     useEffect(() => {
-        fetchStatus();
-        // Dynamic interval: 3s normally, 30s if persistent errors
-        const pollInterval = errorCount > 3 ? 30000 : 3000;
-        const interval = setInterval(fetchStatus, pollInterval);
-        return () => clearInterval(interval);
+        // 🛑 Polling disabled by user request to stop console noise
+        // fetchStatus();
+        // const pollInterval = errorCount > 3 ? 30000 : 3000;
+        // const interval = setInterval(fetchStatus, pollInterval);
+        // return () => clearInterval(interval);
     }, [errorCount]);
 
     const triggerSync = async () => {

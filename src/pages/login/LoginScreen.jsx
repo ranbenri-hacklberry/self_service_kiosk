@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { loginEmployee, clockEvent } from '../../lib/employees/employeeService';
-import { Loader2, User, KeyRound, ArrowRight, CheckCircle, AlertTriangle, Eye, EyeOff, Building2 } from 'lucide-react';
+import { Loader2, User, KeyRound, ArrowRight, CheckCircle, AlertTriangle, Eye, EyeOff, Building2, Keyboard } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Remove BrandLogo import since we're not using it anymore
@@ -40,7 +40,7 @@ const LoginScreen = () => {
 
         // Timeout protection - 15 seconds max
         const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('TIMEOUT')), 15000);
+            setTimeout(() => reject(new Error('TIMEOUT')), 60000); // Increased to 60s
         });
 
         try {
@@ -257,6 +257,20 @@ const LoginScreen = () => {
                                                 <ArrowRight className="w-5 h-5" />
                                             </>
                                         )}
+                                    </button>
+
+                                    {/* On-Screen Keyboard Toggle */}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            // Simple strategy: focus the input to trigger OS keyboard
+                                            const emailInput = document.querySelector('input[type="email"]');
+                                            if (emailInput) emailInput.focus();
+                                        }}
+                                        className="w-full mt-2 text-slate-400 text-xs flex items-center justify-center gap-1 hover:text-blue-500 transition-colors py-2"
+                                    >
+                                        <Keyboard size={14} />
+                                        <span>פתח מקלדת</span>
                                     </button>
                                 </motion.form>
                             )}

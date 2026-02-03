@@ -1,18 +1,24 @@
-const MAX_ACTIVE_ORDER_AGE_MS = 3 * 60 * 60 * 1000; // 3 hours
+const MAX_ACTIVE_ORDER_AGE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days (keep tablet lightweight)
+const MAX_READY_ORDER_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days for ready items history 
 
 /**
  * Check if an order is stale (too old to be in active state).
- * Orders older than MAX_ACTIVE_ORDER_AGE_MS should be treated as completed.
  * @param {object} order - Order object
  * @returns {boolean} - True if order is stale
  */
 export const isStaleActiveOrder = (order) => {
     if (!order.created_at) return false;
 
-    const activeStatuses = ['new', 'pending', 'in_progress', 'ready', 'held'];
+    const orderAge = Date.now() - new Date(order.created_at).getTime();
+
+    // Different threshold for ready vs in-progress
+    if (order.order_status === 'ready') {
+        return orderAge > MAX_READY_ORDER_AGE_MS;
+    }
+
+    const activeStatuses = ['new', 'pending', 'in_progress', 'held'];
     if (!activeStatuses.includes(order.order_status)) return false;
 
-    const orderAge = Date.now() - new Date(order.created_at).getTime();
     return orderAge > MAX_ACTIVE_ORDER_AGE_MS;
 };
 
@@ -262,8 +268,8 @@ export const groupItemsByStatus = (items) => {
     return items.reduce((acc, item) => {
         let groupKey;
 
-        // CRITICAL: Use the normalized 'status' field (which might be overridden by anti-flicker)
-        // instead of the raw 'item_status' from the server.
+        // 🎯 SHOKO FIX: If item is 'held', it is a "DELAYED" item (Second Course)
+        // We want to make sure it appears as its own card or stays in the active view
         if (item.status === 'held') {
             groupKey = 'delayed';
         } else if (item.status === 'new' || item.status === 'pending') {

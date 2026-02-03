@@ -16,8 +16,7 @@ import { addCoffeePurchase, getLoyaltyCount, handleLoyaltyAdjustment, getLoyalty
 import { supabase } from '@/lib/supabase';
 import { useAuth, APP_VERSION } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
-import ConnectionStatusBar from '@/components/ConnectionStatusBar';
-import MiniMusicPlayer from '@/components/music/MiniMusicPlayer';
+import UnifiedHeader from '@/components/UnifiedHeader';
 import Icon from '@/components/AppIcon';
 // Custom hooks
 import { useMenuItems, useLoyalty, useCart } from './hooks';
@@ -43,10 +42,10 @@ const MenuOrderingInterface = () => {
     categories,
     handleCategoryChange,
     isFoodItem,
-    fetchMenuItems
+    fetchMenuItems,
+    updateStockLocally
   } = useMenuItems('hot-drinks', currentUser?.business_id);
 
-  // ===== Cart Hook (replaces cart state + cart functions) =====
   const {
     cartItems,
     cartHistory,
@@ -63,6 +62,31 @@ const MenuOrderingInterface = () => {
     normalizeSelectedOptions: cartNormalizeOptions,
     getCartItemSignature: cartGetSignature
   } = useCart([]);
+
+  // Adjust stock based on items already in cart (visual only before checkout)
+  const itemsWithCartStock = useMemo(() => {
+    return filteredItems.map(item => {
+      // Only items with prepared inventory
+      if (item.current_stock === null || item.current_stock === undefined) return item;
+
+      // Find how many of this item are in the cart AND marked as "Ready" (decrements stock)
+      const cartQty = cartItems
+        .filter(cartItem => (cartItem.menu_item_id || cartItem.id) === item.id)
+        .reduce((sum, cartItem) => {
+          const isKitchenPrep = cartItem.kds_override || cartItem.mods?.kds_override;
+          const hasPrepOption = Array.isArray(cartItem.selectedOptions) &&
+            cartItem.selectedOptions.some(opt => opt.valueId === 'prep');
+
+          // Only subtract from stock if it's NOT sent to kitchen (i.e. it's "Ready" from shelf)
+          return (isKitchenPrep || hasPrepOption) ? sum : sum + (cartItem.quantity || 1);
+        }, 0);
+
+      return {
+        ...item,
+        current_stock: item.current_stock - cartQty
+      };
+    });
+  }, [filteredItems, cartItems]);
 
   // ===== Local State =====
   const [isLoading, setIsLoading] = useState(false);
@@ -1800,13 +1824,13 @@ const MenuOrderingInterface = () => {
               : [];
 
 
-            // Extract valid menu_item_id (must be integer, not UUID)
-            let itemId = item.menu_item_id;
+            // Extract valid menu_item_id (fallback to id)
+            let itemId = item.menu_item_id || item.id;
 
-            // Validate that we have a proper menu_item_id
-            if (!itemId || typeof itemId === 'string') {
-              console.error('⚠️ Invalid menu_item_id for item:', item);
-              throw new Error(`Invalid item: ${item.name} has no valid menu_item_id (got: ${itemId})`);
+            // Validate that we have a proper ID
+            if (!itemId) {
+              console.error('⚠️ Missing ID for item:', item);
+              throw new Error(`Invalid item: ${item.name} has no valid ID`);
             }
 
             // [CLEANED] console.log('🔍 Item ID extraction:', {
@@ -1822,6 +1846,12 @@ const MenuOrderingInterface = () => {
             const discountForItem = Math.floor(itemPrice * discountPercent * 100) / 100;
             const finalPricePerItem = itemPrice - discountForItem;
 
+            // NEW: Unified Prep Check
+            const isKitchenPrep = item.kds_override || item.mods?.kds_override ||
+              item.kds_routing_logic === 'MADE_TO_ORDER' ||
+              item.inventory_settings?.preparationMode === 'requires_prep' ||
+              (Array.isArray(item.selectedOptions) && item.selectedOptions.some(o => o.valueId === 'prep'));
+
             return {
               item_id: itemId,
               quantity: item.quantity || 1,
@@ -1832,11 +1862,11 @@ const MenuOrderingInterface = () => {
               is_hot_drink: !!item.is_hot_drink, // Ensure loyalty counts this
               mods: [
                 ...options,
-                ...((item.kds_override || item.mods?.kds_override) ? ['__KDS_OVERRIDE__'] : []),
+                ...(isKitchenPrep ? ['__KDS_OVERRIDE__'] : []),
                 ...((item.custom_note || item.mods?.custom_note) ? [`__NOTE__:${item.custom_note || item.mods.custom_note}`] : [])
               ],
               notes: item.notes || null,
-              item_status: item.isDelayed ? 'held' : 'in_progress',
+              item_status: item.isDelayed ? 'held' : (isKitchenPrep ? 'in_progress' : 'completed'), // Ready items start as completed
               course_stage: item.isDelayed ? 2 : 1
             };
           });
@@ -1967,6 +1997,72 @@ const MenuOrderingInterface = () => {
         orderResult = response.data;
         orderError = response.error;
 
+        // 📉 INVENTORY DECREMENT (Client-Side Logic for "Ready" Items)
+        if (orderResult && orderResult.order_id && !orderError) {
+          try {
+            // 1. Filter items that should decrement stock
+            const itemsToDecrement = cartItems.filter(item => {
+              if (!item.prepared_items_inventory) return false;
+              const isKitchenPrep = item.kds_override || item.mods?.kds_override ||
+                (Array.isArray(item.selectedOptions) && item.selectedOptions.some(o => o.valueId === 'prep'));
+              return !isKitchenPrep; // Only decrement if NOT sent to kitchen (Ready)
+            });
+
+            if (itemsToDecrement.length > 0) {
+              console.log(`📉 Processing stock decrement for ${itemsToDecrement.length} items...`);
+
+              // 2. Group by ID to handle multiple entries of same item
+              const stockUpdates = {};
+              itemsToDecrement.forEach(item => {
+                const id = item.menu_item_id || item.id;
+                if (!stockUpdates[id]) {
+                  stockUpdates[id] = { id, name: item.name, qty: 0 };
+                }
+                stockUpdates[id].qty += (item.quantity || 1);
+              });
+
+              // 3. Perform updates (Fetch latest stock first to avoid race conditions)
+              await Promise.all(Object.values(stockUpdates).map(async (update) => {
+                // Fetch LATEST stock from DB instead of using snapshotted value from cart
+                const { data: currentRecord } = await supabase
+                  .from('prepared_items_inventory')
+                  .select('current_stock')
+                  .eq('item_id', update.id)
+                  .single();
+
+                const dbStock = currentRecord?.current_stock ?? 0;
+                const newStock = dbStock - update.qty;
+
+                const { error: updateErr } = await supabase
+                  .from('prepared_items_inventory')
+                  .update({
+                    current_stock: newStock,
+                    last_updated: new Date().toISOString()
+                  })
+                  .eq('item_id', update.id);
+
+                if (updateErr) console.error(`   ❌ Failed to decrement ${update.name}:`, updateErr);
+                else {
+                  console.log(`   ✅ Decremented ${update.name}: DB(${dbStock}) -> ${newStock}`);
+                  // 🚀 OPTIMISTIC UI FIX: Update local menu state immediately
+                  updateStockLocally(update.id, newStock);
+                }
+              }));
+
+              console.log('📉 All inventory updates completed.');
+            }
+          } catch (invErr) {
+            console.error('Inventory logic crash:', invErr);
+          }
+        }
+
+        // Check if server handled loyalty (ATOMIC FIX)
+        // If loyalty_points_added is present, the server transaction included loyalty update
+        if (orderResult && orderResult.loyalty_points_added !== undefined) {
+          orderResult.serverHandledLoyalty = true;
+          console.log('✅ Server handled loyalty atomically. Points added:', orderResult.loyalty_points_added);
+        }
+
         // Note: We don't cache to Dexie here - the sync service will handle it
         // This prevents duplicate items when editing orders
       } else {
@@ -2007,11 +2103,15 @@ const MenuOrderingInterface = () => {
             await db.order_items.put({
               id: uuidv4(), // Use proper UUID
               order_id: localOrderId,
-              menu_item_id: item.item_id,
+              menu_item_id: item.menu_item_id,
               quantity: item.quantity,
               price: item.price,
-              mods: item.mods,
               notes: item.notes,
+              mods: {
+                selectedOptions: item.selectedOptions || [],
+                custom_mods: item.mods || {},
+                kds_override: item.kds_override || item.mods?.kds_override || false
+              },
               item_status: item.item_status || 'new', // Shows in KDS
               course_stage: item.course_stage || 1,
               created_at: new Date().toISOString()
@@ -2093,10 +2193,10 @@ const MenuOrderingInterface = () => {
       if (loyaltyPointsForConfirmation === 0 && customerId && realPhone && isOnline) {
         try {
           // [CLEANED] console.log('🔄 Loyalty count is 0, fetching fresh count for confirmation modal...');
-          const freshCount = await getLoyaltyCount(realPhone, currentUser);
-          if (typeof freshCount === 'number') {
-            loyaltyPointsForConfirmation = freshCount;
-            // [CLEANED] console.log('✅ Fetched fresh loyalty count:', freshCount);
+          const result = await getLoyaltyCount(realPhone, currentUser);
+          if (result && typeof result.points === 'number') {
+            loyaltyPointsForConfirmation = result.points;
+            // [CLEANED] console.log('✅ Fetched fresh loyalty count:', loyaltyPointsForConfirmation);
           }
         } catch (lError) {
           console.warn('Loyalty fetch failed in confirmation background:', lError);
@@ -2232,6 +2332,15 @@ const MenuOrderingInterface = () => {
       // OFFLINE FIX: Only process if online
       if (realPhone && isOnline) {
         const processLoyalty = async () => {
+          // STEP 1: If server already handled loyalty (Atomic Fix), just fetch fresh balance
+          if (orderResult?.serverHandledLoyalty) {
+            console.log('⚡ Skipping client-side loyalty add (Server handled it). Fetching fresh balance...');
+            // Just return the fetch result structure disguised as update result
+            const { points } = await getLoyaltyCount(realPhone, currentUser);
+            return { success: true, newCount: points, addedPoints: orderResult.loyalty_points_added };
+          }
+
+          // STEP 2: Fallback for old behavior (if server didn't return loyalty_points_added)
           const { points: freshPoints } = await getLoyaltyCount(realPhone, currentUser);
           const currentCoffeeCount = cartItems.reduce((sum, item) => item.is_hot_drink ? sum + (item.quantity || 1) : sum, 0);
           const currentRedeemedCount = loyaltyFreeItemsCount;
@@ -2283,12 +2392,34 @@ const MenuOrderingInterface = () => {
 
   if (menuLoading) {
     return (
-      <div className={`min-h-screen font-heebo transition-colors duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-gray-50'}`} dir="rtl">
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
-            <p className={`text-lg font-medium ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>טוען תפריט...</p>
+      <div className={`min-h-screen flex flex-col items-center justify-center ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'} gap-8 px-6 transition-all duration-500`} dir="rtl">
+        <div className="relative w-32 h-32 md:w-40 md:h-40">
+          {/* Outer ripples */}
+          <div className="absolute inset-0 bg-orange-500/10 rounded-full animate-[ping_3s_infinite]" />
+          <div className="absolute inset-4 bg-orange-500/20 rounded-full animate-[ping_2s_infinite]" />
+
+          {/* Main loader core */}
+          <div className={`absolute inset-8 rounded-full border-2 ${isDarkMode ? 'bg-slate-800 border-orange-500/50 shadow-[0_0_40px_rgba(249,115,22,0.3)]' : 'bg-white border-orange-200 shadow-xl'} flex items-center justify-center overflow-hidden`}>
+            <div className="relative z-10">
+              <Icon name="Coffee" size={32} className="text-orange-500 animate-pulse" />
+            </div>
+            {/* Progress sweep overlay */}
+            <div className="absolute inset-0 border-t-2 border-orange-500 animate-spin duration-[2000ms]" />
           </div>
+        </div>
+
+        <div className="text-center space-y-3 max-w-xs scale-90 md:scale-100">
+          <h2 className={`text-2xl md:text-3xl font-black tracking-tighter uppercase ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            מכינים את התפריט...
+          </h2>
+          <div className="flex items-center justify-center gap-2">
+            <div className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-bounce [animation-delay:-0.3s]" />
+            <div className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-bounce [animation-delay:-0.15s]" />
+            <div className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-bounce" />
+          </div>
+          <p className={`text-[10px] font-bold uppercase tracking-[0.3em] ${isDarkMode ? 'text-orange-500/50' : 'text-slate-400'}`}>
+            iCaffeOS v5.2 Smart Ordering
+          </p>
         </div>
       </div>
     );
@@ -2317,35 +2448,21 @@ const MenuOrderingInterface = () => {
     <div className={`min-h-screen ${isDarkMode ? 'bg-slate-900' : 'bg-gray-50'} font-heebo`} dir="rtl">
 
       {/* Top Navigation Bar */}
-      <div className={`${isDarkMode ? 'bg-slate-800 border-slate-700 shadow-lg' : 'bg-white border-gray-200 shadow-sm'} border-b flex items-center px-6 py-3 sticky top-0 z-30 transition-colors duration-300 compact-header-h`}>
-
-        {/* Right Side Group (RTL): Home/Back Button + Sync */}
-        <div className="flex items-center gap-2 flex-1">
-          <button
-            onClick={handleBack}
-            className={`flex items-center justify-center w-10 h-10 rounded-xl transition-all ${isDarkMode ? 'text-slate-300 hover:text-white hover:bg-slate-700' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            title={(sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) === 'kds' || fromKDSParam) ? "חזרה ל-KDS" : "חזרה לדף הבית"}
-          >
-            <Icon
-              name={(sessionStorage.getItem(ORDER_ORIGIN_STORAGE_KEY) === 'kds' || fromKDSParam) ? "ChevronRight" : "Home"}
-              size={20}
-            />
-          </button>
-
+      {/* Top Navigation Bar - UnifiedHeader */}
+      <UnifiedHeader
+        onHome={handleBack}
+      >
+        <div className="flex items-center gap-2">
           {/* Sync Button */}
           <button
             onClick={async (e) => {
-              // [CLEANED] console.log('🔄 Sync button clicked!');
               const btn = e.currentTarget;
               btn.classList.add('animate-spin');
               btn.disabled = true;
-
               try {
                 console.log('📥 Starting sync...');
                 const { initialLoad } = await import('../../services/syncService');
                 const result = await initialLoad(currentUser?.business_id);
-                // [CLEANED] console.log('✅ Sync result:', result);
                 alert('✅ סנכרון הושלם! רענן את הדף.');
               } catch (err) {
                 console.error('❌ Sync error:', err);
@@ -2355,8 +2472,7 @@ const MenuOrderingInterface = () => {
                 btn.disabled = false;
               }
             }}
-            className={`flex items-center justify-center w-10 h-10 rounded-xl transition-all disabled:opacity-50 ${isDarkMode ? 'text-blue-400 hover:text-blue-300 hover:bg-slate-700' : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
-              }`}
+            className={`flex items-center justify-center w-10 h-10 rounded-xl transition-all disabled:opacity-50 ${isDarkMode ? 'text-blue-400 hover:text-blue-300 hover:bg-slate-700' : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'}`}
             title="סנכרון נתונים"
           >
             <Icon name="RefreshCw" size={18} />
@@ -2365,27 +2481,13 @@ const MenuOrderingInterface = () => {
           {/* Theme Toggle Button */}
           <button
             onClick={toggleTheme}
-            className={`flex items-center justify-center w-10 h-10 rounded-xl transition-all ${isDarkMode ? 'text-yellow-400 hover:bg-slate-700' : 'text-slate-600 hover:bg-gray-100'
-              }`}
+            className={`flex items-center justify-center w-10 h-10 rounded-xl transition-all ${isDarkMode ? 'text-yellow-400 hover:bg-slate-700' : 'text-slate-600 hover:bg-gray-100'}`}
             title={isDarkMode ? "מעבר למצב יום" : "מעבר למצב לילה"}
           >
             <Icon name={isDarkMode ? "Sun" : "Moon"} size={18} />
           </button>
         </div>
-
-        {/* Center - Clock & Connection Status */}
-        <div className="flex items-center gap-3 px-4">
-          <div className={`text-lg font-black ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>
-            {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-          </div>
-          <ConnectionStatusBar isIntegrated={true} />
-        </div>
-
-        {/* Left Side (RTL = far left): Music Player */}
-        <div className="flex items-center gap-2 flex-1 justify-end">
-          <MiniMusicPlayer />
-        </div>
-      </div>
+      </UnifiedHeader>
 
       {/* Customer Info Modal */}
       <CustomerInfoModal
@@ -2433,7 +2535,7 @@ const MenuOrderingInterface = () => {
           {/* Menu Grid - Scrollable Area */}
           <div className={`flex-1 overflow-y-auto custom-scrollbar ${isRestrictedMode ? 'opacity-50 pointer-events-none' : ''}`}>
             <MenuGrid
-              items={filteredItems}
+              items={itemsWithCartStock}
               groupedItems={groupedItems}
               onAddToCart={handleAddToCart}
               isLoading={isLoading}
@@ -2493,7 +2595,7 @@ const MenuOrderingInterface = () => {
       {selectedItemForMod && (
         <ModifierModal
           isOpen={showModifierModal}
-          selectedItem={selectedItemForMod}
+          selectedItem={itemsWithCartStock.find(i => i.id === selectedItemForMod.id) || selectedItemForMod}
           onClose={() => {
             setShowModifierModal(false);
             setSelectedItemForMod(null);
@@ -2504,17 +2606,26 @@ const MenuOrderingInterface = () => {
           // onCacheUpdate={setModifierOptionsCache}
           // Prevent auto-add for food items OR items with allow_notes enabled so user can add notes
           allowAutoAdd={!isFoodItem(selectedItemForMod) && selectedItemForMod?.allow_notes === false}
-          // Inject extra options for Salads (CONDITIONAL logic)
           extraGroups={
-            selectedItemForMod?.kds_routing_logic === 'CONDITIONAL'
+            (selectedItemForMod?.inventory_settings?.isPreparedItem || selectedItemForMod?.kds_routing_logic === 'hybrid' || selectedItemForMod?.kds_routing_logic === 'CONDITIONAL')
               ? [{
                 id: 'kds_routing',
                 name: 'אופן הכנה',
                 is_required: true,
                 is_multiple_select: false,
                 values: [
-                  { id: 'ready', name: 'קיבל מוכן (מהמדף)', priceAdjustment: 0, is_default: true },
-                  { id: 'prep', name: 'דורש הכנה (הכן עכשיו)', priceAdjustment: 0 }
+                  {
+                    id: 'ready',
+                    name: 'קיבל מוכן (מהמדף)',
+                    priceAdjustment: 0,
+                    is_default: (selectedItemForMod?.current_stock > 0)
+                  },
+                  {
+                    id: 'prep',
+                    name: 'דורש הכנה (הכן עכשיו)',
+                    priceAdjustment: 0,
+                    is_default: (selectedItemForMod?.current_stock <= 0)
+                  }
                 ]
               }]
               : []

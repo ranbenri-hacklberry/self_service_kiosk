@@ -9,6 +9,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import ConnectionStatusBar from '../../components/ConnectionStatusBar';
 import MiniMusicPlayer from '../../components/music/MiniMusicPlayer';
+import UnifiedHeader from '../../components/UnifiedHeader';
 import Icon from '../../components/AppIcon';
 import { supabase } from '../../lib/supabase';
 import { db } from '../../db/database';
@@ -25,6 +26,7 @@ const IPadMenuEditor = () => {
     const navigate = useNavigate();
     const [selectedItem, setSelectedItem] = useState(null);
     const [draftItem, setDraftItem] = useState(null);
+    const [itemModifiers, setItemModifiers] = useState([]);
     const [isAuthOpen, setIsAuthOpen] = useState(false);
     const [authMode, setAuthMode] = useState('pin');
     const [currentTime, setTime] = useState(new Date());
@@ -77,11 +79,54 @@ const IPadMenuEditor = () => {
         return () => clearInterval(timer);
     }, []);
 
-    // Sync draft
+    // Sync draft and fetch modifiers
     useEffect(() => {
-        if (selectedItem) setDraftItem({ ...selectedItem });
-        else setDraftItem(null);
+        if (selectedItem) {
+            setDraftItem({ ...selectedItem });
+            fetchModifiers(selectedItem.id);
+        } else {
+            setDraftItem(null);
+            setItemModifiers([]);
+        }
     }, [selectedItem]);
+
+    const fetchModifiers = async (itemId) => {
+        try {
+            // 1. Fetch linked group IDs
+            const { data: linked } = await supabase
+                .from('menuitemoptions')
+                .select('group_id')
+                .eq('item_id', itemId);
+
+            const groupIds = linked?.map(l => l.group_id) || [];
+
+            // 2. Fetch groups and their values
+            let relevantGroups = [];
+            if (groupIds.length > 0) {
+                const { data: groups } = await supabase
+                    .from('optiongroups')
+                    .select('*, optionvalues(id, value_name, price_adjustment, is_default, display_order)')
+                    .in('id', groupIds);
+                if (groups) relevantGroups = groups;
+            }
+
+            // 3. Fetch private groups
+            const { data: privateGroups } = await supabase
+                .from('optiongroups')
+                .select('*, optionvalues(id, value_name, price_adjustment, is_default, display_order)')
+                .eq('menu_item_id', itemId);
+
+            if (privateGroups?.length) {
+                const existingIds = new Set(relevantGroups.map(g => g.id));
+                const uniquePrivate = privateGroups.filter(g => !existingIds.has(g.id));
+                relevantGroups = [...relevantGroups, ...uniquePrivate];
+            }
+
+            setItemModifiers(relevantGroups);
+        } catch (err) {
+            console.error('Failed to fetch modifiers:', err);
+        }
+    };
 
     const handleSaveRequest = async (updatedItem) => {
         if (!currentUser?.business_id) return;
@@ -211,39 +256,40 @@ const IPadMenuEditor = () => {
 
     return (
         <div className={`flex flex-col h-screen w-full overflow-hidden ${isDarkMode ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-900'}`} dir="rtl">
-            <div className={`flex items-center px-6 py-3 border-b ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'} z-30`}>
-                <div className="flex items-center gap-2 flex-1">
-                    <button onClick={() => navigate('/mode-selection')} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl">
-                        <Icon name="Home" size={20} />
-                    </button>
-                    <button onClick={handleRefresh} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl">
+            {/* UnifiedHeader Header */}
+            <UnifiedHeader
+                onHome={() => navigate('/mode-selection')}
+            >
+                <div className="flex items-center gap-2">
+                    <button onClick={handleRefresh} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl" title="רענן מ-Supabase">
                         <RefreshCw size={20} className={isSaving ? 'animate-spin' : ''} />
                     </button>
-                </div>
 
-                <div className="flex items-center justify-center gap-4 flex-1">
+                    <div className="w-px h-6 bg-slate-200 mx-2" />
+
                     <input type="file" ref={fileInputRef} onChange={handleExcelUpload} className="hidden" accept=".xlsx, .xls" />
                     <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-full text-xs font-bold shadow-lg"
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg hover:bg-emerald-600 transition"
                     >
                         {isImporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
-                        {isImporting ? `מייבא (${importProgress}%)...` : 'ייבוא תפריט (Excel)'}
+                        {isImporting ? `מייבא (${importProgress}%)...` : 'ייבוא Excel'}
                     </button>
-                    <div className="text-lg font-mono font-bold">
-                        {currentTime.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                </div>
 
-                <div className="flex items-center gap-2 flex-1 justify-end">
+                    <div className="w-px h-6 bg-slate-200 mx-2" />
+
                     <button onClick={toggleTheme} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl text-yellow-500">
                         {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
                     </button>
-                    <button onClick={() => setIsUnlocked(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl text-red-500">
+                    <button
+                        onClick={() => setIsUnlocked(false)}
+                        className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl text-red-500"
+                        title="נעל מסך"
+                    >
                         <Lock size={20} />
                     </button>
                 </div>
-            </div>
+            </UnifiedHeader>
 
             <div className="flex flex-1 overflow-hidden">
                 <div className="flex-1 h-full overflow-y-auto p-6">
@@ -257,6 +303,8 @@ const IPadMenuEditor = () => {
                     <EditPanel
                         item={draftItem}
                         onItemChange={setDraftItem}
+                        modifiers={itemModifiers}
+                        onModifiersChange={setItemModifiers}
                         onSave={handleSaveRequest}
                         onClose={() => setSelectedItem(null)}
                         aiSettings={aiSettings}

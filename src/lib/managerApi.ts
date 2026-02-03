@@ -1,5 +1,6 @@
 import { OptionGroup } from '@/components/manager/types';
 import { supabase } from '@/lib/supabase';
+import { db } from '@/db/database';
 
 const DEFAULT_API_BASE_URL = 'https://aimanageragentrani-625352399481.europe-west1.run.app';
 
@@ -45,10 +46,13 @@ export const normalizeOptionGroups = (rawGroups: any[] = []): OptionGroup[] => {
         type: group?.is_multiple_select ? 'multi' : 'single',
         category: group?.category || categorizeGroup(group?.name),
         required: Boolean(group?.is_required ?? group?.required),
+        is_required: Boolean(group?.is_required ?? group?.required),
+        min_selection: Number(group?.min_selection ?? (Boolean(group?.is_required ?? group?.required) ? 1 : 0)),
+        max_selection: Number(group?.max_selection ?? (group?.is_multiple_select ? 99 : 1)),
         description: group?.description ?? null,
         values: values
           .filter(Boolean)
-          .map((value) => ({
+          .map((value: any) => ({
             id: String(value?.id ?? value?.value_id ?? crypto.randomUUID?.() ?? Date.now()),
             name: value?.name || value?.value_name || 'בחירה',
             price: Number(value?.price ?? value?.price_adjustment ?? 0),
@@ -93,19 +97,91 @@ const optionsCache: Record<string, OptionGroup[]> = {};
 export const fetchManagerItemOptions = async (itemId: string | number, businessId?: string): Promise<OptionGroup[]> => {
   const cacheKey = `${businessId}_${itemId}`;
   if (optionsCache[cacheKey]) {
+    console.log('⚡ Using Memory Cache for Options:', itemId);
     return optionsCache[cacheKey];
   }
 
-  const url = businessId
-    ? buildUrl(`/item/${itemId}/options?business_id=${businessId}`)
-    : buildUrl(`/item/${itemId}/options`);
+  // Strategy 1: Try Local Dexie DB first (Fastest & Offline)
+  try {
+    const idStr = String(itemId);
 
-  const response = await fetch(url);
-  const rawGroups = await handleJson<any[]>(response);
-  const normalized = normalizeOptionGroups(rawGroups);
+    // 1. Get linked groups via menuitemoptions
+    const links = await db.menuitemoptions.where('item_id').equals(idStr).toArray();
+    const linkGroupIds = links.map(l => String(l.group_id));
 
-  optionsCache[cacheKey] = normalized;
-  return normalized;
+    // 2. Get groups defined specifically for this item (menu_item_id)
+    const specificGroups = await db.optiongroups.where('menu_item_id').equals(idStr).toArray();
+
+    // 3. Combine Group IDs & Fetch missing groups
+    const specificGroupIds = specificGroups.map(g => String(g.id));
+    const allGroupIds = [...new Set([...linkGroupIds, ...specificGroupIds])];
+
+    if (allGroupIds.length > 0) {
+      // Fetch the actual group objects for the linked IDs
+      // Note: anyOf is case-sensitive and type-sensitive in Dexie usually
+      const linkedGroups = await db.optiongroups.where('id').anyOf(linkGroupIds).toArray();
+
+      // Merge results (specificGroups already fetched)
+      // Use a Map to deduplicate by ID
+      const groupMap = new Map();
+      [...linkedGroups, ...specificGroups].forEach(g => groupMap.set(String(g.id), g));
+      const allGroups = Array.from(groupMap.values());
+
+      // 4. Fetch values for all groups
+      const groupsWithValues = await Promise.all(allGroups.map(async (group) => {
+        const values = await db.optionvalues.where('group_id').equals(String(group.id)).toArray();
+        return { ...group, values };
+      }));
+
+      if (groupsWithValues.length > 0) {
+        console.log('💾 Loaded Options from Dexie Local DB:', groupsWithValues.length);
+        const normalized = normalizeOptionGroups(groupsWithValues);
+        optionsCache[cacheKey] = normalized;
+        return normalized;
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ Dexie lookup failed, falling back to network:', err);
+  }
+
+  // Strategy 2: Fallback to Supabase Direct (if online)
+  try {
+    console.log('🌐 Fetching Options from Supabase...');
+    const targetItemId = String(itemId);
+
+    // 1. Get linked group IDs
+    const { data: links } = await supabase
+      .from('menuitemoptions')
+      .select('group_id')
+      .eq('item_id', targetItemId);
+
+    const linkedIds = links?.map(l => l.group_id) || [];
+
+    // 2. Fetch Groups (Linked + Private)
+    // We want groups where id IN linkedIds OR menu_item_id == targetItemId
+    let query = supabase
+      .from('optiongroups')
+      .select('*, values:optionvalues(*)'); // Join values
+
+    if (linkedIds.length > 0) {
+      query = query.or(`id.in.(${linkedIds.join(',')}),menu_item_id.eq.${targetItemId}`);
+    } else {
+      query = query.eq('menu_item_id', targetItemId);
+    }
+
+    const { data: rawGroups, error } = await query;
+
+    if (!error && rawGroups) {
+      const normalized = normalizeOptionGroups(rawGroups);
+      optionsCache[cacheKey] = normalized;
+      return normalized;
+    }
+  } catch (err) {
+    console.error('❌ Supabase fetch failed:', err);
+  }
+
+  console.warn('⚠️ No options found (Local & Remote)');
+  return [];
 };
 
 // Clear cache for a specific item or all items
@@ -166,7 +242,7 @@ export const MANAGER_API_BASE = API_BASE_URL;
 
 export const updateInventoryStock = async (itemId: string | number, newStock: number) => {
   // 'last_restoc_date' column was not found in schema scan, so we omit it.
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from('inventory_items')
     .update({ current_stock: newStock })
     .eq('id', itemId)

@@ -17,11 +17,15 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useAuth } from '../../../context/AuthContext';
 import db from '../../../db/database';
 import { groupOrderItems } from '../../../utils/kdsUtils';
+import { useKDSSms } from './useKDSSms';
 
 export const useKDSDataLocal = () => {
     const { currentUser } = useAuth();
     const businessId = currentUser?.business_id;
     const hasAutoSynced = useRef(false);
+
+    // 📱 SMS HOOK integration
+    const { smsToast, setSmsToast, isSendingSms, handleSendSms } = useKDSSms();
 
     // Auto-sync on mount (once)
     useEffect(() => {
@@ -56,24 +60,34 @@ export const useKDSDataLocal = () => {
             return [];
         }
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        // 🛠️ FIX: Use BUSINESS DAY starting at 05:00 AM, not a 24-hour window
+        const now = new Date();
+        const businessDayStart = new Date(now);
+        businessDayStart.setHours(5, 0, 0, 0);
 
-        console.log('🔍 [KDS] Querying orders for businessId:', businessId);
+        // If it's before 5 AM, the business day started yesterday at 5 AM
+        if (now.getHours() < 5) {
+            businessDayStart.setDate(businessDayStart.getDate() - 1);
+        }
 
-        // Get orders that are active OR pending sync
+        console.log('🔍 [KDS] Querying orders for businessId:', businessId, 'since:', businessDayStart.toISOString());
+
+        // Get orders that are active AND from current business day
         const orders = await db.orders
             .where('business_id')
             .equals(businessId)
             .filter(o => {
-                const isToday = new Date(o.created_at) >= today;
+                const orderDate = new Date(o.created_at);
+                const isFromToday = orderDate >= businessDayStart;
                 const isActive = ['in_progress', 'ready', 'new', 'pending'].includes(o.order_status);
                 const isPending = o.pending_sync === true;
-                return (isActive && isToday) || isPending;
+
+                // Only show orders from today's business day
+                return (isActive && isFromToday) || (isPending && isFromToday);
             })
             .toArray();
 
-        console.log(`📊 [KDS] Found ${orders.length} active orders`);
+        console.log(`📊 [KDS] Found ${orders.length} active orders from business day`);
         return orders;
     }, [businessId]);
 
@@ -162,13 +176,16 @@ export const useKDSDataLocal = () => {
                     }
 
                     const menuItem = menuItems.get(item.menu_item_id);
-                    if (!menuItem?.name) {
-                        console.log(`  ⏭️ Item ${item.id}: no menu item found (filtered)`);
+                    // 🛠️ FIX: Do not filter out items just because menu lookup fails. Use item.name instead.
+                    const itemName = menuItem?.name || item.name;
+                    if (!itemName) {
+                        console.log(`  ⏭️ Item ${item.id}: no name found (filtered)`);
                         return false;
                     }
 
-                    const kdsLogic = menuItem.kds_routing_logic;
-                    const isPrepRequired = menuItem.is_prep_required;
+                    // Defaults if menu item missing
+                    const kdsLogic = menuItem?.kds_routing_logic || 'MADE_TO_ORDER';
+                    const isPrepRequired = menuItem?.is_prep_required;
 
                     // Check for KDS override in mods
                     let hasOverride = false;
@@ -191,19 +208,29 @@ export const useKDSDataLocal = () => {
                         if (mods.kds_override === true) hasOverride = true;
                     }
 
-                    // Routing logic
-                    if (kdsLogic === 'MADE_TO_ORDER') return true;
-                    if (kdsLogic === 'CONDITIONAL') return hasOverride;
-                    const shouldShow = isPrepRequired !== false;
-
-                    if (!shouldShow) {
-                        console.log(`  ⏭️ Item ${item.id} (${menuItem.name}): kdsLogic=${kdsLogic}, isPrepRequired=${isPrepRequired} (filtered)`);
+                    // Routing logic priority:
+                    // 1. Explicit exclude takes precedence (is_prep_required = false)
+                    if (isPrepRequired === false) {
+                        // console.log(`  ⏭️ Item ${item.id} (${itemName}): Explicitly hidden (is_prep_required=false)`);
+                        return false;
                     }
 
-                    return shouldShow;
+                    // 2. Explicit include takes precedence (is_prep_required = true)
+                    if (isPrepRequired === true) return true;
+
+                    // 3. Check Override for Conditional
+                    if (kdsLogic === 'CONDITIONAL') return hasOverride;
+
+                    // 4. Default for MADE_TO_ORDER (if is_prep_required is NULL/Undefined)
+                    // If it's Made to Order but prep requirement is unknown, we default to SHOW
+                    // UNLESS user wants stricter filtering. For now, assuming standard behavior involves showing it.
+                    if (kdsLogic === 'MADE_TO_ORDER') return true;
+
+                    return true;
                 })
                 .map(item => {
-                    const menuItem = menuItems.get(item.menu_item_id) || { name: 'Unknown', price: 0 };
+                    const menuItem = menuItems.get(item.menu_item_id) || { price: 0 };
+                    const name = menuItem.name || item.name || 'Unknown Item';
 
                     // Parse modifiers
                     let modsArray = [];
@@ -283,8 +310,9 @@ export const useKDSDataLocal = () => {
             const baseOrder = {
                 id: order.id,
                 orderNumber: order.order_number || `#${String(order.id).slice(0, 8)}`,
-                customerName: order.customer_name || 'אורח',
-                customerPhone: order.customer_phone,
+                // 🛠️ FIX: Ensure customer name is prioritized correctly from all possible fields
+                customerName: order.customer_name || order.customerName || (order.order_number ? `#${order.order_number}` : 'אורח'),
+                customerPhone: order.customer_phone || order.customerPhone,
                 customerId: order.customer_id,
                 isPaid: order.is_paid,
                 totalAmount: unpaidAmount > 0 ? unpaidAmount : totalAmount,
@@ -324,10 +352,11 @@ export const useKDSDataLocal = () => {
 
                 let cardType, cardStatus;
                 const isOrderReady = order.order_status === 'ready';
+                const isOrderCompleted = order.order_status === 'completed';
 
-                if (isOrderReady || allReady) {
-                    cardType = 'ready';
-                    cardStatus = 'ready';
+                if (isOrderReady || isOrderCompleted || allReady) {
+                    cardType = 'ready'; // This pushes it to the bottom list (completedOrders)
+                    cardStatus = isOrderCompleted ? 'completed' : 'ready';
                 } else if (hasActiveItems) {
                     cardType = 'active';
                     cardStatus = 'in_progress';
@@ -420,6 +449,33 @@ export const useKDSDataLocal = () => {
         for (const itemId of itemIds) {
             await updateItemStatus(itemId, 'ready');
         }
+
+        // 📱 Check if ALL items in the order are now ready/completed
+        // If so, and the order wasn't ready before, send SMS
+        try {
+            const orderItems = await db.order_items.where('order_id').equals(orderId).toArray();
+            const allReady = orderItems.every(i => ['ready', 'completed', 'cancelled'].includes(i.item_status));
+
+            if (allReady) {
+                const order = await db.orders.get(orderId);
+                // Allow re-sending if it was already ready but maybe user clicked again? 
+                // Better to be safe: Only if not already completed (to avoid spamming history)
+                if (order && order.order_status !== 'completed') {
+                    // Update order status to ready if it's not already
+                    if (order.order_status !== 'ready') {
+                        await updateOrderStatus(orderId, 'ready');
+                    }
+
+                    // Send SMS if phone exists
+                    if (order.customer_phone) {
+                        console.log(`📱 [KDS Local] Order ${orderId} is fully ready, sending SMS to ${order.customer_phone}`);
+                        handleSendSms(order.customer_phone, order.customer_name);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Error in SMS/Ready check:', e);
+        }
     };
 
     const handleCancelOrder = async (orderId) => {
@@ -449,14 +505,70 @@ export const useKDSDataLocal = () => {
         const endOfDay = new Date(selectedDate);
         endOfDay.setHours(23, 59, 59, 999);
 
-        const orders = await db.orders
+        // 1. Try Local First
+        let orders = await db.orders
             .where('business_id')
             .equals(businessId)
             .filter(o => {
-                const createdAt = new Date(o.created_at);
-                return createdAt >= startOfDay && createdAt <= endOfDay;
+                const createdAtTime = new Date(o.created_at).getTime();
+                return createdAtTime >= startOfDay.getTime() && createdAtTime <= endOfDay.getTime();
             })
             .toArray();
+
+        // 2. If nothing found locally (and we are online), try to fetch from server
+        // This handles the case where history hasn't been synced to this device yet
+        if (orders.length === 0 && navigator.onLine) {
+            console.log(`📜 [KDS History] No local orders for ${selectedDate}, attempting server fetch...`);
+            try {
+                // We use the existing sync service but we might need a specific "fetch history" RPC if syncOrders is limited.
+                // For now, let's assume syncOrders brings in enough data or we rely on the broader sync.
+                // Actually, let's manually fetch from Supabase to populate Dexie for this date!
+                const { supabase } = await import('../../../lib/supabase');
+                const { data: serverOrders, error } = await supabase
+                    .rpc('get_kds_orders', {
+                        p_business_id: businessId,
+                        p_date: startOfDay.toISOString()
+                    });
+
+                if (!error && serverOrders && serverOrders.length > 0) {
+                    console.log(`📥 [KDS History] Fetched ${serverOrders.length} orders from server. Fetching items...`);
+
+                    // 1. Save Orders
+                    await db.orders.bulkPut(serverOrders.map(o => ({
+                        ...o,
+                        is_offline: false,
+                        pending_sync: false
+                    })));
+
+                    // 2. Fetch & Save Items
+                    const orderIds = serverOrders.map(o => o.id);
+                    const { data: serverItems } = await supabase
+                        .from('order_items')
+                        .select('*')
+                        .in('order_id', orderIds);
+
+                    if (serverItems && serverItems.length > 0) {
+                        console.log(`__ [KDS History] Saving ${serverItems.length} items to Dexie...`);
+                        await db.order_items.bulkPut(serverItems);
+                    }
+
+                    // Re-query Dexie
+                    orders = await db.orders
+                        .where('business_id')
+                        .equals(businessId)
+                        .filter(o => {
+                            const createdAtTime = new Date(o.created_at).getTime();
+                            return createdAtTime >= startOfDay.getTime() && createdAtTime <= endOfDay.getTime();
+                        })
+                        .toArray();
+                }
+            } catch (err) {
+                console.warn('Failed to fetch history from server:', err);
+            }
+        }
+
+        console.log(`📜 [KDS History] Final count: ${orders.length} orders for date ${selectedDate}`);
+
 
         // Get items for these orders
         const orderIds = orders.map(o => o.id);
@@ -477,9 +589,9 @@ export const useKDSDataLocal = () => {
                 order_number: order.order_number,
                 order_status: order.order_status,
                 orderNumber: order.order_number || `#${String(order.id).slice(0, 8)}`,
-                customerName: order.customer_name || 'אורח',
-                customer_name: order.customer_name,
-                customer_phone: order.customer_phone,
+                customerName: order.customer_name || order.customerName || (order.order_number ? `#${order.order_number}` : 'אורח'),
+                customer_name: order.customer_name || order.customerName,
+                customer_phone: order.customer_phone || order.customerPhone,
                 isPaid: order.is_paid,
                 is_paid: order.is_paid,
                 totalAmount: order.total_amount,
@@ -550,15 +662,15 @@ export const useKDSDataLocal = () => {
     return {
         currentOrders: processedOrders.current || [],
         completedOrders: processedOrders.completed || [],
-        isLoading: !activeOrders || !orderItems || !menuItems || !optionValues,
+        isLoading: (!activeOrders || !orderItems || !menuItems || !optionValues) && (!processedOrders.current.length && !processedOrders.completed.length),
         isOffline: !navigator.onLine,
         lastUpdated: new Date(),
-        lastAction: null, // TODO: Track last action
-        smsToast: null, // TODO: Implement SMS
-        setSmsToast: () => { },
+        lastAction: null,
+        smsToast,
+        setSmsToast,
         errorModal: null,
         setErrorModal: () => { },
-        isSendingSms: false,
+        isSendingSms,
         updateItemStatus,
         updateOrderStatus,
         fireItem,

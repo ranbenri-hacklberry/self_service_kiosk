@@ -59,7 +59,33 @@ export const ConnectionProvider = ({ children }) => {
             cloudOk = false;
         }
 
-        localOk = false; // Force Cloud Only
+        // Check Local (Docker/Local Supabase) - ONLY if likely on local network
+        // 🔒 Security/Optimization: Don't scan localhost if we are on a public domain (Vercel)
+        const isLikelyLocal = window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1' ||
+            window.location.hostname.startsWith('192.168.');
+
+        if (isLikelyLocal) {
+            try {
+                const localController = new AbortController();
+                const localTimeoutId = setTimeout(() => localController.abort(), 2000); // 2s timeout for local
+
+                const localResp = await fetch(`${LOCAL_SUPABASE_URL}/rest/v1/`, {
+                    method: 'GET',
+                    headers: { 'apikey': import.meta.env.VITE_LOCAL_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY },
+                    signal: localController.signal
+                }).catch(() => null);
+
+                clearTimeout(localTimeoutId);
+                localOk = !!(localResp && localResp.ok);
+            } catch (err) {
+                console.log('🏘️ [ConnectionContext] Local check failed:', err.message);
+                localOk = false;
+            }
+        } else {
+            console.log('🌍 [ConnectionContext] Skipping local check (Production Environment)');
+            localOk = false;
+        }
 
         // Determine status
         let status = 'checking';
@@ -109,7 +135,19 @@ export const ConnectionProvider = ({ children }) => {
     // Check on mount and periodically - INCREASED FREQUENCY
     useEffect(() => {
         checkConnectivity();
-        const interval = setInterval(checkConnectivity, 5000); // Check every 5 seconds (was 30)
+
+        // 🚀 MIGRATION CHECK: Run once on mount to see if we need to nuked outdated Dexie
+        import('../services/syncService').then(({ autoDetectMigrationAndReset, initialLoad }) => {
+            autoDetectMigrationAndReset().then((wasReset) => {
+                if (wasReset) {
+                    console.log('🔄 [ConnectionContext] Dexie was reset due to migration. Triggering initial load...');
+                    // Trigger initial load to repopulate data immediately
+                    initialLoad(import.meta.env.VITE_BUSINESS_ID || '11111111-1111-1111-1111-111111111111');
+                }
+            });
+        });
+
+        const interval = setInterval(checkConnectivity, 30000); // Check every 30 seconds (was 5)
         return () => clearInterval(interval);
     }, [checkConnectivity]);
 

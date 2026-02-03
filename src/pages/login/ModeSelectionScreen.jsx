@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Monitor, ChefHat, LogOut, BarChart3, Coffee, Users, Music, ShieldAlert, Package, List, LayoutGrid, Truck, ShoppingCart, Settings } from 'lucide-react';
+import { Monitor, ChefHat, LogOut, BarChart3, Coffee, Users, Music, ShieldAlert, Package, List, LayoutGrid, Truck, ShoppingCart, Settings, MessageSquare, ExternalLink } from 'lucide-react';
 import WhatsNewModal from '../../components/WhatsNewModal';
+import SmsBalanceWidget from '../../components/SmsBalanceWidget';
 
 const ModeSelectionScreen = () => {
     const navigate = useNavigate();
@@ -23,6 +24,9 @@ const ModeSelectionScreen = () => {
 
     // Check if user is a driver
     const isDriver = currentUser?.is_driver === true || role === 'driver' || accessLevel === 'driver';
+
+    // Check if user is staff
+    const isStaff = role === 'staff' || accessLevel === 'staff';
 
     // Check if user is owner
     const isOwner = role === 'owner' || accessLevel === 'owner';
@@ -64,9 +68,8 @@ const ModeSelectionScreen = () => {
                     <h1 className="text-2xl font-black text-white mb-2">
                         שלום, {currentUser?.name || 'עובד'} 👋
                     </h1>
-                    <p className="text-base text-slate-300 mb-3">
-                        בחר את מצב העבודה
-                    </p>
+
+                    <SmsBalanceWidget />
                     {/* Business Name Badge */}
                     <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/20 border border-green-500/30 rounded-full">
                         <span className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" />
@@ -163,7 +166,7 @@ const ModeSelectionScreen = () => {
                             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white mb-3 shadow-lg group-hover:rotate-6 transition-transform">
                                 <List size={20} strokeWidth={2.5} />
                             </div>
-                            <h2 className="text-xl font-black text-slate-900 mb-1">משימות</h2>
+                            <h2 className="text-xl font-black text-slate-900 mb-1">הכנות ומשימות</h2>
                             <p className="text-slate-500 text-sm leading-relaxed font-medium">
                                 פתיחה, סגירה ומשימות יום
                             </p>
@@ -252,8 +255,11 @@ const ModeSelectionScreen = () => {
                     {/* 8. Menu Editor - Manager/Owner Only */}
                     {isManager && (
                         <button
-                            onClick={() => navigate('/menu-editor')}
-                            className="hidden md:block group relative bg-white rounded-2xl p-5 hover:bg-violet-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-violet-100"
+                            onClick={() => {
+                                setMode('manager');
+                                navigate('/menu-editor');
+                            }}
+                            className="group relative bg-white rounded-2xl p-5 hover:bg-violet-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-violet-100"
                         >
                             {/* Decorative Background */}
                             <div className="absolute top-0 left-0 w-24 h-24 bg-violet-100 rounded-br-full -translate-x-6 -translate-y-6 group-hover:scale-110 transition-transform" />
@@ -297,8 +303,8 @@ const ModeSelectionScreen = () => {
                         </button>
                     )}
 
-                    {/* 5. Advanced Data - Hidden on Mobile */}
-                    {isManager && (
+                    {/* 5. Advanced Data - Manager/Owner/Staff Only */}
+                    {(isManager || isStaff) && (
                         <button
                             onClick={() => handleModeSelect('dexie-admin')}
                             className="hidden md:block group relative bg-white rounded-2xl p-5 hover:bg-cyan-50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-cyan-100"

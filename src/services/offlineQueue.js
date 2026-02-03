@@ -33,11 +33,13 @@ export const initializeQueue = async () => {
  * @param {string} type - Action type: 'CREATE_ORDER', 'UPDATE_STATUS', 'UPDATE_CUSTOMER'
  * @param {Object} payload - Action data
  */
-export const queueAction = async (type, payload) => {
+export const queueAction = async (type, payload, table = null, recordId = null) => {
     const action = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         type,
         payload,
+        table,
+        recordId,
         createdAt: new Date().toISOString(),
         status: 'pending',
         retries: 0

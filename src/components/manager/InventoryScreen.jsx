@@ -4,9 +4,9 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import InventoryItemCard from './InventoryItemCard';
 import TripleCheckCard from './TripleCheckCard';
-import { Search, Truck, Plus, X, ArrowRight, Package, ShoppingCart, Check, ChevronLeft, ChevronRight, Settings, PlusCircle, Save, ScanLine, Camera, Upload, AlertTriangle } from 'lucide-react';
+import { Search, Truck, Plus, X, ArrowRight, Package, ShoppingCart, Check, ChevronLeft, ChevronRight, Settings, PlusCircle, Save, AlertTriangle } from 'lucide-react';
 import ConfirmationModal from '../ui/ConfirmationModal';
-import { useInvoiceOCR } from '@/hooks/useInvoiceOCR';
+import { logInventoryAction } from '@/lib/inventoryLog';
 
 
 /**
@@ -32,6 +32,7 @@ const InventoryScreen = () => {
   const [globalCatalog, setGlobalCatalog] = useState([]); // Master catalog_items
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState(null);
 
   // New Item Form State (for 'create' view if needed later, simplified for now)
   // const [newItemForm, setNewItemForm] = useState({ name: '', unit: 'יח׳', supplier_id: null, current_stock: 0, low_stock_alert: 5 });
@@ -52,13 +53,16 @@ const InventoryScreen = () => {
   const [newSupplierDays, setNewSupplierDays] = useState([]); // Array of integers 0-6 (Sun-Fri)
   const [newItemData, setNewItemData] = useState({
     name: '',
-    unit: 'יח׳', // or 'ק״ג'
+    unit: 'יח׳',
     cost_per_unit: 0,
     count_step: 1,
     weight_per_unit: 0,
     min_order: 1,
     order_step: 1,
-    case_quantity: 1
+    case_quantity: 1,
+    low_stock_alert: 0,
+    location: '',
+    category: 'כללי'
   });
 
   // Confirmation Modal State
@@ -71,14 +75,6 @@ const InventoryScreen = () => {
   });
 
   const [isCopied, setIsCopied] = useState(false);
-
-  // 🆕 Scanner Modal State
-  const [showScannerModal, setShowScannerModal] = useState(false);
-  const [scannerStep, setScannerStep] = useState('choose'); // 'choose' | 'uploading' | 'results'
-  const fileInputRef = useState(null);
-
-  // 🆕 Invoice OCR Hook
-  const { scanInvoice, isProcessing: isScanning, error: scanError, ocrResult, resetOCR } = useInvoiceOCR();
 
   // 🆕 Triple-Check Receiving Session State
   const [receivingSession, setReceivingSession] = useState(null);
@@ -131,7 +127,44 @@ const InventoryScreen = () => {
 
       const finalItems = itemsData || [];
 
-      const itemsWithNames = finalItems.map(item => ({
+      // 4. Fetch Prepared Items (Implicit from Menu) - for Hybrid view support
+      const { data: menuData } = await supabase
+        .from('menu_items')
+        .select('id, name, image_url, category, kds_routing_logic, inventory_settings, prepared_items_inventory(current_stock, initial_stock, unit)')
+        .eq('business_id', currentUser.business_id);
+
+      let trackedPreparedItems = [];
+      if (menuData) {
+        trackedPreparedItems = menuData.filter(item => {
+          const hasInvRecord = item.prepared_items_inventory &&
+            (Array.isArray(item.prepared_items_inventory) ? item.prepared_items_inventory.length > 0 : !!item.prepared_items_inventory);
+
+          const isHybrid = item.kds_routing_logic === 'hybrid';
+          const isMarkedPrepared = item.inventory_settings?.isPreparedItem === true;
+          const hasPrepType = item.inventory_settings?.prepType &&
+            ['production', 'completion', 'defrost', 'requires_prep'].includes(item.inventory_settings.prepType);
+
+          return isMarkedPrepared || isHybrid || hasPrepType;
+        }).map(item => ({
+          id: `prep-${item.id}`, // Virtual ID to distinguish
+          name: item.name,
+          unit: (Array.isArray(item.prepared_items_inventory) ? item.prepared_items_inventory[0]?.unit : item.prepared_items_inventory?.unit) ?? 'יח׳',
+          current_stock: (Array.isArray(item.prepared_items_inventory) ? item.prepared_items_inventory[0]?.current_stock : item.prepared_items_inventory?.current_stock) ?? 0,
+          supplier_id: 'uncategorized', // Or a new virtual 'prepared' group
+          category: item.category,
+          is_prepared_item: true,
+          menu_item_id: item.id
+        }));
+      }
+
+      // Merge Real Inventory + Virtual Prepared Items
+      // We only add prepared items that DON'T already match an existing inventory item name (dumb check to avoid dupes if mapped manually)
+      const existingNames = new Set(finalItems.map(i => i.name.trim().toLowerCase()));
+      const uniquePrepared = trackedPreparedItems.filter(p => !existingNames.has(p.name.trim().toLowerCase()));
+
+      const allItems = [...finalItems, ...uniquePrepared];
+
+      const itemsWithNames = allItems.map(item => ({
         ...item,
         last_counted_by_name: item.last_counted_by ? employeeMap[item.last_counted_by] || null : null
       }));
@@ -255,14 +288,23 @@ const InventoryScreen = () => {
   }, [items, suppliers, search]);
 
   const handleOrderChange = (itemId, qty, item = null) => {
+    // Force normalization if quantity is suspiciously large for a unit-based order
+    let normalizedQty = qty;
+    const invItem = items.find(i => i.id === itemId);
+    const wpu = invItem?.weight_per_unit ? parseFloat(invItem.weight_per_unit) : 0;
+
+    if (wpu > 1 && qty >= wpu) {
+      normalizedQty = Math.round(qty / wpu);
+    }
+
     setDraftOrders(prev => {
       const next = { ...prev };
-      if (qty <= 0) {
+      if (normalizedQty <= 0) {
         delete next[itemId];
       } else {
         next[itemId] = {
           itemId,
-          qty,
+          qty: normalizedQty,
           item: item || (next[itemId] ? next[itemId].item : null),
           itemName: item?.name || next[itemId]?.itemName,
           unit: item?.unit || next[itemId]?.unit,
@@ -290,6 +332,23 @@ const InventoryScreen = () => {
       }
 
       console.log('✅ Stock updated successfully:', data);
+
+      // --- LOGGING START ---
+      const oldItem = items.find(i => i.id === itemId);
+      const previousStock = oldItem ? parseFloat(oldItem.current_stock) : 0;
+      // Determine action type based on source
+      const actionType = source === 'order_receipt' ? 'order_receipt' : 'manual_count';
+
+      logInventoryAction(
+        itemId,
+        previousStock,
+        newStock,
+        actionType,
+        currentUser?.name || 'unknown',
+        `Update from ${source}`
+      );
+      // --- LOGGING END ---
+
       setItems(prev => prev.map(i => i.id === itemId ? {
         ...i,
         current_stock: newStock,
@@ -438,6 +497,36 @@ const InventoryScreen = () => {
     }
   };
 
+  const handleItemDelete = async (itemId) => {
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('inventory_items')
+        .delete()
+        .eq('id', itemId);
+
+      if (error) throw error;
+
+      // Optimistic update: remove from local state
+      setItems(prev => prev.filter(i => i.id !== itemId));
+
+      // Show success message
+      setConfirmModal({
+        isOpen: true,
+        title: 'הפריט נמחק',
+        message: 'הפריט הוסר מהמלאי לצמיתות.',
+        variant: 'success',
+        confirmText: 'סגור',
+        onConfirm: () => setConfirmModal(prev => ({ ...prev, isOpen: false }))
+      });
+    } catch (err) {
+      console.error('Error deleting item:', err);
+      alert('שגיאה במחיקת הפריט');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCopyAndFinish = async () => {
     if (!successData) return;
     try {
@@ -535,6 +624,19 @@ const InventoryScreen = () => {
     });
   }, []);
 
+  // 🆕 Update Invoiced Quantity in Receiving Session
+  const updateInvoicedQuantity = useCallback((itemId, newQty) => {
+    setReceivingSession(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        items: prev.items.map(item =>
+          item.id === itemId ? { ...item, invoicedQty: newQty } : item
+        )
+      };
+    });
+  }, []);
+
   // 🆕 Confirm Receipt - Call RPC
   const confirmReceipt = async () => {
     if (!receivingSession || !currentUser?.business_id) return;
@@ -544,13 +646,20 @@ const InventoryScreen = () => {
       // Prepare items for RPC - send ALL items, including new ones
       const rpcItems = receivingSession.items
         .filter(item => item.actualQty > 0) // Only items with quantity
-        .map(item => ({
-          inventory_item_id: item.inventoryItemId || null,
-          catalog_item_id: item.catalogItemId || null,
-          actual_qty: item.actualQty,
-          invoiced_qty: item.invoicedQty,
-          unit_price: item.unitPrice
-        }));
+        .map(receiptItem => {
+          // Find the corresponding inventory item to get its weight_per_unit
+          const invItem = items.find(i => i.id === receiptItem.inventoryItemId);
+          const wpu = invItem?.weight_per_unit ? parseFloat(invItem.weight_per_unit) : 0;
+
+          return {
+            inventory_item_id: receiptItem.inventoryItemId || null,
+            catalog_item_id: receiptItem.catalogItemId || null,
+            // Multiply actual_qty by wpu if it exists (e.g. 16 units * 2000g = 32000g)
+            actual_qty: wpu > 0 ? receiptItem.actualQty * wpu : receiptItem.actualQty,
+            invoiced_qty: wpu > 0 ? receiptItem.invoicedQty * wpu : receiptItem.invoicedQty,
+            unit_price: receiptItem.unitPrice
+          };
+        });
 
       const { data, error } = await supabase.rpc('receive_inventory_shipment', {
         p_items: rpcItems,
@@ -565,9 +674,29 @@ const InventoryScreen = () => {
       if (data?.success) {
         console.log('✅ Receipt confirmed:', data);
         setReceivingSession(null);
-        setShowScannerModal(false);
-        setScannerStep('choose');
-        resetOCR();
+
+        // --- LOGGING SHIPMENT ---
+        // Log each confirmed item
+        if (receivingSession?.items) {
+          receivingSession.items.forEach(item => {
+            if (item.actualQty > 0 && item.inventoryItemId) {
+              // We don't know exact previous stock easily without refetch, 
+              // but we know the CHANGE (actualQty).
+              // We can pass 0 as previous and new, and rely on quantityChange.
+              logInventoryAction(
+                item.inventoryItemId,
+                0, // Placeholder
+                0, // Placeholder
+                'order_receipt',
+                currentUser?.name,
+                `Received from Order #${receivingSession.orderId || 'N/A'}`,
+                parseFloat(item.actualQty)
+              );
+            }
+          });
+        }
+        // --- LOGGING END ---
+
         await fetchData();
         alert(`✅ קבלה אושרה! ${data.items_processed} פריטים עודכנו`);
       } else {
@@ -596,15 +725,22 @@ const InventoryScreen = () => {
         (orderItem.name && orderItem.name.includes(inv.name))
       );
 
+      const wpu = parseFloat(matchedItem?.weight_per_unit) || 0;
+      let calculatedOrderStep = parseFloat(matchedItem?.order_step) || 1;
+      if (wpu > 1 && calculatedOrderStep >= wpu) {
+        calculatedOrderStep = calculatedOrderStep / wpu;
+      }
+
       return {
         id: orderItem.id || `order-item-${idx}-${Date.now()}`,
         name: orderItem.name || 'פריט ללא שם',
         unit: orderItem.unit || matchedItem?.unit || 'יח׳',
-        invoicedQty: null, // No invoice!
-        orderedQty: orderItem.qty || 0, // From order
-        actualQty: orderItem.qty || 0, // Default to ordered
+        invoicedQty: orderItem.qty || 0,
+        orderedQty: orderItem.qty || 0,
+        actualQty: orderItem.qty || 0,
         unitPrice: orderItem.price || matchedItem?.cost_per_unit || 0,
-        countStep: matchedItem?.count_step || 1,
+        countStep: matchedItem?.count_step || (matchedItem?.unit === 'יח׳' ? 1 : 1),
+        orderStep: calculatedOrderStep,
         inventoryItemId: matchedItem?.id || null,
         catalogItemId: matchedItem?.catalog_item_id || null,
         isNew: !matchedItem,
@@ -621,9 +757,7 @@ const InventoryScreen = () => {
       totalInvoiced: 0
     });
 
-    // Open the scanner modal to show the triple-check UI
-    setShowScannerModal(true);
-    setScannerStep('results'); // Skip to results step
+    // Sessions are now displayed directly in the Sent Orders tab
   }, [items]);
 
   // --- NAVIGATION HELPERS ---
@@ -651,9 +785,28 @@ const InventoryScreen = () => {
       if (itemSupId !== 'uncategorized' && !validSupplierIds.has(itemSupId)) {
         itemSupId = 'uncategorized';
       }
-      return itemSupId === selectedSupplier;
-    }).filter(i => !search || i.name.toLowerCase().includes(search.toLowerCase()));
-  }, [items, selectedSupplier, search, suppliers]);
+      if (itemSupId !== selectedSupplier) return false;
+
+      if (selectedCategory) {
+        const itemCat = String(i.category || '').toLowerCase();
+        const n = String(i.name || '').toLowerCase();
+
+        if (selectedCategory === 'ירקות') {
+          if (!(itemCat.includes('ירק') || itemCat.includes('פיר') || n.includes('עגבנ') || n.includes('מלפפ') || n.includes('חסה'))) return false;
+        } else if (selectedCategory === 'חלב') {
+          if (!(itemCat.includes('חלב') || itemCat.includes('גבינ') || n.includes('חלב') || n.includes('יוגורט'))) return false;
+        } else if (selectedCategory === 'מאפים') {
+          if (!(itemCat.includes('מאפ') || itemCat.includes('לחם') || n.includes('לחמנ') || n.includes('פיתה'))) return false;
+        } else if (selectedCategory === 'יבש') {
+          if (!(itemCat.includes('יבש') || itemCat.includes('גלם') || itemCat.includes('מזווה') || n.includes('סוכר') || n.includes('מלח'))) return false;
+        } else if (selectedCategory === 'מקפיא') {
+          if (!(itemCat.includes('קפוא') || itemCat.includes('frozen') || n.includes('גלידה') || n.includes('צ\'יפס'))) return false;
+        }
+      }
+
+      return !search || i.name.toLowerCase().includes(search.toLowerCase());
+    });
+  }, [items, selectedSupplier, search, suppliers, selectedCategory]);
 
   const activeSupplierName = useMemo(() => {
     if (!selectedSupplier) return '';
@@ -693,8 +846,7 @@ const InventoryScreen = () => {
         weight_per_unit: newItemData.weight_per_unit, // Fixed variable name
         case_quantity: newItemData.case_quantity || 1, // Ensure valid integer
         min_order: newItemData.min_order,
-        order_step: newItemData.order_step,
-        item_type: newItemData.unit === 'יח׳' ? 'unit' : 'weight' // 'unit' or 'weight'
+        order_step: newItemData.order_step
       };
 
       const { error } = await supabase.from('inventory_items').insert([dbItem]);
@@ -761,14 +913,8 @@ const InventoryScreen = () => {
         {/* --- SUB-HEADER: Title & Add Action (New Row) --- */}
         {activeTab === 'counts' && currentView === 'suppliers' && (
           <div className="px-4 py-2 flex justify-between items-center max-w-4xl mx-auto w-full gap-3">
-            {/* Scan Invoice Button - Left */}
-            <button
-              onClick={() => setShowScannerModal(true)}
-              className="bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl px-4 py-2 font-bold shadow-lg shadow-purple-200 hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2"
-            >
-              <ScanLine size={20} />
-              <span>סרוק חשבונית</span>
-            </button>
+            {/* Removed Scan Invoice Button */}
+            <div className="flex-1"></div>
 
             {/* Add Supplier Button - Right */}
             <button
@@ -870,26 +1016,45 @@ const InventoryScreen = () => {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.2 }}
-                className="h-full overflow-y-auto p-4"
+                className="h-full flex flex-col p-4 overflow-hidden"
               >
-                <div className="space-y-3 max-w-lg mx-auto pb-20">
-                  {itemsForSelectedSupplier.length === 0 ? (
-                    <div className="text-center py-20 text-gray-400">
-                      <p>לא נמצאו פריטים עבור ספק זה</p>
-                      <button onClick={() => setShowItemModal(true)} className="mt-4 text-blue-600 font-bold hover:underline">הוסף פריט ראשון</button>
-                    </div>
-                  ) : (
-                    itemsForSelectedSupplier.map(item => (
-                      <InventoryItemCard
-                        key={item.id}
-                        item={item}
-                        draftOrderQty={draftOrders[item.id]?.qty || 0}
-                        onStockChange={handleStockUpdate}
-                        onOrderChange={(itemId, val) => handleOrderChange(itemId, val, item)}
-                        onUpdate={handleItemUpdate}
-                      />
-                    ))
-                  )}
+                {/* 🏷️ CATEGORY QUICK-FILTER */}
+                <div className="flex flex-wrap gap-1 mb-4 shrink-0 max-w-7xl mx-auto w-full">
+                  {['הכל', 'ירקות', 'חלב', 'מאפים', 'יבש', 'מקפיא'].map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedCategory(cat === 'הכל' ? null : cat)}
+                      className={`px-4 py-2 rounded-full text-[10px] font-black transition-all uppercase tracking-widest
+                        ${(selectedCategory === cat || (cat === 'הכל' && !selectedCategory))
+                          ? 'bg-blue-600 text-white shadow-lg'
+                          : 'bg-white text-gray-400 border border-gray-100 hover:border-gray-300'}`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex-1 overflow-y-auto pr-1">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 pb-20 max-w-7xl mx-auto">
+                    {itemsForSelectedSupplier.length === 0 ? (
+                      <div className="col-span-full text-center py-20 text-gray-400">
+                        <p>לא נמצאו פריטים עבור ספק זה</p>
+                        <button onClick={() => setShowItemModal(true)} className="mt-4 text-blue-600 font-bold hover:underline">הוסף פריט ראשון</button>
+                      </div>
+                    ) : (
+                      itemsForSelectedSupplier.map(item => (
+                        <InventoryItemCard
+                          key={item.id}
+                          item={item}
+                          draftOrderQty={draftOrders[item.id]?.qty || 0}
+                          onStockChange={handleStockUpdate}
+                          onOrderChange={(itemId, val) => handleOrderChange(itemId, val, item)}
+                          onUpdate={handleItemUpdate}
+                          onDelete={handleItemDelete}
+                        />
+                      ))
+                    )}
+                  </div>
                 </div>
               </motion.div>
             )
@@ -960,8 +1125,64 @@ const InventoryScreen = () => {
           {activeTab === 'sent_orders' && (
             <motion.div key="sent_orders" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="p-4 h-full overflow-y-auto">
               <div className="max-w-2xl mx-auto space-y-4">
-                {sentOrders.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-64 text-gray-400"><Truck size={48} className="mb-4 text-gray-200" /><h3 className="text-lg font-bold text-gray-500">אין הזמנות פתוחות</h3><p className="text-sm">הזמנות שנשלחו לספק וטרם התקבלו יופיעו כאן</p></div>
+
+                {receivingSession ? (
+                  /* 🆕 Receiving View (Triple-Check) */
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                      <button
+                        onClick={() => setReceivingSession(null)}
+                        className="flex items-center gap-2 text-slate-500 font-bold hover:text-slate-800 transition-colors"
+                      >
+                        <ArrowRight size={20} />
+                        <span>חזור להזמנות</span>
+                      </button>
+                      <div className="text-right">
+                        <h3 className="font-black text-slate-800">{receivingSession.supplierName}</h3>
+                        <p className="text-[10px] text-slate-400 font-bold">קבלה ללא חשבונית • וודא כמויות בפועל</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {receivingSession.items.map((it) => (
+                        <TripleCheckCard
+                          key={it.id}
+                          item={it}
+                          orderedQty={it.orderedQty}
+                          invoicedQty={it.invoicedQty}
+                          actualQty={it.actualQty}
+                          onActualChange={(newQty) => updateActualQuantity(it.id, newQty)}
+                          onInvoicedChange={(newQty) => updateInvoicedQuantity(it.id, newQty)}
+                          countStep={it.countStep}
+                          orderStep={it.orderStep}
+                          isNew={it.isNew}
+                        />
+                      ))}
+                    </div>
+
+                    <div className="sticky bottom-4 left-0 right-0 pt-4">
+                      <button
+                        onClick={confirmReceipt}
+                        disabled={isConfirmingReceipt}
+                        className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-lg shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        {isConfirmingReceipt ? (
+                          <div className="w-6 h-6 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <>
+                            <Check size={24} strokeWidth={3} />
+                            <span>סיימתי, קלוט סחורה למלאי</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ) : sentOrders.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+                    <Truck size={48} className="mb-4 text-gray-200" />
+                    <h3 className="text-lg font-bold text-gray-500">אין הזמנות פתוחות</h3>
+                    <p className="text-sm">הזמנות שנשלחו לספק וטרם התקבלו יופיעו כאן</p>
+                  </div>
                 ) : (
                   sentOrders.map(order => (
                     <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
@@ -970,35 +1191,25 @@ const InventoryScreen = () => {
                           <h3 className="font-black text-gray-800 text-sm">{order.supplier_name}</h3>
                           <span className="text-xs text-gray-500">{new Date(order.created_at).toLocaleDateString('he-IL')}</span>
                         </div>
-                        <span className="bg-amber-200 text-amber-800 text-[10px] font-bold px-2 py-1 rounded">נשלח • ממתין</span>
+                        <span className="bg-amber-100 text-amber-700 text-[10px] font-black px-2 py-1 rounded-lg">נשלח • ממתין</span>
                       </div>
                       <div className="p-4">
                         <ul className="space-y-2 mb-4">
                           {order.items.map((it, idx) => (
                             <li key={idx} className="text-sm flex justify-between text-gray-700 border-b border-gray-50 pb-1 last:border-0">
-                              <span>{it.name}</span>
-                              <span className="font-mono bg-gray-100 px-1 rounded">{it.qty} {it.unit}</span>
+                              <span className="font-medium">{it.name}</span>
+                              <span className="font-black text-slate-800">{it.qty} {it.unit}</span>
                             </li>
                           ))}
                         </ul>
 
-                        {/* Two buttons: Quick confirm OR Triple-check without invoice */}
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => initializeReceivingFromOrder(order)}
-                            className="flex-1 py-2.5 bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
-                          >
-                            <Package size={16} />
-                            קבלה ללא חשבונית
-                          </button>
-                          <button
-                            onClick={() => markOrderReceived(order.id)}
-                            className="flex-1 py-2.5 bg-white border border-green-200 text-green-700 hover:bg-green-50 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
-                          >
-                            <Check size={16} />
-                            סמן התקבל
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => initializeReceivingFromOrder(order)}
+                          className="w-full py-3 bg-blue-600 text-white rounded-xl font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-100 hover:bg-blue-700 active:scale-95 transition-all"
+                        >
+                          <Package size={18} />
+                          קבלת סחורה
+                        </button>
                       </div>
                     </div>
                   ))
@@ -1071,100 +1282,63 @@ const InventoryScreen = () => {
               </div>
 
               {/* Scrollable Form Content */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-8">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">שם הפריט</label>
+                    <input type="text" value={newItemData.name} onChange={e => setNewItemData({ ...newItemData, name: e.target.value })} className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-700 focus:outline-none focus:border-blue-400 text-sm" />
+                  </div>
 
-                {/* 1. Basic Details */}
-                <div className="space-y-4">
                   <div>
-                    <label className="text-sm font-bold text-slate-500 mb-1 block">שם הפריט</label>
-                    <input
-                      type="text"
-                      value={newItemData.name}
-                      onChange={e => setNewItemData({ ...newItemData, name: e.target.value })}
-                      className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 focus:border-blue-500 outline-none font-bold text-xl text-center"
-                      placeholder="שם הפריט..."
-                    />
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">יחידת מידה</label>
+                    <select value={newItemData.unit} onChange={e => setNewItemData({ ...newItemData, unit: e.target.value })} className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-700 focus:outline-none focus:border-blue-400 text-sm appearance-none">
+                      <option value="יח׳">יחידות (יח׳)</option>
+                      <option value="ק״ג">קילוגרם (ק״ג)</option>
+                      <option value="גרם">גרם (גרם)</option>
+                      <option value="ליטר">ליטר (ל׳)</option>
+                    </select>
                   </div>
 
-                  {/* Type Selector (Tabs) */}
-                  <div className="bg-gray-100 p-1.5 rounded-2xl flex">
-                    <button
-                      onClick={() => setNewItemData({ ...newItemData, unit: 'יח׳', count_step: 1, min_order: 1, order_step: 1 })}
-                      className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${newItemData.unit === 'יח׳' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                    >
-                      פריט בודד (יח׳)
-                    </button>
-                    <button
-                      onClick={() => setNewItemData({ ...newItemData, unit: 'גרם', count_step: 100, min_order: 1000, order_step: 500, cost_per_unit: 0 })}
-                      className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${newItemData.unit === 'גרם' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                    >
-                      משקל (גרם)
-                    </button>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">קטגוריה</label>
+                    <input type="text" value={newItemData.category} onChange={e => setNewItemData({ ...newItemData, category: e.target.value })} className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-700 focus:outline-none focus:border-blue-400 text-sm" />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">עלות ליחידה (₪)</label>
+                    <input type="number" inputMode="decimal" value={newItemData.cost_per_unit} onChange={e => setNewItemData({ ...newItemData, cost_per_unit: parseFloat(e.target.value) || 0 })} className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-700 focus:outline-none focus:border-blue-400 text-sm" />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">משקל ליחידה (גרם)</label>
+                    <input type="number" inputMode="numeric" value={newItemData.weight_per_unit} onChange={e => setNewItemData({ ...newItemData, weight_per_unit: parseFloat(e.target.value) || 0 })} className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-700 focus:outline-none focus:border-blue-400 text-sm" />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">מינימום להזמנה</label>
+                    <input type="number" value={newItemData.min_order} onChange={e => setNewItemData({ ...newItemData, min_order: parseFloat(e.target.value) || 0 })} className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-700 focus:outline-none focus:border-blue-400 text-sm" />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">קפיצת הזמנה</label>
+                    <input type="number" value={newItemData.order_step} onChange={e => setNewItemData({ ...newItemData, order_step: parseFloat(e.target.value) || 0 })} className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-700 focus:outline-none focus:border-blue-400 text-sm" />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">קפיצת ספירה</label>
+                    <input type="number" step="0.1" value={newItemData.count_step} onChange={e => setNewItemData({ ...newItemData, count_step: parseFloat(e.target.value) || 0 })} className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-700 focus:outline-none focus:border-blue-400 text-sm" />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">התראת מלאי נמוך</label>
+                    <input type="number" value={newItemData.low_stock_alert} onChange={e => setNewItemData({ ...newItemData, low_stock_alert: parseFloat(e.target.value) || 0 })} className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-700 focus:outline-none focus:border-blue-400 text-sm" />
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">מיקום במחסן / תצוגה</label>
+                    <input type="text" value={newItemData.location} onChange={e => setNewItemData({ ...newItemData, location: e.target.value })} className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-700 focus:outline-none focus:border-blue-400 text-sm" />
                   </div>
                 </div>
-
-                {/* 2. Configuration Pickers */}
-                <div className="space-y-3">
-
-                  {/* Package Weight (Replacement for unit_weight_grams) */}
-                  <NumberPicker
-                    label="משקל אריזה (גרם)"
-                    value={newItemData.weight_per_unit || 0}
-                    onChange={v => setNewItemData({ ...newItemData, weight_per_unit: v })}
-                    unit="גרם"
-                    stepSmall={10}
-                    stepLarge={100}
-                  />
-
-                  {/* Count Step - Hidden for single units (always 1) */}
-                  {newItemData.unit !== 'יח׳' && (
-                    <NumberPicker
-                      label="קפיצות ספירה"
-                      value={newItemData.count_step}
-                      onChange={v => setNewItemData({ ...newItemData, count_step: v })}
-                      unit={newItemData.unit}
-                      stepSmall={10}
-                      stepLarge={100}
-                    />
-                  )}
-
-                  {/* Min Order */}
-                  <NumberPicker
-                    label="מינימום להזמנה"
-                    value={newItemData.min_order}
-                    onChange={v => setNewItemData({ ...newItemData, min_order: v })}
-                    unit={newItemData.unit}
-                    stepSmall={100}
-                    stepLarge={500}
-                  />
-
-                  {/* Order Step */}
-                  <NumberPicker
-                    label="קפיצות הזמנה"
-                    value={newItemData.order_step}
-                    onChange={v => setNewItemData({ ...newItemData, order_step: v })}
-                    unit={newItemData.unit}
-                    stepSmall={100}
-                    stepLarge={500}
-                  />
-
-                  {/* Cost Picker */}
-                  <NumberPicker
-                    label={newItemData.unit === 'גרם' ? 'עלות לק״ג (₪)' : `עלות ל${newItemData.unit} (₪)`}
-                    value={newItemData.unit === 'גרם' ? (newItemData.cost_per_unit * 1000) : newItemData.cost_per_unit || 0}
-                    onChange={v => {
-                      // If grams, convert price per kg back to price per gram
-                      const realCost = newItemData.unit === 'גרם' ? (v / 1000) : v;
-                      setNewItemData({ ...newItemData, cost_per_unit: realCost });
-                    }}
-                    unit="₪"
-                    stepSmall={1}
-                    stepLarge={10}
-                    format={v => v.toFixed(2)}
-                  />
-                </div>
-
-                <div className="h-10"></div> {/* Bottom Spacer */}
               </div>
 
               {/* Fixed Footer Action */}
@@ -1222,351 +1396,7 @@ const InventoryScreen = () => {
         )}
       </AnimatePresence>
 
-      {/* 🆕 --- SCANNER MODAL --- */}
-      <AnimatePresence>
-        {showScannerModal && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.5 }}
-              exit={{ opacity: 0 }}
-              onClick={() => {
-                setShowScannerModal(false);
-                setScannerStep('choose');
-                resetOCR();
-              }}
-              className="fixed inset-0 bg-black z-40"
-            />
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white z-50 rounded-t-3xl shadow-2xl p-6 min-h-[60vh] max-h-[85vh] overflow-y-auto"
-            >
-              <div className="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-6" />
-
-              {/* Choose Step */}
-              {scannerStep === 'choose' && (
-                <div className="space-y-6">
-                  <div className="text-center">
-                    <div className="w-20 h-20 mx-auto bg-gradient-to-r from-purple-100 to-blue-100 rounded-2xl flex items-center justify-center mb-4">
-                      <ScanLine size={40} className="text-purple-600" />
-                    </div>
-                    <h3 className="text-2xl font-black text-slate-800">סריקת חשבונית</h3>
-                    <p className="text-sm text-gray-400 mt-2">בחר איך להעלות את החשבונית</p>
-                  </div>
-
-                  <div className="space-y-3 max-w-md mx-auto">
-                    {/* Camera Option */}
-                    <button
-                      onClick={async () => {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = 'image/*';
-                        input.capture = 'environment';
-                        input.onchange = async (e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            setScannerStep('scanning');
-                            try {
-                              await scanInvoice(file);
-                              setScannerStep('results');
-                            } catch (err) {
-                              console.error('❌ Scanner error:', err);
-                              setScannerStep('results'); // Show error on results screen
-                            }
-                          }
-                        };
-                        input.click();
-                      }}
-                      className="w-full p-6 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-xl shadow-purple-200"
-                    >
-                      <Camera size={24} />
-                      <span>פתח מצלמה</span>
-                    </button>
-
-                    {/* Upload Option */}
-                    <button
-                      onClick={() => {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = 'image/*,.pdf,application/pdf';
-                        input.onchange = async (e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            setScannerStep('scanning');
-                            try {
-                              await scanInvoice(file);
-                              setScannerStep('results');
-                            } catch (err) {
-                              console.error('❌ Scanner error:', err);
-                              setScannerStep('results'); // Show error on results screen
-                            }
-                          }
-                        };
-                        input.click();
-                      }}
-                      className="w-full p-6 bg-white border-2 border-gray-200 text-gray-700 rounded-2xl font-black text-lg flex items-center justify-center gap-3 hover:border-blue-400 hover:bg-blue-50 transition-all"
-                    >
-                      <Upload size={24} />
-                      <span>העלה תמונה או PDF</span>
-                    </button>
-
-                    {/* Cancel */}
-                    <button
-                      onClick={() => {
-                        setShowScannerModal(false);
-                        setScannerStep('choose');
-                      }}
-                      className="w-full py-3 text-gray-400 font-bold hover:text-gray-600 transition-colors"
-                    >
-                      ביטול
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Scanning Step */}
-              {scannerStep === 'scanning' && (
-                <div className="flex flex-col items-center justify-center min-h-[40vh] space-y-6">
-                  <div className="relative">
-                    <div className="w-24 h-24 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <ScanLine size={32} className="text-purple-600" />
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <h3 className="text-xl font-black text-slate-800">סורק חשבונית...</h3>
-                    <p className="text-sm text-gray-400 mt-2">AI מזהה פריטים ומחירים</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Results Step */}
-              {scannerStep === 'results' && (
-                <div className="space-y-6">
-                  <div className="text-center">
-                    <div className="w-16 h-16 mx-auto bg-green-100 rounded-2xl flex items-center justify-center mb-4">
-                      <Check size={32} className="text-green-600" />
-                    </div>
-                    <h3 className="text-2xl font-black text-slate-800">סריקה הושלמה!</h3>
-
-                    {/* Supplier Info */}
-                    {ocrResult?.supplier_detected && (
-                      <div className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 bg-purple-50 text-purple-700 rounded-full text-sm font-black border border-purple-100">
-                        <span className="opacity-60 text-[10px] uppercase">ספק זהה:</span>
-                        <span>{ocrResult.supplier_detected}</span>
-                      </div>
-                    )}
-
-                    {/* Status Bar with Tokens & Cost */}
-                    {ocrResult?.usageMetadata && (
-                      <div className="mt-4 flex items-center justify-center gap-4 text-[10px] font-bold uppercase tracking-wider text-gray-400 bg-gray-50 py-2 px-4 rounded-full border border-gray-100 mx-auto w-fit">
-                        <div className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
-                          <span>{ocrResult.usageMetadata.totalTokenCount} TOKENS</span>
-                        </div>
-                        <div className="flex items-center gap-1 border-r border-gray-200 pr-4 ml-4">
-                          <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
-                          <span>EST. COST: ${(ocrResult.usageMetadata.totalTokenCount * 0.00001).toFixed(4)}</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Error Display */}
-                  {scanError && (
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
-                      <p className="text-sm text-red-600 font-bold">{scanError}</p>
-                    </div>
-                  )}
-
-                  {/* Items List - Legacy View OR Triple-Check View */}
-                  {ocrResult?.items && ocrResult.items.length > 0 && (
-                    <div className="space-y-3">
-                      {/* Initialize Triple-Check Button (if not already initialized) */}
-                      {!receivingSession && (
-                        <button
-                          onClick={() => initializeReceivingSession(ocrResult)}
-                          className="w-full py-3 bg-purple-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-colors"
-                        >
-                          <Package size={20} />
-                          התחל אימות קבלה (Triple-Check)
-                        </button>
-                      )}
-
-                      {/* Triple-Check View */}
-                      {receivingSession && (
-                        <div className="space-y-3">
-                          {/* No Invoice Warning Banner */}
-                          {receivingSession.hasInvoice === false && (
-                            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 flex items-center gap-3">
-                              <AlertTriangle size={20} className="text-orange-500 shrink-0" />
-                              <div>
-                                <p className="text-sm font-bold text-orange-800">קבלה ללא חשבונית</p>
-                                <p className="text-xs text-orange-600">הפריטים מבוססים על ההזמנה בלבד. לא התקבלה תעודת משלוח/חשבונית.</p>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Header */}
-                          <div className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-2 text-slate-600">
-                              <span className="font-bold">הוזמן</span>
-                              <span>|</span>
-                              {receivingSession.hasInvoice !== false ? (
-                                <span className="font-bold text-blue-600">בחשבונית</span>
-                              ) : (
-                                <span className="font-bold text-orange-500">—</span>
-                              )}
-                              <span>|</span>
-                              <span className="font-bold text-green-600">בפועל</span>
-                            </div>
-                            {receivingSession.items.some(i => i.isNew) && (
-                              <span className="flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full font-bold">
-                                <AlertTriangle size={12} />
-                                {receivingSession.items.filter(i => i.isNew).length} פריטים חדשים
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Items List */}
-                          <div className="max-h-[35vh] overflow-y-auto pr-2 space-y-3">
-                            {receivingSession.items.map((item) => (
-                              <TripleCheckCard
-                                key={item.id}
-                                item={item}
-                                orderedQty={item.orderedQty || null}
-                                invoicedQty={item.invoicedQty}
-                                actualQty={item.actualQty}
-                                onActualChange={(newQty) => updateActualQuantity(item.id, newQty)}
-                                unitPrice={item.unitPrice}
-                                isNew={item.isNew}
-                                countStep={item.countStep}
-                              />
-                            ))}
-                          </div>
-
-                          {/* Total Summary */}
-                          <div className={`${receivingSession.hasInvoice === false ? 'bg-orange-900' : 'bg-slate-900'} text-white rounded-2xl p-3.5 shadow-lg relative overflow-hidden mx-auto max-w-[85%] border ${receivingSession.hasInvoice === false ? 'border-orange-700' : 'border-slate-700'}`}>
-                            <div className="absolute top-0 right-0 w-20 h-20 bg-purple-500/10 blur-2xl rounded-full translate-x-10 -translate-y-10"></div>
-                            <div className="flex justify-between items-center relative z-10 gap-3">
-                              <div className="space-y-0">
-                                <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest leading-none mb-1">סה״כ בפועל</p>
-                                <h4 className="text-xl font-black text-white leading-none">
-                                  ₪{receivingSession.items.reduce((sum, i) => sum + (i.actualQty * i.unitPrice), 0).toFixed(2)}
-                                </h4>
-                              </div>
-                              {receivingSession.hasInvoice !== false ? (
-                                <div className="text-center">
-                                  <div className="text-[8px] font-bold text-blue-300 uppercase leading-none mb-0.5">חשבונית</div>
-                                  <div className="text-base font-black leading-none">₪{receivingSession.totalInvoiced?.toFixed(2) || '0'}</div>
-                                </div>
-                              ) : (
-                                <div className="text-center">
-                                  <div className="text-[8px] font-bold text-orange-300 uppercase leading-none mb-0.5">ללא חשבונית</div>
-                                  <div className="text-base font-black leading-none">—</div>
-                                </div>
-                              )}
-                              <div className="bg-white/10 px-2.5 py-1.5 rounded-lg border border-white/5 flex flex-col items-center justify-center min-w-[50px]">
-                                <div className="text-[8px] font-bold text-green-300 uppercase leading-none mb-0.5">פריטים</div>
-                                <div className="text-base font-black text-center leading-none">{receivingSession.items.length}</div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Legacy View (if not in Triple-Check mode) */}
-                      {!receivingSession && (
-                        <div className="max-h-[40vh] overflow-y-auto pr-2 space-y-2">
-                          {ocrResult.items.map((item, idx) => {
-                            const qty = item.quantity || item.amount || item.current_stock_added || 0;
-                            const price = item.price || item.cost_per_unit || item.cost || 0;
-                            const subtotal = (qty * price).toFixed(2);
-                            const name = item.name || item.description || 'פריט ללא שם';
-
-                            return (
-                              <div key={idx} className="bg-white border border-gray-100 shadow-sm rounded-xl p-4 flex justify-between items-center hover:border-blue-200 transition-colors">
-                                <div className="flex-1">
-                                  <h4 className="font-bold text-gray-800 text-sm leading-tight mb-1">{name}</h4>
-                                  <div className="flex items-center gap-2 text-xs text-gray-400">
-                                    <span className="bg-gray-100 px-1.5 py-0.5 rounded">{qty} {item.unit || 'יח\''}</span>
-                                    <span>×</span>
-                                    <span>₪{price}</span>
-                                  </div>
-                                </div>
-                                <div className="text-left font-black text-gray-900 pr-4 border-r border-gray-50">
-                                  ₪{subtotal}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-3">
-                    {receivingSession ? (
-                      <>
-                        <button
-                          onClick={confirmReceipt}
-                          disabled={isConfirmingReceipt}
-                          className="flex-1 py-4 bg-green-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-700 transition-colors disabled:opacity-50"
-                        >
-                          {isConfirmingReceipt ? (
-                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          ) : (
-                            <>
-                              <Check size={20} />
-                              אישור קבלה
-                            </>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setReceivingSession(null);
-                            setScannerStep('choose');
-                            resetOCR();
-                          }}
-                          className="px-6 py-4 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-colors"
-                        >
-                          ביטול
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => {
-                            setScannerStep('choose');
-                            resetOCR();
-                          }}
-                          className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
-                        >
-                          סרוק שוב
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowScannerModal(false);
-                            setScannerStep('choose');
-                            resetOCR();
-                          }}
-                          className="flex-1 py-4 bg-white border-2 border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-colors"
-                        >
-                          סגור
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* Removed Scanner Modal and OCR logic */}
 
       <ConfirmationModal
         isOpen={confirmModal.isOpen}
@@ -1578,7 +1408,7 @@ const InventoryScreen = () => {
         confirmText={confirmModal.confirmText}
         cancelText={confirmModal.cancelText}
       />
-    </div >
+    </div>
   );
 };
 

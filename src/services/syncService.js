@@ -13,6 +13,7 @@
 
 import { db, sync_meta } from '../db/database';
 import { supabase } from '../lib/supabase';
+import { syncQueue, getPendingActions } from './offlineQueue';
 
 // Sync configuration
 const SYNC_CONFIG = {
@@ -23,10 +24,8 @@ const SYNC_CONFIG = {
         { local: 'customers', remote: 'customers' },
         { local: 'employees', remote: 'employees' },
         { local: 'discounts', remote: 'discounts' },
-        { local: 'ingredients', remote: 'ingredients' },
-        // orders and order_items handled via specialized syncOrders RPC
-        // { local: 'orders', ... } - REMOVED from generic loop
-        // { local: 'order_items', ... } - REMOVED from generic loop
+        { local: 'orders', remote: 'orders' },
+        { local: 'order_items', remote: 'order_items' },
         // Option groups and values for modifiers (milk type, size, etc.)
         { local: 'optiongroups', remote: 'optiongroups' },
         { local: 'optionvalues', remote: 'optionvalues' },
@@ -34,6 +33,13 @@ const SYNC_CONFIG = {
         // Loyalty tracking
         { local: 'loyalty_cards', remote: 'loyalty_cards' },
         { local: 'loyalty_transactions', remote: 'loyalty_transactions' },
+        // Tasks and Prep
+        { local: 'recurring_tasks', remote: 'recurring_tasks' },
+        { local: 'task_completions', remote: 'task_completions' },
+        { local: 'prepared_items_inventory', remote: 'prepared_items_inventory' },
+        { local: 'suppliers', remote: 'suppliers' },
+        { local: 'inventory_items', remote: 'inventory_items' },
+        { local: 'item_category', remote: 'item_category' },
     ],
     // How many records to fetch per batch
     batchSize: 1000,
@@ -47,12 +53,82 @@ export const isOnline = () => {
 };
 
 /**
- * Sync a single table from Supabase to Dexie
- * @param {string} localTable - Local Dexie table name
- * @param {string} remoteTable - Remote Supabase table name
+ * Retry a function with exponential backoff
+ * @param {Function} fn - Async function to retry
+ * @param {Object} options - Retry options
+ * @param {number} options.maxRetries - Maximum number of retries (default: 3)
+ * @param {number} options.baseDelay - Base delay in ms (default: 1000)
+ * @param {number} options.maxDelay - Maximum delay in ms (default: 10000)
+ * @returns {Promise} Result of the function or throws after all retries
+ */
+export const retryWithBackoff = async (fn, { maxRetries = 3, baseDelay = 1000, maxDelay = 10000 } = {}) => {
+    let lastError;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (error) {
+            lastError = error;
+
+            // Don't retry on certain errors
+            const noRetryErrors = ['RLS', 'permission', 'unauthorized', '401', '403'];
+            if (noRetryErrors.some(e => error.message?.toLowerCase().includes(e.toLowerCase()))) {
+                throw error;
+            }
+
+            if (attempt < maxRetries) {
+                // Exponential backoff with jitter
+                const delay = Math.min(baseDelay * Math.pow(2, attempt) + Math.random() * 500, maxDelay);
+                console.warn(`⏳ [Sync] Retry ${attempt + 1}/${maxRetries} in ${Math.round(delay)}ms:`, error.message);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+
+    throw lastError;
+};
+
+/**
  * @param {Object} filter - Optional filter for the query
  * @param {string} businessId - Business ID for multi-tenant filtering
  */
+
+/**
+ * MIGRATION CHECK:
+ * Detects if this is a fresh Local Server environment or legacy browser cache.
+ * If legacy/unknown, performs a HARD RESET of Dexie to prevent stale data conflicts.
+ */
+export const autoDetectMigrationAndReset = async () => {
+    const MIGRATION_KEY = 'kds_local_migration_v3'; // FORCE RUN: Bumped version to v3
+    const hasMigrated = localStorage.getItem(MIGRATION_KEY);
+
+    if (!hasMigrated) {
+        console.warn('🚀 [Migration] New Environment Detected! Performing Hard Reset of Dexie...');
+
+        try {
+            // WIPE EVERYTHING to ensure clean slate
+            await db.transaction('rw', db.tables, async () => {
+                await Promise.all(db.tables.map(table => table.clear()));
+            });
+
+            console.log('✅ [Migration] Dexie Wiped Successfully.');
+            localStorage.setItem(MIGRATION_KEY, 'true');
+
+            // 📡 Notify Server (Alerts Admin that computer is online)
+            try {
+                await fetch('/api/admin/notify-online', { method: 'POST' });
+                console.log('📡 [Migration] Notification sent to Admin.');
+            } catch (e) { console.warn('Notification failed', e); }
+
+            return true; // Indicates reset happened
+        } catch (e) {
+            console.error('❌ [Migration] Failed to wipe Dexie:', e);
+            return false;
+        }
+    }
+    return false;
+};
+
 export const syncTable = async (localTable, remoteTable, filter = null, businessId = null) => {
     if (!isOnline()) {
         console.log(`⏸️ Offline - skipping sync for ${localTable}`);
@@ -62,169 +138,223 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
     try {
         console.log(`🔄 Syncing ${localTable}...`);
 
-        // Special handling for customers - use RPC to bypass RLS
-        if (remoteTable === 'customers' && businessId) {
-            console.log(`🔄 Using RPC for customers sync...`);
-            const { data, error } = await supabase.rpc('get_customers_for_sync', {
-                p_business_id: businessId
-            });
-
-            if (error) {
-                console.error(`❌ RPC error for customers:`, error.message);
-                return { success: false, error: error.message };
-            }
-            if (data) {
-                // TAGGING: Ensure records have the correct businessId for local lookup
-                const recordsToPut = data.map(c => ({
-                    ...c,
-                    business_id: c.business_id || businessId
-                }));
-
-                await db[localTable].bulkPut(recordsToPut);
-
-                // AGGRESSIVE PRUNING: Remove local records that aren't in the cloud for this business
-                // This includes "orphaned" records (null business_id) that cause stale data display
-                const cloudIds = new Set(recordsToPut.map(c => c.id));
-                const allLocal = await db[localTable].toArray();
-                const idsToDelete = allLocal
-                    .filter(item => {
-                        // Delete if it belongs to this business but not in cloud
-                        if (item.business_id === businessId && !cloudIds.has(item.id)) return true;
-                        // ALSO delete if it has NO business_id (orphaned data causing the 219 vs 6 mismatch)
-                        if (!item.business_id || item.business_id === 'null') return true;
-                        return false;
-                    })
-                    .map(item => item.id);
-
-                if (idsToDelete.length > 0) {
-                    console.warn(`🧹 Pruning ${idsToDelete.length} stale/orphaned ${localTable} records...`);
-                    await db[localTable].bulkDelete(idsToDelete);
-                }
-
-                console.log(`✅ Synced ${recordsToPut.length} customers via RPC`);
-                return { success: true, count: recordsToPut.length };
+        // 🛡️ [LOCAL PROTECTION] If syncing menu_items and we already have data, skip it.
+        // The user explicitly requested to prioritize local inventory data.
+        if (localTable === 'menu_items') {
+            const count = await db[localTable].count();
+            if (count > 0) {
+                console.log(`🛡️ [Sync] Skipping ${localTable} sync (local data prioritized)`);
+                return { success: true, count, skipped: true };
             }
         }
 
-        // Special handling for loyalty_cards - use RPC
-        if (remoteTable === 'loyalty_cards' && businessId) {
-            console.log(`🔄 Using RPC for loyalty_cards sync...`);
-            const { data, error } = await supabase.rpc('get_loyalty_cards_for_sync', {
-                p_business_id: businessId
-            });
+        // 🧹 [WIPE BEFORE SYNC] Ensure local Dexie mirrors the remote (Docker/Cloud) perfectly
+        if (businessId) {
+            try {
+                // 🗑️ HISTORICAL TABLES: Clear ALL data before loading fresh 3-day window
+                // This prevents accumulation of old orders/items that are no longer relevant
+                const historicalTables = ['orders', 'order_items', 'loyalty_transactions'];
+                if (historicalTables.includes(localTable)) {
+                    console.log(`🧹 [Sync] CLEARING ALL ${localTable} (3-day window sync)`);
+                    await db[localTable].clear();
+                } else if (localTable === 'prepared_items_inventory' || localTable === 'menuitemoptions' || localTable === 'optionvalues') {
+                    // ⚠️ CRITICAL CLEANUP: These join tables accumulate orphans easily.
+                    // Instead of smart filtering, we WIPE them completely to ensure exact mirror of Docker.
+                    console.log(`🧹 [Sync] Aggressively clearing ${localTable} to remove stale orphans...`);
+                    await db[localTable].clear();
 
-            if (error) {
-                console.error(`❌ RPC error for loyalty_cards:`, error.message);
-                return { success: false, error: error.message };
-            }
-            if (data) {
-                // TAGGING
-                const recordsToPut = data.map(c => ({
-                    ...c,
-                    business_id: c.business_id || businessId
-                }));
-
-                await db[localTable].bulkPut(recordsToPut);
-
-                // AGGRESSIVE PRUNING: Safe but thorough
-                const cloudIds = new Set(recordsToPut.map(c => c.id));
-                const allLocal = await db[localTable].toArray();
-                const idsToDelete = allLocal
-                    .filter(item => {
-                        if (item.business_id === businessId && !cloudIds.has(item.id)) return true;
-                        if (!item.business_id || item.business_id === 'null') return true;
-                        return false;
-                    })
-                    .map(item => item.id);
-
-                if (idsToDelete.length > 0) {
-                    console.warn(`🧹 Pruning ${idsToDelete.length} stale/orphaned ${localTable} records...`);
-                    await db[localTable].bulkDelete(idsToDelete);
+                } else if (db[localTable].schema.indexes.some(idx => idx.name === 'business_id')) {
+                    await db[localTable].where('business_id').equals(businessId).delete();
+                } else if (localTable === 'businesses') {
+                    await db.businesses.where('id').equals(businessId).delete();
                 }
+            } catch (wipeErr) {
+                console.warn(`⚠️ Dexie cleanup failed for ${localTable}:`, wipeErr);
+            }
+        }
 
-                console.log(`✅ Synced ${recordsToPut.length} loyalty_cards via RPC`);
-                return { success: true, count: recordsToPut.length };
+        // --- SPECIAL SYNC LOGIC ---
+
+        // 1. Customers, Loyalty, etc. (RPC with pagination fallback)
+        if ((remoteTable === 'customers' || remoteTable === 'loyalty_cards') && businessId) {
+            console.log(`🔄 Syncing ${remoteTable} via specialized RPC/Query...`);
+            const rpcName = remoteTable === 'customers' ? 'get_customers_for_sync' : 'get_loyalty_cards_for_sync';
+
+            let allRemoteData = [];
+            let rpcPage = 0;
+            let hasMoreRpc = true;
+
+            while (hasMoreRpc) {
+                const { data, error } = await supabase.rpc(rpcName, { p_business_id: businessId })
+                    .range(rpcPage * 1000, (rpcPage + 1) * 1000 - 1);
+
+                if (error || !data || data.length === 0) {
+                    hasMoreRpc = false;
+                } else {
+                    allRemoteData.push(...data);
+                    if (data.length < 1000) hasMoreRpc = false;
+                    rpcPage++;
+                }
+            }
+
+            // Fallback
+            if (allRemoteData.length === 0) {
+                const { data: fallbackData } = await supabase.from(remoteTable).select('*').eq('business_id', businessId).limit(1000);
+                if (fallbackData) allRemoteData = fallbackData;
+            }
+
+            if (allRemoteData.length > 0) {
+                const recordsToPut = allRemoteData.map(r => ({ ...r, business_id: r.business_id || businessId }));
+                await db[localTable].bulkPut(recordsToPut);
+                console.log(`✅ Synced ${allRemoteData.length} ${remoteTable}`);
+                return { success: true, count: allRemoteData.length };
             }
             return { success: true, count: 0 };
         }
 
-        // Special handling for loyalty_transactions - use RPC
+        // 1.5 Loyalty Transactions - 3 Days ONLY
         if (remoteTable === 'loyalty_transactions' && businessId) {
-            console.log(`🔄 Using RPC for loyalty_transactions sync...`);
-            const { data, error } = await supabase.rpc('get_loyalty_transactions_for_sync', {
-                p_business_id: businessId
-            });
+            console.log(`🔄 Syncing loyalty_transactions (LAST 3 DAYS only)...`);
+            const threeDaysAgo = new Date();
+            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+            const isoDate = threeDaysAgo.toISOString();
 
-            if (error) {
-                console.error(`❌ RPC error for loyalty_transactions:`, error.message);
-                return { success: false, error: error.message };
-            }
-            if (data) {
-                await db[localTable].bulkPut(data);
+            let page = 0;
+            let hasMore = true;
+            let syncedCount = 0;
 
-                // AGGRESSIVE PRUNING: Remove local transactions missing from cloud
-                const cloudIds = new Set(data.map(c => c.id));
-                const allLocal = await db[localTable].toArray();
-                const idsToDelete = allLocal
-                    .filter(item => (item.business_id === businessId || !item.business_id) && !cloudIds.has(item.id))
-                    .map(item => item.id);
+            while (hasMore) {
+                const { data, error } = await supabase
+                    .from(remoteTable)
+                    .select('*')
+                    .eq('business_id', businessId)
+                    .gte('created_at', isoDate) // Filter by date
+                    .range(page * 1000, (page + 1) * 1000 - 1);
 
-                if (idsToDelete.length > 0) {
-                    console.warn(`🧹 Pruning ${idsToDelete.length} stale loyalty_transactions from local DB...`);
-                    await db[localTable].bulkDelete(idsToDelete);
+                if (error || !data || data.length === 0) {
+                    hasMore = false;
+                } else {
+                    await db[localTable].bulkPut(data);
+                    syncedCount += data.length;
+                    if (data.length < 1000) hasMore = false;
+                    page++;
                 }
-
-                console.log(`✅ Synced ${data.length} loyalty_transactions via RPC`);
-                return { success: true, count: data.length };
             }
-            return { success: true, count: 0 };
+            console.log(`✅ Synced ${syncedCount} recent loyalty transactions.`);
+            return { success: true, count: syncedCount };
         }
 
-        // Special handling for order_items - sync only items from this business's orders
+
+
+
         if (remoteTable === 'order_items' && businessId) {
-            console.log(`🔄 Syncing order_items via orders join...`);
-            // First get the order IDs for this business
-            const { data: orderIds, error: orderError } = await supabase
-                .from('orders')
-                .select('id')
-                .eq('business_id', businessId);
+            console.log(`🔄 Syncing order_items (LAST 3 DAYS only) using JOIN...`);
 
-            if (orderError) {
-                console.error(`❌ Error getting orders for order_items:`, orderError.message);
-                return { success: false, error: orderError.message };
+            // 🕒 3-Day Window Calculation
+            const threeDaysAgo = new Date();
+            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+            const isoDate = threeDaysAgo.toISOString();
+
+            let page = 0;
+            let hasMore = true;
+            let syncedCount = 0;
+
+            while (hasMore) {
+                // Use retry with backoff for network resilience
+                const fetchPage = async () => {
+                    // Optimized single query using JOIN to filter by orders.business_id
+                    // This avoids the N+1 problem of fetching order IDs first
+                    const { data, error } = await supabase
+                        .from('order_items')
+                        .select('*, orders!inner(business_id, created_at)')
+                        .eq('orders.business_id', businessId)
+                        .gte('created_at', isoDate) // Use order_items.created_at for date window
+                        .range(page * 1000, (page + 1) * 1000 - 1);
+
+                    if (error) throw error;
+                    return data;
+                };
+
+                try {
+                    const data = await retryWithBackoff(fetchPage, { maxRetries: 2 });
+
+                    if (data && data.length > 0) {
+                        // Strip the join object (orders) before saving to Dexie
+                        const itemsToSave = data.map(({ orders, ...item }) => item);
+                        await db[localTable].bulkPut(itemsToSave);
+                        syncedCount += data.length;
+                        if (data.length < 1000) hasMore = false;
+                        else page++;
+                    } else {
+                        hasMore = false;
+                    }
+                } catch (error) {
+                    console.error(`❌ order_items sync failed:`, error.message);
+                    hasMore = false;
+                }
             }
-
-            if (!orderIds || orderIds.length === 0) {
-                console.log(`📭 No orders found, skipping order_items`);
-                return { success: true, count: 0 };
-            }
-
-            const ids = orderIds.map(o => o.id);
-            // Fetch order_items for these orders (in batches if many)
-            const { data, error } = await supabase
-                .from('order_items')
-                .select('*')
-                .in('order_id', ids.slice(0, 100)) // Limit to first 100 orders for performance
-                .limit(SYNC_CONFIG.batchSize);
-
-            if (error) {
-                console.error(`❌ Error syncing order_items:`, error.message);
-                return { success: false, error: error.message };
-            }
-
-            if (data && data.length > 0) {
-                await db[localTable].bulkPut(data);
-                console.log(`✅ Synced ${data.length} order_items`);
-            }
-            return { success: true, count: data?.length || 0 };
+            console.log(`✅ Synced ${syncedCount} recent order_items.`);
+            return { success: true, count: syncedCount };
         }
 
-        // Build query
+        if (remoteTable === 'orders' && businessId) {
+            console.log(`🔄 Syncing orders (LAST 3 DAYS only)...`);
+            const threeDaysAgo = new Date();
+            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+            const isoDate = threeDaysAgo.toISOString();
+
+            let page = 0;
+            let hasMore = true;
+            let syncedCount = 0;
+
+            while (hasMore) {
+                // Use retry with backoff for network resilience
+                const fetchPage = async () => {
+                    const { data, error } = await supabase
+                        .from(remoteTable)
+                        .select('*')
+                        .eq('business_id', businessId)
+                        .gte('created_at', isoDate)
+                        .range(page * SYNC_CONFIG.batchSize, (page + 1) * SYNC_CONFIG.batchSize - 1);
+
+                    if (error) throw error;
+                    return data;
+                };
+
+                try {
+                    const data = await retryWithBackoff(fetchPage, { maxRetries: 2 });
+
+                    if (data && data.length > 0) {
+                        await db[localTable].bulkPut(data);
+                        syncedCount += data.length;
+                        if (data.length < SYNC_CONFIG.batchSize) hasMore = false;
+                        page++;
+                    } else {
+                        hasMore = false;
+                    }
+                } catch (error) {
+                    console.error(`❌ Orders sync failed after retries:`, error.message);
+                    hasMore = false;
+                }
+            }
+            console.log(`✅ Synced ${syncedCount} recent orders.`);
+            return { success: true, count: syncedCount };
+        }
+
+        // 2. Option Groups/Values (Simplified Sync)
+        // Previous logic tried to filter by valid groups, but this was fragile and caused missing data.
+        // We now sync them as standard tables. If the Docker contains them, we want them.
+        if (remoteTable === 'optionvalues' || remoteTable === 'menuitemoptions') {
+            // Let the General Sync Flow handle it below.
+            // We intentionally skip the special block here to fall through to standard sync.
+            console.log(`🎯 Syncing ${remoteTable} using standard flow...`);
+        }
+
+        // --- GENERAL SYNC FLOW ---
         let query = supabase.from(remoteTable).select('*');
 
-        // Apply business filter only for multi-tenant tables
-        // NOTE: ingredients does NOT have business_id column
-        // businesses table is NOT filtered (it's a lookup table)
+
+        // Apply business filter ONLY for multi-tenant tables
         const multiTenantTables = [
             'menu_items',
             'customers',
@@ -232,20 +362,13 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
             'discounts',
             'orders',
             'optiongroups',
-            'loyalty_cards'
+            'loyalty_cards',
+            'recurring_tasks',
+            'task_completions',
+            'suppliers',
+            'inventory_items'
         ];
         if (businessId && multiTenantTables.includes(remoteTable)) {
-            query = query.eq('business_id', businessId);
-        }
-
-        // Special handling for optionvalues and menuitemoptions
-        // These tables are small (< 500 rows), so we fetch ALL of them to ensure no linking issues.
-        // Complex filtering by group_id was causing sync failures when groups weren't found correctly.
-        if (remoteTable === 'optionvalues' || remoteTable === 'menuitemoptions') {
-            console.log(`🌍 Fetching ALL ${remoteTable} (small table optimization)...`);
-            // Do NOT filter by business_id or group_id
-        }
-        else if (businessId && multiTenantTables.includes(remoteTable)) {
             query = query.eq('business_id', businessId);
         }
 
@@ -264,37 +387,58 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
             return { success: false, error: error.message };
         }
 
-        // DIAGNOSTIC: For orders, log detailed info
-        if (localTable === 'orders') {
-            console.log(`📊 Orders sync result: ${data?.length || 0} records. Query used businessId: ${businessId}, date filter: today`);
-            if (data && data.length > 0) {
-                console.log(`📊 Sample order IDs: ${data.slice(0, 3).map(o => o.id).join(', ')}`);
-            }
-        }
-
         if (!data || data.length === 0) {
             console.log(`📭 No data for ${localTable}`);
             return { success: true, count: 0 };
         }
 
-        // Fix for tables that might not have an 'id' field (like menuitemoptions)
-        // Generate a unique id if missing
-        // Tag records with business_id if missing (for menu_items, etc)
+        // 🔒 CONFLICT PROTECTION: Check for local pending changes and timestamps
         const dataWithIds = data.map((record, index) => {
-            const enriched = {
-                ...record,
-                business_id: record.business_id || businessId
-            };
-            if (!enriched.id) {
-                // Create a composite key from available fields
-                const compositeId = `${enriched.item_id || enriched.id || ''}_${enriched.group_id || ''}_${index}`;
+            const enriched = { ...record, business_id: record.business_id || businessId };
+            // Ensure ID exists for Dexie
+            if (!enriched.id && localTable !== 'prepared_items_inventory') {
+                const compositeId = `${enriched.item_id || ''}_${enriched.group_id || ''}_${index}`;
                 enriched.id = enriched.id || compositeId;
+            }
+            // For prepared_items_inventory, item_id is the key
+            if (localTable === 'prepared_items_inventory' && !enriched.item_id) {
+                enriched.item_id = enriched.id;
             }
             return enriched;
         });
 
-        // Bulk upsert into Dexie
-        await db[localTable].bulkPut(dataWithIds);
+        let recordsToSave = [];
+        const pendingActions = await getPendingActions();
+        const dirtyIds = new Set(pendingActions.map(a => String(a.recordId || a.payload?.id)));
+
+        for (const remoteRecord of dataWithIds) {
+            // 🛡️ EXPLICIT FILTER: Ensure record belongs to this business
+            // (Double protection against leaky queries or cross-tenant contamination)
+            if (remoteRecord.business_id && remoteRecord.business_id !== businessId) {
+                console.warn(`🛑 Blocked cross-tenant leak for ${localTable}:${remoteRecord.id} (Biz: ${remoteRecord.business_id})`);
+                continue;
+            }
+
+            const id = remoteRecord.id || remoteRecord.item_id; // item_id for prep
+            if (dirtyIds.has(String(id))) {
+                console.log(`🛡️ Skipping sync for dirty record: ${localTable}:${id}`);
+                continue;
+            }
+
+            // Timestamp check (if both have updated_at)
+            const localRecord = await db[localTable].get(id);
+            if (localRecord && localRecord.updated_at && remoteRecord.updated_at) {
+                if (new Date(localRecord.updated_at) > new Date(remoteRecord.updated_at)) {
+                    console.log(`🛡️ Keeping newer local record for ${localTable}:${id}`);
+                    continue;
+                }
+            }
+            recordsToSave.push(remoteRecord);
+        }
+
+        if (recordsToSave.length > 0) {
+            await db[localTable].bulkPut(recordsToSave);
+        }
 
         // Update sync metadata
         await sync_meta.put({
@@ -327,39 +471,57 @@ export const syncOrders = async (businessId) => {
         return { success: false, reason: 'offline' };
     }
 
-    // Use date from 30 days ago to capture enough historical data and ensure cleanup of old demo data
+    // Expansion: Sync 3 days of history (KDS/Active Orders only)
     const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 30); // 30 days of history
+    fromDate.setDate(fromDate.getDate() - 3);
     const fromDateISO = fromDate.toISOString();
     const toDateISO = new Date().toISOString();
 
-    console.log('📅 [syncOrders] Filtering and Pruning from:', fromDateISO, 'to:', toDateISO);
+    const clientBrand = (supabase.supabaseUrl.includes('127.0.0.1') || supabase.supabaseUrl.includes('localhost')) ? 'DOCKER' : 'CLOUD';
+    console.log(`📅 [syncOrders] ${clientBrand} Sync - Filtering and Pruning from:`, fromDateISO, 'to:', toDateISO);
 
     try {
-        // Use get_orders_history RPC to get ALL orders (not just active)
-        const { data: ordersData, error: ordersError } = await supabase.rpc('get_orders_history', {
-            p_from_date: fromDateISO,
-            p_to_date: toDateISO,
-            p_business_id: businessId
-        });
+        let orders = [];
+        let historyPage = 0;
+        let hasMoreHistory = true;
 
-        if (ordersError) {
-            console.error('❌ Orders sync error:', ordersError);
-            return { success: false, error: ordersError };
+        console.log(`📅 [syncOrders] Fetching history from ${clientBrand} since ${fromDateISO} (Last 3 Days)...`);
+
+        while (hasMoreHistory) {
+            const { data, error } = await supabase.rpc('get_orders_history', {
+                p_from_date: fromDateISO,
+                p_to_date: toDateISO,
+                p_business_id: businessId
+            }).range(historyPage * 1000, (historyPage + 1) * 1000 - 1);
+
+            if (error || !data || data.length === 0) {
+                hasMoreHistory = false;
+                if (error) console.error('❌ Orders history RPC error:', error);
+            } else {
+                orders.push(...data);
+                if (data.length < 1000) hasMoreHistory = false;
+                historyPage++;
+            }
         }
 
-        const orders = Array.isArray(ordersData) ? ordersData : (ordersData || []);
         const cloudOrderIds = new Set(orders.map(o => o.id));
         let prunedCount = 0;
 
-        console.log(`📦 [syncOrders] Cloud returned ${orders.length} orders. Starting sync & pruning...`);
+        console.log(`📦 [syncOrders] Cloud returned ${orders.length} total orders (after pagination). Starting sync & pruning...`);
 
         await db.transaction('rw', [db.orders, db.order_items], async () => {
-            // 1. Update/Insert orders from cloud
+            // 🧹 CLEAR ALL DATA FIRST - We want ONLY the 3-day window
+            console.log(`🧹 [syncOrders] Clearing orders and order_items before fresh load...`);
+            await db.orders.clear();
+            await db.order_items.clear();
+
+            // 1. Prepare bulk data
+            const ordersToPut = [];
+            const itemsToPut = [];
+
             if (orders.length > 0) {
                 for (const order of orders) {
                     const existing = await db.orders.get(order.id);
-
                     // 🛡️ CONFLICT RESOLUTION (Recommendation #2)
                     // If we have a local record with pending_sync, we only overwrite it 
                     // if the server has a STRICTLY NEWER update.
@@ -375,8 +537,7 @@ export const syncOrders = async (businessId) => {
                         }
                     }
 
-                    const orderItems = order.order_items || order.items_detail || [];
-                    await db.orders.put({
+                    ordersToPut.push({
                         id: order.id,
                         order_number: order.order_number,
                         order_status: order.order_status,
@@ -405,24 +566,27 @@ export const syncOrders = async (businessId) => {
                         courier_name: order.courier_name
                     });
 
-                    if (orderItems.length > 0) {
-                        for (const item of orderItems) {
-                            await db.order_items.put({
-                                id: item.id,
-                                order_id: order.id,
-                                menu_item_id: item.menu_item_id || item.menu_items?.id,
-                                quantity: item.quantity,
-                                price: item.price || item.menu_items?.price,
-                                mods: item.mods,
-                                notes: item.notes,
-                                item_status: item.item_status,
-                                course_stage: item.course_stage || 1,
-                                created_at: item.created_at || order.created_at
-                            });
-                        }
+                    const orderItems = order.order_items || order.items_detail || [];
+                    for (const item of orderItems) {
+                        itemsToPut.push({
+                            id: item.id,
+                            order_id: order.id,
+                            menu_item_id: item.menu_item_id || item.menu_items?.id,
+                            quantity: item.quantity,
+                            price: item.price || item.menu_items?.price,
+                            mods: item.mods,
+                            notes: item.notes,
+                            item_status: item.item_status,
+                            course_stage: item.course_stage || 1,
+                            created_at: item.created_at || order.created_at
+                        });
                     }
                 }
             }
+
+            // Perform bulk operations
+            if (ordersToPut.length > 0) await db.orders.bulkPut(ordersToPut);
+            if (itemsToPut.length > 0) await db.order_items.bulkPut(itemsToPut);
 
 
             // 2. AGGRESSIVE PRUNING: Find local records in this window that are NOT in the cloud response
@@ -506,6 +670,12 @@ export const initialLoad = async (businessId, onProgress = null) => {
     console.log('🚀 Starting initial data load...');
     const startTime = Date.now();
     const results = {};
+    // 🛑 STRICT SAFETY: Never sync without a Business ID in a multi-tenant system
+    if (!businessId) {
+        console.error('❌ [initialLoad] CRITICAL: Missing businessId! Aborting sync to prevent data leak.');
+        return { success: false, error: 'missing_business_id' };
+    }
+
     const totalTables = SYNC_CONFIG.tables.length + 1; // +1 for Orders
 
     // 1. Sync Standard Tables
@@ -515,16 +685,45 @@ export const initialLoad = async (businessId, onProgress = null) => {
         results[table.local] = result;
 
         const progress = Math.round(((i + 1) / totalTables) * 100);
+        // Map table name to Hebrew friendly name
+        const tableHebrew = {
+            'menu_items': 'תפריט',
+            'ingredients': 'מרכיבים',
+            'businesses': 'פרופיל עסק',
+            'customers': 'לקוחות',
+            'employees': 'עובדים',
+            'discounts': 'מבצעים',
+            'optiongroups': 'קבוצות תוספות',
+            'optionvalues': 'ערכי תוספות',
+            'menuitemoptions': 'חיבורי תוספות',
+            'loyalty_cards': 'מועדון לקוחות',
+            'loyalty_transactions': 'היסטוריית מועדון',
+            'recurring_tasks': 'משימות קבועות',
+            'task_completions': 'ביצועי משימות',
+            'prepared_items_inventory': 'מלאי מוכן',
+            'suppliers': 'ספקים'
+        }[table.local] || table.local;
+
         console.log(`📊 Sync progress: ${progress}% - ${table.local}`);
-        if (onProgress) onProgress(table.local, result.count || 0, progress);
+        if (onProgress) {
+            const countMsg = result.count > 0 ? `עודכנו ${result.count} רשומות` : 'הכל מעודכן';
+            onProgress(table.local, result.count || 0, progress, `טוען ${tableHebrew}... (${countMsg})`);
+        }
     }
 
     // 2. Sync Orders (Specialized RPC for history + items)
     console.log('📦 Syncing Orders via RPC...');
+
+    // 🛡️ [LOCAL OPTIMIZATION] If local, sync a much smaller window for initial load
+    // The server already has the full history, the tablet just needs today's/recent data to start.
     const ordersResult = await syncOrders(businessId);
     results['orders'] = ordersResult;
 
-    if (onProgress) onProgress('orders', ordersResult.ordersCount || 0, 100);
+    if (onProgress) {
+        const orderCount = ordersResult.ordersCount || 0;
+        const msg = orderCount > 0 ? `סונכרנו ${orderCount} הזמנות` : 'אין הזמנות חדשות';
+        onProgress('orders', orderCount, 100, `מסנכרן הזמנות... (${msg})`);
+    }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`🎉 Initial load complete in ${duration}s`, results);
@@ -536,14 +735,42 @@ export const initialLoad = async (businessId, onProgress = null) => {
 };
 
 /**
+ * 🔄 Full Bidirectional Sync
+ * 1. Pushes pending local changes (Upload)
+ * 2. Pulls latest data from server (Download)
+ * @param {string} businessId 
+ */
+export const fullSync = async (businessId) => {
+    console.log('🔄 Initiating Full Bidirectional Sync...');
+    // 1. Push
+    await pushPendingChanges();
+    // 2. Pull
+    return await initialLoad(businessId);
+};
+
+/**
  * Push local changes to Supabase (for when coming back online)
  * This handles offline-created orders
  */
 export const pushPendingChanges = async () => {
-    // TODO: Implement offline queue for orders created while offline
-    // For now, KDS is read-only when offline
-    console.log('📤 Push pending changes - not implemented yet');
-    return { success: true, pending: 0 };
+    // 🛡️ [LOCAL OPTIMIZATION] If we are on the local server, the server handles sync.
+    // We only need to push if there's truly an offline queue that haven't hit the local DB yet.
+    if (localStorage.getItem('is_local_instance') === 'true') {
+        const pending = await getPendingActions();
+        if (pending.length === 0) {
+            console.log('🏘️ Local Mode: No pending queue, server is authoritative. Skipping Push.');
+            return { success: true, count: 0 };
+        }
+    }
+
+    console.log('📤 Pushing pending changes via OfflineQueue...');
+    try {
+        const result = await syncQueue();
+        return { success: true, ...result };
+    } catch (err) {
+        console.error('❌ Push failed:', err);
+        return { success: false, error: err };
+    }
 };
 
 /**
@@ -566,7 +793,17 @@ export const subscribeToOrders = (businessId, onUpdate) => {
                 console.log('📡 Order change detected:', payload.eventType);
 
                 if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-                    await db.orders.put(payload.new);
+                    // 🛡️ CONFLICT PROTECTION: Check for local pending changes
+                    try {
+                        const existing = await db.orders.get(payload.new.id);
+                        if (existing && existing.pending_sync) {
+                            console.log(`🛡️ [Realtime] Skipping external update for dirty order ${payload.new.order_number || payload.new.id}`);
+                        } else {
+                            await db.orders.put(payload.new);
+                        }
+                    } catch (e) {
+                        await db.orders.put(payload.new);
+                    }
                 } else if (payload.eventType === 'DELETE') {
                     await db.orders.delete(payload.old.id);
                 }
@@ -798,5 +1035,6 @@ export default {
     subscribeToOrderItems,
     subscribeToAllChanges,
     getSyncDiffs,
-    healOrder
+    healOrder,
+    fullSync
 };

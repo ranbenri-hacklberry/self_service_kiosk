@@ -2,14 +2,14 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { Search, Truck, Plus, X, ArrowRight, Package, Save, Check, RefreshCw, ChevronLeft, ChevronRight, Trash2, Edit2, AlertTriangle, ChevronDown, ChevronUp, Clock, House, Camera, Upload, ScanLine, Filter, RotateCcw, Calculator, ClipboardList } from 'lucide-react';
+import { Search, Truck, Plus, X, ArrowRight, Package, Save, Check, CheckCircle, RefreshCw, ChevronLeft, ChevronRight, Trash2, Edit2, AlertTriangle, ChevronDown, ChevronUp, Clock, House, Camera, Upload, ScanLine, Filter, RotateCcw, Calculator, ClipboardList, ChefHat, Snowflake, Thermometer, ClipboardCheck } from 'lucide-react';
 import LowStockReportModal from './LowStockReportModal';
 import ConfirmationModal from '../../../components/ui/ConfirmationModal';
-import ConnectionStatusBar from '../../../components/ConnectionStatusBar';
-import BusinessInfoBar from '../../../components/BusinessInfoBar';
-import MiniMusicPlayer from '../../../components/music/MiniMusicPlayer';
+import UnifiedHeader from '../../../components/UnifiedHeader';
 import TripleCheckCard from '../../../components/manager/TripleCheckCard';
 import { useInvoiceOCR } from '@/hooks/useInvoiceOCR';
+import { logInventoryAction } from '@/lib/inventoryLog';
+import ManagerAuthModal from '../../../components/ManagerAuthModal';
 
 /**
  * KDS Inventory Screen - Redesigned Layout
@@ -251,6 +251,10 @@ const KDSInventoryScreen = ({ onExit }) => {
     const [showScannerModal, setShowScannerModal] = useState(false);
     const [scannerStep, setScannerStep] = useState('choose'); // 'choose' | 'scanning' | 'results'
     const [successMessage, setSuccessMessage] = useState(null); // { title: string, message: string }
+    const [lastFetched, setLastFetched] = useState(null);
+    const [selectedCategory, setSelectedCategory] = useState(null);
+    const [showDeleteAuth, setShowDeleteAuth] = useState(false);
+    const [itemToDelete, setItemToDelete] = useState(null);
 
     // ⚙️ Invoice OCR Hook
     const { scanInvoice, isProcessing: isScanning, error: scanError, ocrResult, imagePreview, resetOCR } = useInvoiceOCR();
@@ -471,53 +475,91 @@ const KDSInventoryScreen = ({ onExit }) => {
         }
     };
 
+    const [preparedItems, setPreparedItems] = useState([]);
+
     const fetchData = useCallback(async () => {
         if (!currentUser?.business_id) return;
+
+        // Clear previous state only if switching businesses drastically, otherwise keep for smooth UX
+        // setItems([]); 
         setLoading(true);
+
         try {
-            const { data: suppliersData, error: supError } = await supabase
-                .from('suppliers')
-                .select('*')
-                .eq('business_id', currentUser.business_id)  // CRITICAL: Filter by business
-                .order('name');
+            console.time('fetchInventory');
+
+            // Parallel Fetching for Speed ⚡️
+            const [
+                { data: suppliersData, error: supError },
+                { data: itemsData, error: itemError },
+                { data: menuData, error: menuErr }
+            ] = await Promise.all([
+                supabase.from('suppliers').select('*').eq('business_id', currentUser.business_id).order('name'),
+                supabase.from('inventory_items').select(`*, supplier:suppliers(*)`).eq('business_id', currentUser.business_id).order('category', { ascending: true }).order('name').range(0, 2000),
+                supabase.from('menu_items')
+                    .select('id, name, image_url, category, kds_routing_logic, inventory_settings, prepared_items_inventory(current_stock, initial_stock, unit)')
+                    .eq('business_id', currentUser.business_id)
+            ]);
+
+            console.timeEnd('fetchInventory');
 
             if (supError) throw supError;
-            setSuppliers(suppliersData || []);
-
-            const { data: itemsData, error: itemError } = await supabase
-                .from('inventory_items')
-                .select(`*, supplier:suppliers(*)`)
-                .eq('business_id', currentUser.business_id)
-                .order('category', { ascending: true })
-                .order('name')
-                .range(0, 2000);
+            // Strict Frontend Filter for Suppliers
+            const businessSuppliers = (suppliersData || []).filter(s => s.business_id === currentUser.business_id);
+            setSuppliers(businessSuppliers);
 
             if (itemError) throw itemError;
-            setItems(itemsData || []);
+            // Strict Frontend Filter
+            const businessItems = (itemsData || []).filter(i => i.business_id === currentUser.business_id);
+            setItems(businessItems);
 
-            // 3. Fetch Global Catalog
-            console.log('Fetching global catalog...');
-            const { data: catalogData, error: catalogError } = await supabase
-                .from('catalog_items')
-                .select('*')
-                .order('name');
+            // 🐛 DEBUG LOG: Inventory Items Dump
+            console.group('📦 KDS Inventory Items Debug');
+            console.log(`Fetched ${businessItems.length} items for Business ID: ${currentUser.business_id}`);
+            console.table(businessItems.map(i => ({
+                id: i.id,
+                name: i.name,
+                unit: i.unit,
+                stock: i.current_stock,
+                wpu: i.weight_per_unit || 0,
+                step: i.count_step || 1,
+                business: i.business_id.substring(0, 8) + '...'
+            })));
+            console.groupEnd();
 
-            if (catalogError) {
-                console.error('Failed to fetch global catalog:', catalogError);
-            } else {
-                console.log(`Successfully fetched ${catalogData?.length || 0} catalog items`);
-                setGlobalCatalog(catalogData || []);
+            if (!menuErr && menuData) {
+                // Filter Prepared Items
+                const tracked = menuData.filter(item => {
+                    // Check for modern prepType usage
+                    const pt = item.inventory_settings?.prepType;
+                    const hasPrepType = pt && ['production', 'completion', 'defrost', 'requires_prep'].includes(pt);
+
+                    const hasInvRecord = item.prepared_items_inventory &&
+                        (Array.isArray(item.prepared_items_inventory) ? item.prepared_items_inventory.length > 0 : !!item.prepared_items_inventory);
+
+                    return item.inventory_settings?.isPreparedItem === true || item.kds_routing_logic === 'hybrid' || hasPrepType;
+                }).map(item => ({
+                    ...item,
+                    type: 'prepared',
+                    current_stock: (Array.isArray(item.prepared_items_inventory) ? item.prepared_items_inventory[0]?.current_stock : item.prepared_items_inventory?.current_stock) ?? 0,
+                    initial_stock: (Array.isArray(item.prepared_items_inventory) ? item.prepared_items_inventory[0]?.initial_stock : item.prepared_items_inventory?.initial_stock) ?? 0,
+                    unit: (Array.isArray(item.prepared_items_inventory) ? item.prepared_items_inventory[0]?.unit : item.prepared_items_inventory?.unit) ?? 'units'
+                }));
+                setPreparedItems(tracked);
             }
 
-            // 4. Fetch supplier catalog mappings (supplier_name -> catalog_item_id)
-            const { data: supplierCatalogData, error: scError } = await supabase
-                .from('catalog_item_suppliers')
-                .select('catalog_item_id, supplier_name, occurrence_count')
-                .order('occurrence_count', { ascending: false });
+            setLastFetched(new Date());
 
-            if (!scError && supplierCatalogData) {
-                setSupplierCatalog(supplierCatalogData);
-            }
+            // Defer heavy non-critical fetches (Catalog) to run AFTER UI is ready
+            setTimeout(async () => {
+                // 3. Fetch Global Catalog
+                const { data: catalogData } = await supabase.from('catalog_items').select('*').order('name');
+                if (catalogData) setGlobalCatalog(catalogData);
+
+                // 4. Fetch supplier catalog mappings
+                const { data: supplierCatalogData } = await supabase.from('catalog_item_suppliers').select('catalog_item_id, supplier_name, occurrence_count').order('occurrence_count', { ascending: false });
+                if (supplierCatalogData) setSupplierCatalog(supplierCatalogData);
+            }, 100);
+
         } catch (err) {
             console.error('Error fetching inventory:', err);
         } finally {
@@ -558,12 +600,18 @@ const KDSInventoryScreen = ({ onExit }) => {
 
             // 0. PRIORITY CHECK: Match against existing inventory items' supplier_product_name
             // This is the "Learning" feature - if we saved this invoice name before, we match it instantly!
-            const inventorySupplierNameMatch = items.find(i =>
-                i.supplier_product_name && (
-                    i.supplier_product_name.toLowerCase() === normalizedInvoiceName ||
-                    (i.supplier_product_name.length > 3 && normalizedInvoiceName.includes(i.supplier_product_name.toLowerCase()))
-                )
-            );
+            // SECURITY: Double check strict business_id equality
+            const inventorySupplierNameMatch = items.find(i => {
+                if (i.business_id !== currentUser.business_id) return false; // Strict safeguard
+
+                if (!i.supplier_product_name) return false;
+                const names = Array.isArray(i.supplier_product_name) ? i.supplier_product_name : [i.supplier_product_name];
+                return names.some(name => {
+                    const normalizedName = name.toLowerCase().trim();
+                    return normalizedName === normalizedInvoiceName ||
+                        (normalizedName.length > 3 && (normalizedInvoiceName.includes(normalizedName) || normalizedName.includes(normalizedInvoiceName)));
+                });
+            });
 
             if (inventorySupplierNameMatch) {
                 console.log(`🎯 Found direct inventory match by supplier name: ${invoiceName} -> ${inventorySupplierNameMatch.name}`);
@@ -709,8 +757,9 @@ const KDSInventoryScreen = ({ onExit }) => {
             const invoicedQty = parseFloat(ocrItem.quantity || ocrItem.amount || 0);
             const unitPrice = parseFloat(ocrItem.price || ocrItem.cost_per_unit || 0);
 
-            // Try to match with catalog using fuzzy matching
-            const matchedItem = findBestCatalogMatch(name); // Returns item object (Inventory or Global)
+            // CONFIDENCE CHECK: If AI confidence is low (< 80%), skip auto-matching for safety
+            const confidence = parseFloat(ocrItem.confidence || 1);
+            const matchedItem = confidence >= 0.8 ? findBestCatalogMatch(name) : null;
 
             // ROBUST DETECTION: Check if it's really an inventory item
             // Inventory IDs are Integers (e.g. 118574), Global IDs are UUIDs (e.g. "a0e...")
@@ -864,6 +913,18 @@ const KDSInventoryScreen = ({ onExit }) => {
         });
     }, []);
 
+    const updateInvoicedQuantity = useCallback((itemId, newQty) => {
+        setReceivingSession(prev => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                items: prev.items.map(item =>
+                    item.id === itemId ? { ...item, invoicedQty: newQty } : item
+                )
+            };
+        });
+    }, []);
+
     // Handler for when user manually selects a catalog item from suggestions
     const updateCatalogItemMapping = useCallback((itemId, selectedCatalogItem) => {
         setReceivingSession(prev => {
@@ -874,7 +935,6 @@ const KDSInventoryScreen = ({ onExit }) => {
                     if (item.id !== itemId) return item;
 
                     if (!selectedCatalogItem) {
-                        // Keep as new item
                         return {
                             ...item,
                             inventoryItemId: null,
@@ -885,22 +945,48 @@ const KDSInventoryScreen = ({ onExit }) => {
                         };
                     }
 
-                    // Map to selected catalog item
                     return {
                         ...item,
-                        inventoryItemId: selectedCatalogItem.inventory_item_id || null, // Might be null if only in global catalog
+                        inventoryItemId: selectedCatalogItem.inventory_item_id || null,
                         catalogItemId: selectedCatalogItem.id,
                         catalogItemName: selectedCatalogItem.name,
                         catalogPrice: selectedCatalogItem.cost_per_unit || selectedCatalogItem.default_cost_per_unit || 0,
                         countStep: selectedCatalogItem.count_step || selectedCatalogItem.inventory_count_step || 1,
                         unit: selectedCatalogItem.unit || item.unit,
                         isNew: false,
-                        matchType: 'manual' // Mark as manually mapped
+                        matchType: 'manual'
                     };
                 })
             };
         });
     }, []);
+
+    // --- Realtime Subscriptions ---
+    useEffect(() => {
+        if (!currentUser?.business_id) return;
+
+        console.log('🔌 Subscribing to inventory changes for business:', currentUser.business_id);
+
+        const channel = supabase
+            .channel(`inventory_tracking:${currentUser.business_id}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'inventory_items',
+                filter: `business_id=eq.${currentUser.business_id}`
+            }, (payload) => {
+                if (payload.eventType === 'UPDATE') {
+                    setItems(prev => prev.map(i => i.id === payload.new.id ? { ...i, ...payload.new } : i));
+                } else if (payload.eventType === 'INSERT') {
+                    setItems(prev => [...prev, payload.new]);
+                } else if (payload.eventType === 'DELETE') {
+                    setItems(prev => prev.filter(i => i.id !== payload.old.id));
+                }
+            })
+            .subscribe();
+
+        return () => supabase.removeChannel(channel);
+    }, [currentUser?.business_id]);
 
     const confirmReceipt = async () => {
         if (!receivingSession || !currentUser?.business_id) return;
@@ -970,114 +1056,15 @@ const KDSInventoryScreen = ({ onExit }) => {
                 }
             });
 
+            // 🚀 REDUNDANT LOOP REMOVED: Item creation is now handled atomically inside 'receive_inventory_shipment' RPC
+            // to prevent race conditions and duplicates.
             const itemsToCreate = workingItems.filter(item => item.catalogItemId && !item.inventoryItemId);
+            console.log(`📦 Found ${itemsToCreate.length} items to be created automatically by DB...`);
 
-            if (itemsToCreate.length > 0) {
-                console.log(`🔨 Creating ${itemsToCreate.length} missing inventory items from catalog matches...`);
-
-                // Create them one by one (or Promise.all)
-                await Promise.all(itemsToCreate.map(async (item) => {
-                    try {
-                        let validCatalogId = item.catalogItemId;
-
-                        // DATA SANITIZATION: Validate UUID format
-                        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                        if (!uuidRegex.test(validCatalogId)) {
-                            console.warn(`⚠️ Invalid UUID for creation: ${validCatalogId}. Trying to find real UUID from global catalog...`);
-                            // Try to find correct UUID from globalCatalog cache
-                            let realCatalogItem = globalCatalog.find(gc =>
-                                gc.id === validCatalogId ||
-                                gc.name === item.catalogItemName ||
-                                gc.name === item.name ||
-                                item.name.includes(gc.name)
-                            );
-
-                            // If not in cache, try fetching from DB directly!
-                            if (!realCatalogItem) {
-                                console.log(`🕵️ Not in cache, searching DB for catalog item: "${item.catalogItemName || item.name}"...`);
-                                // Clean name for DB lookup (remove everything except Hebrew)
-                                const searchName = (item.catalogItemName || item.name).match(/[\u0590-\u05FF]+/g)?.join(' ') || item.name;
-                                const { data: dbItem } = await supabase
-                                    .from('catalog_items')
-                                    .select('id, name')
-                                    .or(`name.eq."${item.catalogItemName}",name.eq."${item.name}",name.ilike."%${searchName}%"`)
-                                    .limit(1)
-                                    .maybeSingle();
-
-                                if (dbItem) realCatalogItem = dbItem;
-                            }
-
-                            if (realCatalogItem && realCatalogItem.id) {
-                                validCatalogId = realCatalogItem.id;
-                                console.log(`✅ Found valid UUID locally/remotely for ${item.name}: ${validCatalogId}`);
-                            } else {
-                                console.error(`❌ Could not find valid UUID for ${item.name} in global catalog. Skipping creation.`);
-                                return;
-                            }
-                        }
-
-                        // Robust handling for supplierId (Check if it's a valid UUID)
-                        let preparedSupplierId = receivingSession.supplierId;
-                        const validUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                        const isSupplierUuid = (str) => typeof str === 'string' && validUuidRegex.test(str);
-
-                        const supplierIdToPass = isSupplierUuid(preparedSupplierId) ? preparedSupplierId : null;
-
-                        console.log(`🛠️ Creating Item RPC Params:`, {
-                            name: item.catalogItemName || item.name,
-                            catalogId: validCatalogId,
-                            supplierIdSource: preparedSupplierId,
-                            supplierIdFinal: supplierIdToPass
-                        });
-
-                        // FINAL SAFETY CHECK: Ensure catalog ID is a valid UUID before calling RPC
-                        if (!uuidRegex.test(validCatalogId)) {
-                            console.error(`🚫 FINAL CHECK FAILED: catalogId "${validCatalogId}" is not a valid UUID. Skipping.`);
-                            return;
-                        }
-
-                        // DEBUG: Log exact values being sent
-                        const rpcParams = {
-                            p_business_id: currentUser.business_id,
-                            p_catalog_item_id: validCatalogId,
-                            p_name: item.catalogItemName || item.name,
-                            p_unit: item.unit || 'יח׳',
-                            p_cost_per_unit: item.catalogPrice || 0,
-                            p_supplier_id: String(receivingSession.supplierId || '')
-                        };
-                        console.log('📦 RPC PARAMS DEBUG:', rpcParams, {
-                            businessIdType: typeof rpcParams.p_business_id,
-                            catalogIdType: typeof rpcParams.p_catalog_item_id,
-                            catalogIdIsUuid: uuidRegex.test(rpcParams.p_catalog_item_id)
-                        });
-
-                        // Use V2 RPC (handles TEXT supplier_id safely)
-                        const { data: newItemId, error } = await supabase
-                            .rpc('create_missing_inventory_item_v2', rpcParams);
-
-                        if (error) throw error;
-
-                        if (newItemId) {
-                            console.log(`✅ Created inventory item for "${item.name}" -> ID: ${newItemId}`);
-                            item.inventoryItemId = newItemId;
-                            item.isNew = false;
-                        }
-                    } catch (err) {
-                        console.error(`❌ Failed to create inventory item for ${item.name}:`, {
-                            message: err?.message,
-                            code: err?.code,
-                            hint: err?.hint,
-                            details: err?.details,
-                            full: err
-                        });
-                    }
-                }));
-            }
-
-            // 2. Filter valid items (Must have inventoryItemId now)
+            // 2. Filter valid items (Must have inventoryItemId OR be matched to catalog for auto-creation)
             // Still skip truly unknown items (no catalog match AND no inventory match)
-            const validItems = workingItems.filter(item => item.inventoryItemId);
-            const skippedItems = workingItems.filter(item => !item.inventoryItemId);
+            const validItems = workingItems.filter(item => item.inventoryItemId || item.catalogItemId);
+            const skippedItems = workingItems.filter(item => !item.inventoryItemId && !item.catalogItemId);
 
             console.log('🔍 Processing Summary:', {
                 total: workingItems.length,
@@ -1156,11 +1143,17 @@ const KDSInventoryScreen = ({ onExit }) => {
             const existingItemsToLearn = validItems.filter(item => item.inventoryItemId && item.name);
 
             if (existingItemsToLearn.length > 0) {
-                console.log(`🧠 Learning ${existingItemsToLearn.length} supplier product names for existing items...`);
-                for (const item of existingItemsToLearn) {
-                    await supabase.from('inventory_items')
-                        .update({ supplier_product_name: item.name })
-                        .eq('id', item.inventoryItemId);
+                console.log(`🧠 Learning ${existingItemsToLearn.length} supplier product names using RPC (append)...`);
+                try {
+                    await Promise.all(existingItemsToLearn.map(item =>
+                        supabase.rpc('append_supplier_name', {
+                            p_item_id: item.inventoryItemId,
+                            p_new_name: item.name
+                        })
+                    ));
+                } catch (learnError) {
+                    console.warn('⚠️ Could not save learned names (migration may not be applied):', learnError.message);
+                    // Non-blocking error, allow flow to continue
                 }
             }
 
@@ -1228,6 +1221,19 @@ const KDSInventoryScreen = ({ onExit }) => {
 
     const supplierGroups = useMemo(() => {
         const groups = {};
+
+        // 🚀 Add Prepared Items Group FIRST
+        if (preparedItems.length > 0) {
+            groups['prepared'] = {
+                id: 'prepared',
+                name: 'מוכן במקום',
+                supplier: { id: 'prepared', name: 'מוכן במקום', isPrepared: true },
+                count: preparedItems.length,
+                isToday: false,
+                isSpecial: true
+            };
+        }
+
         // Build a Set of valid supplier IDs for quick lookup
         const validSupplierIds = new Set(suppliers.map(s => s.id));
 
@@ -1265,30 +1271,123 @@ const KDSInventoryScreen = ({ onExit }) => {
             });
     }, [items, suppliers]);
 
+    const categoryTests = {
+        'ירקות': (cat, name) => (cat.includes('ירק') || cat.includes('פיר') || name.includes('עגבנ') || name.includes('מלפפ') || name.includes('חסה') || name.includes('גזר') || name.includes('בצל') || name.includes('בטטה') || name.includes('פטרוזי') || name.includes('נענע')),
+        'חלב': (cat, name) => (cat.includes('חלב') || cat.includes('גבינ') || name.includes('חלב') || name.includes('יוגורט')),
+        'מאפים': (cat, name) => (cat.includes('מאפ') || cat.includes('לחם') || name.includes('לחמנ') || name.includes('פיתה')),
+        'יבש': (cat, name) => (cat.includes('יבש') || cat.includes('גלם') || cat.includes('מזווה') || name.includes('סוכר') || name.includes('מלח') || name.includes('קמח')),
+        'מקפיא': (cat, name) => (cat.includes('קפוא') || cat.includes('מקפיא') || name.includes('קפוא') || name.includes('צ\'יפס') || name.includes('נקניק'))
+    };
+
+    const availableCategories = useMemo(() => {
+        if (!selectedSupplierId || selectedSupplierId === 'prepared') return [];
+        const validSupplierIds = new Set(suppliers.map(s => s.id));
+        const supplierItems = items.filter(item => {
+            let supId = item.supplier_id || 'uncategorized';
+            if (supId !== 'uncategorized' && !validSupplierIds.has(supId)) supId = 'uncategorized';
+            return supId === selectedSupplierId;
+        });
+
+        return ['ירקות', 'חלב', 'מאפים', 'יבש', 'מקפיא'].filter(catName => {
+            const test = categoryTests[catName];
+            return supplierItems.some(item => {
+                const itemCat = String(item.category || '').toLowerCase();
+                const n = String(item.name || '').toLowerCase();
+                return test(itemCat, n);
+            });
+        });
+    }, [items, suppliers, selectedSupplierId]);
+
+    // Reset category when supplier changes or category disappears
+    useEffect(() => {
+        if (selectedCategory && !availableCategories.includes(selectedCategory)) {
+            setSelectedCategory(null);
+        }
+    }, [availableCategories, selectedCategory]);
+
+    useEffect(() => {
+        setSelectedCategory(null);
+    }, [selectedSupplierId]);
+
     const filteredItems = useMemo(() => {
         if (!selectedSupplierId) return [];
 
-        // Build valid supplier IDs set (same logic as supplierGroups)
         const validSupplierIds = new Set(suppliers.map(s => s.id));
 
-        return items.filter(i => {
-            let itemSupId = i.supplier_id || 'uncategorized';
-            // If supplier_id is invalid, treat as uncategorized
-            if (itemSupId !== 'uncategorized' && !validSupplierIds.has(itemSupId)) {
-                itemSupId = 'uncategorized';
+        let result = items.filter(item => {
+            let supId = item.supplier_id || 'uncategorized';
+            // If supplier ID doesn't exist in our list, treat as uncategorized
+            if (supId !== 'uncategorized' && !validSupplierIds.has(supId)) {
+                supId = 'uncategorized';
             }
-            return itemSupId === selectedSupplierId;
-        }).filter(i => !search || i.name.toLowerCase().includes(search.toLowerCase()));
-    }, [items, selectedSupplierId, search, suppliers]);
+
+            if (supId !== selectedSupplierId) return false;
+
+            if (selectedCategory) {
+                const itemCat = String(item.category || '').toLowerCase();
+                const n = String(item.name || '').toLowerCase();
+                const test = categoryTests[selectedCategory];
+                if (test && !test(itemCat, n)) return false;
+            }
+
+            if (search) {
+                return (item.name || '').toLowerCase().includes(search.toLowerCase());
+            }
+            return true;
+        });
+
+        // Robust Sorting by Department Keywords
+        const getDeptIndex = (cat, name) => {
+            const c = String(cat || '').toLowerCase();
+            const n = String(name || '').toLowerCase();
+
+            // Index 1: Vegetables & Fruits (High priority check for names too)
+            if (c.includes('ירק') || c.includes('פיר') || c.includes('fruit') || c.includes('veg') ||
+                n.includes('עגבנ') || n.includes('מלפפ') || n.includes('חסה') || n.includes('גזר') ||
+                n.includes('בצל') || n.includes('בטטה') || n.includes('פטרוזי') || n.includes('נענע') ||
+                n.includes('כוסבר') || n.includes('שום') || n.includes('פטרי') || n.includes('תפוח') || n.includes('פלפל') || n.includes('קולורבי')) return 1;
+
+            // Index 2: Dairy
+            if (c.includes('חלב') || c.includes('גבינ') || c.includes('dairy') || n.includes('חלב') || n.includes('גבינ') || n.includes('צפתית') || n.includes('קוטג')) return 2;
+
+            // Index 3: Bakery
+            if (c.includes('מאפ') || c.includes('לחם') || c.includes('pastry') || c.includes('bread') || c.includes('פיתה') ||
+                n.includes('לחם') || n.includes('לחמנ') || n.includes('בורקס') || n.includes('עוגה') || n.includes('קרואס')) return 3;
+
+            // Index 4: Meat/Fish
+            if (c.includes('בשר') || c.includes('דג') || c.includes('עוף') || c.includes('meat') || c.includes('fish') || n.includes('המבורגר') || n.includes('נקניק') || n.includes('שניצל') || n.includes('קבב')) return 4;
+
+            // Index 5: Pantry / Dry
+            if (c.includes('יבש') || c.includes('גלם') || c.includes('מזווה') || c.includes('dry') || n.includes('סוכר') || n.includes('מלח') || n.includes('קמח') || n.includes('אבקת')) return 5;
+
+            // Index 6: Frozen
+            if (c.includes('קפוא') || c.includes('frozen') || n.includes('גלידה') || n.includes('צ\'יפס')) return 6;
+
+            // Index 7: Cleaning
+            if (c.includes('נקה') || n.includes('סבון') || n.includes('כלים') || n.includes('ספוג')) return 7;
+
+            // Index 8: Disposable
+            if (c.includes('חד פעמי') || c.includes('disposable') || n.includes('נייר') || n.includes('מפית')) return 8;
+
+            return 99;
+        };
+
+        return [...result].sort((a, b) => {
+            const indexA = getDeptIndex(a.category, a.name);
+            const indexB = getDeptIndex(b.category, b.name);
+
+            if (indexA !== indexB) return indexA - indexB;
+
+            return (a.name || '').localeCompare(b.name || '', 'he');
+        });
+    }, [items, selectedSupplierId, search, suppliers, selectedCategory]);
 
 
-    // Handle Local Stock Change with Smart Rounding
-    // First step snaps to the nearest grid multiple, then continues in even steps
-    const handleStockChange = (itemId, change) => {
-        const item = items.find(i => i.id === itemId);
+    function handleStockChange(itemId, change) {
+        const item = items.find(i => i.id === itemId) || preparedItems.find(i => i.id === itemId);
         if (!item) return;
 
-        const step = Math.abs(change); // The step size (e.g., 500 for grams)
+        const step = Math.abs(change);
         const isIncrement = change > 0;
 
         setStockUpdates(prev => {
@@ -1297,60 +1396,148 @@ const KDSInventoryScreen = ({ onExit }) => {
                 : (item.current_stock || 0);
 
             let newVal;
-
-            // Check if current value is already on a step multiple
-            const epsilon = 0.001; // For floating point comparison
+            const epsilon = 0.001;
             const isOnGrid = Math.abs(currentVal % step) < epsilon || Math.abs((currentVal % step) - step) < epsilon;
 
             if (isOnGrid) {
-                // Already on grid, just add/subtract the step
                 newVal = currentVal + change;
             } else {
-                // Not on grid - snap to nearest grid point in the direction of change
                 if (isIncrement) {
-                    // Snap UP to next grid point
                     newVal = Math.ceil(currentVal / step) * step;
                 } else {
-                    // Snap DOWN to previous grid point
                     newVal = Math.floor(currentVal / step) * step;
                 }
             }
 
-            // Ensure we don't go below 0
             newVal = Math.max(0, newVal);
-
-            // Round to 2 decimal places to avoid floating point issues
             newVal = Math.round(newVal * 100) / 100;
-
             return { ...prev, [itemId]: newVal };
         });
-    };
+    }
 
-    // Save Stock Update
-    const saveStockUpdate = async (itemId) => {
+    async function saveStockUpdate(itemId) {
         const newValue = stockUpdates[itemId];
         if (newValue === undefined) return;
 
+        const preparedItem = preparedItems.find(i => i.id === itemId);
+
         setSaving(true);
         try {
-            console.log('📦 KDS: Updating stock via RPC:', itemId, newValue);
-            const { data, error } = await supabase.rpc('update_inventory_stock', {
-                p_item_id: itemId,
-                p_new_stock: newValue,
-                p_counted_by: currentUser?.id || null,
-                p_source: 'manual'
-            });
+            if (preparedItem) {
+                console.log('📦 KDS: Updating PREPARED stock:', itemId, newValue);
+                const existingInv = Array.isArray(preparedItem.prepared_items_inventory)
+                    ? preparedItem.prepared_items_inventory[0]
+                    : preparedItem.prepared_items_inventory;
 
-            if (error) throw error;
+                // Ensure ID is integer for DB
+                const dbItemId = parseInt(itemId, 10);
+                if (isNaN(dbItemId)) {
+                    throw new Error(`Invalid Item ID: ${itemId}`);
+                }
 
-            console.log('✅ KDS: Stock updated successfully:', data);
-            setItems(prev => prev.map(i => i.id === itemId ? {
-                ...i,
-                current_stock: newValue,
-                last_counted_at: new Date().toISOString(),
-                last_counted_by_name: data?.counted_by_name || currentUser?.name,
-                last_count_source: 'manual'
-            } : i));
+                const payload = {
+                    item_id: dbItemId,
+                    // business_id: removed, handled by trigger on insert, ignored on update
+                    current_stock: newValue,
+                    initial_stock: existingInv?.initial_stock ?? newValue,
+                    unit: existingInv?.unit ?? 'units',
+                    last_updated: new Date().toISOString()
+                };
+
+                const { error: prepError } = await supabase
+                    .from('prepared_items_inventory')
+                    .upsert(payload, {
+                        onConflict: 'item_id'
+                    });
+
+                if (prepError) {
+                    console.error('Supabase Upsert Error:', prepError);
+                    throw prepError;
+                }
+
+                setPreparedItems(prev => prev.map(i => i.id === itemId ? {
+                    ...i,
+                    current_stock: newValue,
+                    prepared_items_inventory: [{
+                        current_stock: newValue,
+                        initial_stock: payload.initial_stock,
+                        unit: payload.unit
+                    }]
+                } : i));
+            } else {
+                // SECURITY: Verify that this item actually belongs to the current business
+                const itemToVerify = items.find(i => i.id === itemId);
+                if (itemToVerify && itemToVerify.business_id && itemToVerify.business_id !== currentUser.business_id) {
+                    throw new Error("מזהה עסק לא תואם. עדכון נחסם מטעמי אבטחה.");
+                }
+
+                if (!currentUser?.business_id) {
+                    alert('שגיאה: חסר מזהה עסק. אנא התחבר מחדש.');
+                    return;
+                }
+
+                console.log('📦 KDS: Attempting update via existing RPC (update_inventory_stock)...', itemId, newValue);
+
+                // Use the EXISTING iPad function which is known to work
+                const { data, error: rpcError } = await supabase.rpc('update_inventory_stock', {
+                    p_item_id: parseInt(itemId, 10),
+                    p_new_stock: newValue,
+                    p_counted_by: currentUser?.id || null,
+                    p_source: 'manual'
+                });
+
+                if (rpcError) {
+                    console.warn('⚠️ RPC update_inventory_stock failed, falling back to direct update:', rpcError.message);
+
+                    // FALLBACK: Direct Update
+                    const { data: updatedRows, error: updateError } = await supabase
+                        .from('inventory_items')
+                        .update({
+                            current_stock: newValue,
+                            last_counted_at: new Date().toISOString(),
+                            last_counted_by: currentUser?.id,
+                            last_count_source: 'manual'
+                        })
+                        .eq('id', parseInt(itemId, 10))
+                        // REMOVED business_id check to allow Super Admin cross-business updates
+                        .select(); // 🛡️ Verify update happened
+
+                    if (updateError) {
+                        console.error('❌ Fallback Update Error:', updateError);
+                        throw updateError;
+                    }
+
+                    if (!updatedRows || updatedRows.length === 0) {
+                        console.error('❌ Fallback failed: No rows updated. Likely RLS issue.', { itemId, busId: currentUser.business_id });
+                        throw new Error("עדכון נכשל: לא נמצאה רשומה מתאימה או שאין הרשאה לעדכן (RLS).");
+                    }
+
+                    console.log('✅ Fallback update successful', updatedRows[0]);
+                }
+                console.log('✅ Local update success');
+
+                // --- LOGGING ---
+                const oldItem = items.find(i => i.id === itemId);
+                const previousStock = oldItem ? parseFloat(oldItem.current_stock) : 0;
+                logInventoryAction(
+                    itemId,
+                    previousStock,
+                    newValue,
+                    'manual_count',
+                    currentUser?.name || 'KDS',
+                    'Update from KDS Screen'
+                );
+                // --- END LOGGING ---
+
+                setItems(prev => prev.map(i => i.id === itemId ? {
+                    ...i,
+                    current_stock: newValue,
+                    last_counted_at: new Date().toISOString(),
+                    last_counted_by: currentUser?.id,
+                    last_count_source: 'manual'
+                } : i));
+            }
+
             setStockUpdates(prev => { const next = { ...prev }; delete next[itemId]; return next; });
 
         } catch (err) {
@@ -1359,301 +1546,563 @@ const KDSInventoryScreen = ({ onExit }) => {
         } finally {
             setSaving(false);
         }
+    }
+
+    // Function to handle delete button click - REMOVED for KDS
+    const handleDeleteClick = (item) => {
+        // Functionality removed as per user request (KDS is for employees counting, not manager editing)
+    };
+
+    // Function to confirm and execute deletion after manager authentication
+    const confirmDeleteItem = async () => {
+        if (!itemToDelete) return;
+
+        setShowDeleteAuth(false); // Close modal
+        setSaving(true); // Indicate saving/deleting operation
+
+        try {
+            if (itemToDelete.isPrepared) {
+                // Delete from prepared_items_inventory
+                const { error: deleteInvError } = await supabase
+                    .from('prepared_items_inventory')
+                    .delete()
+                    .eq('item_id', itemToDelete.id);
+
+                if (deleteInvError) throw deleteInvError;
+
+                // Log the deletion
+                logInventoryAction(
+                    itemToDelete.id,
+                    itemToDelete.current_stock,
+                    0, // Stock becomes 0 after deletion
+                    'item_deleted',
+                    currentUser?.name || 'KDS',
+                    `Prepared item deleted from KDS Screen: ${itemToDelete.name}`
+                );
+
+                // Update local state
+                setPreparedItems(prev => prev.filter(i => i.id !== itemToDelete.id));
+                setStockUpdates(prev => { const next = { ...prev }; delete next[itemToDelete.id]; return next; });
+
+                setSuccessMessage({
+                    title: 'פריט נמחק בהצלחה!',
+                    message: `הפריט "${itemToDelete.name}" הוסר ממלאי המנות המוכנות.`
+                });
+
+            } else {
+                // Delete from inventory_items
+                const { error: deleteError } = await supabase
+                    .from('inventory_items')
+                    .delete()
+                    .eq('id', itemToDelete.id)
+                    .eq('business_id', currentUser.business_id); // Security check
+
+                if (deleteError) throw deleteError;
+
+                // Log the deletion
+                logInventoryAction(
+                    itemToDelete.id,
+                    itemToDelete.current_stock,
+                    0, // Stock becomes 0 after deletion
+                    'item_deleted',
+                    currentUser?.name || 'KDS',
+                    `Inventory item deleted from KDS Screen: ${itemToDelete.name}`
+                );
+
+                // Update local state
+                setItems(prev => prev.filter(i => i.id !== itemToDelete.id));
+                setStockUpdates(prev => { const next = { ...prev }; delete next[itemToDelete.id]; return next; });
+
+                setSuccessMessage({
+                    title: 'פריט נמחק בהצלחה!',
+                    message: `הפריט "${itemToDelete.name}" הוסר מהמלאי.`
+                });
+            }
+        } catch (err) {
+            console.error('Error deleting item:', err);
+            alert('שגיאה במחיקת הפריט: ' + err.message);
+        } finally {
+            setSaving(false);
+            setItemToDelete(null);
+        }
     };
 
 
-
     // Render Suppliers List (Right Column)
-    const renderSuppliersList = () => (
-        <div className="flex flex-col gap-3 overflow-y-auto p-2 pb-20">
-            {supplierGroups.map(group => {
-                const isActive = selectedSupplierId === group.id;
-                return (
+    function renderSuppliersList(showSpecial = false) {
+        return (
+            <div className="flex flex-col h-full overflow-hidden Hebrew">
+                {/* 1. Suppliers Section */}
+                <div className="flex-1 overflow-y-auto p-2 space-y-3 pb-4">
+                    <div className="px-2 pb-1">
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ספקי חומרי גלם</h3>
+                    </div>
+                    {supplierGroups.filter(g => !g.isSpecial).map(group => {
+                        const isActive = selectedSupplierId === group.id;
+                        return (
+                            <motion.div
+                                key={group.id}
+                                onClick={() => setSelectedSupplierId(group.id)}
+                                whileTap={{ scale: 0.98 }}
+                                className={`relative p-4 rounded-2xl cursor-pointer border transition-all duration-200 overflow-hidden ${isActive
+                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-100 border-blue-500 scale-[1.02]'
+                                    : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-100 shadow-sm'
+                                    }`}
+                            >
+                                <div className="flex justify-between items-center relative z-10">
+                                    <div className="flex items-center gap-3">
+                                        <Truck size={20} className={isActive ? 'text-blue-200' : (group.isToday ? 'text-green-500' : 'text-gray-400')} />
+                                        <div>
+                                            <h3 className={`font-bold text-base ${isActive ? 'text-white' : 'text-slate-700'}`}>{group.name}</h3>
+                                            {group.isToday && (
+                                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isActive ? 'bg-white/20 text-white' : 'bg-green-100 text-green-700'}`}>
+                                                    אספקה היום!
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-mono font-bold text-sm ${isActive ? 'bg-white text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                                        {group.count}
+                                    </div>
+                                </div>
+                                {isActive && <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />}
+                            </motion.div>
+                        );
+                    })}
+                </div>
+
+                {/* 2. Special Tab: Dish Inventory (TAB BELOW SUPPLIERS) */}
+                <div className="p-3 bg-slate-50 border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.03)] shrink-0">
+                    <div className="px-1 pb-3">
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ניהול מוצרים ומנות</h3>
+                    </div>
+
                     <motion.div
-                        key={group.id}
-                        onClick={() => setSelectedSupplierId(group.id)}
+                        onClick={() => setSelectedSupplierId('prepared')}
                         whileTap={{ scale: 0.98 }}
-                        className={`relative p-4 rounded-xl cursor-pointer border transition-all duration-200 overflow-hidden ${isActive
-                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 border-blue-500 scale-[1.02]'
-                            : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-100 shadow-sm'
+                        className={`relative p-4 rounded-2xl cursor-pointer border transition-all duration-200 overflow-hidden ${selectedSupplierId === 'prepared'
+                            ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-200 border-indigo-500 scale-[1.02]'
+                            : 'bg-white text-gray-600 hover:bg-indigo-50/50 border-indigo-100 shadow-sm'
                             }`}
                     >
                         <div className="flex justify-between items-center relative z-10">
                             <div className="flex items-center gap-3">
-                                <Truck size={20} className={isActive ? 'text-blue-200' : (group.isToday ? 'text-green-500' : 'text-gray-400')} />
+                                <ChefHat size={22} className={selectedSupplierId === 'prepared' ? 'text-indigo-200' : 'text-indigo-500'} />
                                 <div>
-                                    <h3 className={`font-bold text-lg ${isActive ? 'text-white' : 'text-slate-700'}`}>{group.name}</h3>
-                                    {group.isToday && (
-                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isActive ? 'bg-white/20 text-white' : 'bg-green-100 text-green-700'}`}>
-                                            אספקה היום!
-                                        </span>
-                                    )}
+                                    <h3 className={`font-black text-lg ${selectedSupplierId === 'prepared' ? 'text-white' : 'text-slate-800'}`}>מלאי מנות מוכנות</h3>
+                                    <p className={`text-[10px] font-bold ${selectedSupplierId === 'prepared' ? 'text-indigo-200' : 'text-slate-400'}`}>
+                                        ניהול מלאי זמין להזמנה בטאבלט
+                                    </p>
                                 </div>
                             </div>
-
-                            {/* Count Badge */}
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-mono font-bold text-sm ${isActive ? 'bg-white text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
-                                {group.count}
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-mono font-bold text-sm ${selectedSupplierId === 'prepared' ? 'bg-white text-indigo-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                                {preparedItems.length}
                             </div>
                         </div>
-
-                        {/* Active Indicator Background Effect */}
-                        {isActive && <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />}
+                        {selectedSupplierId === 'prepared' && <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />}
                     </motion.div>
-                );
-            })}
-        </div>
-    );
+                </div>
+            </div>
+        );
+    }
+
+    function renderPreparedItemsColumn() {
+        if (preparedItems.length === 0) return (
+            <div className="text-center py-10 text-indigo-300">
+                <p className="text-sm font-bold">אין מוצרים מוכנים</p>
+            </div>
+        );
+
+        return preparedItems.map(item => {
+            const hasChange = stockUpdates[item.id] !== undefined;
+            const currentVal = hasChange ? stockUpdates[item.id] : (item.current_stock || 0);
+
+            return (
+                <div key={item.id} className="bg-white rounded-2xl p-3 border border-indigo-100/50 shadow-sm Hebrew">
+                    <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 overflow-hidden">
+                            {item.image_url ? (
+                                <img src={item.image_url} className="w-8 h-8 rounded-lg object-cover" />
+                            ) : (
+                                <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-400">
+                                    <Package size={14} />
+                                </div>
+                            )}
+                            <span className="font-bold text-sm text-slate-800 truncate">{item.name}</span>
+                        </div>
+                        {hasChange && (
+                            <button
+                                onClick={() => saveStockUpdate(item.id)}
+                                disabled={saving}
+                                className="p-2 bg-indigo-600 text-white rounded-lg shadow-sm hover:bg-indigo-700 active:scale-95 transition-all"
+                            >
+                                <Save size={14} />
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex items-center justify-between bg-slate-50 rounded-xl p-2">
+                        <button
+                            onClick={() => handleStockChange(item.id, -1)}
+                            className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition"
+                        >
+                            <ChevronRight size={16} />
+                        </button>
+
+                        <div className="text-center">
+                            <span className={`text-lg font-black ${hasChange ? 'text-indigo-600' : 'text-slate-800'}`}>
+                                {currentVal}
+                            </span>
+                            <span className="text-[9px] text-slate-400 font-bold block uppercase mt-[-4px]">מלאי</span>
+                        </div>
+
+                        <button
+                            onClick={() => handleStockChange(item.id, 1)}
+                            className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 transition"
+                        >
+                            <ChevronLeft size={16} />
+                        </button>
+                    </div>
+                </div>
+            );
+        });
+    }
 
     // Render Items Grid (Left/Center Column)
-    const renderItemsGrid = () => (
-        <div className="h-full min-h-0 overflow-y-auto p-2 pb-24 relative">
-            {/* FAB for Report */}
-            <div className="fixed bottom-6 left-6 z-50">
-                <button
-                    onClick={() => setShowReportModal(true)}
-                    className="flex items-center gap-2 bg-slate-900 text-white px-5 py-3 rounded-full shadow-xl shadow-slate-900/30 hover:bg-slate-800 active:scale-95 transition-all font-bold"
-                >
-                    <ClipboardList size={20} />
-                    <span>דוח חוסרים</span>
-                </button>
-            </div>
+    function renderPreparedItemCard(item) {
+        const hasChange = stockUpdates[item.id] !== undefined;
+        const currentVal = hasChange ? stockUpdates[item.id] : (item.current_stock || 0);
 
-            {!selectedSupplierId ? (
-                <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
-                    <ArrowRight size={64} className="mb-6 animate-pulse" />
-                    <h3 className="text-2xl font-bold">בחר ספק מהרשימה</h3>
-                    <p>כדי לצפות ולעדכן פריטי מלאי</p>
+        return (
+            <div key={item.id} className={`flex items-center justify-between bg-white rounded-2xl p-3 border transition-all ${hasChange ? 'border-indigo-300 ring-2 ring-indigo-50 shadow-md' : 'border-slate-100 hover:border-slate-200 shadow-sm'}`}>
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="flex flex-col min-w-0 pr-1">
+                        <h4 className="font-bold text-slate-800 text-xs leading-tight break-words">{item.name}</h4>
+                        <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">{item.category || 'כללי'}</span>
+                    </div>
                 </div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 auto-rows-max pb-24">
-                    {filteredItems.map(item => {
-                        const currentStock = stockUpdates[item.id] !== undefined ? stockUpdates[item.id] : item.current_stock;
-                        const isChanged = stockUpdates[item.id] !== undefined && stockUpdates[item.id] !== item.current_stock;
 
-                        // Toggle state for weight vs unit view
-                        // We use a local state or just check if user toggled.
-                        // Ideally we need a state map for toggles: const [showWeight, setShowWeight] = useState({})
-                        const isWeightMode = expandedItems[item.id] || false; // Reusing expandedItems for toggle (true=Weight, false=Unit)
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/50">
+                        <button
+                            onClick={() => handleStockChange(item.id, -1)}
+                            className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-slate-400 hover:text-rose-500 transition active:scale-75"
+                        >
+                            <span className="text-xl font-bold leading-none mb-1">−</span>
+                        </button>
+                        <div className="px-2 text-center min-w-[40px]">
+                            <span className={`text-base font-black ${hasChange ? 'text-indigo-600' : 'text-slate-700'}`}>{currentVal}</span>
+                            <span className="text-[9px] text-slate-400 font-bold mr-1">{item.unit === 'units' ? 'יח׳' : (item.unit || 'יח׳')}</span>
+                        </div>
+                        <button
+                            onClick={() => handleStockChange(item.id, 1)}
+                            className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-slate-400 hover:text-emerald-500 transition active:scale-75"
+                        >
+                            <Plus size={14} />
+                        </button>
+                    </div>
 
-                        const wpu = parseFloat(item.weight_per_unit) || 0;
-                        const dbStep = parseFloat(item.count_step) || 1;
+                    <div className="w-10 flex justify-center">
+                        <button
+                            onClick={() => hasChange && saveStockUpdate(item.id)}
+                            disabled={!hasChange || saving}
+                            className={`w-10 h-10 rounded-xl shadow-lg flex items-center justify-center transition-all active:scale-95
+                                ${hasChange
+                                    ? 'bg-indigo-600 text-white shadow-indigo-100 hover:bg-indigo-700'
+                                    : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+                        >
+                            {hasChange ? <Save size={18} /> : <CheckCircle size={18} />}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
-                        // 1. Calculate actual delta to add/remove from DB stock
-                        let stepToApply;
-                        // If toggle is ON (Weight Mode), we add/remove in Grams/KG steps? 
-                        // Actually, simplify: always use the defined step logic, just change DISPLAY.
-                        // But user asked to UPDATE stock in units or kg. 
+    function renderItemsGrid() {
+        return (
+            <div className="h-full min-h-0 overflow-y-auto p-2 pb-24 relative">
+                {/* FAB for Report */}
+                <div className="fixed bottom-6 left-6 z-50">
+                    <button
+                        onClick={() => setShowReportModal(true)}
+                        className="flex items-center gap-2 bg-slate-900 text-white px-5 py-3 rounded-full shadow-xl shadow-slate-900/30 hover:bg-slate-800 active:scale-95 transition-all font-bold"
+                    >
+                        <ClipboardList size={20} />
+                        <span>דוח חוסרים</span>
+                    </button>
+                </div>
 
-                        if (wpu > 0) {
-                            stepToApply = dbStep * wpu;
-                        } else {
-                            stepToApply = dbStep;
-                        }
+                {!selectedSupplierId ? (
+                    <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
+                        <ArrowRight size={64} className="mb-6 animate-pulse" />
+                        <h3 className="text-2xl font-bold">בחר ספק או "מלאי מנות" מהרשימה</h3>
+                        <p>כדי לצפות ולעדכן פריטי מלאי</p>
+                    </div>
+                ) : selectedSupplierId === 'prepared' ? (
+                    /* DEDICATED PREPARED ITEMS GRID VIEW (Integrated into main grid area) */
+                    <div className="h-full flex flex-col overflow-hidden">
+                        {/* Header bar removed as per request */}
 
-                        // 2. Calculate Display Value & Unit
-                        let displayStock = currentStock;
-                        let displayUnit = item.unit;
-                        let secondaryInfo = null;
-
-                        if (wpu > 0) {
-                            if (isWeightMode) {
-                                // WEIGHT MODE: Show total weight (KG/G)
-                                if (currentStock >= 1000) {
-                                    displayStock = currentStock / 1000;
-                                    displayUnit = 'ק״ג';
-                                } else {
-                                    displayUnit = 'גרם';
-                                }
-                                secondaryInfo = `${parseFloat((currentStock / wpu).toFixed(2))} יח׳`;
-                            } else {
-                                // UNIT MODE: Show units count
-                                displayStock = currentStock / wpu;
-                                displayUnit = 'יח׳';
-                                secondaryInfo = wpu >= 1000
-                                    ? `${parseFloat((displayStock * (wpu / 1000)).toFixed(2))} ק״ג`
-                                    : `${Math.round(displayStock * wpu)} גרם`;
-                            }
-                        } else if (item.unit === 'גרם' && currentStock >= 1000) {
-                            displayStock = currentStock / 1000;
-                            displayUnit = 'ק״ג';
-                        } else if (item.unit === 'מ״ל' && currentStock >= 1000) {
-                            displayStock = currentStock / 1000;
-                            displayUnit = 'ליטר';
-                        }
-
-                        // Format display - max 2 decimals, no trailing zeros
-                        displayStock = parseFloat(displayStock.toFixed(2));
-
-                        // 3. Price Display (for reference)
-                        let priceDisplay = null;
-                        if (item.cost_per_unit > 0) {
-                            if (wpu > 0) {
-                                // Price per unit (pack)
-                                priceDisplay = `₪${item.cost_per_unit}`;
-                            } else if (item.unit === 'גרם' || item.unit === 'מ״ל') {
-                                // Bulk: Price per KG/L
-                                priceDisplay = `₪${(item.cost_per_unit * 1000).toFixed(2)}/${item.unit === 'גרם' ? 'ק״ג' : 'ליטר'}`;
-                            } else {
-                                priceDisplay = `₪${item.cost_per_unit}`;
-                            }
-                        }
-
-                        const isCountedToday = (() => {
-                            if (!item.last_counted_at) return false;
-                            const lastDate = new Date(item.last_counted_at).toLocaleDateString();
-                            const today = new Date().toLocaleDateString();
-                            return lastDate === today;
-                        })();
-
-                        return (
-                            <div key={item.id} className={`px-4 py-2 rounded-xl shadow-sm border transition-colors group flex items-center justify-between
-                                ${isChanged ? 'bg-blue-50 border-blue-300' :
-                                    isCountedToday ? 'bg-emerald-50/50 border-emerald-200' : 'bg-white border-gray-100 hover:border-blue-300'}`}>
-                                <div className="flex items-center gap-4 flex-1 min-w-0">
-                                    <div className="flex flex-col min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <h4 className="font-bold text-slate-800 text-sm leading-tight truncate">{item.name}</h4>
-                                            {wpu > 0 && item.category === 'ירקות' && (
-                                                <button
-                                                    onClick={() => setExpandedItems(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-                                                    className="bg-gray-100 hover:bg-gray-200 text-gray-500 text-[10px] px-1.5 py-0.5 rounded font-bold transition-colors"
-                                                >
-                                                    {isWeightMode ? 'הצג יח׳' : 'הצג משקל'}
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        <div className="flex items-center gap-3 mt-0.5">
-                                            {item.location && (
-                                                <div className="flex items-center gap-1 text-xs text-amber-600">
-                                                    <span>📍</span>
-                                                    <span>{item.location}</span>
-                                                </div>
-                                            )}
-                                            {secondaryInfo && (
-                                                <div className="text-[10px] text-gray-400 font-medium">
-                                                    ({secondaryInfo})
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
+                        {preparedItems.length === 0 ? (
+                            <div className="flex-1 flex flex-col items-center justify-center text-center p-10 bg-white rounded-3xl border-2 border-dashed border-slate-100 mt-4">
+                                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-4">
+                                    <Package size={40} />
                                 </div>
-
-                                <div className="flex items-center gap-3">
-                                    <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
-                                        <button
-                                            onClick={() => handleStockChange(item.id, -stepToApply)}
-                                            className="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-500 hover:text-red-500 hover:bg-red-50 transition active:scale-95"
-                                        >
-                                            <span className="text-xl font-bold leading-none mb-1">-</span>
-                                        </button>
-
-                                        <div className="w-20 text-center flex flex-col justify-center leading-none">
-                                            <span className={`font-mono text-lg font-black ${isChanged ? 'text-blue-600' : 'text-slate-700'}`}>
-                                                {displayStock}
-                                            </span>
-                                            <span className="text-[10px] text-gray-400 font-bold">{displayUnit}</span>
-                                        </div>
-
-                                        <button
-                                            onClick={() => handleStockChange(item.id, stepToApply)}
-                                            className="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-500 hover:text-green-600 hover:bg-green-50 transition active:scale-95"
-                                        >
-                                            <Plus size={16} strokeWidth={3} />
-                                        </button>
-                                    </div>
-
-                                    <div className="w-10 flex justify-center">
-                                        {isChanged && (
-                                            <motion.button
-                                                initial={{ scale: 0, opacity: 0 }}
-                                                animate={{ scale: 1, opacity: 1 }}
-                                                onClick={() => saveStockUpdate(item.id)}
-                                                disabled={saving}
-                                                className="w-10 h-10 bg-blue-600 text-white rounded-lg shadow-md shadow-blue-200 flex items-center justify-center hover:bg-blue-700 active:scale-90 transition-all"
-                                            >
-                                                <Save size={18} />
-                                            </motion.button>
-                                        )}
-                                    </div>
-                                </div>
+                                <h3 className="text-xl font-bold text-slate-400">אין מנות למעקב מלאי</h3>
                             </div>
-                        );
-                    })}
+                        ) : (
+                            <div className="flex-1 min-h-0 flex flex-col gap-6 overflow-y-auto pb-24">
+                                {(() => {
+                                    const prepItems = preparedItems.filter(i => (i.inventory_settings?.prepType || 'production') !== 'defrost');
+                                    const defrostItems = preparedItems.filter(i => i.inventory_settings?.prepType === 'defrost');
 
-                    {filteredItems.length === 0 && (
-                        <div className="col-span-2 text-center py-20 text-gray-400">
-                            <p>לא נמצאו פריטים</p>
+                                    const showPrep = prepItems.length > 0;
+                                    const showDefrost = defrostItems.length > 0;
+
+                                    return (
+                                        <>
+                                            {/* Section: Prep & Production */}
+                                            {(showPrep || (!showPrep && !showDefrost)) && (
+                                                <div className="w-full flex flex-col bg-indigo-50/30 rounded-3xl p-4 border border-indigo-100/50">
+                                                    <div className="flex items-center justify-between mb-4 px-1">
+                                                        <h4 className="flex items-center gap-2 font-black text-indigo-900 text-lg">
+                                                            <ChefHat size={20} className="text-indigo-600" />
+                                                            הכנות וייצור
+                                                        </h4>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                        {prepItems.length === 0 ? (
+                                                            <div className="col-span-full flex flex-col items-center justify-center py-10 text-slate-300 opacity-50 italic text-xs">
+                                                                <span>אין פריטים להכנה</span>
+                                                            </div>
+                                                        ) : (
+                                                            prepItems.map(item => renderPreparedItemCard(item))
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Section: Defrost */}
+                                            {showDefrost && (
+                                                <div className="w-full flex flex-col bg-blue-50/30 rounded-3xl p-4 border border-blue-100/50">
+                                                    <div className="flex items-center justify-between mb-4 px-1">
+                                                        <h4 className="flex items-center gap-2 font-black text-blue-900 text-lg">
+                                                            <Snowflake size={20} className="text-blue-500" />
+                                                            הפשרה
+                                                        </h4>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                        {defrostItems.map(item => renderPreparedItemCard(item))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="h-full flex flex-col">
+                        {/* 🏷️ CATEGORY QUICK-FILTER */}
+                        <div className="flex flex-wrap gap-2 px-1 mb-6 shrink-0">
+                            {availableCategories.map(cat => (
+                                <button
+                                    key={cat}
+                                    onClick={() => setSelectedCategory(cat)}
+                                    className={`px-5 py-2.5 rounded-2xl text-[11px] font-black transition-all uppercase tracking-widest flex items-center gap-2
+                                        ${selectedCategory === cat
+                                            ? 'bg-slate-800 text-white shadow-xl scale-105'
+                                            : 'bg-white text-slate-500 border border-slate-200 hover:border-slate-400 hover:bg-slate-50'}`}
+                                >
+                                    {cat === 'מקפיא' && <Snowflake size={14} />}
+                                    {cat}
+                                </button>
+                            ))}
                         </div>
 
-                    )}
-                </div>
-            )
-            }
+                        {!selectedCategory ? (
+                            <div className="flex-1 flex flex-col items-center justify-center text-center p-10 bg-white rounded-3xl border-2 border-dashed border-slate-100 mb-20">
+                                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-4">
+                                    <Filter size={40} />
+                                </div>
+                                <h3 className="text-xl font-bold text-slate-400">יש לבחור קטגוריה למעלה</h3>
+                                <p className="text-slate-400 max-w-xs mx-auto mt-2">
+                                    בחר מחלקה כדי לראות ולעדכן את פריטי המלאי שלה.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 pb-24 overflow-y-auto pr-1">
+                                {filteredItems.map(item => {
 
-            {/* Low Stock Report Modal */}
-            <LowStockReportModal
-                isOpen={showReportModal}
-                onClose={() => setShowReportModal(false)}
-                items={items} // Pass all items so it can filter global low stock
-                currentStocks={stockUpdates} // Pass local edits buffer + original logic is inside modal?
-                // "currentStocks" prop in modal expects { id: val }. 
-                // We should pass a merged map? Or just pass 'stockUpdates'.
-                // Modal logic: const stock = currentStocks[item.id] !== undefined ? currentStocks[item.id] : (item.current_stock || 0);
-                // This matches exactly what we do in the grid. So passing 'stockUpdates' is correct.
-                // BUT we also need to handle updates.
-                onUpdateStock={handleStockChange}
-            />
-        </div >
-    );
+                                    const currentStock = stockUpdates[item.id] !== undefined ? stockUpdates[item.id] : item.current_stock;
+                                    const isChanged = stockUpdates[item.id] !== undefined && stockUpdates[item.id] !== item.current_stock;
+
+                                    // Basic Data Extraction
+                                    const rawWpu = parseFloat(item.weight_per_unit) || 0;
+                                    const dbStep = parseFloat(item.count_step) || 1;
+
+                                    // 🚨 AGGRESSIVE OVERRIDE for items that must be displayed as packages/units
+                                    const forcePackageList = ['קפוא', 'לימונדה', 'מארז', 'שקית', 'חסה', 'מנגו', 'בננה', 'תות', 'אננס'];
+                                    const isForcedPackage = forcePackageList.some(k => item.name.includes(k));
+
+                                    // Determine effective WPU (Weight Per Unit)
+                                    let effectiveWpu = rawWpu;
+                                    if (effectiveWpu === 0 && isForcedPackage) {
+                                        // Fallback defaults if data is missing (Magic numbers)
+                                        if (item.name.includes('לימונדה')) effectiveWpu = 2000;
+                                        else if (item.name.includes('חסה')) effectiveWpu = 1;
+                                        else effectiveWpu = 1000;
+                                    }
+
+                                    // Calculation Logic
+                                    let stepToApply;
+                                    let displayStock;
+                                    let displayUnit = item.unit; // Default to DB unit
+
+                                    if (effectiveWpu > 0) {
+                                        // Item is a Package/Unit (Explicit WPU or Forced by Name)
+                                        const safeStep = isForcedPackage ? 1 : dbStep;
+
+                                        stepToApply = safeStep * effectiveWpu;
+                                        displayStock = (currentStock || 0) / effectiveWpu;
+                                        displayUnit = 'יח׳'; // 📦 ALWAYS show Units for these items
+                                    } else {
+                                        // Standard Item
+                                        stepToApply = dbStep;
+                                        displayStock = currentStock || 0;
+                                    }
+
+                                    // 🧹 Clean numbers
+                                    displayStock = parseFloat(displayStock.toFixed(2));
+
+                                    const isCountedToday = (() => {
+                                        if (!item.last_counted_at) return false;
+                                        const lastDate = new Date(item.last_counted_at).toLocaleDateString();
+                                        const today = new Date().toLocaleDateString();
+                                        return lastDate === today;
+                                    })();
+
+                                    return (
+                                        <div key={item.id} className={`p-2 rounded-xl border transition-all ${isChanged ? 'bg-blue-50 border-blue-300' : isCountedToday ? 'bg-emerald-50/50 border-emerald-200 shadow-sm' : 'bg-white border-slate-100 shadow-sm hover:border-blue-200'}`} dir="rtl">
+                                            <div className="flex items-center gap-2">
+                                                {/* Info Column */}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-1.5 truncate">
+                                                        <h4 className="font-bold text-xs text-slate-700 truncate leading-tight">{item.name}</h4>
+                                                        {item.location && <span className="text-[9px] text-amber-600 bg-amber-50 px-1 rounded font-bold">📍 {item.location}</span>}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                        {isForcedPackage ? (
+                                                            <span className="text-[9px] text-blue-600 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                                                                📦 {effectiveWpu > 1000 ? effectiveWpu / 1000 + ' ק"ג' : effectiveWpu + ' גרם'}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[9px] text-slate-400 font-medium truncate">{item.category || 'כללי'}</span>
+                                                        )}
+                                                        {isCountedToday && <span className="text-[8px] text-emerald-600 font-bold bg-emerald-50 px-1 rounded">מעודכן</span>}
+                                                    </div>
+                                                </div>
+
+                                                {/* Stepper Column */}
+                                                <div className="flex items-center gap-1.5">
+                                                    <div className="flex flex-col items-center gap-0.5">
+                                                        <span className="text-[8px] font-bold text-slate-400 uppercase">מלאי נוכחי</span>
+                                                        <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-slate-200 shadow-sm">
+                                                            <button
+                                                                onClick={() => handleStockChange(item.id, -stepToApply)}
+                                                                className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-rose-500 active:scale-90 transition-all font-bold"
+                                                            >
+                                                                -
+                                                            </button>
+                                                            <div className="flex flex-col items-center justify-center min-w-[35px] leading-none">
+                                                                <span className={`font-mono text-sm font-black ${isChanged ? 'text-blue-600' : 'text-slate-700'}`}>
+                                                                    {displayStock}
+                                                                </span>
+                                                                <span className="text-[7px] font-bold text-slate-400 uppercase tracking-tighter">{displayUnit}</span>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => handleStockChange(item.id, stepToApply)}
+                                                                className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-emerald-600 active:scale-90 transition-all font-bold"
+                                                            >
+                                                                +
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Save Button */}
+                                                    <div className="w-9 h-9 flex items-center justify-center">
+                                                        {isChanged && (
+                                                            <button
+                                                                onClick={() => saveStockUpdate(item.id)}
+                                                                disabled={saving}
+                                                                className="w-8 h-8 bg-blue-600 text-white rounded-lg shadow-md flex items-center justify-center hover:bg-blue-700 active:scale-90 transition-all"
+                                                            >
+                                                                <Save size={14} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                                {filteredItems.length === 0 && (
+                                    <div className="col-span-full text-center py-20 text-gray-400">
+                                        <p>לא נמצאו פריטים</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Low Stock Report Modal */}
+                <LowStockReportModal
+                    isOpen={showReportModal}
+                    onClose={() => setShowReportModal(false)}
+                    items={items}
+                    currentStocks={stockUpdates}
+                    onUpdateStock={handleStockChange}
+                />
+            </div>
+        );
+    }
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-heebo" dir="rtl">
-            {/* Header & Tabs - Responsive Layout */}
-            <div className="bg-white shadow-sm z-20 shrink-0 px-4 md:px-6 py-2 md:py-3 flex flex-col md:flex-row items-center border-b border-gray-200 gap-3 md:gap-6">
-
-                {/* Right Side: Home + Tabs */}
-                <div className="flex items-center gap-3 w-full md:flex-1">
-                    {/* Home button - rightmost in RTL */}
-                    {onExit && (
-                        <button
-                            onClick={onExit}
-                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors shrink-0"
-                            title="יציאה למסך הראשי"
-                        >
-                            <House size={22} />
-                        </button>
-                    )}
-
-                    {/* Tabs */}
-                    <div className="flex bg-gray-100 p-1 rounded-xl flex-1 md:flex-none overflow-x-auto no-scrollbar">
-                        <button onClick={() => { setActiveTab('counts'); setSelectedSupplierId(null); }} className={`px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-bold transition flex items-center gap-1.5 md:gap-2 whitespace-nowrap ${activeTab === 'counts' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                            <Package size={16} /> ספירה ודיווח
-                        </button>
-                        <button onClick={() => { setActiveTab('incoming'); setSelectedOrderId(null); }} className={`px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-bold transition flex items-center gap-1.5 md:gap-2 whitespace-nowrap ${activeTab === 'incoming' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                            <Truck size={16} /> משלוחים בדרך
-                            {incomingOrders.length > 0 && <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px]">{incomingOrders.length}</span>}
-                        </button>
-                        <button onClick={fetchData} className="px-2 text-gray-400 hover:text-blue-500 transition" title="רענן נתונים">
-                            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                        </button>
-                    </div>
+            {/* Header & Tabs - UnifiedHeader */}
+            <UnifiedHeader
+                onHome={onExit}
+            >
+                {/* Tabs */}
+                <div className="flex bg-gray-100 p-1 rounded-xl flex-1 md:flex-none overflow-x-auto no-scrollbar items-center gap-1">
+                    <button
+                        onClick={() => { setActiveTab('counts'); setSelectedSupplierId(null); }}
+                        className={`px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-bold transition flex items-center gap-1.5 md:gap-2 whitespace-nowrap ${activeTab === 'counts' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        <Package size={16} /> ספירה ודיווח
+                    </button>
+                    <button
+                        onClick={() => { setActiveTab('incoming'); setSelectedOrderId(null); }}
+                        className={`px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-bold transition flex items-center gap-1.5 md:gap-2 whitespace-nowrap ${activeTab === 'incoming' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        <Truck size={16} /> משלוחים בדרך
+                        {incomingOrders.length > 0 && <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px]">{incomingOrders.length}</span>}
+                    </button>
+                    <div className="w-px h-6 bg-gray-200 mx-1" />
+                    <button
+                        onClick={() => fetchData()}
+                        className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-all shadow-sm flex items-center gap-2"
+                        title="רענן נתונים"
+                    >
+                        <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+                        <span className="text-xs font-bold hidden md:inline">רענן</span>
+                    </button>
                 </div>
-
-                {/* Center - Clock & Connection (Hidden on very small screens if needed, or compact) */}
-                <div className="hidden md:flex items-center gap-3 px-4 border-l border-r border-gray-100">
-                    <div className="text-lg font-black text-slate-700">
-                        {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                    <ConnectionStatusBar isIntegrated={true} />
-                </div>
-
-                {/* Left Side (RTL = far left): Music - Hidden on mobile header to save space */}
-                <div className="hidden md:flex items-center gap-2 flex-1 justify-end">
-                    <MiniMusicPlayer />
-                </div>
-            </div>
+            </UnifiedHeader>
 
             {/* Content Area */}
             <div className="flex-1 overflow-hidden relative">
@@ -1661,23 +2110,18 @@ const KDSInventoryScreen = ({ onExit }) => {
                     {activeTab === 'counts' && (
                         <motion.div
                             key="counts"
-                            className="h-full flex flex-col md:flex-row"
+                            className="h-full flex flex-col md:flex-row overflow-hidden"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                         >
-                            {/* Right Column: Suppliers (Full on mobile, 1/3 on desktop) */}
-                            <div className={`${(selectedSupplierId && !isDesktop) ? 'hidden' : 'w-full md:w-1/3'} border-l border-gray-200 bg-white h-full min-h-0 flex flex-col z-10 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]`}>
-                                <div className="p-4 bg-gray-50/50 border-b border-gray-100 shrink-0">
-                                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">ספקים ({supplierGroups.length})</h3>
-                                </div>
-                                <div className="flex-1 min-h-0">
-                                    {renderSuppliersList()}
-                                </div>
+                            {/* Column 1: Suppliers & Dishes Sidebar (RTL = far right) */}
+                            <div className={`${(selectedSupplierId && !isDesktop) ? 'hidden' : 'w-full md:w-[320px]'} border-l border-gray-200 bg-white h-full min-h-0 flex flex-col z-10 shadow-sm transition-all`}>
+                                {renderSuppliersList()}
                             </div>
 
-                            {/* Left/Center Column: Items (Full on mobile if entry selected, 2/3 on desktop) */}
-                            <div className={`${(!selectedSupplierId && !isDesktop) ? 'hidden' : 'w-full md:w-2/3'} h-full min-h-0 bg-slate-50/50 p-2 md:p-4 flex flex-col`}>
+                            {/* Column 2: Items Grid (The rest of the space) */}
+                            <div className={`${(!selectedSupplierId && !isDesktop) ? 'hidden' : 'flex-1'} h-full min-h-0 bg-slate-50/50 p-2 md:p-6 flex flex-col overflow-hidden`}>
                                 {/* Mobile Back Button */}
                                 {!isDesktop && selectedSupplierId && (
                                     <button
@@ -1921,6 +2365,7 @@ const KDSInventoryScreen = ({ onExit }) => {
                                                     invoicedQty={item.invoicedQty}
                                                     actualQty={item.actualQty}
                                                     onActualChange={(newQty) => updateActualQuantity(item.id, newQty)}
+                                                    onInvoicedChange={(newQty) => updateInvoicedQuantity(item.id, newQty)}
                                                     unitPrice={item.unitPrice}
                                                     catalogPrice={item.catalogPrice}
                                                     catalogItemName={item.catalogItemName}
@@ -2089,115 +2534,67 @@ const KDSInventoryScreen = ({ onExit }) => {
 
                                             return (
                                                 <>
-                                                    {/* Header Actions */}
-                                                    <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-                                                        <div>
-                                                            <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                                                                {order.supplier_name}
-                                                                <span className="text-sm font-normal text-gray-400">#{order.id}</span>
-                                                            </h2>
-                                                            <p className="text-sm text-gray-500">נא לאשר או לעדכן כמויות שהתקבלו בפועל</p>
-                                                        </div>
+                                                    {/* Header Actions - Compact */}
+                                                    <div className="flex justify-between items-center mb-4 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
                                                         <div className="flex items-center gap-3">
+                                                            <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center text-green-600">
+                                                                <Truck size={24} />
+                                                            </div>
+                                                            <div>
+                                                                <h2 className="text-base font-black text-slate-800 leading-tight">
+                                                                    {order.supplier_name}
+                                                                </h2>
+                                                                <p className="text-[10px] text-slate-400 font-bold uppercase">הזמנה #{order.id.toString().slice(-4)}</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
                                                             <button
                                                                 onClick={() => promptDeleteOrder(order.id)}
-                                                                className="p-3 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                                                                className="p-2 text-slate-300 hover:text-rose-500 rounded-lg transition-colors"
                                                                 title="מחק הזמנה"
                                                             >
-                                                                <Trash2 size={20} />
+                                                                <Trash2 size={18} />
                                                             </button>
                                                             {hasMissing ? (
                                                                 <div className="flex gap-2">
-                                                                    <button onClick={() => promptProcessReceipt(order.id, 'complete')} className="px-4 py-2 bg-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-300 text-sm">
-                                                                        סגור (מחק יתרה)
+                                                                    <button onClick={() => promptProcessReceipt(order.id, 'complete')} className="px-3 py-1.5 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 text-[11px]">
+                                                                        סגור
                                                                     </button>
-                                                                    <button onClick={() => promptProcessReceipt(order.id, 'split')} className="px-4 py-2 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-200 text-sm flex items-center gap-2">
-                                                                        <RefreshCw size={16} /> אשר וצור השלמה
+                                                                    <button onClick={() => promptProcessReceipt(order.id, 'split')} className="px-3 py-1.5 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-100 text-[11px] flex items-center gap-1.5">
+                                                                        <RefreshCw size={14} /> אשר והשלמה
                                                                     </button>
                                                                 </div>
                                                             ) : (
-                                                                <button onClick={() => promptProcessReceipt(order.id, 'complete')} className="px-6 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-200 flex items-center gap-2">
-                                                                    <Check size={20} /> אשר קבלה מלאה
+                                                                <button onClick={() => promptProcessReceipt(order.id, 'complete')} className="px-4 py-2 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-100 flex items-center gap-2 text-sm">
+                                                                    <Check size={18} strokeWidth={3} /> אשר קבלה
                                                                 </button>
                                                             )}
                                                         </div>
                                                     </div>
 
-                                                    {/* Items Grid */}
-                                                    <div className="grid grid-cols-2 gap-3 overflow-y-auto pb-20">
+                                                    {/* Items List (Triple Check Style) */}
+                                                    <div className="flex-1 overflow-y-auto space-y-2 pb-24 px-1">
                                                         {order.items.map((item) => {
                                                             const itemId = item.inventory_item_id || item.name;
                                                             const itemDraft = draft[itemId] || { qty: item.qty, status: 'received' };
                                                             const isExpanded = expandedItems[itemId];
-                                                            const isMissing = itemDraft.qty < item.qty;
-
-                                                            const unitStr = item.unit || '';
-                                                            const lowerUnit = unitStr.toLowerCase().trim();
-                                                            // Hide units for "יח׳" or similar generic units and trailing apostrophes
-                                                            const isGeneric = ['יח׳', 'יחידה', 'יח', 'units', 'unit', 'pcs', 'pc'].some(u => lowerUnit.includes(u)) ||
-                                                                !unitStr ||
-                                                                ['\'', '׳'].includes(lowerUnit);
 
                                                             return (
-                                                                <div key={itemId} className={`bg-white border rounded-xl overflow-hidden transition-all ${isMissing ? 'border-amber-200 shadow-amber-50' : 'border-gray-100 hover:border-blue-200'}`}>
-                                                                    {/* Summary View */}
-                                                                    <div className="p-3 flex justify-between items-center cursor-pointer" onClick={() => setExpandedItems(prev => ({ ...prev, [itemId]: !prev[itemId] }))} >
-                                                                        <div className="flex items-center gap-3">
-                                                                            <div className={`p-2 rounded-lg ${isMissing ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
-                                                                                <Package size={20} />
-                                                                            </div>
-                                                                            <div>
-                                                                                <h4 className="font-bold text-slate-800 text-sm">{item.name}</h4>
-                                                                                <div className="flex items-center gap-2 text-xs">
-                                                                                    <span className="text-gray-500">הוזמן: {item.qty} {item.unit}</span>
-                                                                                    {isMissing && <span className="text-amber-600 font-bold bg-amber-50 px-1 rounded">חסר: {item.qty - itemDraft.qty}</span>}
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                        <div className="text-left">
-                                                                            <div className="font-mono font-black text-lg text-slate-700">
-                                                                                {isGeneric ? formatValue(itemDraft.qty) : `${formatValue(itemDraft.qty)} ${unitStr}`}
-                                                                            </div>
-                                                                            <span className="text-[10px] text-blue-500 flex items-center justify-end gap-1">ערוך <ChevronDown size={10} className={`transform transition ${isExpanded ? 'rotate-180' : ''}`} /></span>
-                                                                        </div>
-                                                                    </div>
-
-                                                                    {/* Expanded Edit View */}
-                                                                    <AnimatePresence>
-                                                                        {isExpanded && (
-                                                                            <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="bg-gray-50 border-t border-gray-100">
-                                                                                <div className="p-4 space-y-4">
-                                                                                    <div className="flex items-center justify-between">
-                                                                                        <label className="text-xs font-bold text-gray-500">כמות שהתקבלה:</label>
-                                                                                        <div className="flex items-center gap-2 bg-white rounded-lg border border-gray-200 p-1">
-                                                                                            <button onClick={() => handleReceiptChange(selectedOrderId, itemId, 'qty', Math.max(0, itemDraft.qty - 1))} className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded text-slate-600 font-bold">-</button>
-                                                                                            <span className="w-12 text-center font-mono font-bold text-lg">{itemDraft.qty}</span>
-                                                                                            <button onClick={() => handleReceiptChange(selectedOrderId, itemId, 'qty', itemDraft.qty + 1)} className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded text-slate-600 font-bold">+</button>
-                                                                                        </div>
-                                                                                    </div>
-
-                                                                                    <div className="flex gap-2">
-                                                                                        <button
-                                                                                            onClick={() => handleReceiptChange(selectedOrderId, itemId, 'qty', 0)}
-                                                                                            className="flex-1 py-2 bg-white border border-red-100 text-red-500 text-xs font-bold rounded-lg hover:bg-red-50"
-                                                                                        >
-                                                                                            לא הגיע כלל
-                                                                                        </button>
-                                                                                        <button
-                                                                                            onClick={() => handleReceiptChange(selectedOrderId, itemId, 'qty', item.qty)}
-                                                                                            className="flex-1 py-2 bg-white border border-green-100 text-green-600 text-xs font-bold rounded-lg hover:bg-green-50"
-                                                                                        >
-                                                                                            הגיע מלא ({item.qty})
-                                                                                        </button>
-                                                                                    </div>
-                                                                                </div>
-                                                                            </motion.div>
-                                                                        )}
-                                                                    </AnimatePresence>
-                                                                </div>
+                                                                <TripleCheckCard
+                                                                    key={itemId}
+                                                                    item={item}
+                                                                    orderedQty={item.qty}
+                                                                    invoicedQty={itemDraft.invoicedQty || item.qty}
+                                                                    actualQty={itemDraft.qty}
+                                                                    onActualChange={(newQty) => handleReceiptChange(selectedOrderId, itemId, 'qty', newQty)}
+                                                                    onInvoicedChange={(newQty) => handleReceiptChange(selectedOrderId, itemId, 'invoicedQty', newQty)}
+                                                                    countStep={item.count_step || 1}
+                                                                />
                                                             );
-                                                        })
-                                                        }
+                                                        })}
+                                                        {order.items.length === 0 && (
+                                                            <div className="text-center py-20 text-slate-400 italic text-sm">אין פריטים בהזמנה</div>
+                                                        )}
                                                     </div>
                                                 </>
                                             );
@@ -2287,7 +2684,18 @@ const KDSInventoryScreen = ({ onExit }) => {
                     </motion.div>
                 )}
             </AnimatePresence>
-        </div >
+            {/* PIN Authentication for Deletion */}
+            <ManagerAuthModal
+                isOpen={showDeleteAuth}
+                onCancel={() => {
+                    setShowDeleteAuth(false);
+                    setItemToDelete(null);
+                }}
+                onSuccess={confirmDeleteItem}
+                actionDescription={itemToDelete ? `מחיקת פריט מהמלאי: ${itemToDelete.name}` : 'אימות מחיקה'}
+                mode="pin"
+            />
+        </div>
     );
 };
 

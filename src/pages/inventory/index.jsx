@@ -11,8 +11,8 @@ const InventoryPage = () => {
     };
 
     return (
-        <div className="flex flex-col h-screen bg-gray-50 overflow-hidden" dir="rtl">
-            {/* Content - KDSInventoryScreen now handles the full layout including header */}
+        <div className="flex flex-col h-screen bg-transparent overflow-hidden">
+            {/* Content - KDSInventoryScreen handles the full layout */}
             <div className="flex-1 overflow-hidden relative">
                 <KDSInventoryScreen onExit={handleExit} />
             </div>

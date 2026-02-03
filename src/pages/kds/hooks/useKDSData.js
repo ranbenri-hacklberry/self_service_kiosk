@@ -9,7 +9,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { supabase } from '../../../lib/supabase';
+import { supabase, isLocalInstance } from '../../../lib/supabase';
 import { useAuth } from '../../../context/AuthContext';
 import { sendSms } from '../../../services/smsService';
 import { groupOrderItems, sortItems } from '../../../utils/kdsUtils';
@@ -74,6 +74,52 @@ export const useKDSData = () => {
     // ANTI-FLICKER: Track recent local updates to override stale server data
     const recentLocalUpdatesRef = useRef(new Map());
 
+    // OPTIMIZATION: Cache menu map to avoid fetching all menu items on every process loop
+    const menuMapRef = useRef(new Map());
+    const lastMenuUpdateRef = useRef(0);
+
+    // 🕒 TIME SYNC: Offset between Server and Client to resolve merge conflicts accurately
+    const serverTimeOffsetRef = useRef(0);
+
+    const checkServerTime = async () => {
+        try {
+            // HEAD request to Supabase gets server time from headers
+            const start = Date.now();
+            // Use URL from supabase client or env
+            const supabaseUrl = supabase.supabaseUrl || import.meta.env.VITE_SUPABASE_URL;
+            if (!supabaseUrl) return;
+
+            const response = await fetch(`${supabaseUrl}/rest/v1/`, {
+                method: 'HEAD',
+                headers: { 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || supabase.supabaseKey }
+            });
+
+            const serverDateStr = response.headers.get('date');
+            if (serverDateStr) {
+                const serverTime = new Date(serverDateStr).getTime();
+                const now = Date.now();
+                const latency = (now - start) / 2;
+                // Offset = Server - Client => ServerTime ≈ ClientTime + offset
+                const offset = (serverTime + latency) - now;
+                serverTimeOffsetRef.current = offset;
+
+                if (Math.abs(offset) > 5000) {
+                    console.warn(`🕒 [KDS-TIME] Clock Drift Detected! Client is ${Math.round(offset / 1000)}s relative to Server.`);
+                } else {
+                    console.log(`🕒 [KDS-TIME] Sync: Offset is ${Math.round(offset)}ms`);
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to sync server time:', e);
+        }
+    };
+
+    useEffect(() => {
+        checkServerTime();
+        const interval = setInterval(checkServerTime, 5 * 60 * 1000); // Every 5 mins
+        return () => clearInterval(interval);
+    }, []);
+
     // 🟢 PRODUCTION LOGGING HELPERS
     const DEBUG = true;
     const log = (msg, ...args) => {
@@ -95,80 +141,35 @@ export const useKDSData = () => {
     const isLiteMode = localStorage.getItem('lite_mode') === 'true';
 
     // 🛠️ GLOBAL AUTO-HEAL: Run once on mount to fix ALL Dexie inconsistencies
-    useEffect(() => {
-        // Skip heavy healing scan on weak devices to prevent startup hang
-        if (isLiteMode) {
-            console.log('🐌 Lite Mode: Skipping deep auto-heal scan');
-            return;
-        }
+    /**
+     * 🧹 AGGRESSIVE CLEANUP: Remove ANY order from previous business days
+     */
+    const cleanupOldData = useCallback(async () => {
+        try {
+            const now = new Date();
+            const businessDayStart = new Date(now);
+            businessDayStart.setHours(5, 0, 0, 0);
+            if (now.getHours() < 5) businessDayStart.setDate(businessDayStart.getDate() - 1);
 
-        const healDexieData = async () => {
-            try {
-                // db is imported at top level
+            const oldOrders = await db.orders
+                .filter(o => new Date(o.created_at) < businessDayStart)
+                .toArray();
 
-                // OPTIMIZATION: Use indexed queries instead of loading everything
-                const activeOrders = await db.orders
-                    .where('order_status')
-                    .anyOf('new', 'in_progress', 'pending', 'ready')
-                    .toArray();
-
-                if (activeOrders.length === 0) return;
-
-                const activeOrderIds = activeOrders.map(o => o.id);
-                const activeItems = await db.order_items
-                    .where('order_id')
-                    .anyOf(activeOrderIds)
-                    .toArray();
-
-                let healedCount = 0;
-
-                for (const order of activeOrders) {
-                    const orderItems = activeItems.filter(i => String(i.order_id) === String(order.id));
-                    // ... remainder of logic ...
-
-                    if (orderItems.length === 0) continue;
-
-                    let correctStatus = order.order_status;
-
-                    // Logic 1: If ANY item is active, order MUST be in an active status
-                    const hasActive = orderItems.some(i => ['in_progress', 'new', 'pending', 'held'].includes(i.item_status));
-                    if (hasActive && !['in_progress', 'pending', 'new'].includes(order.order_status)) {
-                        correctStatus = 'in_progress';
-                    }
-
-                    // Logic 2: If ALL items are ready/completed, order SHOULD be ready (unless already completed)
-                    const allDone = orderItems.every(i => ['ready', 'completed', 'cancelled'].includes(i.item_status));
-                    if (allDone && order.order_status === 'in_progress') {
-                        correctStatus = 'ready';
-                    }
-
-                    // Logic 3: If ALL items are completed, order SHOULD be completed
-                    const allCompleted = orderItems.every(i => ['completed', 'cancelled'].includes(i.item_status));
-                    if (allCompleted && order.order_status !== 'completed') {
-                        correctStatus = 'completed';
-                    }
-
-                    // Apply Fix
-                    if (correctStatus !== order.order_status) {
-                        console.log(`🏥 Healing Order ${order.order_number || order.id}: ${order.order_status} -> ${correctStatus}`);
-                        await db.orders.update(order.id, {
-                            order_status: correctStatus,
-                            pending_sync: true, // Mark for sync so server gets the fix
-                            updated_at: new Date().toISOString()
-                        });
-                        healedCount++;
-                    }
-                }
-
-                if (healedCount > 0) console.log(`✅ Auto-Healed ${healedCount} inconsistent orders in Dexie`);
-
-            } catch (err) {
-                console.error('Auto-heal failed:', err);
+            if (oldOrders.length > 0) {
+                const oldIds = oldOrders.map(o => o.id);
+                console.log(`🧹 [KDS-CLEANUP] Removing ${oldOrders.length} stale orders from Dexie`);
+                await db.orders.bulkDelete(oldIds);
+                await db.order_items.where('order_id').anyOf(oldIds).delete();
             }
-        };
+        } catch (err) {
+            console.error('Cleanup failed:', err);
+        }
+    }, []);
 
-        healDexieData();
-    }, [isLiteMode]);
+    // Initial Cleanup on Mount
+    useEffect(() => {
+        cleanupOldData();
+    }, [cleanupOldData]);
 
     /**
      * 🚀 Helper to process raw order data and update React state
@@ -183,12 +184,26 @@ export const useKDSData = () => {
         }
 
         try {
-            // 🔧 Load menu items for fallback names
-            let menuMap = menuMapFromRef;
-            if (!menuMap || menuMap.size === 0) {
+            console.log(`📊 [UI-PROCESS] Processing ${ordersData.length} raw orders. Sample:`, ordersData[0]?.id);
+            if (ordersData.length > 0) {
+                console.log(`📊 [UI-PROCESS] Order statuses:`, ordersData.map(o => `${o.order_number}: ${o.order_status}`).join(', '));
+            }
+
+            // 🕒 Calculate business day start (5:00 AM)
+            const now = new Date();
+            const businessDayStart = new Date(now);
+            businessDayStart.setHours(5, 0, 0, 0);
+            if (now.getHours() < 5) {
+                businessDayStart.setDate(businessDayStart.getDate() - 1);
+            }
+
+            // 🔧 Load menu items for fallback names (Optimized Cache)
+            let menuMap = menuMapFromRef || menuMapRef.current;
+            if (menuMap.size === 0) {
                 try {
                     const allMenuItems = await db.menu_items.toArray();
                     menuMap = new Map(allMenuItems.map(m => [m.id, m]));
+                    menuMapRef.current = menuMap;
                 } catch (e) { /* ignore */ }
             }
 
@@ -196,26 +211,40 @@ export const useKDSData = () => {
             const recentUpdates = recentLocalUpdatesRef.current;
             const processTimestamp = Date.now();
 
-            console.log(`📊 [UI-PROCESS] Processing ${ordersData.length} raw orders...`);
-
             ordersData.forEach((order) => {
-                // ANTI-FLICKER: Check for recent local override
+                // 🛡️ BUSINESS DAY FILTER: Skip orders from previous business days
+                // unless they are pending sync (local changes that need to be saved)
+                const orderDate = new Date(order.created_at);
+                if (orderDate < businessDayStart && !order.pending_sync && !order._useLocalStatus) {
+                    // Skip old orders - they shouldn't appear today
+                    return;
+                }
+                // ANTI-FLICKER: Aggressive Local Authority
                 const recentUpdate = recentUpdates.get(order.id) || recentUpdates.get(order.serverOrderId);
+                const localOverride = order._useLocalStatus || order.pending_sync; // Flag set during fetch merge
 
-                if (recentUpdate && processTimestamp - recentUpdate.timestamp < 5000) {
-                    if (order.order_status !== recentUpdate.status) {
-                        log(`🛡️ [ANTI-FLICKER] Overriding ${order.order_number}: ${order.order_status} → ${recentUpdate.status}`);
-                        order.order_status = recentUpdate.status;
-                        order._useLocalStatus = true; // 🌸 CRITICAL: Tell helpers to use this status for items too
+                // If we have a local decision (either from merge or recent update), ENFORCE IT.
+                if (localOverride || (recentUpdate && processTimestamp - recentUpdate.timestamp < 10000)) { // 10s protection
+                    const targetStatus = recentUpdate?.status || order.order_status; // Trust local status from merge if no recent update
 
-                        // ANTI-FLICKER: Force item status to match overridden order status
-                        if (['completed', 'ready', 'in_progress', 'new'].includes(recentUpdate.status)) {
-                            const targetItemStatus = recentUpdate.status === 'in_progress' ? 'in_progress' : recentUpdate.status;
+                    if (order.order_status !== targetStatus) {
+                        log(`🛡️ [AUTHORITY] Enforcing local status for ${order.order_number}: ${order.order_status} -> ${targetStatus}`);
+                        order.order_status = targetStatus;
+                    }
+
+                    // FORCE item statuses to match if order is completed/ready
+                    // 🛡️ PARTIALITY FIX: Only force items if the order itself is definitively effectively closed
+                    // OR if the items are not specifically tracked as separate active entities.
+                    if (['completed', 'ready'].includes(targetStatus)) {
+                        // Check if we have mixed states in the raw data that we should respect?
+                        // Actually, if localStatus says "completed", it usually means the WHOLE order is done.
+                        // But for SPLIT orders, the order status might remain 'in_progress' while some items complete.
+
+                        // If the targetStatus is 'completed', we assume the whole order is done.
+                        if (targetStatus === 'completed') {
                             if (order.order_items) {
                                 order.order_items.forEach(i => {
-                                    if (i.item_status !== 'cancelled') {
-                                        i.item_status = targetItemStatus;
-                                    }
+                                    if (i.item_status !== 'cancelled') i.item_status = 'completed';
                                 });
                             }
                         }
@@ -225,20 +254,67 @@ export const useKDSData = () => {
                 if (!order.order_items && order.items_detail) order.order_items = order.items_detail;
                 if (!order.order_items && order.items) order.order_items = order.items;
 
+                // 🔍 DEBUG SPECIFIC ORDERS
+                const debugIds = ['3624', '3625', '3710'];
+                if (debugIds.includes(String(order.order_number))) {
+                    console.log(`🕵️ DEBUG_ORDER ${order.order_number}:`, {
+                        status: order.order_status,
+                        itemsCount: order.order_items?.length,
+                        items: order.order_items
+                    });
+                }
+
                 const rawItems = processOrderItems(order, menuMap);
                 const hasActiveItemsFlag = rawItems.some(item =>
                     ['in_progress', 'new', 'pending', 'ready', 'held'].includes(item.item_status)
                 );
 
-                if (order.order_status === 'completed' && !hasActiveItemsFlag) return;
+                // 🍫 SHOKO FIX: Check specifically for held items
+                const hasHeldItems = rawItems.some(item => item.item_status === 'held');
+
+                // 🔍 DEBUG POST-PROCESS
+                if (debugIds.includes(String(order.order_number))) {
+                    console.log(`🕵️ DEBUG_ORDER ${order.order_number} POST-PROCESS:`, {
+                        rawItemsCount: rawItems.length,
+                        hasActiveItemsFlag,
+                        hasHeldItems,
+                        orderStatus: order.order_status
+                    });
+                }
+
+                // 🛡️ UI FILTER: Don't show fully completed orders on the main KDS screens 
+                // unless they were updated very recently (e.g. 30 minutes) to allow for "Undo"
+                const isVeryRecent = (Date.now() - new Date(order.updated_at || 0).getTime()) < 30 * 60 * 1000;
+
+                // 🛡️ NUCLEAR SHOKO FIX: If an order has ANY item in 'held' status, 
+                // it is NOT effectively done, regardless of the order_status field!
+                const isEffectivelyDone = (order.order_status === 'completed' || order.order_status === 'ready') && !hasHeldItems;
+
+                if (isEffectivelyDone && !hasActiveItemsFlag && !isVeryRecent) return;
+
                 if (!rawItems || rawItems.length === 0) return;
 
                 const baseOrder = buildBaseOrder(order);
+
+                // 🛡️ ENSURE STABILITY: If the order is 'completed' but has held items, 
+                // we treat the card as 'in_progress' so it stays in the Active/Delayed list.
+                if (order.order_status === 'completed' && hasHeldItems) {
+                    baseOrder.order_status = 'in_progress';
+                }
                 const itemsByGroup = groupItemsByStatus(rawItems);
 
                 Object.entries(itemsByGroup).forEach(([groupKey, groupItems]) => {
                     const { cardType, cardStatus } = determineCardStatus(groupKey, groupItems, order);
                     const cardId = groupKey === 'active' ? order.id : `${order.id}-${groupKey}`;
+
+                    // 🛡️ [KDS-STABILITY] SKIP FULLY COMPLETED CARDS:
+                    // If every item in this specific status group is 'completed', 
+                    // we don't want to show this card on the KDS anymore.
+                    // It should only exist in the history/reports.
+                    const allCompleted = groupItems.every(i => i.item_status === 'completed');
+                    if (allCompleted) {
+                        return;
+                    }
 
                     processedOrders.push({
                         ...baseOrder,
@@ -266,7 +342,11 @@ export const useKDSData = () => {
                     // 🔒 STABLE SORT: Always use created_at to prevent jumping when firing new items
                     const aTime = new Date(a.created_at || 0).getTime();
                     const bTime = new Date(b.created_at || 0).getTime();
-                    return aTime - bTime;
+
+                    if (aTime !== bTime) return aTime - bTime;
+
+                    // Secondary deterministic sort: Order ID or Number
+                    return String(a.order_number || a.id).localeCompare(String(b.order_number || b.id));
                 });
 
             // 2. COMPLETED/READY ORDERS (The "Bottom Room")
@@ -292,8 +372,19 @@ export const useKDSData = () => {
                 if (completed.length > 20) finalCompleted = completed.slice(0, 20);
             }
 
-            setCurrentOrders(finalCurrent);
-            setCompletedOrders(finalCompleted);
+            // 🛑 ANTI-JUMP PREVENTION: only update state if data ACTUALLY changed
+            // This prevents React from destroy/recreating DOM nodes which causes the visual "flash/jump"
+            setCurrentOrders(prev => {
+                const prevStr = JSON.stringify(prev.map(o => ({ id: o.id, status: o.status, items: o.items?.length })));
+                const nextStr = JSON.stringify(finalCurrent.map(o => ({ id: o.id, status: o.status, items: o.items?.length })));
+                return prevStr === nextStr ? prev : finalCurrent;
+            });
+
+            setCompletedOrders(prev => {
+                const prevStr = JSON.stringify(prev.map(o => ({ id: o.id, status: o.status, items: o.items?.length })));
+                const nextStr = JSON.stringify(finalCompleted.map(o => ({ id: o.id, status: o.status, items: o.items?.length })));
+                return prevStr === nextStr ? prev : finalCompleted;
+            });
 
             console.log(`✅ [UI-UPDATE] Displaying ${finalCurrent.length} active and ${finalCompleted.length} ready/completed cards.`);
 
@@ -339,8 +430,11 @@ export const useKDSData = () => {
      * 
      * @param {AbortSignal} signal - Optional abort signal for cancellation
      */
-    const fetchOrders = useCallback(async (isForced = false, signal) => {
+    const fetchOrders = useCallback(async (isForced = false, signal, silent = false) => {
         try {
+            // 🧹 Clean up zombie data before we even start
+            await cleanupOldData();
+
             // 🔒 ANTI-JUMP: Ignore background fetches during cooldown
             if (!isForced && Date.now() < skipFetchUntilRef.current) {
                 log('⏳ [fetchOrders] Skipping background fetch - in anti-jump cooldown');
@@ -351,7 +445,7 @@ export const useKDSData = () => {
             // PHASE 1: INITIALIZATION
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             // 🌸 STABILITY FIX: Only show full loading spinner if we have NO orders at all
-            if (currentOrders.length === 0 && completedOrders.length === 0) {
+            if (!silent && currentOrders.length === 0 && completedOrders.length === 0) {
                 setIsLoading(true);
             }
 
@@ -411,27 +505,75 @@ export const useKDSData = () => {
             }
 
             const today = anchor;
-            log(`📅 [KDS] Lookback anchor set to 5:00 AM. (Since: ${today.toISOString()})`);
+            log(`📅 [KDS] Use 5:00 AM anchor for HISTORY, but fetch ALL active orders regardless of date. (Anchor: ${today.toISOString()})`);
 
             let ordersData = [];
             let supabaseFailed = false;
 
-            // 🚀 STEP 1: LOAD FROM DEXIE (Offline Only or if explicitly requested)
-            // USER FEEDBACK: "When online, truth is in the cloud. Do not rely on Dexie."
-            // We ONLY load from Dexie if we are offline.
+            // 🚀 STEP 1: LOAD FROM DEXIE / LOCAL CACHE
+            const isLocal = isLocalInstance();
+            let localPendingOrders = [];
+
+            try {
+                // 🕒 BUSINESS DAY ANCHOR (Same as server)
+                const now = new Date();
+                const businessDayStart = new Date(now);
+                businessDayStart.setHours(5, 0, 0, 0);
+                if (now.getHours() < 5) businessDayStart.setDate(businessDayStart.getDate() - 1);
+
+                // ALWAYS load pending/unsynced orders from Dexie first.
+                // 🛡️ CRITICAL: Only load orders from TODAY'S business day.
+                // Old "pending" orders from yesterday are likely sync-errors that shouldn't haunt the KDS.
+                const rawPendingOrders = await db.orders
+                    .filter(o => {
+                        const orderDate = new Date(o.created_at);
+                        const isFromToday = orderDate >= businessDayStart;
+
+                        // If it's not from today, we don't show it in KDS regardless of status
+                        if (!isFromToday) return false;
+
+                        return o.pending_sync === true ||
+                            o.is_offline === true ||
+                            o._useLocalStatus === true ||
+                            (o.order_status === 'completed' && o.updated_at > new Date(Date.now() - 15 * 60 * 1000).toISOString())
+                    })
+                    .toArray();
+
+                localPendingOrders = await Promise.all(rawPendingOrders.map(async (o) => {
+                    const items = await db.order_items.where('order_id').equals(o.id).toArray();
+                    return { ...o, order_items: items };
+                }));
+
+                if (localPendingOrders.length > 0) {
+                    log(`💾 [KDS] Found ${localPendingOrders.length} locally pending orders for today.`);
+                }
+            } catch (err) {
+                warn('Failed to load pending local orders:', err);
+            }
+
+            // Re-declare to ensure scope availability if needed, though 'let localPendingOrders' is above.
+
             if (!isOnline) {
                 try {
-                    // db is imported at top level
+                    // ... (existing offline logic remains, but we can rely on localPendingOrders + others)
+                    // For full offline support we still need the main load:
                     const localOrders = await db.orders
                         .filter(o => {
+                            // ... (existing filter logic)
                             const isToday = new Date(o.created_at) >= today;
                             const isActiveState = ['in_progress', 'ready', 'new', 'pending'].includes(o.order_status);
                             const isUnpaidCompleted = o.order_status === 'completed' && o.is_paid === false;
                             const isPending = o.pending_sync === true || o.is_offline === true;
+                            // Check if this pending order was already loaded above to avoid duplicates?
+                            // easier to just load everything here if offline.
                             const businessMatch = !businessId || String(o.business_id) === String(businessId);
                             return businessMatch && (((isActiveState || isUnpaidCompleted) && isToday) || isPending);
                         })
                         .toArray();
+
+                    ordersData = localOrders || [];
+
+                    // ... (rest of offline logic)
 
                     if (localOrders && localOrders.length > 0) {
                         const localOrderIds = localOrders.map(o => o.id);
@@ -475,8 +617,24 @@ export const useKDSData = () => {
                 } catch (err) {
                     warn('Offline initial Dexie load failed:', err);
                 }
+            } else if (isLocal) {
+                log('🏘️ [Local Mode] Prioritizing Supabase (N150) over Dexie cache.');
+                // We skip the Dexie load phase and wait for the local RPC which is fast.
             } else {
-                log('🌐 [Online] Skipping Dexie load - fetching fresh from Supabase');
+                log('🌐 [Cloud Mode] Direct Fetch from Supabase (SWR Disabled to prevent flicker)');
+                // 🛑 DISABLE SWR: Do not show stale checks from Dexie.
+                // It is better to show nothing/loading than wrong/incomplete data.
+                /*
+                try {
+                    const localOrders = await db.orders
+                        .filter(o => ['in_progress', 'ready', 'new', 'pending'].includes(o.order_status))
+                        .toArray();
+                    
+                    if (localOrders.length > 0) {
+                        // ... SWR logic removed ... 
+                    }
+                } catch (e) { console.warn('SWR Load failed:', e); }
+                */
             }
 
             // 🚀 STEP 2: SUPABASE FETCH (Background Refresh)
@@ -497,8 +655,7 @@ export const useKDSData = () => {
 
                     if (syncResult.synced > 0) {
                         console.log(`🔄 [useKDSData] Synced ${syncResult.synced} pending actions.`);
-                        // ⏱️ Short wait for server triggers
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                        // Removed 500ms arbitrary delay - let realtime or state handles the rest
                     }
                 } catch (syncErr) {
                     console.warn('Queue sync failed or timed out, continuing:', syncErr);
@@ -506,15 +663,14 @@ export const useKDSData = () => {
 
                 // ONLINE: Try Supabase
                 try {
-                    log(`📡 [KDS] Calling RPC get_kds_orders with date: ${today.toISOString()}, businessId: ${businessId}`);
-
+                    log(`📡 [KDS] Calling RPC get_kds_orders: date=${today.toISOString()}, businessId=${businessId}`);
                     const { data, error } = await supabase.rpc('get_kds_orders', {
                         p_date: today.toISOString(),
                         p_business_id: businessId || null
                     }).abortSignal(signal);
 
                     if (error) {
-                        console.error(`❌ [KDS] RPC Error:`, error);
+                        console.error('❌ [KDS-ERROR] RPC get_kds_orders failed:', error.message, error.details);
                         throw error;
                     }
 
@@ -523,6 +679,44 @@ export const useKDSData = () => {
                         log(`📦 [KDS] Sample order IDs: ${data.slice(0, 3).map(o => o.id).join(', ')}`);
                     }
                     ordersData = data || [];
+
+                    // 🛡️ MERGE-BACK: If we have local pending orders, they OVERRIDE the server data.
+                    // This handles the "Undo Ready" -> Refresh -> Reappear bug.
+                    if (localPendingOrders.length > 0) {
+                        console.log('🔄 [MERGE-BACK] Applying local pending overrides to server data...');
+                        localPendingOrders.forEach(localOrder => {
+                            const existingIndex = ordersData.findIndex(o => o.id === localOrder.id);
+                            if (existingIndex !== -1) {
+                                // Order exists in server response - OVERRIDE IT
+                                const serverOrder = ordersData[existingIndex];
+
+                                // If local is explicitly more recent or has pending_sync, we trust it for status
+                                // especially if local status is 'completed' and server is 'ready'
+                                if (localOrder.pending_sync || localOrder._useLocalStatus || localOrder.order_status === 'completed') {
+                                    console.log(`🛡️ [OVERRIDE] ${localOrder.order_number}: Server(${serverOrder.order_status}) -> Local(${localOrder.order_status})`);
+                                    ordersData[existingIndex] = {
+                                        ...serverOrder, // Keep server structure (items etc)
+                                        order_status: localOrder.order_status,
+                                        // 🛡️ CRITICAL FIX: Also Override items if they exist locally!
+                                        // This ensures partial updates (split cards) are respected
+                                        order_items: localOrder.order_items || serverOrder.order_items,
+                                        pending_sync: !!localOrder.pending_sync,
+                                        _useLocalStatus: !!localOrder._useLocalStatus
+                                    };
+                                }
+                            } else {
+                                // Order doesn't exist on server yet (or filtered out because it's completed)
+                                // 🛡️ Proactive Cleanup: If it's already completed locally and isn't on server, 
+                                // it's likely already old/processed. Stop appending it to keep screen clean.
+                                if (localOrder.order_status === 'completed' && !localOrder.is_offline) {
+                                    console.log(`🧹 [MERGE-CLEAN] Cleaning up completed order ${localOrder.order_number} not in server list`);
+                                    db.orders.update(localOrder.id, { pending_sync: false, _useLocalStatus: false });
+                                    return;
+                                }
+                                ordersData.push(localOrder);
+                            }
+                        });
+                    }
 
                     // 💾 CACHE TO DEXIE: Save orders locally for offline access
                     try {
@@ -535,34 +729,42 @@ export const useKDSData = () => {
                         try {
                             // 2. Cache the active ones & MERGE with local pending changes
                             const mergedOrders = [];
+                            const ordersToCache = [];
+                            const itemsToCache = [];
+                            const itemsToCleanup = []; // orderId -> payloadItemIds
+
+                            // Fetch ALL relevant local orders at once to avoid loop-awaits
+                            const localOrdersArr = await db.orders.toArray();
+                            const localOrdersMap = new Map(localOrdersArr.map(o => [String(o.id), o]));
 
                             for (const order of ordersData) {
                                 // Robust ID handling: ensure it's saved correctly
-                                const smartId = getSmartId(order.id); // Use helper to ensure type match with Dexie
+                                const sId = getSmartId(order.id);
+                                const smartId = String(sId);
 
                                 // MAP RPC structure to Local structure
-                                // RPC uses 'items_detail', local/Dexie expects 'order_items'
                                 if (!order.order_items && order.items_detail) {
                                     order.order_items = order.items_detail;
                                 }
 
                                 // PROTECTION: Don't overwrite local changes that haven't synced yet!
-                                const existingLocal = await db.orders.get(smartId);
+                                const existingLocal = localOrdersMap.get(smartId);
 
                                 // CLOUD FIRST: If online, trust server unless it's a completely unsynced L-order
-                                // Otherwise, let Anti-Flicker/Optimistic UI handle the gap.
                                 const isOrderLocalOnly = String(order.id).startsWith('L');
                                 if (existingLocal && existingLocal.pending_sync && !isOrderLocalOnly && isOnline && order.order_status !== 'completed') {
-                                    // Skip merge, trust server payload. Anti-flicker takes care of the UI.
+                                    // Skip merge, trust server payload.
                                     log(`🌐 [Merge] Online: Trusting server version for ${order.order_number}`);
                                 } else if (existingLocal && existingLocal.pending_sync && order.order_status !== 'completed') {
-                                    const serverUpdatedAt = new Date(order.server_updated_at || order.updated_at || 0);
-                                    const localUpdatedAt = new Date(existingLocal.server_updated_at || existingLocal.updated_at || 0);
+                                    const serverUpdatedAt = new Date(order.server_updated_at || order.updated_at || 0).getTime();
+
+                                    // 🕒 ADJUST LOCAL TIME TO SERVER TIME FRAME
+                                    const localRaw = new Date(existingLocal.server_updated_at || existingLocal.updated_at || 0).getTime();
+                                    const localInServerTime = localRaw + serverTimeOffsetRef.current;
+
                                     const serverMatchesLocal = order.order_status === existingLocal.order_status;
 
-                                    if (serverUpdatedAt > localUpdatedAt || serverMatchesLocal) {
-                                        // Server caught up
-                                    } else {
+                                    if (!(serverUpdatedAt > localInServerTime || serverMatchesLocal)) {
                                         // Still local-newer
                                         mergedOrders.push({
                                             ...order,
@@ -575,9 +777,9 @@ export const useKDSData = () => {
                                     }
                                 }
 
-                                // No pending changes - cache server version to Dexie
-                                await db.orders.put({
-                                    id: smartId,
+                                // No pending changes or server caught up - prepare for bulk cache
+                                ordersToCache.push({
+                                    id: sId,
                                     order_number: order.order_number,
                                     order_status: order.order_status,
                                     is_paid: order.is_paid,
@@ -588,41 +790,50 @@ export const useKDSData = () => {
                                     business_id: order.business_id || businessId,
                                     created_at: order.created_at,
                                     updated_at: order.updated_at || new Date().toISOString(),
-                                    pending_sync: false // Mark as synced since it came from server
+                                    pending_sync: false
                                 });
 
-                                // Save order items and match status
+                                // Prepare items for bulk cache
                                 if (order.order_items) {
-                                    const payloadItemIds = new Set(order.order_items.map(i => i.id));
-
-                                    // Update/Put seen items
+                                    const payloadItemIds = new Set();
                                     for (const item of order.order_items) {
-                                        await db.order_items.put({
+                                        payloadItemIds.add(item.id);
+                                        itemsToCache.push({
                                             id: item.id,
-                                            order_id: smartId,
+                                            order_id: sId,
                                             menu_item_id: item.menu_item_id || item.menu_items?.id,
                                             quantity: item.quantity,
                                             price: item.price || item.menu_items?.price,
                                             mods: item.mods,
                                             notes: item.notes,
                                             item_status: item.item_status,
-                                            is_early_delivered: !!item.is_early_delivered, // 🔥 PRESERVE FLAG
+                                            is_early_delivered: !!item.is_early_delivered,
                                             course_stage: item.course_stage || 1,
                                             created_at: item.created_at || order.created_at
                                         });
                                     }
-
-                                    // CRITICAL: Mark items NOT in payload as completed (Supabase filters them out)
-                                    await db.order_items
-                                        .where('order_id')
-                                        .equals(smartId)
-                                        .filter(i => !payloadItemIds.has(i.id))
-                                        .modify({ item_status: 'completed' });
+                                    itemsToCleanup.push({ smartId: sId, payloadItemIds });
                                 }
 
                                 // Push server version to merged list
                                 mergedOrders.push(order);
                             }
+
+                            // Perform BULK Dexie updates
+                            if (ordersToCache.length > 0) await db.orders.bulkPut(ordersToCache);
+                            if (itemsToCache.length > 0) await db.order_items.bulkPut(itemsToCache);
+
+                            // Handle item cleanups if any items were filtered out by RPC (e.g. marked completed)
+                            for (const cleanup of itemsToCleanup) {
+                                await db.order_items
+                                    .where('order_id')
+                                    .equals(cleanup.smartId)
+                                    .filter(i => !cleanup.payloadItemIds.has(i.id))
+                                    .modify({ item_status: 'completed' });
+                            }
+
+                            // ✅ USE MERGED DATA
+                            ordersData = mergedOrders;
 
                             // ✅ USE MERGED DATA (local pending + server confirmed)
                             ordersData = mergedOrders;
@@ -635,36 +846,55 @@ export const useKDSData = () => {
                             console.error('❌ Failed to cache orders to Dexie:', cacheErr);
                         }
 
-                        // 2.5 Cache Menu Items (for offline display)
-                        try {
-                            const { data: menuItemsData } = await supabase.from('menu_items').select('*');
-                            if (menuItemsData) {
-                                await db.menu_items.clear(); // Refresh cache
-                                await db.menu_items.bulkPut(menuItemsData);
-                            }
-                        } catch (e) { console.warn('Menu cache failed:', e); }
+                        // 2.5 Cache Menu Items (Throttled: Every 5 minutes)
+                        if (Date.now() - lastMenuUpdateRef.current > 5 * 60 * 1000) {
+                            try {
+                                const { data: menuItemsData } = await supabase.from('menu_items').select('*');
+                                if (menuItemsData) {
+                                    await db.menu_items.clear(); // Refresh cache
+                                    await db.menu_items.bulkPut(menuItemsData);
+                                    lastMenuUpdateRef.current = Date.now();
+                                    // Update local ref as well
+                                    menuMapRef.current = new Map(menuItemsData.map(m => [m.id, m]));
+                                }
+                            } catch (e) { console.warn('Menu cache failed:', e); }
+                        }
 
                         // 3. CLEANUP: Find orders in Dexie that ARE active locally but NOT in Supabase active list
-                        const staleOrders = await db.orders
-                            .where('order_status')
-                            .anyOf(['new', 'in_progress', 'ready', 'pending'])
-                            .filter(o => {
-                                // CRITICAL FIX: Staged orders (UUID-stage-X) MUST NOT be cleaned if parent is active
-                                const baseId = String(o.id).replace(/-stage-\d+/, '').replace(/-ready$/, '');
+                        if (ordersData.length > 0) {
+                            const staleOrders = await db.orders
+                                .where('order_status')
+                                .anyOf(['new', 'in_progress', 'ready', 'pending', 'prep_started', 'held'])
+                                .filter(o => {
+                                    // CRITICAL FIX: Staged orders (UUID-stage-X) MUST NOT be cleaned if parent is active
+                                    const baseId = String(o.id).replace(/-stage-\d+/, '').replace(/-ready$/, '');
 
-                                return !activeServerOrderIds.has(o.id) && // Strict check
-                                    !activeServerOrderIds.has(String(o.id)) && // Loose check
-                                    !activeServerOrderIds.has(Number(o.id)) && // Loose check
-                                    !activeServerOrderIds.has(baseId) && // CHECK PARENT/BASE ID
-                                    !o.pending_sync &&
-                                    !String(o.id).startsWith('L');
-                            })
-                            .toArray();
+                                    return !activeServerOrderIds.has(o.id) && // Strict check
+                                        !activeServerOrderIds.has(String(o.id)) && // Loose check
+                                        !activeServerOrderIds.has(Number(o.id)) && // Loose check
+                                        !activeServerOrderIds.has(baseId) && // CHECK PARENT/BASE ID
+                                        !o.pending_sync &&
+                                        !String(o.id).startsWith('L');
+                                })
+                                .toArray();
 
-                        for (const stale of staleOrders) {
-                            console.log(`🧹 Cleaning up stale order ${stale.order_number || stale.id} in Dexie (ID: ${stale.id})`);
-                            await db.orders.update(stale.id, { order_status: 'completed' });
-                            await db.order_items.where('order_id').equals(stale.id).modify({ item_status: 'completed' });
+                            for (const stale of staleOrders) {
+                                console.log(`🧹 Cleaning up stale order ${stale.order_number || stale.id} in Dexie (ID: ${stale.id})`);
+                                await db.orders.update(stale.id, { order_status: 'completed', pending_sync: false, _useLocalStatus: false });
+                                await db.order_items.where('order_id').equals(stale.id).modify({ item_status: 'completed', pending_sync: false });
+                            }
+                        }
+
+                        // 4. GARBAGE COLLECTION: Delete orders older than 3 days to keep database tiny
+                        const lastGC = localStorage.getItem('kds_last_gc');
+                        if (!lastGC || Date.now() - parseInt(lastGC) > 10 * 60 * 1000) { // Every 10 mins
+                            const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+                            const deletedCount = await db.orders.where('created_at').below(threeDaysAgo).delete();
+                            if (deletedCount > 0) {
+                                console.log(`♻️ Garbage Collection: Deleted ${deletedCount} orders older than 3 days from Dexie`);
+                                await db.order_items.where('created_at').below(threeDaysAgo).delete();
+                            }
+                            localStorage.setItem('kds_last_gc', Date.now().toString());
                         }
 
                         console.log(`💾 Synced Dexie cache with ${ordersData.length} active orders`);
@@ -684,46 +914,13 @@ export const useKDSData = () => {
                 if (isLiteMode) {
                     log('🐌 Lite Mode: Skipping supplemental items/rescue fetches');
                 } else {
-                    // WORKAROUND: The RPC might filter out 'ready' items from 'in_progress' orders.
-                    // We need to fetch 'ready' items manually for these orders to show split courses in "Completed".
+                    // WORKAROUND REMOVED: The RPC already includes all non-cancelled items.
+                    // Redundant fetch was causing URI length limits / "Network connection lost" errors.
+                    /*
                     if (ordersData && ordersData.length > 0) {
-                        // Filter out legacy numeric IDs to avoid Supabase "invalid uuid" error
-                        const orderIds = ordersData
-                            .map(o => o.id)
-                            .filter(id => typeof id === 'string' && id.length > 20 && id.includes('-'));
-
-                        if (orderIds.length > 0) {
-                            try {
-                                const { data: readyItems } = await supabase
-                                    .from('order_items')
-                                    .select('id, mods, notes, item_status, is_early_delivered, course_stage, quantity, order_id, menu_items!inner(name, price, kds_routing_logic, is_prep_required)')
-                                    .in('order_id', orderIds)
-                                    .in('item_status', ['ready', 'completed']) // Fetch both ready and completed items
-                                    .abortSignal(signal);
-
-                                if (readyItems && readyItems.length > 0) {
-                                    // Merge ready items into active orders
-                                    ordersData.forEach(order => {
-                                        if (!order.order_items) order.order_items = [];
-                                        const missingItems = readyItems.filter(ri =>
-                                            ri.order_id === order.id &&
-                                            !order.order_items.some(oi => oi.id === ri.id)
-                                        );
-                                        if (missingItems.length > 0) {
-                                            const mappedItems = missingItems.map(mi => ({
-                                                ...mi,
-                                                menu_items: mi.menu_items || { name: 'Unknown', price: 0 },
-                                                item_status: 'ready' // Force status for consistency
-                                            }));
-                                            order.order_items = [...order.order_items, ...mappedItems];
-                                        }
-                                    });
-                                }
-                            } catch (mergeErr) {
-                                console.error('Error merging ready items:', mergeErr);
-                            }
-                        }
+                        ...
                     }
+                    */
 
                     // ⚠️ SAFETY NET: Fetch orders that have ANY active items, regardless of order_status.
                     // This ensures orders with new items added (even if previously completed) show up!
@@ -804,9 +1001,9 @@ export const useKDSData = () => {
                             // 1. Business ID Check
                             if (businessId && String(o.business_id) !== String(businessId)) return false;
 
-                            // 2. DATE CHECK: Only orders from yesterday onwards
-                            const orderDate = o.created_at || o.updated_at;
-                            if (orderDate && orderDate < anchorISO) return false;
+                            // 2. DATE CHECK: Removed for active orders to allow clearing zombie orders
+                            // const orderDate = o.created_at || o.updated_at;
+                            // if (orderDate && orderDate < anchorISO) return false;
 
                             // 3. Sync Status Check - take if NOT yet synced OR has pending local update
                             const isPending = o.pending_sync === true || o.is_offline === true;
@@ -867,6 +1064,13 @@ export const useKDSData = () => {
                                 // ✅ DOUBLE SAFETY NET: Check if existing version has correct local status
                                 if (existing.order_status === 'completed' && localOrder.order_status === 'ready') {
                                     console.log(`🛡️ [MERGE-SHIELD] Preventing server-merger from reverting 'completed' back to 'ready' for ${localOrder.order_number}`);
+                                    return;
+                                }
+
+                                // Case 0: Server caught up! Clear local dirty flags proactively.
+                                if (localOrder.pending_sync && existing.order_status === localOrder.order_status) {
+                                    console.log(`✨ [SYNC-CONFIRMED] Server caught up for ${localOrder.order_number} (${existing.order_status}). Cleaning Dexie flags.`);
+                                    db.orders.update(localOrder.id, { pending_sync: false, _useLocalStatus: false });
                                     return;
                                 }
 
@@ -959,9 +1163,9 @@ export const useKDSData = () => {
                                 updated_at: localOrder.updated_at || new Date().toISOString(),
                                 ready_at: localOrder.ready_at,
                                 business_id: localOrder.business_id,
-                                is_offline: true,
-                                pending_sync: true,
-                                _useLocalStatus: true,  // Mark it!
+                                is_offline: !!localOrder.is_offline,
+                                pending_sync: !!localOrder.pending_sync,
+                                _useLocalStatus: !!localOrder._useLocalStatus,  // Preserve, don't force!
                                 order_items: orderItems
                             };
 
@@ -1120,12 +1324,15 @@ export const useKDSData = () => {
                     .where('order_id')
                     .equals(smartOrderId)
                     .modify(it => {
-                        it.item_status = itemStatusForItems;
+                        // 🍫 SHOKO PROTECTION: NEVER overwrite a 'held' status during an order-level status change.
+                        if (it.item_status !== 'held') {
+                            it.item_status = itemStatusForItems;
+                        }
                         if (shouldResetEarlyMarks) it.is_early_delivered = false;
+                        it.updated_at = new Date().toISOString();
                     });
 
-                // ALWAYS queue status updates - they will be synced AFTER the CREATE_ORDER completes
-                // For local orders, we store the localOrderId so the sync can match them up
+                // ALWAYS queue status updates
                 await queueAction('UPDATE_ORDER_STATUS', {
                     orderId: smartOrderId,
                     localOrderId: isLocalOnly ? smartOrderId : null,
@@ -1133,122 +1340,22 @@ export const useKDSData = () => {
                     isLocalOrder: isLocalOnly
                 });
 
-                // Send SMS if moving to ready (only if online - SMS requires network)
-                // Note: In true offline mode, SMS will fail silently
                 if (nextStatus === 'ready' && order?.customerPhone && navigator.onLine) {
                     handleSendSms(order.customerPhone, order.customerName);
                 }
 
                 console.log(`✅ Local update complete for ${smartOrderId} -> ${nextStatus}`);
 
-                // CRITICAL: Don't call fetchOrders() when offline - it might clear the state!
-                // Instead, do an optimistic UI update
-                if (navigator.onLine) {
-                    await fetchOrders();
-                } else {
-                    // Optimistic local state update
-                    console.log('📴 Updating local state optimistically (no fetchOrders)');
-
-                    // Update state directly based on status change
-                    if (nextStatus === 'completed') {
-                        // Save for undo before removing
-                        const orderToRemove = currentOrders.find(o => o.id === orderId || o.originalOrderId === orderId) ||
-                            completedOrders.find(o => o.id === orderId || o.originalOrderId === orderId);
-                        if (orderToRemove) {
-                            setLastAction({
-                                type: 'status_change',
-                                orderId: orderId,
-                                previousStatus: orderToRemove.orderStatus || 'ready',
-                                newStatus: 'completed',
-                                timestamp: new Date()
-                            });
-                        }
-                        // Remove from both lists
-                        setCurrentOrders(prev => prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId));
-                        setCompletedOrders(prev => prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId));
-                    } else if (nextStatus === 'ready') {
-                        // Move from current to completed
-                        const orderToMove = currentOrders.find(o => o.id === orderId || o.originalOrderId === orderId);
-                        if (orderToMove) {
-                            // Save for undo
-                            setLastAction({
-                                type: 'status_change',
-                                orderId: orderId,
-                                previousStatus: orderToMove.orderStatus || 'in_progress',
-                                newStatus: 'ready',
-                                timestamp: new Date()
-                            });
-                            setCurrentOrders(prev => prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId));
-                            setCompletedOrders(prev => {
-                                const newOrder = {
-                                    ...orderToMove,
-                                    id: orderId,
-                                    orderStatus: 'ready',
-                                    type: 'ready',
-                                    ready_at: new Date().toISOString()
-                                };
-                                const filtered = prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId);
-                                // Add to end (newest ready = left side in RTL)
-                                return [...filtered, newOrder];
-                            });
-                        }
-                    } else if (nextStatus === 'in_progress') {
-                        // Move from completed back to current (undo)
-                        const orderToMove = completedOrders.find(o => o.id === orderId || o.originalOrderId === orderId);
-                        if (orderToMove) {
-                            // Save for potential re-undo
-                            setLastAction({
-                                type: 'status_change',
-                                orderId: orderId,
-                                previousStatus: orderToMove.orderStatus || 'ready',
-                                newStatus: 'in_progress',
-                                timestamp: new Date()
-                            });
-                            // Remove from completed
-                            setCompletedOrders(prev => prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId));
-                            // Insert at correct position based on created_at
-                            setCurrentOrders(prev => {
-                                const newOrder = {
-                                    ...orderToMove,
-                                    id: orderId,
-                                    orderStatus: 'in_progress',
-                                    type: 'active'
-                                };
-                                const filtered = prev.filter(o => o.id !== orderId && o.originalOrderId !== orderId);
-                                // Find correct position based on created_at (oldest first = right side in RTL)
-                                const orderTime = new Date(orderToMove.created_at || 0).getTime();
-                                let insertIndex = filtered.length;
-                                for (let i = 0; i < filtered.length; i++) {
-                                    const existingTime = new Date(filtered[i].created_at || 0).getTime();
-                                    if (orderTime < existingTime) {
-                                        insertIndex = i;
-                                        break;
-                                    }
-                                }
-                                return [...filtered.slice(0, insertIndex), newOrder, ...filtered.slice(insertIndex)];
-                            });
-                        }
-                    } else if (nextStatus === 'new') {
-                        // Pending → New (acknowledgment) - just update status in place
-                        const orderToUpdate = currentOrders.find(o => o.id === orderId || o.originalOrderId === orderId);
-                        if (orderToUpdate) {
-                            setLastAction({
-                                type: 'status_change',
-                                orderId: orderId,
-                                previousStatus: orderToUpdate.orderStatus || 'pending',
-                                newStatus: 'new',
-                                timestamp: new Date()
-                            });
-                            // Update in place (stays in currentOrders)
-                            setCurrentOrders(prev => prev.map(o =>
-                                (o.id === orderId || o.originalOrderId === orderId)
-                                    ? { ...o, orderStatus: 'new' }
-                                    : o
-                            ));
-                        }
-                    }
-                    setLastUpdated(new Date());
+                // 🛡️ SMART OPTIMISTIC UI:
+                if (nextStatus === 'completed') {
+                    setCurrentOrders(prev => prev.filter(o => o.id !== orderId));
+                } else if (nextStatus === 'ready') {
+                    setCurrentOrders(prev => prev.filter(o => o.id !== orderId));
                 }
+
+                // Background silent refresh
+                fetchOrders(false, null, true);
+
                 return;
             } catch (offlineErr) {
                 console.error('❌ Local order update failed:', offlineErr);
@@ -1298,12 +1405,10 @@ export const useKDSData = () => {
             log('📋 [PESSIMISTIC-MODE] Waiting for server confirmation before UI update.');
 
 
-            // 🎯 STEP 3: OPTIMISTIC DEXIE UPDATE (Critical for stable UI during sync)
+            // 🎯 STEP 3: OPTIMISTIC DEXIE UPDATE
             const applyDexieUpdate = async () => {
                 try {
-                    const { db } = await import('../../../db/database');
-
-                    // 🏁 ONLY update global order status if it's NOT a partial card
+                    // Update global order status if it's NOT a partial card
                     if (!isPartialCard) {
                         const updateFields = {
                             order_status: nextStatus,
@@ -1312,6 +1417,7 @@ export const useKDSData = () => {
                         };
                         if (nextStatus === 'ready') updateFields.ready_at = now;
                         await db.orders.update(smartId, updateFields);
+                        log(`💾 [DEXIE] Updated Order ${smartId} to ${nextStatus}`);
                     }
 
                     const itemStatus = nextStatus === 'completed' ? 'completed' :
@@ -1320,17 +1426,19 @@ export const useKDSData = () => {
 
                     const shouldResetEarlyMarks = ['ready', 'completed', 'shipped'].includes(nextStatus);
 
-                    // 🏁 ONLY update specific items if it's a partial card
                     const itemQuery = isPartialCard
                         ? db.order_items.where('id').anyOf(cardItemIds)
                         : db.order_items.where('order_id').equals(smartId);
 
-                    log(`💾 [DEXIE] Updating ${isPartialCard ? 'PARTIAL' : 'FULL'} item selection to ${itemStatus}`);
                     await itemQuery.modify(it => {
-                        it.item_status = itemStatus;
+                        // 🍫 Protection for held items
+                        if (it.item_status !== 'held') {
+                            it.item_status = itemStatus;
+                        }
                         if (shouldResetEarlyMarks) it.is_early_delivered = false;
                         it.updated_at = now;
                     });
+                    log(`💾 [DEXIE] Updated ${isPartialCard ? 'PARTIAL' : 'FULL'} items to ${itemStatus}`);
                 } catch (e) {
                     console.warn('Dexie background update failed:', e);
                 }
@@ -1389,18 +1497,46 @@ export const useKDSData = () => {
 
                 log('✅ [SERVER] Supabase update confirmed:', rpcData);
 
+                // 🎯 [DEXIE-SYNC] Clear the dirty flags in Dexie now that the server is confirmed
+                try {
+                    // Use the top-level 'db' already imported
+                    await db.orders.update(smartId, {
+                        pending_sync: false,
+                        _useLocalStatus: false,
+                        updated_at: now
+                    });
+
+                    // Also clear items if fully completed/synced
+                    const itemUpdateQuery = isPartialCard
+                        ? db.order_items.where('id').anyOf(cardItemIds)
+                        : db.order_items.where('order_id').equals(smartId);
+
+                    await itemUpdateQuery.modify({
+                        pending_sync: false,
+                        updated_at: now
+                    });
+                    log(`💾 [DEXIE-SYNC] Cleared pending_sync for ${smartId}`);
+                } catch (dexieErr) {
+                    console.warn('Failed to clear pending_sync in Dexie:', dexieErr);
+                }
+
                 // 🎯 STEP 3: PESSIMISTIC UI UPDATE
                 if (orderToMove) {
+                    log(`🎯 [UI-UPDATE] Applying pessimistic update for card ${orderId} -> ${nextStatus}`);
                     // Determine target stable ID (active orders use base UUID, others use suffix)
                     const targetId = nextStatus === 'in_progress' ? smartId : (nextStatus === 'ready' ? `${smartId}-ready` : orderId);
 
                     if (nextStatus === 'completed') {
-                        setCurrentOrders(prev => prev.filter(o => o.id !== orderId && o.serverOrderId !== smartId));
-                        setCompletedOrders(prev => prev.filter(o => o.id !== orderId && o.serverOrderId !== smartId));
+                        // 🛡️ [STABILITY FIX] ONLY remove the specific card updated (orderId).
+                        // DO NOT remove all cards with serverOrderId (smartId) as that breaks split cards!
+                        setCurrentOrders(prev => prev.filter(o => o.id !== orderId));
+                        setCompletedOrders(prev => prev.filter(o => o.id !== orderId));
+                        log(`🗑️ [UI] Removed card ${orderId} from view (Moved to history/completed)`);
                     } else if (nextStatus === 'ready') {
-                        setCurrentOrders(prev => prev.filter(o => o.id !== orderId && o.serverOrderId !== smartId));
+                        // For ready, we ONLY move the specific card being updated.
+                        setCurrentOrders(prev => prev.filter(o => o.id !== orderId));
                         setCompletedOrders(prev => {
-                            const newList = prev.filter(o => o.id !== targetId && o.serverOrderId !== smartId);
+                            const newList = prev.filter(o => o.id !== targetId);
                             newList.push({
                                 ...orderToMove,
                                 id: targetId,
@@ -1411,8 +1547,9 @@ export const useKDSData = () => {
                             });
                             return newList;
                         });
+                        log(`📦 [UI] Moved card ${orderId} to READY list as ${targetId}`);
                     } else if (nextStatus === 'in_progress') {
-                        setCompletedOrders(prev => prev.filter(o => o.id !== orderId && o.serverOrderId !== smartId));
+                        setCompletedOrders(prev => prev.filter(o => o.id !== orderId));
                         setCurrentOrders(prev => {
                             const newOrder = {
                                 ...orderToMove,
@@ -1421,12 +1558,13 @@ export const useKDSData = () => {
                                 type: 'active',
                                 items: orderToMove.items?.map(i => ({ ...i, status: 'in_progress', item_status: 'in_progress' }))
                             };
-                            const filtered = prev.filter(o => o.id !== targetId && o.serverOrderId !== smartId);
+                            const filtered = prev.filter(o => o.id !== targetId);
                             const orderTime = new Date(orderToMove.created_at || 0).getTime();
                             let idx = filtered.findIndex(o => new Date(o.created_at || 0).getTime() > orderTime);
                             if (idx === -1) idx = filtered.length;
                             return [...filtered.slice(0, idx), newOrder, ...filtered.slice(idx)];
                         });
+                        log(`🔥 [UI] Moved card ${orderId} to ACTIVE list as ${targetId}`);
                     }
                     setLastUpdated(new Date());
                     // 🛡️ INCREASED COOLDOWN: Let local state "soak" for 5 seconds
@@ -1442,6 +1580,9 @@ export const useKDSData = () => {
                         .eq('order_id', realOrderId)
                         .then(() => log('🧹 [SERVER] Cleared early marks for', realOrderId));
                 }
+
+                // 🎯 FINAL RECONCILIATION: Silent background refresh
+                fetchOrders(false, null, true);
 
             } catch (supabaseErr) {
                 console.error('❌ Supabase update failed:', supabaseErr);
@@ -1461,23 +1602,36 @@ export const useKDSData = () => {
 
     const handleFireItems = async (orderId, itemsToFire) => {
         try {
-            setIsLoading(true);
             const itemIds = itemsToFire.map(i => i.id);
+            const smartOrderId = getSmartId(orderId);
+            const now = new Date().toISOString();
+
+            // 💾 DEXIE FIRST: Mark items as in_progress immediately
+            try {
+                const { db } = await import('../../../db/database');
+                await db.order_items.where('id').anyOf(itemIds).modify({
+                    item_status: 'in_progress',
+                    updated_at: now
+                });
+                log(`💾 [DEXIE] Fired ${itemIds.length} items locally`);
+            } catch (e) { console.warn('Dexie fire update failed:', e); }
+
+            setIsLoading(true);
 
             // FIX: Extract clean UUID if it's a composite ID (e.g. "uuid-delayed")
-            // This prevents "invalid input syntax for type uuid" error in RPC
             const cleanOrderId = (typeof orderId === 'string' && orderId.length > 36)
                 ? orderId.replace('-delayed', '').replace('-stage-1', '').replace('-stage-2', '')
                 : orderId;
 
-            // CHANGED: Use supabase directly
             const { error } = await supabase.rpc('fire_items_v2', {
                 p_order_id: cleanOrderId,
                 p_item_ids: itemIds
             });
 
             if (error) throw error;
-            await fetchOrders();
+
+            // Background refresh (silent)
+            await fetchOrders(false, null, true);
         } catch (err) {
             console.error('Error firing items:', err);
             setErrorModal({
@@ -1495,17 +1649,29 @@ export const useKDSData = () => {
 
     const handleReadyItems = async (orderId, itemsToReady) => {
         try {
-            setIsLoading(true);
             const itemIds = itemsToReady.map(i => i.id);
+            const smartOrderId = getSmartId(orderId);
+            const now = new Date().toISOString();
 
-            // CHANGED: Use supabase directly
+            // 💾 DEXIE FIRST: Mark items as ready immediately
+            try {
+                const { db } = await import('../../../db/database');
+                await db.order_items.where('id').anyOf(itemIds).modify({
+                    item_status: 'ready',
+                    updated_at: now
+                });
+                log(`💾 [DEXIE] Mark ${itemIds.length} items as READY locally`);
+            } catch (e) { console.warn('Dexie ready items update failed:', e); }
+
+            setIsLoading(true);
+
             const { error } = await supabase.rpc('mark_items_ready_v2', {
                 p_order_id: orderId,
                 p_item_ids: itemIds
             });
 
             if (error) throw error;
-            await fetchOrders();
+            await fetchOrders(false, null, true);
         } catch (err) {
             console.error('Error marking items ready:', err);
             setErrorModal({
@@ -1747,6 +1913,71 @@ export const useKDSData = () => {
                 retryLabel: 'נסה שוב',
                 onRetry: () => handleCancelOrder(orderId)
             });
+        }
+    };
+
+    /**
+     * 🔚 End of Day: Close all active orders
+     */
+    const closeAllDailyOrders = async () => {
+        try {
+            setIsLoading(true);
+            const businessId = currentUser?.business_id;
+
+            if (!businessId) throw new Error('No business_id found');
+
+            log('🏁 [END-DAY] Closing active orders...');
+
+            // Try RPC first
+            try {
+                const { data, error } = await supabase.rpc('close_business_day', { p_business_id: businessId });
+                if (!error) {
+                    log('✅ [END-DAY] RPC Success:', data);
+                    fetchOrders();
+                    return data;
+                }
+                log('⚠️ [END-DAY] RPC Failed/Missing, falling back to iterative update', error);
+            } catch (e) {
+                // Ignore RPC error and fallback
+            }
+
+            // Fallback: Query active orders and update them
+            // We use the same query logic as KDS
+            const { data: openOrders, error: fetchError } = await supabase
+                .from('orders')
+                .select('id')
+                .eq('business_id', businessId)
+                .in('order_status', ['new', 'in_progress', 'pending', 'held', 'ready']);
+
+            if (fetchError) throw fetchError;
+
+            if (!openOrders || openOrders.length === 0) {
+                log('🏁 [END-DAY] No open orders to close.');
+                return { closed_orders: 0 };
+            }
+
+            const ids = openOrders.map(o => o.id);
+            log(`🏁 [END-DAY] Closing ${ids.length} orders directly...`);
+
+            const { error: updateError } = await supabase
+                .from('orders')
+                .update({
+                    order_status: 'completed',
+                    updated_at: new Date().toISOString()
+                })
+                .in('id', ids);
+
+            if (updateError) throw updateError;
+
+            log('✅ [END-DAY] Successfully closed all orders.');
+            fetchOrders();
+            return { closed_orders: ids.length };
+
+        } catch (err) {
+            console.error('❌ Error closing daily orders:', err);
+            throw err;
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -2041,6 +2272,7 @@ export const useKDSData = () => {
             // FIX: Use local date components instead of ISOString to avoid jumping back a day in non-UTC timezones
             const dateStr = `${startOfDay.getFullYear()}-${String(startOfDay.getMonth() + 1).padStart(2, '0')}-${String(startOfDay.getDate()).padStart(2, '0')}`;
 
+            console.log(`📜 [HISTORY-FETCH] p_date=${dateStr}, p_business_id=${currentUser?.business_id}`);
             const { data: v2Data, error: v2Error } = await supabase
                 .rpc('get_kds_history_orders_v3', {
                     p_date: dateStr,
@@ -2050,25 +2282,22 @@ export const useKDSData = () => {
                 })
                 .abortSignal(signal);
 
+            if (v2Error) {
+                console.error(`❌ [HISTORY-ERROR] get_kds_history_orders_v3 failed:`, v2Error.message, v2Error.details);
+            }
+
             if (!v2Error && v2Data && v2Data.length > 0) {
-                console.log(`📜 [HISTORY RPC] Fetched ${v2Data.length} raw orders from V3 for date: ${dateStr}`);
+                console.log(`📜 [HISTORY-DEBUG] Fetched ${v2Data.length} raw orders from RPC V3`);
 
                 // Simplified Filter for History: Show everything that is paid, completed, OR cancelled.
                 // If the user is in the history tab, they want to see all closed/settled orders.
                 historyData = v2Data.filter(o => {
                     const isCancelled = o.order_status === 'cancelled';
-                    const isPaid = o.is_paid || o.isPaid || (Number(o.paid_amount) > 0) || (o.payment_method && o.payment_method !== 'null');
-                    const isCompleted = o.order_status === 'completed' || o.order_status === 'ready';
+                    const isCompleted = o.order_status === 'completed';
 
-                    // 🛑 CRITICAL: Explicitly EXCLUDE orders that are still being worked on
-                    const isInProgress = o.order_status === 'in_progress' || o.order_status === 'new';
-
-                    // Rule: If it reached a final state (Paid, Completed, or Cancelled) AND NOT in progress.
-                    if (isPaid || isCompleted || isCancelled) {
-                        return !isInProgress;
-                    }
-
-                    return false; // Orders not settled do not belong in history
+                    // Rule: Only show truly completed or cancelled orders in history.
+                    // This prevents active/ready orders from appearing in both tabs.
+                    return isCompleted || isCancelled;
                 });
 
                 usedRpc = true;
@@ -2093,13 +2322,9 @@ export const useKDSData = () => {
                         console.log(`📜 [HISTORY RPC] Fetched ${v1Data.length} raw orders from V1`);
                         historyData = v1Data.filter(o => {
                             const isCancelled = o.order_status === 'cancelled';
-                            const isRefunded = o.is_refund || o.isRefund || (o.refund_amount > 0);
-                            const isPaid = o.is_paid || o.isPaid;
                             const isCompleted = o.order_status === 'completed';
 
-                            if (isPaid || isCompleted) return true;
-                            if (isCancelled) return isRefunded;
-                            return true;
+                            return isCompleted || isCancelled;
                         });
                         usedRpc = true;
                     }

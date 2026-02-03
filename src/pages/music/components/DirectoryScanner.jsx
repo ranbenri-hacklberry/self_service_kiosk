@@ -3,9 +3,12 @@ import { X, FolderOpen, HardDrive, Music, RefreshCw, Check, Copy } from 'lucide-
 import { motion } from 'framer-motion';
 import '@/styles/music.css';
 
-const MUSIC_API_URL = import.meta.env.VITE_MUSIC_API_URL ||
+const isLocalServer = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const MUSIC_API_URL = isLocalServer ? '' : (
+    import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
-    'http://localhost:8080';
+    'http://127.0.0.1:8082'
+);
 
 /**
  * Directory scanner modal - input path to music folder on external drive

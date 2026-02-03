@@ -1,13 +1,16 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from './AuthContext';
+import { useAuth } from '@/context/AuthContext';
 
 const MusicContext = createContext(null);
 
-// Get base URL for music files from backend
-const MUSIC_API_URL = import.meta.env.VITE_MUSIC_API_URL ||
+// Get base URL for music files from backend - Use relative paths on localhost to leverage Vite proxy
+const isLocalServer = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const MUSIC_API_URL = isLocalServer ? '' : (
+    import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
-    'http://localhost:8080';
+    'http://127.0.0.1:8082'
+);
 
 export const MusicProvider = ({ children }) => {
     const { currentUser } = useAuth();
@@ -269,7 +272,7 @@ export const MusicProvider = ({ children }) => {
                 if (repeat === 'all') prevIndex = playlist.length - 1;
                 else {
                     // Start of playlist reached and it's disliked
-                    prevIndex = 0; 
+                    prevIndex = 0;
                     // If even the first one is disliked, we stop or find first playable
                     if (isDislikedSong(playlist[0])) {
                         let firstPlayable = playlist.findIndex(s => !isDislikedSong(s));
@@ -323,7 +326,7 @@ export const MusicProvider = ({ children }) => {
             setPlaylist(prev => prev.map(s => s.id === songId ? { ...s, myRating: rating } : s));
             if (currentSong?.id === songId) {
                 setCurrentSong(prev => ({ ...prev, myRating: rating }));
-                
+
                 // If the current song was just disliked, skip to next
                 if (rating === 1) {
                     console.log('🎵 rateSong: current song disliked, skipping...');

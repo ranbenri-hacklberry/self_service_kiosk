@@ -44,13 +44,22 @@ export const useStore = create((set, get) => ({
                 const { data, error } = await supabase.from('employees').select('*').eq('pin_code', pin).maybeSingle();
                 if (data && !error) {
                     console.log('🌍 Found user online:', data);
+
+                    // Force refresh business name from DB to ensure it's up to date
+                    if (data.business_id) {
+                        try {
+                            const { data: bData } = await supabase.from('businesses').select('name').eq('id', data.business_id).single();
+                            if (bData?.name) data.business_name = bData.name;
+                        } catch (e) { /* ignore */ }
+                    }
+
                     // Update local cache
                     const existing = await db.employees.where('pin_code').equals(pin).first();
                     if (!existing) {
                         await db.employees.add(data);
                     } else {
-                        // Update existing if needed, e.g. business_id changed
-                        if (existing.business_id !== data.business_id) {
+                        // Update existing if needed
+                        if (existing.business_id !== data.business_id || existing.business_name !== data.business_name) {
                             await db.employees.update(existing.id, data);
                         }
                     }

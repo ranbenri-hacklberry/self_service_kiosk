@@ -140,6 +140,12 @@ const TasksManager = () => {
 
     // Check if task is scheduled for today
     const isScheduledToday = (task) => {
+      // Monthly: Only show on the first occurrence (first 7 days of month)
+      if (task.frequency === 'Monthly') {
+        const dom = new Date().getDate();
+        if (dom > 7) return false;
+      }
+
       const schedule = task.weekly_schedule || {};
       if (Object.keys(schedule).length > 0) {
         const config = schedule[todayIdx];
@@ -215,50 +221,47 @@ const TasksManager = () => {
       // Map tab to correct category
       const categoryByTab = {
         'opening': 'פתיחה',
-        'pre_closing': 'משימות',
+        'pre_closing': 'הכנות',
         'closing': 'סגירה'
       };
       const category = categoryByTab[activeTab] || 'פתיחה';
 
-      // Convert selectedDays to weekly_schedule
       const selectedDays = taskForm.selectedDays || [0, 1, 2, 3, 4, 5, 6];
       const weeklySchedule = {};
       selectedDays.forEach(dayIdx => {
         weeklySchedule[dayIdx] = { qty: 1, mode: 'fixed' };
       });
 
+      const payload = {
+        name: taskForm.name,
+        description: taskForm.description,
+        is_pre_closing: taskForm.is_pre_closing,
+        weekly_schedule: weeklySchedule,
+        frequency: taskForm.frequency || 'Daily',
+        business_id: currentUser?.business_id,
+        // 🆕 Populate day_of_week for Weekly/Monthly clarity
+        day_of_week: (taskForm.frequency === 'Weekly' || taskForm.frequency === 'Monthly') && selectedDays.length > 0
+          ? selectedDays[0]
+          : null
+      };
+
       if (editingTask) {
         // Update existing
         const { error } = await supabase
           .from('recurring_tasks')
-          .update({
-            name: taskForm.name,
-            description: taskForm.description,
-            is_pre_closing: taskForm.is_pre_closing,
-            weekly_schedule: weeklySchedule
-          })
+          .update(payload)
           .eq('id', editingTask.id)
           .eq('business_id', currentUser?.business_id);
 
         if (error) throw error;
       } else {
-        // Create new - Set as daily by default (all 7 days)
-        const defaultSchedule = {};
-        for (let i = 0; i < 7; i++) {
-          defaultSchedule[i] = { qty: 1, mode: 'fixed' };
-        }
-
+        // Create new
         const { error } = await supabase
           .from('recurring_tasks')
           .insert([{
-            name: taskForm.name,
-            description: taskForm.description,
+            ...payload,
             category: category,
-            is_pre_closing: taskForm.is_pre_closing,
-            is_active: true,
-            frequency: 'Daily',
-            weekly_schedule: defaultSchedule, // Daily schedule for all days
-            business_id: currentUser?.business_id
+            is_active: true
           }]);
 
         if (error) throw error;
@@ -392,7 +395,7 @@ const TasksManager = () => {
 
   const tabLabels = {
     'opening': 'פתיחה',
-    'pre_closing': 'משימות',
+    'pre_closing': 'הכנות',
     'closing': 'סגירה'
   };
 
@@ -678,40 +681,87 @@ const TasksManager = () => {
                   </div>
                 )}
 
-                {/* Days Selection */}
-                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                  <label className="text-sm font-bold text-slate-500 mb-3 block">ימי ביצוע</label>
-                  <div className="flex gap-2 justify-center flex-wrap">
-                    {DAYS_FULL.map((dayName, idx) => {
-                      const isSelected = taskForm.selectedDays?.includes(idx) ?? true; // Default: all selected
-                      return (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => {
-                            const current = taskForm.selectedDays || [0, 1, 2, 3, 4, 5, 6];
-                            const updated = isSelected
-                              ? current.filter(d => d !== idx)
-                              : [...current, idx].sort();
-                            setTaskForm({ ...taskForm, selectedDays: updated });
-                          }}
-                          className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${isSelected
-                            ? 'bg-blue-600 text-white shadow-md'
-                            : 'bg-white text-gray-400 border border-gray-200'
-                            }`}
-                        >
-                          {dayName}
-                        </button>
-                      );
-                    })}
+                {/* Frequency & Days Selection */}
+                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 space-y-4">
+
+                  {/* Frequency Toggle */}
+                  <div className="flex bg-gray-200/50 p-1 rounded-xl">
+                    {['Daily', 'Weekly', 'Monthly'].map((freq) => (
+                      <button
+                        key={freq}
+                        type="button"
+                        onClick={() => {
+                          // Reset selection when mode changes
+                          const isNewMode = taskForm.frequency !== freq;
+                          setTaskForm({
+                            ...taskForm,
+                            frequency: freq,
+                            selectedDays: isNewMode ? (freq === 'Daily' ? [0, 1, 2, 3, 4, 5, 6] : [0]) : taskForm.selectedDays
+                          });
+                        }}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${(taskForm.frequency || 'Daily') === freq
+                          ? 'bg-white text-blue-600 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                      >
+                        {freq === 'Daily' ? 'יומי' : (freq === 'Weekly' ? 'שבועי' : 'חודשי')}
+                      </button>
+                    ))}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setTaskForm({ ...taskForm, selectedDays: [0, 1, 2, 3, 4, 5, 6] })}
-                    className="mt-3 w-full py-2 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                  >
-                    בחר הכל
-                  </button>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-500 block">
+                      {(taskForm.frequency || 'Daily') === 'Daily' ? 'ימי ביצוע' : 'יום לביצוע'}
+                    </label>
+                    <div className="flex gap-2 justify-center flex-wrap">
+                      {DAYS_FULL.map((dayName, idx) => {
+                        const isSelected = taskForm.selectedDays?.includes(idx);
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              const currentMode = taskForm.frequency || 'Daily';
+                              if (currentMode === 'Daily') {
+                                // Multi-select
+                                const current = taskForm.selectedDays || [];
+                                const updated = isSelected
+                                  ? current.filter(d => d !== idx)
+                                  : [...current, idx].sort();
+                                setTaskForm({ ...taskForm, selectedDays: updated });
+                              } else {
+                                // Single-select for Weekly/Monthly
+                                setTaskForm({ ...taskForm, selectedDays: [idx] });
+                              }
+                            }}
+                            className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${isSelected
+                              ? 'bg-blue-600 text-white shadow-md'
+                              : 'bg-white text-gray-400 border border-gray-200'
+                              }`}
+                          >
+                            {dayName}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Explanation Text */}
+                  <div className="text-xs text-gray-400 text-center bg-white p-2 rounded-lg border border-gray-100/50">
+                    {(taskForm.frequency || 'Daily') === 'Daily' && 'המשימה תופיע בכל הימים שנבחרו.'}
+                    {(taskForm.frequency || 'Daily') === 'Weekly' && `המשימה תופיע בכל יום ${DAYS_FULL[taskForm.selectedDays?.[0] || 0]} בשבוע.`}
+                    {(taskForm.frequency || 'Daily') === 'Monthly' && `המשימה תופיע ביום ראשון הראשון של כל חודש (אם נבחר יום ראשון).`}
+                  </div>
+
+                  {(taskForm.frequency || 'Daily') === 'Daily' && (
+                    <button
+                      type="button"
+                      onClick={() => setTaskForm({ ...taskForm, selectedDays: [0, 1, 2, 3, 4, 5, 6] })}
+                      className="mt-1 w-full py-2 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    >
+                      בחר הכל
+                    </button>
+                  )}
                 </div>
               </div>
 

@@ -128,11 +128,40 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const galleryInputRef = useRef(null);
     const [generalError, setGeneralError] = useState(null); // { title, message, canReport }
 
+    const [showInventorySection, setShowInventorySection] = useState(false);
+    const [inventorySettings, setInventorySettings] = useState({
+        isPreparedItem: false,
+        prepType: 'production',
+        dailyPars: {
+            sunday: 0, monday: 0, tuesday: 0, wednesday: 0, thurday: 0, friday: 0, saturday: 0
+        }
+    });
+
     const updateSchedule = (day, field, value) => {
         setTaskSchedule(prev => ({
             ...prev,
             [day]: { ...(prev[day] || { qty: 0, mode: 'fixed' }), [field]: value }
         }));
+    };
+
+    const updateInventorySettings = (field, value) => {
+        setInventorySettings(prev => ({ ...prev, [field]: value }));
+
+        // 🔒 Enforce KDS Constraint: Inventory Items = Cashier Choice (Conditional)
+        console.log('📦 Updating Inventory:', field, value);
+        if (field === 'isPreparedItem' && value === true) {
+            setKdsVisibility('conditional');
+        }
+
+        setIsDirty(true);
+    };
+
+    const updateDailyPar = (day, value) => {
+        setInventorySettings(prev => ({
+            ...prev,
+            dailyPars: { ...prev.dailyPars, [day]: Number(value) }
+        }));
+        setIsDirty(true);
     };
 
     // Initial History Push
@@ -227,6 +256,18 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             setHistory([]); // Reset history
 
             setIsNewCategory(false);
+
+            if (item.inventory_settings) {
+                setInventorySettings(item.inventory_settings);
+            } else {
+                setInventorySettings({
+                    isPreparedItem: false,
+                    prepType: 'production',
+                    dailyPars: {
+                        sunday: 0, monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0, saturday: 0
+                    }
+                });
+            }
 
             // Re-fetch all supplementary data whenever item changes
             fetchCategories();
@@ -489,23 +530,35 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     };
 
     const fetchInventoryOptions = async () => {
-        if (!user?.business_id) return [];
+        if (!user?.business_id) {
+            console.warn('⚠️ fetchInventoryOptions: No business_id found in user object');
+            return [];
+        }
         try {
+            console.log('🔄 Fetching inventory for business:', user.business_id);
             // Use cost_per_unit instead of price
+            // And filter out deleted items
             let { data, error } = await supabase.from('inventory_items')
                 .select('id, name, unit, cost_per_unit, quantity_step, recipe_step')
                 .eq('business_id', user.business_id)
+                .or('is_deleted.is.null,is_deleted.eq.false')
                 .order('name');
-            console.log('📦 Inventory fetched:', data?.length, 'items', error ? `Error: ${error.message}` : '');
-            // Debug: show some cost_per_unit values
-            const withCosts = (data || []).filter(i => i.cost_per_unit && i.cost_per_unit > 0);
-            console.log('📦 Items with cost_per_unit > 0:', withCosts.length, withCosts.slice(0, 3).map(i => ({ id: i.id, name: i.name, cost: i.cost_per_per_unit })));
-            // Map cost_per_unit to price for consistency in component
-            const mappedData = (data || []).map(item => ({ ...item, price: item.cost_per_unit }));
+
+            if (error) throw error;
+
+            console.log('📦 Inventory fetched:', data?.length, 'items');
+
+            // Map cost_per_unit to price for consistency in component logic
+            // Ensure numbers
+            const mappedData = (data || []).map(item => ({
+                ...item,
+                price: item.cost_per_unit ? Number(item.cost_per_unit) : 0
+            }));
+
             setInventoryOptions(mappedData);
             return mappedData;
         } catch (e) {
-            console.error('fetchInventoryOptions error:', e);
+            console.error('❌ fetchInventoryOptions error:', e);
             return [];
         }
     };
@@ -1769,27 +1822,47 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                     </div>
 
                                     {/* KDS Visibility Mode (Single Button - Cycles on Click) */}
+                                    {/* KDS Visibility Mode (Single Button - Cycles on Click) */}
                                     {(() => {
+                                        // 🔒 Inventory Override Rule:
+                                        // If this is a Prepared/Inventory item, we MUST set KDS to 'CONDITIONAL' (Cashier Choice/Prompt).
+                                        // We lock the UI to reflect this enforced logic.
+                                        const isInventoryItem = inventorySettings?.isPreparedItem;
+
                                         const modes = [
                                             { value: null, label: 'קטגוריה', color: 'bg-gray-100 text-gray-600 border-gray-200' },
                                             { value: 'MADE_TO_ORDER', label: 'תמיד', color: 'bg-green-100 text-green-700 border-green-300' },
                                             { value: 'NEVER_SHOW', label: 'לעולם לא', color: 'bg-red-100 text-red-700 border-red-300' },
                                             { value: 'CONDITIONAL', label: 'שאל קופאי', color: 'bg-purple-100 text-purple-700 border-purple-300' }
                                         ];
-                                        const currentMode = modes.find(m => m.value === kdsVisibility) || modes[0];
+
+                                        const effectiveValue = isInventoryItem ? 'CONDITIONAL' : kdsVisibility;
+                                        const currentMode = modes.find(m => m.value === effectiveValue) || modes[0];
+
                                         const cycleMode = () => {
+                                            if (isInventoryItem) {
+                                                // Locked - maybe shake animation or toast?
+                                                return;
+                                            }
                                             const currentIndex = modes.findIndex(m => m.value === kdsVisibility);
                                             const nextIndex = (currentIndex + 1) % modes.length;
                                             setKdsVisibility(modes[nextIndex].value);
                                         };
+
                                         return (
                                             <button
                                                 type="button"
                                                 onClick={cycleMode}
-                                                className={`h-14 px-3 rounded-xl flex flex-col items-center justify-center font-bold transition-all shrink-0 border-2 ${currentMode.color}`}
+                                                disabled={isInventoryItem}
+                                                className={`h-14 px-3 rounded-xl flex flex-col items-center justify-center font-bold transition-all shrink-0 border-2 ${currentMode.color} ${isInventoryItem ? 'opacity-90 cursor-not-allowed contrast-125' : 'cursor-pointer hover:brightness-95'}`}
                                             >
-                                                <span className="text-xs leading-tight">KDS: {currentMode.label}</span>
-                                                <span className="text-[9px] opacity-60">(לחץ לשינוי)</span>
+                                                <div className="flex items-center justify-center gap-1">
+                                                    {isInventoryItem && <Lock size={10} className="shrink-0" />}
+                                                    <span className="text-xs leading-tight whitespace-nowrap">KDS: {currentMode.label}</span>
+                                                </div>
+                                                <span className="text-[9px] opacity-60 font-medium">
+                                                    {isInventoryItem ? '(נעול: פריט מלאי)' : '(לחץ לשינוי)'}
+                                                </span>
                                             </button>
                                         );
                                     })()}
@@ -2496,7 +2569,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                                 <div className="flex items-center justify-between gap-4">
                                                                     {/* Quantity Picker */}
                                                                     {/* Quantity Picker (Detached) */}
-                                                                    <div className="flex items-center gap-2 flex-1 max-w-[200px]">
+                                                                    <div className="flex items-center gap-2 flex-1 max-w-[200px]" dir="rtl">
                                                                         <button type="button" onClick={() => adjustComponentQuantity(comp.id, -step)} className="w-12 h-12 bg-gray-50 hover:bg-gray-100 text-gray-500 font-bold border border-gray-200 rounded-xl active:bg-gray-200 text-lg flex items-center justify-center transition-colors">
                                                                             <Minus size={18} strokeWidth={2.5} />
                                                                         </button>
@@ -2507,7 +2580,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                                                 value={isKg ? gramsValue : comp.quantity}
                                                                                 onChange={(e) => isKg ? setQuantityFromGrams(comp.id, e.target.value, comp.unit) : handleComponentChange(comp.id, 'quantity', e.target.value)}
                                                                             />
-                                                                            {!isKg && <span className="absolute right-3 text-[10px] font-bold text-gray-400 pointer-events-none">{(comp.unit || 'יח׳')}</span>}
+                                                                            {!isKg && <span className="absolute left-3 text-[10px] font-bold text-gray-400 pointer-events-none">{(comp.unit || 'יח׳')}</span>}
                                                                         </div>
                                                                         <button type="button" onClick={() => adjustComponentQuantity(comp.id, step)} className="w-12 h-12 bg-gray-50 hover:bg-gray-100 text-gray-500 font-bold border border-gray-200 rounded-xl active:bg-gray-200 text-lg flex items-center justify-center transition-colors">
                                                                             <Plus size={18} strokeWidth={2.5} />
@@ -2607,7 +2680,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                     <div className="flex gap-3">
                                                         <div className="flex-1">
                                                             <label className="text-[10px] text-gray-400 font-bold block mb-1">כמות {['kg', 'kilo', 'ק"ג'].includes((newIngredient.unit || '').toLowerCase().trim()) ? '(גרם)' : ''}</label>
-                                                            <div className="flex items-center gap-2 h-12 flex-1 relative shadow-sm">
+                                                            <div className="flex items-center gap-2 h-12 flex-1 relative shadow-sm" dir="rtl">
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => {
@@ -2616,10 +2689,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                                         let step = 1;
                                                                         if (selectedInv?.recipe_step) {
                                                                             step = Number(selectedInv.recipe_step);
-                                                                        } else if (selectedInv?.quantity_step) {
-                                                                            step = Number(selectedInv.quantity_step);
-                                                                        } else {
-                                                                            step = isKg ? 10 : 1;
+                                                                        } else if (isKg) {
+                                                                            step = 10; // Enforce 10g jumps for weight
                                                                         }
                                                                         setNewIngredient(p => ({ ...p, quantity: Math.max(0, (Number(p.quantity) || 0) - step) }));
                                                                     }}
@@ -2644,12 +2715,10 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                                                         let step = 1;
                                                                         if (selectedInv?.recipe_step) {
                                                                             step = Number(selectedInv.recipe_step);
-                                                                        } else if (selectedInv?.quantity_step) {
-                                                                            step = Number(selectedInv.quantity_step);
-                                                                        } else {
-                                                                            step = isKg ? 10 : 1;
+                                                                        } else if (isKg) {
+                                                                            step = 10; // Enforce 10g jumps for weight
                                                                         }
-                                                                        setNewIngredient(p => ({ ...p, quantity: (Number(p.quantity) || 0) + step }));
+                                                                        setNewIngredient(p => ({ ...p, quantity: Math.max(0, (Number(p.quantity) || 0) + step) }));
                                                                     }}
                                                                     className="w-12 h-full bg-gray-50 hover:bg-gray-100 text-gray-500 font-bold border border-gray-200 rounded-xl active:bg-gray-200 text-xl flex items-center justify-center transition-colors"
                                                                 >
@@ -2670,98 +2739,136 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                 </AnimatedSection>
                             </div>
 
-                            {/* --- KITCHEN LOGIC SECTION (Bottom) --- */}
-                            <div id="kitchen-logic-section" className="border-t border-gray-100 bg-white">
+                            {/* 🆕 Inventory & Prep Logic Section */}
+                            <div className="border-t border-gray-100 bg-white">
                                 <div className="flex items-center gap-3 w-full p-4 pointer-events-auto">
                                     <button
                                         type="button"
-                                        onClick={() => toggleSection('kitchenLogic')}
-                                        className="w-full flex items-center justify-between hover:bg-gray-50 transition-colors p-2 rounded-xl"
+                                        onClick={() => toggleSection('inventory')}
+                                        className={`w-full flex items-center justify-between hover:bg-gray-50 transition-colors p-2 rounded-xl border ${showInventorySection ? 'border-blue-200 bg-blue-50' : 'border-transparent'}`}
                                     >
                                         <div className="flex items-center gap-3">
-                                            <div className={`p-2 rounded-xl transition-colors ${showKitchenLogic ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-500'}`}>
-                                                <RotateCcw size={20} />
+                                            <div className={`p-2 rounded-xl transition-colors ${showInventorySection ? 'bg-blue-500 text-white shadow-md' : 'bg-gray-100 text-gray-500'}`}>
+                                                <Package size={20} />
                                             </div>
                                             <div className="text-right">
-                                                <h3 className={`font-black text-lg ${showKitchenLogic ? 'text-purple-900' : 'text-gray-700'}`}>
-                                                    הכנות אוטומטיות (פרדקשן)
-                                                </h3>
-                                                <p className="text-xs text-gray-400 font-medium">הגדרת כמויות ייצור יומיות</p>
+                                                <div className="font-black text-lg text-gray-800">ניהול מלאי והכנות</div>
+                                                <div className="text-xs font-bold text-gray-400">הגדרת רמות מלאי (Pars) וייצור יומי</div>
                                             </div>
                                         </div>
-                                        <div className={`transform transition-transform duration-300 ${showKitchenLogic ? 'rotate-180' : ''}`}>
-                                            <ChevronDown size={20} className="text-gray-400" />
+                                        <div className={`transform transition-transform duration-300 ${showInventorySection ? 'rotate-180 bg-blue-500 text-white rounded-full p-1' : ''}`}>
+                                            <ChevronDown size={20} className={showInventorySection ? 'text-white' : 'text-gray-400'} />
                                         </div>
                                     </button>
                                 </div>
 
-                                <AnimatedSection show={showKitchenLogic}>
-                                    <div className="p-4 bg-purple-50/50 space-y-3 pb-6">
-                                        {/* Days Grid */}
-                                        <div className="space-y-2">
-                                            {[0, 1, 2, 3, 4, 5, 6].map(dayIdx => {
-                                                const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
-                                                const config = taskSchedule[dayIdx] || { qty: 0, mode: 'fixed' };
+                                <AnimatedSection show={showInventorySection}>
+                                    <div className="border-t border-gray-100 p-6 bg-white space-y-8">
 
-                                                return (
-                                                    <div key={dayIdx} className="bg-white rounded-xl p-3 border border-purple-100/50 shadow-sm flex items-center justify-between">
-
-                                                        {/* Left: Day & Type Toggle */}
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="w-12 text-center">
-                                                                <span className="block font-black text-slate-700 text-sm">{days[dayIdx]}</span>
-                                                            </div>
-
-                                                            {/* Logic Mode Toggle */}
-                                                            <div className="flex bg-gray-100 rounded-lg p-0.5 h-8">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => updateSchedule(dayIdx, 'mode', 'fixed')}
-                                                                    className={`px-3 rounded-md text-xs font-bold transition flex items-center ${config.mode !== 'par_level' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-400 hover:text-gray-600'}`}
-                                                                >
-                                                                    ייצור
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => updateSchedule(dayIdx, 'mode', 'par_level')}
-                                                                    className={`px-3 rounded-md text-xs font-bold transition flex items-center ${config.mode === 'par_level' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-400 hover:text-gray-600'}`}
-                                                                >
-                                                                    השלמה
-                                                                </button>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Right: Quantity Picker */}
-                                                        <div className="flex items-center gap-3" dir="ltr">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => updateSchedule(dayIdx, 'qty', Math.max(0, (config.qty || 0) - 1))}
-                                                                className="w-8 h-8 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center justify-center transition-colors active:scale-90"
-                                                            >
-                                                                <Minus size={16} strokeWidth={3} />
-                                                            </button>
-
-                                                            <div className="w-12 text-center">
-                                                                <span className={`text-xl font-black ${config.qty > 0 ? 'text-purple-700' : 'text-gray-300'}`}>
-                                                                    {config.qty || 0}
-                                                                </span>
-                                                            </div>
-
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => updateSchedule(dayIdx, 'qty', (config.qty || 0) + 1)}
-                                                                className="w-8 h-8 rounded-lg bg-purple-100 text-purple-600 hover:bg-purple-200 flex items-center justify-center transition-colors active:scale-90"
-                                                            >
-                                                                <Plus size={16} strokeWidth={3} />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                        {/* Toggle Master Switch */}
+                                        <div className="flex items-center justify-between p-4 bg-blue-50/50 rounded-2xl border border-blue-100">
+                                            <div className="space-y-1">
+                                                <div className="font-black text-gray-800 text-lg">פריט מוכן מראש (Prepared Item)</div>
+                                                <div className="text-xs text-gray-500 font-bold max-w-[300px] leading-relaxed">
+                                                    מוצר זה מיוצר מראש (Grab & Go). הפעל כדי לעקוב אחר מלאי ולחסום מכירה כשהוא נגמר.
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => updateInventorySettings('isPreparedItem', !inventorySettings.isPreparedItem)}
+                                                className={`relative w-16 h-9 rounded-full transition-colors duration-300 ${inventorySettings.isPreparedItem ? 'bg-blue-500 shadow-inner' : 'bg-gray-200'}`}
+                                            >
+                                                <div className={`absolute top-1 left-1 w-7 h-7 bg-white rounded-full shadow-md transform transition-transform duration-300 ${inventorySettings.isPreparedItem ? 'translate-x-7' : 'translate-x-0'}`} />
+                                            </button>
                                         </div>
+
+                                        {inventorySettings.isPreparedItem && (
+                                            <div className="animate-in slide-in-from-top-4 fade-in duration-300 space-y-8">
+
+                                                {/* Prep Type Toggle */}
+                                                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                                                    <label className="block text-sm font-black text-gray-700 mb-3">סוג הכנה</label>
+                                                    <div className="flex bg-gray-200/50 p-1 rounded-xl">
+                                                        <button
+                                                            onClick={() => updateInventorySettings('prepType', 'production')}
+                                                            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${inventorySettings.prepType === 'production' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                                        >
+                                                            ייצור קבוע (Production)
+                                                        </button>
+                                                        <button
+                                                            onClick={() => updateInventorySettings('prepType', 'completion')}
+                                                            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${inventorySettings.prepType === 'completion' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                                        >
+                                                            השלמה ל-Par (Completion)
+                                                        </button>
+                                                    </div>
+                                                    <p className="mt-3 text-xs text-gray-500 px-1">
+                                                        {inventorySettings.prepType === 'production'
+                                                            ? 'צוות המטבח יתבקש לייצר כמות קבועה בכל יום (לדוגמה: הכן 20 בקבוקים טריים).'
+                                                            : 'צוות המטבח יתבקש להשלים את המדף לרמת המלאי (Par Level).'}
+                                                    </p>
+                                                </div>
+
+                                                {/* Daily Pars Grid */}
+                                                <div>
+                                                    <div className="flex items-center justify-between mb-4">
+                                                        <label className="text-sm font-black text-gray-800 flex items-center gap-2">
+                                                            <RotateCcw size={16} className="text-blue-500" />
+                                                            כמויות יעד יומיות (Pars)
+                                                        </label>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 gap-2">
+                                                        <div className="flex items-center justify-between px-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                                                            <span>יום</span>
+                                                            <span>כמות יעד</span>
+                                                        </div>
+                                                        {[
+                                                            { key: 'sunday', label: 'ראשון' },
+                                                            { key: 'monday', label: 'שני' },
+                                                            { key: 'tuesday', label: 'שלישי' },
+                                                            { key: 'wednesday', label: 'רביעי' },
+                                                            { key: 'thursday', label: 'חמישי' },
+                                                            { key: 'friday', label: 'שישי' },
+                                                            { key: 'saturday', label: 'שבת' },
+                                                        ].map((day) => (
+                                                            <div key={day.key} className="flex items-center justify-between bg-white border border-gray-100 p-2 rounded-2xl shadow-sm hover:border-blue-200 transition-colors">
+                                                                <div className="font-black text-gray-600 px-2 text-sm">{day.label}</div>
+                                                                <div className="flex items-center gap-2 h-10 w-[160px] relative" dir="rtl">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => updateDailyPar(day.key, Math.max(0, (inventorySettings.dailyPars?.[day.key] || 0) - 1))}
+                                                                        className="w-10 h-10 bg-gray-50 hover:bg-red-50 text-gray-400 hover:text-red-500 font-bold border border-gray-200 rounded-xl active:scale-95 text-lg flex items-center justify-center transition-all"
+                                                                    >
+                                                                        <Minus size={16} strokeWidth={3} />
+                                                                    </button>
+                                                                    <div className="flex-1 flex items-center justify-center font-black text-lg text-gray-800 relative bg-gray-50 border border-gray-200 rounded-xl h-full">
+                                                                        <input
+                                                                            type="number"
+                                                                            className="w-full text-center font-black bg-transparent outline-none h-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                                            value={inventorySettings.dailyPars?.[day.key] || 0}
+                                                                            onChange={(e) => updateDailyPar(day.key, e.target.value)}
+                                                                        />
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => updateDailyPar(day.key, (inventorySettings.dailyPars?.[day.key] || 0) + 1)}
+                                                                        className="w-10 h-10 bg-gray-50 hover:bg-green-50 text-gray-400 hover:text-green-500 font-bold border border-gray-200 rounded-xl active:scale-95 text-lg flex items-center justify-center transition-all"
+                                                                    >
+                                                                        <Plus size={16} strokeWidth={3} />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                            </div>
+                                        )}
                                     </div>
                                 </AnimatedSection>
                             </div>
+
+
                         </form >
                     ) : activeView === 'modifiers' ? (
                         <div className="max-w-5xl mx-auto p-4 space-y-4">
@@ -3094,49 +3201,51 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             }
 
             {/* General Error / Message Modal */}
-            {generalError && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col">
-                        <div className="bg-red-50 p-6 flex flex-col items-center gap-3 border-b border-red-100">
-                            <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center text-red-500 mb-1">
-                                <AlertTriangle size={32} strokeWidth={2.5} />
+            {
+                generalError && (
+                    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col">
+                            <div className="bg-red-50 p-6 flex flex-col items-center gap-3 border-b border-red-100">
+                                <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center text-red-500 mb-1">
+                                    <AlertTriangle size={32} strokeWidth={2.5} />
+                                </div>
+                                <h3 className="text-xl font-black text-red-900 text-center">{generalError.title || 'שגיאה'}</h3>
                             </div>
-                            <h3 className="text-xl font-black text-red-900 text-center">{generalError.title || 'שגיאה'}</h3>
-                        </div>
-                        <div className="p-6 text-center">
-                            <p className="text-gray-600 font-medium leading-relaxed mb-6">
-                                {generalError.message}
-                            </p>
+                            <div className="p-6 text-center">
+                                <p className="text-gray-600 font-medium leading-relaxed mb-6">
+                                    {generalError.message}
+                                </p>
 
-                            <div className="flex flex-col gap-3">
-                                <button
-                                    onClick={() => setGeneralError(null)}
-                                    className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition shadow-lg shadow-gray-200"
-                                >
-                                    הבנתי, סגור
-                                </button>
-
-                                {generalError.canReport && (
+                                <div className="flex flex-col gap-3">
                                     <button
-                                        onClick={() => {
-                                            // For now just simulate report
-                                            setGeneralError({
-                                                title: 'הדיווח נשלח',
-                                                message: 'תודה! הדיווח הועבר לצוות הטכני לבדיקה.',
-                                                canReport: false
-                                            });
-                                            setTimeout(() => setGeneralError(null), 2500);
-                                        }}
-                                        className="w-full py-3 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 transition flex items-center justify-center gap-2"
+                                        onClick={() => setGeneralError(null)}
+                                        className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition shadow-lg shadow-gray-200"
                                     >
-                                        <Bug size={18} /> דווח על תקלה
+                                        הבנתי, סגור
                                     </button>
-                                )}
+
+                                    {generalError.canReport && (
+                                        <button
+                                            onClick={() => {
+                                                // For now just simulate report
+                                                setGeneralError({
+                                                    title: 'הדיווח נשלח',
+                                                    message: 'תודה! הדיווח הועבר לצוות הטכני לבדיקה.',
+                                                    canReport: false
+                                                });
+                                                setTimeout(() => setGeneralError(null), 2500);
+                                            }}
+                                            className="w-full py-3 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 transition flex items-center justify-center gap-2"
+                                        >
+                                            <Bug size={18} /> דווח על תקלה
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Category Manager Modal */}
             <CategoryManager

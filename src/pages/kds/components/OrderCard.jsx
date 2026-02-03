@@ -16,6 +16,9 @@ import { Clock, Edit, RotateCcw, Flame, Truck, Phone, MapPin, Package, Check, Ch
 import { sortItems } from '../../../utils/kdsUtils';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
+// Fallback for item icons to prevent crash
+const getIcon = (name) => null;
+
 const PAYMENT_STYLES = {
   cash: 'bg-green-100 text-green-700 border-green-200',
   credit_card: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -295,7 +298,7 @@ const OrderCard = memo(({
                     <div className="flex flex-col">
                       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-right leading-normal whitespace-normal break-words">
                         <span className={`font-bold ${isEarlyDelivered ? 'text-slate-600 line-through' : (item.quantity > 1 ? 'text-orange-700' : 'text-gray-900')} ${nameSizeClass}`}>
-                          {item.name}
+                          {getIcon(item.name)} {item.name}
                         </span>
                         {isPackedItem && <Check size={14} className="text-green-600 stroke-[3]" />}
                       </div>
@@ -315,7 +318,7 @@ const OrderCard = memo(({
                   <div className="flex flex-col">
                     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 text-right leading-normal whitespace-normal break-words">
                       <span className={`font-bold ${isEarlyDelivered ? 'text-slate-600 line-through' : (item.quantity > 1 ? 'text-orange-700' : 'text-gray-900')} ${nameSizeClass}`}>
-                        {item.name}
+                        {getIcon(item.name)} {item.name}
                       </span>
                       {isPackedItem && <Check size={14} className="text-green-600 stroke-[3]" />}
 

@@ -1,31 +1,40 @@
 import { create } from 'zustand';
 import { onboarding_sessions } from '../../../db/database';
-import { OnboardingItem, AtmosphereSeed } from '../types/onboardingTypes';
-import { validateMenuRow, mapRowToItem, validateModifierGroups, enrichItemVisually, generateImagePrompt, generateImageGemini } from '../logic/onboardingLogic';
+import { OnboardingItem, AtmosphereSeed, ModifierLogic, ModifierRequirement } from '../types/onboardingTypes';
+import { validateMenuRow, mapRowToItem, validateModifierGroups, enrichItemVisually, generateImagePrompt, generateImageGemini, normalizeCategory, parseModifierString } from '../logic/onboardingLogic';
+import { syncModifiersToRelational } from '../logic/modifierSync';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../../../lib/supabase';
+// @ts-ignore
+import { queueAction } from '../../../services/offlineQueue';
 
 interface OnboardingState {
-    // State
     sessionId: number | null;
     businessId: number | string | null;
+    businessName: string | null;
     step: number;
     items: OnboardingItem[];
     atmosphereSeeds: AtmosphereSeed[];
     isLoading: boolean;
     error: string | null;
-    eventSource: EventSource | null; // 🆕 Track active stream
-
-    // AI Generation
+    eventSource: EventSource | null;
     isGenerating: boolean;
     generationProgress: number;
     currentItemName: string | null;
     geminiApiKey: string | null;
-    businessContext: string | null; // 🆕 Global context (e.g., "Nursery", "Coffee Shop")
+    businessContext: string | null;
+    aiSettings: {
+        ai_prompt_template?: string;
+        generation_timeout_seconds?: number;
+        use_image_composition?: boolean;
+        composition_style?: string;
+        background_blur_radius?: number;
+    } | null;
+    categorySeeds: Record<string, { backgroundIds?: string[]; containerIds?: string[]; prompt?: string }>;
+    setCategorySeed: (category: string, config: { backgroundIds?: string[]; containerIds?: string[]; prompt?: string }) => void;
     setGeminiApiKey: (key: string) => void;
     setBusinessContext: (context: string) => void;
-
-    // Actions
+    setError: (error: string | null) => void;
     initSession: (businessId: string | number) => Promise<void>;
     saveSession: () => Promise<void>;
     setStep: (step: number) => void;
@@ -34,18 +43,21 @@ interface OnboardingState {
     processExcelData: (rows: any[]) => Promise<void>;
     updateItem: (itemId: string, updates: Partial<OnboardingItem>, saveToCloud?: boolean) => Promise<void>;
     deleteItem: (itemId: string) => Promise<void>;
-    addNewItem: (category?: string) => void;
+    addNewItem: (category?: string) => OnboardingItem;
     cleanupDuplicates: () => void;
     applyAtmosphereToCategory: (category: string, backgroundId?: string, containerId?: string) => void;
     startLiveGeneration: () => Promise<void>;
     cancelGeneration: () => Promise<void>;
     regenerateSingleItem: (itemId: string) => Promise<void>;
-    uploadOriginalImage: (itemId: string, file: File) => Promise<string>;
+    uploadOriginalImage: (itemId: string, fileOrBase64: File | string | Blob) => Promise<string>;
+    syncRecurringTasks: (businessId: string | number, menuItemId: number, item: OnboardingItem) => Promise<void>;
+    exposeDebug: () => void;
 }
 
 export const useOnboardingStore = create<OnboardingState>((set, get) => ({
     sessionId: null,
     businessId: null,
+    businessName: null,
     step: 1,
     items: [],
     atmosphereSeeds: [],
@@ -57,564 +69,500 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
     eventSource: null,
     geminiApiKey: localStorage.getItem('onboarding_gemini_api_key'),
     businessContext: null,
+    aiSettings: null,
+    categorySeeds: {},
 
-    setGeminiApiKey: (key) => {
+    setCategorySeed: (category, config) => {
+        set(state => ({
+            categorySeeds: { ...state.categorySeeds, [category]: { ...state.categorySeeds[category], ...config } }
+        }));
+    },
+
+    exposeDebug: () => {
+        if (typeof window !== 'undefined') {
+            (window as any).useOnboardingStore = useOnboardingStore;
+            (window as any).supabase = supabase;
+        }
+    },
+
+    setGeminiApiKey: async (key) => {
         localStorage.setItem('onboarding_gemini_api_key', key);
         set({ geminiApiKey: key });
+        const { businessId } = get();
+        if (businessId) {
+            await supabase.from('businesses').update({ gemini_api_key: key }).eq('id', businessId);
+        }
     },
-    setBusinessContext: (context) => {
-        set({ businessContext: context });
-    },
+
+    setBusinessContext: (context) => set({ businessContext: context }),
+    setError: (error) => set({ error }),
 
     initSession: async (businessId) => {
+        // 🔒 CONCURRENCY LOCK: Prevent accidental double-triggers
+        if (get().isLoading) {
+            console.log('⏳ initSession already in progress, skipping...');
+            return;
+        }
+
         set({ isLoading: true, businessId });
+        console.log(`🚀 [initSession] Starting for ${businessId}...`);
+
         try {
-            // 1. Fetch API Key
-            const { data: businessData } = await supabase
-                .from('businesses')
-                .select('gemini_api_key')
-                .eq('id', businessId)
-                .single();
+            get().exposeDebug();
 
-            if (businessData?.gemini_api_key) {
-                set({ geminiApiKey: businessData.gemini_api_key });
+            // 🏎️ PARALLEL CORE FETCH: Get business info and items in one go
+            const [businessRes, menuItemsRes] = await Promise.all([
+                supabase.from('businesses').select('name, gemini_api_key, settings').eq('id', businessId).single(),
+                supabase.from('menu_items').select('*')
+                    .eq('business_id', businessId)
+                    .or('is_deleted.is.null,is_deleted.eq.false')
+                    .order('name')
+            ]);
+
+            if (businessRes.data) {
+                const bData = businessRes.data;
+                const apiKey = bData.gemini_api_key || (bData.settings as any)?.gemini_api_key;
+                set({ businessName: bData.name, geminiApiKey: apiKey });
             }
 
-            // 2. Load existing items from Supabase
-            console.log(`📡 Fetching existing menu items for business ${businessId}...`);
-            const { data: cloudItems, error: cloudError } = await supabase
-                .from('menu_items')
-                .select('*')
-                .eq('business_id', businessId)
-                .order('name');
+            const cloudItems = menuItemsRes.data || [];
+            const cloudMap = new Map();
+            cloudItems.forEach(ci => {
+                const key = `${normalizeCategory(ci.category || 'General').toLowerCase()}:${ci.name.trim().toLowerCase()}`;
+                if (!cloudMap.has(key) || (!cloudMap.get(key).image_url && ci.image_url)) {
+                    cloudMap.set(key, ci);
+                }
+            });
 
-            if (cloudError) throw cloudError;
+            const allItemIds = cloudItems.map(ci => ci.id);
 
-            // Map Supabase items to OnboardingItem type
-            const mappedCloudItems: OnboardingItem[] = (cloudItems || []).map((ci: any) => ({
-                id: ci.id,
-                name: ci.name,
-                category: ci.category || 'General',
-                description: ci.description || '',
-                price: ci.price || 0,
-                salePrice: ci.sale_price,
-                productionArea: ci.production_area || 'Kitchen',
-                ingredients: ci.ingredients || [],
-                imageUrl: ci.image_url,
-                modifiers: ci.modifiers || [],
-                status: 'completed', // Existing items are considered completed
-                visualDescription: ci.visual_description,
-                prompt: ci.ai_prompt
-            }));
+            // 🏎️ PARALLEL MODIFIER FETCH: Reconstruct modifiers from relational source of truth
+            let groupMapByItem = new Map();
+            if (allItemIds.length > 0) {
+                // Fetch group links and private groups in parallel
+                const [privGroupsRes, linksRes] = await Promise.all([
+                    supabase.from('optiongroups').select('*, optionvalues(*)').in('menu_item_id', allItemIds),
+                    supabase.from('menuitemoptions').select('item_id, group_id').in('item_id', allItemIds)
+                ]);
 
-            // 3. Check Dexie session for progress
-            const existing: any = await onboarding_sessions
-                .where('business_id')
-                .equals(businessId)
-                .last();
-
-            if (existing) {
-                // Merge cloud items with session items (prefer cloud items for consistency if IDs match)
-                const sessionIds = new Set((existing.items || []).map((i: any) => i.id));
-                const uniqueCloudItems = mappedCloudItems.filter(ci => !sessionIds.has(ci.id));
-                const mergedItems = [...(existing.items || []), ...uniqueCloudItems];
-
-                set({
-                    sessionId: existing.id,
-                    step: existing.step,
-                    items: mergedItems,
-                    atmosphereSeeds: existing.atmosphereSeeds || [],
-                    isLoading: false
+                privGroupsRes.data?.forEach(g => {
+                    const itemId = String(g.menu_item_id);
+                    if (!groupMapByItem.has(itemId)) groupMapByItem.set(itemId, []);
+                    groupMapByItem.get(itemId).push(g);
                 });
 
-                // Cleanup visual duplicates (same name/category) immediately after merge
-                get().cleanupDuplicates();
+                const sharedGroupIds = [...new Set(linksRes.data?.map(l => l.group_id) || [])];
+                if (sharedGroupIds.length > 0) {
+                    const { data: sharedGroups } = await supabase.from('optiongroups').select('*, optionvalues(*)').in('id', sharedGroupIds);
+                    linksRes.data?.forEach(link => {
+                        const itemId = String(link.item_id);
+                        const group = sharedGroups?.find(g => g.id === link.group_id);
+                        if (group) {
+                            if (!groupMapByItem.has(itemId)) groupMapByItem.set(itemId, []);
+                            if (!groupMapByItem.get(itemId).some((g: any) => g.id === group.id)) {
+                                groupMapByItem.get(itemId).push(group);
+                            }
+                        }
+                    });
+                }
+            }
+
+            // Map results to OnboardingItem interface
+            const mappedCloudItems = Array.from(cloudMap.values()).map(ci => {
+                let modifiers = [];
+                const fetchedGroups = groupMapByItem.get(String(ci.id));
+
+                if (fetchedGroups && fetchedGroups.length > 0) {
+                    modifiers = fetchedGroups.map((g: any) => ({
+                        id: g.id,
+                        name: g.name,
+                        requirement: g.is_required ? ModifierRequirement.MANDATORY : ModifierRequirement.OPTIONAL,
+                        logic: g.is_replacement ? ModifierLogic.REPLACE : ModifierLogic.ADD,
+                        minSelection: g.min_selection || (g.is_required ? 1 : 0),
+                        maxSelection: g.max_selection || (g.is_multiple_select ? 10 : 1),
+                        items: (g.optionvalues || []).map((v: any) => ({
+                            id: v.id,
+                            name: v.value_name,
+                            price: v.price_adjustment || 0,
+                            isDefault: v.is_default
+                        })).sort((a: any, b: any) => a.price - b.price)
+                    }));
+                } else {
+                    const raw = ci.modifiers;
+                    if (typeof raw === 'string' && raw.length > 0) {
+                        try { modifiers = JSON.parse(raw); } catch (e) { modifiers = parseModifierString(raw); }
+                    } else if (Array.isArray(raw)) {
+                        modifiers = raw;
+                    }
+                }
+
+                return {
+                    id: ci.id.toString(),
+                    name: ci.name,
+                    category: normalizeCategory(ci.category || 'General'),
+                    description: ci.description || '',
+                    price: ci.price || 0,
+                    salePrice: ci.sale_price,
+                    ingredients: ci.ingredients || [],
+                    imageUrl: ci.image_url,
+                    modifiers: Array.isArray(modifiers) ? modifiers : [],
+                    status: ci.image_url ? 'completed' : 'pending',
+                    visualDescription: ci.visual_description,
+                    prompt: ci.ai_prompt,
+                    productionArea: ci.production_area || 'Checker',
+                    categoryId: ci.category_id,
+                    originalImageUrls: ci.original_image_urls || [],
+                };
+            }) as OnboardingItem[];
+
+            // Merge with local Dexie session
+            const localSession = await onboarding_sessions.where('business_id').equals(businessId).first();
+            let finalItems = mappedCloudItems;
+
+            if (localSession) {
+                const existingItems = [...localSession.items];
+                mappedCloudItems.forEach(cloudItem => {
+                    const idx = existingItems.findIndex(li =>
+                        String(li.id) === String(cloudItem.id) ||
+                        (li.name.trim().toLowerCase() === cloudItem.name.trim().toLowerCase() && li.category === cloudItem.category)
+                    );
+                    if (idx !== -1) {
+                        const existing = existingItems[idx];
+                        existingItems[idx] = {
+                            ...existing,
+                            ...cloudItem,
+                            modifiers: (cloudItem.modifiers && cloudItem.modifiers.length > 0) ? cloudItem.modifiers : (existing.modifiers || []),
+                            ingredients: (cloudItem.ingredients && cloudItem.ingredients.length > 0) ? cloudItem.ingredients : (existing.ingredients || []),
+                            imageUrl: (cloudItem.imageUrl && cloudItem.imageUrl.length > 5) ? cloudItem.imageUrl : existing.imageUrl,
+                            originalImageUrls: (cloudItem.originalImageUrls && cloudItem.originalImageUrls.length > 0) ? cloudItem.originalImageUrls : existing.originalImageUrls
+                        };
+                    } else {
+                        existingItems.push(cloudItem);
+                    }
+                });
+                finalItems = existingItems;
+                set({ sessionId: localSession.id, step: localSession.step, items: finalItems, atmosphereSeeds: localSession.atmosphereSeeds || [] });
             } else {
-                const id = await onboarding_sessions.add({
-                    business_id: businessId,
-                    step: 2, // Start at step 2 if we found items
-                    items: mappedCloudItems,
-                    atmosphereSeeds: [],
-                    updated_at: Date.now()
-                });
-                set({
-                    sessionId: id as number,
-                    step: 2,
-                    items: mappedCloudItems,
-                    atmosphereSeeds: [],
-                    isLoading: false
-                });
+                const step = finalItems.length > 0 ? 3 : 1;
+                const id = await onboarding_sessions.add({ business_id: businessId, step, items: finalItems, atmosphereSeeds: [], updated_at: Date.now() });
+                set({ sessionId: id, step, items: finalItems });
             }
 
-            // 🆕 Global Context Detection
-            const allItems = get().items;
-            const plantKeywords = ['צמח', 'פרח', 'משתלה', 'עונתי', 'שתיל', 'עציץ', 'plant', 'flower', 'nursery'];
-            const plantItemCount = allItems.filter(i =>
-                plantKeywords.some(kw => i.name.toLowerCase().includes(kw) || i.category?.toLowerCase().includes(kw))
-            ).length;
-
-            if (plantItemCount > allItems.length * 0.3 || plantItemCount > 3) {
-                set({ businessContext: 'Plant Nursery (משתלה)' });
-            } else {
-                set({ businessContext: 'Coffee Shop / Restaurant' });
-            }
-            console.log(`🏢 Business Context Detected: ${get().businessContext}`);
-        } catch (err: any) {
-            console.error('Failed to init session:', err);
-            set({ error: err.message, isLoading: false });
+            console.log(`✅ [initSession] Complete. Loaded ${finalItems.length} items.`);
+        } catch (err) {
+            console.error('❌ [initSession] Error:', err);
+            set({ error: 'שגיאה בטעינת הנתונים מהשרת. נסה לרענן.' });
+        } finally {
+            set({ isLoading: false });
         }
     },
 
     saveSession: async () => {
         const { sessionId, step, items, atmosphereSeeds } = get();
-        if (sessionId) {
-            await onboarding_sessions.update(sessionId, {
-                step,
-                items,
-                atmosphereSeeds,
-                updated_at: Date.now()
-            });
+        if (!sessionId) return;
+        try {
+            // 🛡️ Added a safety timeout for the local DB update to prevent UI hang
+            await Promise.race([
+                onboarding_sessions.update(sessionId, { step, items, atmosphereSeeds, updated_at: Date.now() }),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Local DB Timeout')), 5000))
+            ]);
+        } catch (err) {
+            console.warn('⚠️ Local session save failed or timed out:', err);
         }
     },
 
-    setStep: (step) => {
-        set({ step });
-        get().saveSession();
-    },
-
-    addAtmosphereSeed: (seed) => {
-        set(state => ({ atmosphereSeeds: [...state.atmosphereSeeds, seed] }));
-        get().saveSession();
-    },
-
-    removeAtmosphereSeed: (id) => {
-        set(state => ({ atmosphereSeeds: state.atmosphereSeeds.filter(s => s.id !== id) }));
-        get().saveSession();
-    },
+    setStep: (step) => { set({ step }); get().saveSession(); },
+    addAtmosphereSeed: (seed) => { set(state => ({ atmosphereSeeds: [...state.atmosphereSeeds, seed] })); get().saveSession(); },
+    removeAtmosphereSeed: (id) => { set(state => ({ atmosphereSeeds: state.atmosphereSeeds.filter(s => s.id !== id) })); get().saveSession(); },
 
     processExcelData: async (rows) => {
         set({ isLoading: true });
-        const items: OnboardingItem[] = rows.map((row, index) => {
+        const items = rows.map((row, index) => {
             const item = mapRowToItem(row, uuidv4());
-            const basicErrors = validateMenuRow(row, index);
-            const modifierErrors = validateModifierGroups(item.modifiers || []);
-            const modifierMsgErrors = modifierErrors.map(e => `Modifier Error [${e.groupName}]: ${e.message}`);
-            const allErrors = [...basicErrors, ...modifierMsgErrors];
-
-            item.validationErrors = allErrors;
-            if (allErrors.length > 0) item.status = 'error';
+            item.validationErrors = validateMenuRow(row, index);
+            if (item.validationErrors.length > 0) item.status = 'error';
             return item;
         });
-
         set({ items, isLoading: false });
         get().saveSession();
-
-        // 🆕 Async Enrichment of Visual Anchors (Hebrew Descriptions)
-        for (const item of items) {
-            if (item.status !== 'error') {
-                const visualAnchor = await enrichItemVisually(item, get().geminiApiKey || undefined);
-                const { prompt: aiPrompt } = await generateImagePrompt(item, get().atmosphereSeeds);
-                get().updateItem(item.id, {
-                    visualDescription: visualAnchor,
-                    prompt: aiPrompt // Pre-generate the SD tags too
-                });
-            }
-        }
     },
 
     updateItem: async (itemId, updates, saveToCloud = true) => {
-        set(state => ({
-            items: state.items.map(item =>
-                item.id === itemId ? { ...item, ...updates } : item
-            )
-        }));
+        let updatedItem: OnboardingItem | undefined;
+        set(state => {
+            const newItems = state.items.map(item => {
+                if (item.id === itemId) {
+                    updatedItem = { ...item, ...updates };
+                    return updatedItem;
+                }
+                return item;
+            });
+            return { items: newItems };
+        });
 
         get().saveSession();
 
-        if (saveToCloud) {
+        if (saveToCloud && updatedItem) {
             const { businessId } = get();
-            const item = get().items.find(i => i.id === itemId);
-            if (!item || !businessId) return;
+            if (!businessId) return;
 
-            console.log(`☁️ Syncing item ${item.name} to cloud...`);
+            const item = updatedItem;
+            console.log(`☁️ [Cloud Sync] Syncing item "${item.name}"...`);
 
-            // Map to Supabase schema
-            const dbItem = {
+            // 🔄 KDS Routing Logic Mapping
+            let kdsLogic = 'MADE_TO_ORDER'; // Default to "Always Prepare"
+            if (item.preparationMode === 'ready') kdsLogic = 'NEVER_SHOW'; // Grab n Go
+            else if (item.preparationMode === 'cashier_choice') kdsLogic = 'CONDITIONAL'; // Decision at POS
+
+            const dbItem: any = {
                 business_id: businessId,
                 name: item.name,
                 category: item.category,
-                description: item.description,
-                price: item.price,
-                sale_price: item.salePrice,
-                production_area: item.productionArea,
-                ingredients: item.ingredients,
+                description: item.description || '',
+                price: item.price || 0,
+                sale_price: item.salePrice || null,
                 image_url: item.imageUrl,
-                modifiers: item.modifiers,
+                modifiers: item.modifiers || [],
+                production_area: item.productionArea || 'Checker', // Primary
+                ingredients: item.ingredients || [],
                 visual_description: item.visualDescription,
                 ai_prompt: item.prompt,
-                updated_at: new Date().toISOString()
+                english_name: item.englishName || '',
+                cost: item.cost || 0,
+                is_prep_required: item.preparationMode === 'requires_prep', // Legacy field?
+                kds_routing_logic: kdsLogic, // ✅ Correctly mapped field
+                display_kds: item.displayKDS || [item.productionArea || 'Checker'], // 🆕 Support multi-KDS routing
+                inventory_settings: item.inventorySettings || null,
+                is_deleted: false,
+                original_image_urls: item.originalImageUrls || []
             };
 
+            const isNumericId = !isNaN(Number(itemId)) && itemId.toString().indexOf('-') === -1;
+
             try {
-                let result;
-                // If ID is UUID (Supabase generated) or we check if it exists
-                if (itemId.length > 20 && !itemId.includes('-local')) {
-                    result = await supabase.from('menu_items').update(dbItem).eq('id', itemId);
-                } else {
-                    result = await supabase.from('menu_items').insert([dbItem]).select();
-                    if (result.data) {
-                        // Update local ID with the one from Supabase
-                        const newId = result.data[0].id;
-                        set(state => ({
-                            items: state.items.map(i => i.id === itemId ? { ...i, id: newId } : i)
-                        }));
+                // 🛡️ Safety timeout for Cloud DB sync
+                const cloudPromise = (async () => {
+                    if (isNumericId) {
+                        const syncId = Number(itemId);
+                        const { error } = await supabase.from('menu_items').update(dbItem).eq('id', syncId);
+                        if (error) throw error;
+                        await syncModifiersToRelational(syncId, item.modifiers || []); // 🆕 Sync relational tables
+                        await get().syncRecurringTasks(businessId, syncId, item);
+                    } else {
+                        const { data, error } = await supabase.from('menu_items').insert([dbItem]).select();
+                        if (error) throw error;
+                        if (data?.[0]) {
+                            const newId = data[0].id.toString();
+                            set(state => ({ items: state.items.map(i => i.id === itemId ? { ...i, id: newId } : i) }));
+                            await syncModifiersToRelational(Number(newId), item.modifiers || []); // 🆕 Sync relational tables
+                            await get().syncRecurringTasks(businessId, Number(newId), item);
+                        }
                     }
+                })();
+
+                await Promise.race([
+                    cloudPromise,
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Cloud Sync Timeout')), 10000))
+                ]);
+                console.log(`✅ [Cloud Sync] "${item.name}" synced successfully.`);
+            } catch (err: any) {
+                console.error(`❌ [Cloud Sync] Failed for "${item.name}"... switching to Offline Queue`, err);
+
+                // Queuing logic: If fails, queue generic UPDATE
+                if (isNumericId) {
+                    const syncId = Number(itemId);
+                    try {
+                        await queueAction('UPDATE', dbItem, 'menu_items', syncId);
+                        // Using browser console as notification since we don't have a Toast system here easily
+                        console.log('✅ Changes saved to Offline Queue (Server Unreachable)');
+                        // Optionally notify UI
+                        // alert('נשמר במצב אופליין (יסונכרן כשהשרת יחזור)');
+                    } catch (qErr: any) {
+                        console.error('Failed to queue offline action:', qErr);
+                        alert(`שגיאה בשמירת פריט "${item.name}": ${err.message || 'תקשורת נכשלה'}`);
+                    }
+                } else {
+                    // Creating new item offline is tricky with IDs. For now, alert user.
+                    alert(`שגיאה בשמירת פריט חדש "${item.name}": חיבור לשרת נכשל.`);
                 }
-                if (result.error) throw result.error;
-            } catch (err) {
-                console.error('Failed to sync item to Supabase:', err);
             }
         }
     },
 
     deleteItem: async (itemId) => {
-        set(state => ({
-            items: state.items.filter(i => i.id !== itemId)
-        }));
+        set(state => ({ items: state.items.filter(i => i.id !== itemId) }));
         get().saveSession();
-
-        if (itemId.length > 20 && !itemId.includes('-local')) {
-            await supabase.from('menu_items').delete().eq('id', itemId);
-        }
-    },
-
-    cleanupDuplicates: () => {
-        const { items } = get();
-        const seen = new Map<string, string>(); // "category:name" -> id
-        const cleanItems: OnboardingItem[] = [];
-        let count = 0;
-
-        items.forEach(item => {
-            const key = `${item.category.trim().toLowerCase()}:${item.name.trim().toLowerCase()}`;
-            if (!seen.has(key)) {
-                seen.set(key, item.id);
-                cleanItems.push(item);
-            } else {
-                count++;
-                console.log(`🗑️ Removing duplicate: ${item.name} (${item.category})`);
+        // 🛡️ Soft Delete to handle FK constraints (Recurring Tasks, Orders)
+        if (!isNaN(Number(itemId))) {
+            try {
+                await supabase.from('menu_items').update({ is_deleted: true }).eq('id', Number(itemId));
+            } catch (err: any) {
+                console.warn(`❌ Delete failed online, queuing offline action for ${itemId}`);
+                await queueAction('DELETE', {}, 'menu_items', Number(itemId));
             }
-        });
-
-        if (count > 0) {
-            set({ items: cleanItems });
-            get().saveSession();
-            console.log(`✅ Cleanup complete. Removed ${count} duplicates.`);
+            // Optional: clean up recurring tasks logic if needed, but soft delete is safer
         }
     },
 
     addNewItem: (category = 'General') => {
-        const existingNewItems = get().items.filter(i => i.name.startsWith('New Item')).length;
-        const newItem: OnboardingItem = {
-            id: `local-${Date.now()}`,
-            name: `New Item ${existingNewItems + 1}`,
-            category: category,
-            description: '',
-            price: 0,
-            productionArea: 'Kitchen',
-            ingredients: [],
-            modifiers: [],
-            status: 'pending'
-        };
-        set(state => ({ items: [newItem, ...state.items] }));
+        const item: OnboardingItem = { id: `local-${Date.now()}`, name: 'New Item', category, description: '', price: 0, status: 'pending', productionArea: 'Kitchen', ingredients: [], modifiers: [] };
+        set(state => ({ items: [item, ...state.items] }));
         get().saveSession();
+        return item;
     },
 
-    applyAtmosphereToCategory: (category: string, backgroundId?: string, containerId?: string) => {
-        set(state => ({
-            items: state.items.map(item =>
-                item.category === category
-                    ? { ...item, selectedBackgroundId: backgroundId, selectedContainerId: containerId }
-                    : item
-            )
-        }));
+    cleanupDuplicates: () => {
+        const { items } = get();
+        const seen = new Set();
+        const clean = items.filter(i => {
+            const key = `${i.category}:${i.name}`.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+        set({ items: clean });
+    },
+
+    applyAtmosphereToCategory: (category, bgId, contId) => {
+        set(state => ({ items: state.items.map(i => i.category === category ? { ...i, selectedBackgroundId: bgId, selectedContainerId: contId } : i) }));
         get().saveSession();
     },
 
     startLiveGeneration: async () => {
-        const { businessId, eventSource: existingSource } = get();
+        set({ isGenerating: true, error: null });
+        const pending = get().items.filter(i => i.status === 'pending');
+        for (const item of pending) {
+            if (!get().isGenerating) break;
+            try {
+                // 🔄 Set status to 'generating' to trigger animations
+                set(state => ({ items: state.items.map(i => i.id === item.id ? { ...i, status: 'generating' } : i) }));
 
-        if (existingSource) {
-            existingSource.close();
-        }
-
-        set(state => ({
-            items: state.items.map(item => {
-                if (item.status === 'pending' || item.status === 'error') {
-                    return { ...item, status: 'pending' as const };
+                const { prompt, negativePrompt, seeds } = await generateImagePrompt(item, get().atmosphereSeeds, get().geminiApiKey || undefined, get().businessContext || undefined);
+                const res = await generateImageGemini(prompt, get().geminiApiKey!, negativePrompt, seeds);
+                if (res) await get().updateItem(item.id, { imageUrl: res.url, status: 'completed', lastPrompt: prompt, powerSource: res.powerSource });
+                else await get().updateItem(item.id, { status: 'pending' });
+            } catch (err: any) {
+                // Reset status on error
+                set(state => ({ items: state.items.map(i => i.id === item.id ? { ...i, status: 'pending' } : i) }));
+                console.error("Generation failed:", err);
+                if (err.message.includes("GEMINI_KEY")) {
+                    set({ error: err.message, isGenerating: false });
+                    return;
                 }
-                return item;
-            }) as OnboardingItem[]
-        }));
-        get().saveSession();
-
-        const pendingItems = get().items.filter(i => i.status === 'pending');
-        if (pendingItems.length === 0) {
-            set({ isGenerating: false, generationProgress: 100 });
-            return;
+            }
         }
+        set({ isGenerating: false });
+    },
 
-        set({ isGenerating: true, generationProgress: 0, error: null });
+    cancelGeneration: async () => set({ isGenerating: false }),
 
+    regenerateSingleItem: async (itemId) => {
+        const item = get().items.find(i => i.id === itemId);
+        if (!item) return;
+        set({ error: null });
         try {
-            // Serialize prompt generation to avoid rate limits
-            const itemsWithPrompts = [];
-            for (const item of pendingItems) {
-                console.log(`📝 Generating prompt for: ${item.name}`);
-                const { prompt, negativePrompt, seeds } = await generateImagePrompt(item, get().atmosphereSeeds, get().geminiApiKey || undefined, get().businessContext);
-                itemsWithPrompts.push({
-                    ...item,
-                    prompt,
-                    negativePrompt,
-                    seeds
-                });
-            }
+            // 🔄 Set status to 'generating' to trigger animations
+            set(state => ({ items: state.items.map(i => i.id === itemId ? { ...i, status: 'generating' } : i) }));
 
-            if (get().geminiApiKey) {
-                // 🆕 New Logic: Use Google Gemini Direct
-                for (let i = 0; i < itemsWithPrompts.length; i++) {
-                    const item = itemsWithPrompts[i];
-                    if (!get().isGenerating) break;
-
-                    set({ currentItemName: item.name });
-
-                    try {
-                        // Mark as generating
-                        set(state => ({
-                            items: state.items.map(it => it.id === item.id ? { ...it, status: 'generating' as const } : it)
-                        }));
-
-                        // Small delay to prevent rate limits
-                        await new Promise(r => setTimeout(r, 1000));
-                        const result = await generateImageGemini(item.prompt, get().geminiApiKey!, item.negativePrompt, item.seeds);
-                        if (result) {
-                            set(state => ({
-                                items: state.items.map(it => it.id === item.id ? {
-                                    ...it,
-                                    imageUrl: result.url,
-                                    status: 'completed' as const,
-                                    generationTime: result.timeTaken,
-                                    powerSource: result.powerSource
-                                } : it)
-                            }));
-                        }
-                    } catch (e: any) {
-                        console.error('Gemini Gen failed for item:', item.name, e);
-                    }
-
-                    const progress = Math.round(((i + 1) / itemsWithPrompts.length) * 100);
-                    set({ generationProgress: progress });
-                }
-
-                set({ isGenerating: false, generationProgress: 100, currentItemName: 'Done!' });
-                get().saveSession();
-                console.log('✅ Batch Generation completed via Gemini Cloud.');
-                return;
-            }
-
-            console.log('🚀 Starting Local Machine Generation (ComfyUI)...');
-            const prepResponse = await fetch('/api/onboarding/prepare-generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ businessId, items: itemsWithPrompts })
-            });
-
-            if (!prepResponse.ok) throw new Error('Failed to prepare generation');
-            const { jobId } = await prepResponse.json();
-
-            const url = `/api/onboarding/generate?jobId=${jobId}`;
-            const eventSource = new EventSource(url);
-            set({ eventSource });
-
-            eventSource.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.type === 'start') {
-                    set({ generationProgress: 0 });
-                } else if (data.type === 'progress') {
-                    set({ currentItemName: data.item });
-                } else if (data.type === 'success') {
-                    const progress = Math.round(((data.index + 1) / pendingItems.length) * 100);
-                    set(state => ({
-                        generationProgress: progress,
-                        items: state.items.map(item =>
-                            item.id === data.id ? {
-                                ...item,
-                                imageUrl: data.url,
-                                status: 'completed' as const,
-                                generationTime: data.timeTaken,
-                                powerSource: data.powerSource
-                            } : item
-                        )
-                    }));
-                    get().saveSession();
-                } else if (data.type === 'complete') {
-                    set({ isGenerating: false, generationProgress: 100, currentItemName: 'Done!', eventSource: null });
-                    eventSource.close();
-                } else if (data.type === 'error' || data.type === 'cancelled') {
-                    set({ isGenerating: false, error: data.message, eventSource: null });
-                    eventSource.close();
-                }
-            };
-
-            eventSource.onerror = (err) => {
-                console.error("SSE Error:", err);
-                set({ isGenerating: false, error: 'Connection lost', eventSource: null });
-                eventSource.close();
-            };
+            const { prompt, negativePrompt, seeds } = await generateImagePrompt(item, get().atmosphereSeeds, get().geminiApiKey || undefined, get().businessContext || undefined);
+            const res = await generateImageGemini(prompt, get().geminiApiKey!, negativePrompt, seeds);
+            if (res) await get().updateItem(itemId, { imageUrl: res.url, status: 'completed', lastPrompt: prompt, powerSource: res.powerSource });
+            else await get().updateItem(itemId, { status: 'pending' });
         } catch (err: any) {
-            console.error("Generation startup failed:", err);
-            set({ isGenerating: false, error: err.message });
-        }
-    },
-
-    cancelGeneration: async () => {
-        const { businessId } = get();
-        try {
-            await fetch('/api/onboarding/cancel', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ businessId })
-            });
-            set({ isGenerating: false, currentItemName: 'Stopping...' });
-        } catch (e) {
-            console.error('Cancel failed:', e);
-        }
-    },
-
-    regenerateSingleItem: async (itemId: string) => {
-        const { atmosphereSeeds } = get();
-        try {
-            set(state => ({
-                items: state.items.map(i => i.id === itemId ? { ...i, status: 'preparing' as const } : i)
-            }));
-
-            const item = get().items.find(i => i.id === itemId);
-            if (!item) return;
-
-            // 🆕 Respect manual prompt if it exists, otherwise generate
-            let finalPrompt = item.prompt;
-            let finalNegative = "low quality, blurry";
-
-            if (!finalPrompt || finalPrompt.trim() === "") {
-                const { prompt, negativePrompt, seeds } = await generateImagePrompt(item, atmosphereSeeds, get().geminiApiKey || undefined, get().businessContext);
-                finalPrompt = prompt;
-                finalNegative = negativePrompt;
-                item.seeds = seeds;
+            // Reset status on error
+            set(state => ({ items: state.items.map(i => i.id === itemId ? { ...i, status: 'pending' } : i) }));
+            console.error("Single generation failed:", err);
+            if (err.message.includes("GEMINI_KEY")) {
+                set({ error: err.message });
             }
-
-            if (get().geminiApiKey) {
-                // 🆕 New Logic: Gemini Direct
-                try {
-                    const result = await generateImageGemini(finalPrompt, get().geminiApiKey!, finalNegative, item.seeds);
-                    if (result) {
-                        set(state => ({
-                            items: state.items.map(i => i.id === itemId ? {
-                                ...i,
-                                imageUrl: result.url,
-                                status: 'completed' as const,
-                                generationTime: result.timeTaken,
-                                powerSource: result.powerSource
-                            } : i)
-                        }));
-                        get().saveSession();
-                        console.log(`✅ Item ${itemId} regenerated via Gemini Cloud.`);
-                        return;
-                    } else {
-                        throw new Error('Empty result from Gemini');
-                    }
-                } catch (e: any) {
-                    console.error("❌ Gemini Regeneration failed:", e);
-                    set(state => ({
-                        items: state.items.map(i => i.id === itemId ? {
-                            ...i,
-                            status: 'error' as const,
-                            error: e.message // 🆕 Capture specific error
-                        } : i),
-                        error: `Gemini Cloud Error: ${e.message}`
-                    }));
-                    return; // 🛑 Prevent fallback to local if Gemini failed but was intended
-                }
-            }
-
-            console.log('🚀 Regenerating via Local Machine (ComfyUI)...');
-
-            const res = await fetch('/api/onboarding/generate-single', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    businessId: get().businessId,
-                    itemId: item.id,
-                    prompt: finalPrompt,
-                    negativePrompt: finalNegative,
-                    originalImageUrl: item.originalImageUrl
-                })
-            });
-
-            if (!res.ok) throw new Error('Failed to regenerate');
-            const data = await res.json();
-
-            set(state => ({
-                items: state.items.map(i => i.id === itemId ? {
-                    ...i,
-                    imageUrl: data.url,
-                    status: 'completed' as const,
-                    generationTime: data.timeTaken,
-                    powerSource: data.powerSource
-                } : i)
-            }));
-            get().saveSession();
-        } catch (err: any) {
-            set(state => ({
-                items: state.items.map(i => i.id === itemId ? { ...i, status: 'error' as const } : i),
-                error: err.message
-            }));
+            throw err; // Allow UI to handle error
         }
     },
 
-    uploadOriginalImage: async (itemId: string, file: File) => {
+    uploadOriginalImage: async (itemId: string, fileOrBase64: File | string | Blob) => {
         const { businessId } = get();
         try {
             const tempId = uuidv4();
-            const fileExt = file.name.split('.').pop();
             const folder = businessId || 'anonymous';
-            const fileName = `wizard/${folder}/${itemId}_${tempId}.${fileExt}`;
+            let blob: Blob;
+            let fileName: string;
 
-            const { error: uploadError } = await supabase.storage
-                .from('menu-images')
-                .upload(fileName, file);
-
-            if (uploadError) throw uploadError;
-
-            const { data: { publicUrl } } = supabase.storage
-                .from('menu-images')
-                .getPublicUrl(fileName);
-
-            set(state => ({
-                items: state.items.map(i => i.id === itemId ? { ...i, originalImageUrl: publicUrl } : i)
-            }));
-
-            get().saveSession();
-
-            // Also sync to cloud if possible
-            const item = get().items.find(i => i.id === itemId);
-            if (item && businessId) {
-                await supabase.from('menu_items').update({ original_image_url: publicUrl }).eq('id', itemId);
+            if (fileOrBase64 instanceof File || fileOrBase64 instanceof Blob) {
+                blob = fileOrBase64;
+                const fileExt = (fileOrBase64 as File).name?.split('.').pop() || 'jpg';
+                fileName = `wizard/${folder}/${itemId}_${tempId}.${fileExt}`;
+            } else if (typeof fileOrBase64 === 'string') {
+                if (fileOrBase64.startsWith('data:')) {
+                    const base64Data = fileOrBase64.split(',')[1] || fileOrBase64;
+                    const byteCharacters = atob(base64Data);
+                    const byteNumbers = new Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+                    blob = new Blob([new Uint8Array(byteNumbers)], { type: 'image/jpeg' });
+                    fileName = `wizard/${folder}/${itemId}_generated_${tempId}.jpg`;
+                } else {
+                    return fileOrBase64;
+                }
+            } else {
+                throw new Error('Invalid image format');
             }
 
+            const { error } = await supabase.storage.from('menu-images').upload(fileName, blob, { contentType: blob.type, upsert: true });
+            if (error) throw error;
+            const { data: { publicUrl } } = supabase.storage.from('menu-images').getPublicUrl(fileName);
             return publicUrl;
         } catch (err: any) {
-            console.error('Reference image upload failed:', err);
+            console.error('Upload failed:', err);
             set({ error: err.message });
             throw err;
         }
-    }
+    },
+
+    syncRecurringTasks: async (businessId, menuItemId, item) => {
+        if (!item.inventorySettings) return;
+        const { prepType, parShifts, dailyPars } = item.inventorySettings;
+        if (!['production', 'defrost', 'completion', 'requires_prep'].includes(prepType)) return;
+
+        const tasksByCategory: Record<string, { qtyByDay: Record<number, number> }> = {};
+        ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].forEach((day, idx) => {
+            const shift = parShifts?.[day as keyof typeof parShifts] || 'prep';
+            let category = 'Prep';
+            if (shift === 'opening') category = 'Opening';
+            if (shift === 'closing') category = 'Closing';
+            if (!tasksByCategory[category]) tasksByCategory[category] = { qtyByDay: {} };
+            tasksByCategory[category].qtyByDay[idx] = dailyPars[day as keyof typeof dailyPars] || 0;
+        });
+
+        const categoriesWithWork = Object.keys(tasksByCategory).filter(cat => Object.values(tasksByCategory[cat].qtyByDay).some(q => q > 0));
+
+        // Log for debugging
+        console.log('🔄 Syncing Tasks:', { item: item.name, categories: categoriesWithWork, schedule: tasksByCategory });
+
+        const { data: existingTasks } = await supabase.from('recurring_tasks').select('id, category').eq('menu_item_id', menuItemId);
+        const existingMap = new Map();
+        existingTasks?.forEach((t: any) => existingMap.set(t.category, t.id));
+
+        const logicType = prepType === 'completion' ? 'par_level' : 'fixed';
+        for (const cat of categoriesWithWork) {
+            const weeklySchedule: any = {};
+            Object.entries(tasksByCategory[cat].qtyByDay).forEach(([dayIdx, qty]) => { weeklySchedule[dayIdx] = { qty, mode: logicType }; });
+            const payload = {
+                business_id: businessId,
+                menu_item_id: menuItemId,
+                name: item.name,
+                category: cat,
+                frequency: 'Daily',
+                weekly_schedule: weeklySchedule,
+                logic_type: logicType,
+                is_active: true,
+                image_url: item.imageUrl,
+                quantity: 0,
+                display_kds: item.displayKDS || [item.productionArea || 'Checker'] // 🆕 Sync KDS routing to tasks
+            };
+            const exId = existingMap.get(cat);
+            if (exId) { await supabase.from('recurring_tasks').update(payload).eq('id', exId); existingMap.delete(cat); }
+            else { await supabase.from('recurring_tasks').insert([payload]); }
+        }
+        if (existingMap.size > 0) await supabase.from('recurring_tasks').delete().in('id', Array.from(existingMap.values()));
+    },
+
 }));

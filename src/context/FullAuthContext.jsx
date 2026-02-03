@@ -1,12 +1,14 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { supabase } from '../lib/supabase'; // 🆕 FIX: Import supabase client
+import AuthContext from './AuthContextCore';
 
-const AuthContext = createContext(null);
-
-// API URL for sync endpoint
-const API_URL = import.meta.env.VITE_MUSIC_API_URL ||
+// API URL for sync endpoint - Favor relative paths when running locally to use Vite proxy
+const isLocalServer = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_URL = isLocalServer ? '' : (
+    import.meta.env.VITE_MUSIC_API_URL ||
     import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
-    'http://localhost:8080';
+    'http://127.0.0.1:8082'
+);
 
 import { APP_VERSION } from '../version';
 
@@ -94,29 +96,25 @@ export const AuthProvider = ({ children }) => {
                     try {
                         let sessionUser = JSON.parse(storedSession);
 
-                        // Fetch business_name if missing from stored session
-                        if (!sessionUser.business_name && sessionUser.business_id) {
-                            console.log('🏢 Fetching missing business_name for business_id:', sessionUser.business_id);
+                        // ALWAYS fetch fresh business_name to prevent stale cache (e.g. "עגלת קפה" persisting)
+                        if (sessionUser.business_id && navigator.onLine) {
+                            // console.log('🏢 Validating business_name for:', sessionUser.business_id);
                             try {
-                                const { data: businessData, error } = await supabase
+                                const { data: businessData } = await supabase
                                     .from('businesses')
                                     .select('name')
                                     .eq('id', sessionUser.business_id)
                                     .single();
 
-                                console.log('🏢 Business fetch result:', { data: businessData, error });
-
-                                if (businessData?.name) {
+                                if (businessData?.name && businessData.name !== sessionUser.business_name) {
+                                    console.log(`🏢 Updating stale business name: "${sessionUser.business_name}" -> "${businessData.name}"`);
                                     sessionUser = { ...sessionUser, business_name: businessData.name };
-                                    // Update localStorage with enriched data
+                                    // Update localStorage with fresh data
                                     localStorage.setItem('kiosk_user', JSON.stringify(sessionUser));
-                                    console.log('✅ Business name saved:', businessData.name);
                                 }
                             } catch (e) {
-                                console.warn('❌ Could not fetch business name for session:', e);
+                                console.warn('❌ Could not validate business name:', e);
                             }
-                        } else {
-                            console.log('🏢 Business name already present:', sessionUser.business_name);
                         }
 
                         setCurrentUser(sessionUser);
@@ -153,6 +151,7 @@ export const AuthProvider = ({ children }) => {
             }
 
             setIsLoading(false);
+            console.log('🏁 [AuthContext] checkAuth complete (isLoading -> false)');
         };
 
         checkAuth();
@@ -194,39 +193,26 @@ export const AuthProvider = ({ children }) => {
                     return;
                 }
 
+                if (localStorage.getItem('block_background_sync') === 'true') {
+                    console.log('🛑 [Background] Sync blocked by DatabaseExplorer operation');
+                    return;
+                }
+
                 // First, sync local changes TO cloud
                 await syncQueue();
 
                 // Check if we need a FULL sync (Initial Load)
-                // We do this once per session or if explicit refresh needed
-                // But for now, let's do a lightweight check or just rely on syncOrders for frequent updates
-                // However, user specifically asked for auto-sync on entry.
-                // syncing ALL tables is safer for modifiers/menu consistency.
+                // DISABLED: We now handle this via SyncStatusModal with a proactive user prompt
 
-                const { initialLoad } = await import('../services/syncService');
-                const lastFullSync = localStorage.getItem('last_full_sync');
-                const timeSinceFullSync = lastFullSync ? (Date.now() - parseInt(lastFullSync)) : Infinity;
+                // Just sync orders and loyalty frequently in the background
+                const res = await syncOrders(currentUser.business_id);
+                const loyRes = await syncLoyalty(currentUser.business_id);
 
-                // Run full sync if it's been more than 1 hour or never ran
-                const shouldRunFullSync = isLiteMode
-                    ? timeSinceFullSync > 4 * 60 * 60 * 1000 // Only every 4 hours for lite devices
-                    : timeSinceFullSync > 60 * 60 * 1000;
-
-                if (shouldRunFullSync) {
-                    console.log(`🔄 [Background] Running FULL initial load (${isLiteMode ? 'Lite' : 'Standard'})...`);
-                    await initialLoad(currentUser.business_id);
-                    localStorage.setItem('last_full_sync', Date.now().toString());
-                } else {
-                    // Just sync orders and loyalty frequently
-                    const result = await syncOrders(currentUser.business_id);
-                    const loyaltyResult = await syncLoyalty(currentUser.business_id);
-
-                    if (result.success) {
-                        console.log(`✅ [Background] Synced ${result.ordersCount} orders`);
-                    }
-                    if (loyaltyResult.success) {
-                        console.log(`✅ [Background] Synced ${loyaltyResult.transactions} transactions`);
-                    }
+                if (res.success) {
+                    console.log(`✅ [Background] Synced ${res.ordersCount} orders`);
+                }
+                if (loyRes.success) {
+                    console.log(`✅ [Background] Synced ${loyRes.transactions} transactions`);
                 }
 
                 localStorage.setItem('last_sync_time', Date.now().toString());
@@ -238,14 +224,21 @@ export const AuthProvider = ({ children }) => {
         // Check for Lite Mode
         const isLiteMode = localStorage.getItem('lite_mode') === 'true';
 
-        // Run immediately on login
-        runBackgroundSync();
+        // 🛡️ DELAY INITIAL SYNC: Allow UI to render Mode Selection before hammering the CPU
+        // This prevents the "Frozen after Splash" feeling
+        const startupTimer = setTimeout(() => {
+            console.log('⏰ [Background] Startup delay finished - triggering sync');
+            runBackgroundSync();
+        }, 3000);
 
         // Adjust interval based on device capability
         const syncIntervalMs = isLiteMode ? 10 * 60 * 1000 : 5 * 60 * 1000;
         const interval = setInterval(runBackgroundSync, syncIntervalMs);
 
-        return () => clearInterval(interval);
+        return () => {
+            clearTimeout(startupTimer);
+            clearInterval(interval);
+        };
     }, [currentUser?.business_id]);
 
     // 🕛 MIDNIGHT AUTO-LOGOUT: Force logout at midnight every day
@@ -421,3 +414,7 @@ export const useAuth = () => {
     }
     return context;
 };
+
+// Export the context itself for rare cases or testing
+export { AuthContext };
+

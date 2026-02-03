@@ -1,18 +1,16 @@
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useOnboardingStore } from '../store/useOnboardingStore';
-import Step1_Atmosphere from './Step1_Atmosphere';
-import Step2_MenuUpload from './Step2_MenuUpload';
-import Step3_ReviewAI from './Step3_ReviewAI';
-import Step4_Generation from './Step4_Generation';
-import Step5_Finish from './Step5_Finish';
+import BrandIdentityDesigner from './BrandIdentityDesigner';
+import MenuDataImporter from './MenuDataImporter';
+import MenuReviewDashboard from './MenuReviewDashboard';
 import { useTheme } from '../../../context/ThemeContext';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, AlertTriangle, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 
 const WizardLayout = () => {
-    const { step, setStep, initSession } = useOnboardingStore();
+    const { step, setStep, initSession, isLoading, error, setError } = useOnboardingStore();
     const { isDarkMode } = useTheme();
     const { currentUser } = useAuth();
     const navigate = useNavigate();
@@ -31,14 +29,23 @@ const WizardLayout = () => {
 
     const renderStep = () => {
         switch (step) {
-            case 1: return <Step1_Atmosphere />;
-            case 2: return <Step2_MenuUpload />;
-            case 3: return <Step3_ReviewAI />;
-            case 4: return <Step4_Generation />;
-            case 5: return <Step5_Finish />;
-            default: return <Step1_Atmosphere />;
+            case 1: return <BrandIdentityDesigner />;
+            case 2: return <MenuDataImporter />;
+            case 3: return <MenuReviewDashboard />;
+            default: return <BrandIdentityDesigner />;
         }
     };
+
+    if (isLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-50">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                    <p className="text-slate-400 text-xs font-bold tracking-widest uppercase">Initializing Wizard...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className={`min-h-screen flex flex-col ${isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
@@ -52,7 +59,7 @@ const WizardLayout = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    {[1, 2, 3, 4, 5].map((s) => (
+                    {[1, 2, 3].map((s) => (
                         <div key={s} className="flex items-center gap-2">
                             <button
                                 onClick={() => setStep(s)}
@@ -63,7 +70,7 @@ const WizardLayout = () => {
                             >
                                 {s}
                             </button>
-                            {s < 5 && <div className={`w-6 h-[2px] rounded-full ${step > s ? 'bg-indigo-500/50' : 'bg-slate-700/30'}`} />}
+                            {s < 3 && <div className={`w-6 h-[2px] rounded-full ${step > s ? 'bg-indigo-500/50' : 'bg-slate-700/30'}`} />}
                         </div>
                     ))}
                 </div>
@@ -87,7 +94,39 @@ const WizardLayout = () => {
                     </motion.div>
                 </AnimatePresence>
             </div>
-        </div>
+
+            {/* Funny Error Toast */}
+            <AnimatePresence>
+                {error && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 50, scale: 0.9 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 50, scale: 0.9 }}
+                        className="fixed bottom-6 left-6 right-6 md:left-auto md:right-6 md:w-96 bg-white rounded-2xl shadow-2xl border-l-4 border-l-red-500 border border-slate-100 p-4 z-[400] flex gap-4 items-start"
+                        dir="rtl"
+                    >
+                        <div className="bg-red-50 p-2 rounded-full shrink-0">
+                            <AlertTriangle className="text-red-500" size={24} />
+                        </div>
+                        <div className="flex-1">
+                            <h4 className="font-black text-slate-800 text-sm mb-1">אופס! קרתה תקלה 🍌</h4>
+                            <p className="text-xs text-slate-500 leading-relaxed font-medium mb-2">
+                                נראה שהמערכת החליקה על בננה (או סתם באג)...
+                            </p>
+                            <div className="bg-slate-50 p-2 rounded border border-slate-100 font-mono text-[10px] text-red-400 break-all">
+                                {error}
+                            </div>
+                            <button onClick={() => setError(null)} className="mt-2 text-[10px] font-bold text-slate-400 hover:text-slate-600 underline">
+                                סגור והתעלם (כאילו לא קרה כלום)
+                            </button>
+                        </div>
+                        <button onClick={() => setError(null)} className="text-slate-300 hover:text-slate-500">
+                            <X size={16} />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div >
     );
 };
 

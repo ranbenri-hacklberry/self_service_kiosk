@@ -1,5 +1,6 @@
 
 import { AuthProvider as FullAuthProvider, useAuth as useFullAuth, APP_VERSION as FULL_APP_VERSION } from './FullAuthContext';
+import AuthContext from './AuthContextCore';
 import { useStore } from '@/core/store';
 
 const isLite = import.meta.env.VITE_APP_MODE === 'lite';
@@ -29,3 +30,5 @@ const useLiteAuth = () => {
 
 export const AuthProvider = isLite ? LiteAuthProvider : FullAuthProvider;
 export const useAuth = isLite ? useLiteAuth : useFullAuth;
+export { AuthContext };
+

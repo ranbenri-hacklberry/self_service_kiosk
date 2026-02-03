@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 
-const DateScroller = ({ selectedDate, onSelectDate }) => {
+const DateScroller = ({ selectedDate, onDateChange }) => {
     const containerRef = useRef(null);
     const [dates, setDates] = useState([]);
     const ITEM_WIDTH = 100;
@@ -83,7 +83,7 @@ const DateScroller = ({ selectedDate, onSelectDate }) => {
 
         if (closestDate && (!selectedDate || closestDate.getTime() !== selectedDate.getTime())) {
             isManualScroll.current = true;
-            onSelectDate(closestDate);
+            onDateChange(closestDate);
         }
     };
 
@@ -94,7 +94,7 @@ const DateScroller = ({ selectedDate, onSelectDate }) => {
 
     // 4. Select Handler
     const handleItemClick = (date, index) => {
-        onSelectDate(date);
+        onDateChange(date);
         scrollToIndex(index, 'smooth');
     };
 

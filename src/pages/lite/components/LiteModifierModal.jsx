@@ -8,34 +8,56 @@ const LiteModifierModal = ({ item, onClose, onConfirm }) => {
     const [groups, setGroups] = useState([]);
     const [selections, setSelections] = useState({}); // { groupId: [valueId, ...] }
 
-    // Fetch options from Dexie
+    // Fetch options from Dexie or Embedded JSON
     useEffect(() => {
         const fetchOptions = async () => {
             try {
-                // 1. Find groups linked to this item
+                // 🆕 1. Check for Embedded JSON Modifiers (From Onboarding Wizard)
+                if (item.modifiers && Array.isArray(item.modifiers) && item.modifiers.length > 0) {
+                    console.log("Using Embedded JSON Modifiers for:", item.name);
+                    const mappedGroups = item.modifiers.map((group, gIdx) => ({
+                        id: `json-g${gIdx}-${group.name}`, // Stable ID
+                        name: group.name,
+                        requirement: group.requirement || 'optional',
+                        logic: group.logic || 'add',
+                        values: (group.items || []).map((opt, oIdx) => ({
+                            id: `json-v${gIdx}-${oIdx}-${opt.name}`,
+                            value_name: opt.name,
+                            price_adjustment: Number(opt.price) || 0,
+                            // Preserve original meta if needed
+                            original_price: Number(opt.price) || 0
+                        }))
+                    }));
+
+                    setGroups(mappedGroups);
+                    setLoading(false);
+                    return;
+                }
+
+                // 2. Fallback: Dexie Relational Lookup (Legacy)
+                // Find groups linked to this item
                 const links = await db.menuitemoptions.where('item_id').equals(item.id).toArray();
                 const groupIds = links.map(l => l.group_id);
 
-                // 2. Fetch groups
+                // Fetch groups
                 const groupsData = await db.optiongroups.bulkGet(groupIds);
 
-                // 3. Fetch values for each group
+                // Fetch values for each group
                 const fullGroups = await Promise.all(groupsData.filter(g => g).map(async group => {
                     const values = await db.optionvalues.where('group_id').equals(group.id).toArray();
                     return { ...group, values };
                 }));
 
                 setGroups(fullGroups);
-
-                // Initialize default selections if needed (e.g. first option if required - ignored for now)
                 setLoading(false);
+
             } catch (e) {
                 console.error("Failed to fetch modifiers", e);
                 setLoading(false);
             }
         };
         fetchOptions();
-    }, [item.id]);
+    }, [item.id, item.modifiers]);
 
     const handleToggle = (group, value) => {
         setSelections(prev => {
@@ -84,7 +106,14 @@ const LiteModifierModal = ({ item, onClose, onConfirm }) => {
 
                 {/* Header */}
                 <div className="p-4 bg-slate-800 border-b border-slate-700 flex justify-between items-center shrink-0">
-                    <h2 className="text-xl font-black text-white">{item.name}</h2>
+                    <div>
+                        <h2 className="text-xl font-black text-white">{item.name}</h2>
+                        {item.current_stock !== null && item.current_stock !== undefined && (
+                            <p className="text-xs font-bold text-emerald-400">
+                                {item.inventory_settings?.prepType === 'defrost' ? 'מופשרים:' : 'מוכנים:'} {item.current_stock}
+                            </p>
+                        )}
+                    </div>
                     <button onClick={onClose} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-full text-slate-300">
                         <X size={20} />
                     </button>
@@ -110,8 +139,8 @@ const LiteModifierModal = ({ item, onClose, onConfirm }) => {
                                                 key={val.id}
                                                 onClick={() => handleToggle(group, val)}
                                                 className={`p-3 rounded-xl border text-right transition-all flex justify-between items-center ${isSelected
-                                                        ? 'bg-amber-500/20 border-amber-500 text-amber-100 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
-                                                        : 'bg-slate-800 border-transparent text-slate-400 hover:bg-slate-700'
+                                                    ? 'bg-amber-500/20 border-amber-500 text-amber-100 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+                                                    : 'bg-slate-800 border-transparent text-slate-400 hover:bg-slate-700'
                                                     }`}
                                             >
                                                 <span className="font-bold">{val.value_name}</span>

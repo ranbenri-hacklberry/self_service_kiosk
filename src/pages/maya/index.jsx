@@ -11,6 +11,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { searchCode, formatCodeContext } from '@/services/codeSearchService';
 import { askMaya } from '../../services/aiService';
+import { mcpClient } from '../../services/mcpClient';
 
 const MAYA_VERSION = "v2.0 - RAG Code Expert Mode";
 
@@ -32,6 +33,7 @@ const MayaAssistant = () => {
         status: { sales: 'idle', menu: 'idle', team: 'idle', inventory: 'idle' }
     });
     const [isContextLoading, setIsContextLoading] = useState(false);
+    const [isMcpConnected, setIsMcpConnected] = useState(false);
 
     const messagesEndRef = useRef(null);
     const recognitionRef = useRef(null);
@@ -44,6 +46,20 @@ const MayaAssistant = () => {
         }, 150);
         return () => clearTimeout(timer);
     }, [messages, isLoading]);
+
+    // MCP Connection
+    useEffect(() => {
+        const initMcp = async () => {
+            try {
+                console.log('🔌 Connecting to icaffeOS Cloud...');
+                const connected = await mcpClient.connect();
+                setIsMcpConnected(connected === true);
+            } catch (e) {
+                console.error('MCP Init Error:', e);
+            }
+        };
+        initMcp();
+    }, []);
 
     // Permission check
     useEffect(() => {
@@ -531,7 +547,10 @@ ${contextData.salesLog}
 2. המידע למעלה הוא המידע האמיתי מהמערכת.
 3. השתמשי בטבלת העסקאות (CSV) כדי לענות על שאלות ספציפיות.
 4. אל תגידי "אין לי מידע" - המידע נמצא כאן!
-5. עני בעברית בלבד.`
+5. עני בעברית בלבד.
+6. ☁️ MCP Cloud Status: ${isMcpConnected ? 'CONNECTED (Tools Available)' : 'DISCONNECTED'}
+7. אם חסר מידע, השתמשי בכלים! פלט JSON בלבד: {"tool": "tool_name", "args": {...}}
+8. כלים זמינים: inspect_schema(table_name), query_supa(sql), list_inventory(business_id)`
             };
 
             const messagesPayload = [
@@ -617,7 +636,35 @@ ${codeContext}
                 { role: 'user', content: userInput }
             ];
 
-            const reply = await askMaya(messagesPayload, apiKey);
+            let reply = await askMaya(messagesPayload, apiKey);
+
+            // 🛠️ MCP Tool Execution Loop
+            if (isMcpConnected && reply.includes('{"tool":')) {
+                try {
+                    const jsonMatch = reply.match(/\{[\s\S]*"tool"[\s\S]*\}/);
+                    if (jsonMatch) {
+                        const toolCall = JSON.parse(jsonMatch[0]);
+                        console.log('🛠️ Maya Calling Tool:', toolCall);
+
+                        // Notify UI
+                        setMessages(prev => [...prev, { id: 'tool-' + Date.now(), role: 'assistant', content: `🔧 מפעילה כלי: ${toolCall.tool}...` }]);
+
+                        const result = await mcpClient.callTool(toolCall.tool, toolCall.args);
+                        const resultStr = JSON.stringify(result, null, 2).substring(0, 2000); // Limit context size
+
+                        console.log('✅ Tool Result:', resultStr);
+
+                        // Feed back to Maya
+                        messagesPayload.push({ role: 'assistant', content: reply });
+                        messagesPayload.push({ role: 'user', content: `Tool Result (${toolCall.tool}):\n${resultStr}\n\nעכשיו עני למשתמש על סמך המידע הזה.` });
+
+                        // Get final answer
+                        reply = await askMaya(messagesPayload, apiKey);
+                    }
+                } catch (e) {
+                    console.error('Tool Loop Error:', e);
+                }
+            }
 
             // Insert into DB first
             if (currentUser?.id && currentUser?.business_id) {
@@ -765,7 +812,7 @@ ${codeContext}
                                 {MAYA_VERSION} | {isContextLoading ? 'מעדכנת...' : `עודכן: ${contextData.lastUpdate || 'כעת'}`}
                             </span>
                             <span className="text-[9px] text-slate-400 font-medium mt-0.5">
-                                {contextData.debugInfo} | {Object.entries(contextData.status).map(([k, v]) => `${k}: ${v === 'success' ? '✅' : '⏳'}`).join(' ')}
+                                {contextData.debugInfo} | {Object.entries(contextData.status).map(([k, v]) => `${k}: ${v === 'success' ? '✅' : '⏳'}`).join(' ')} | ☁️ ${isMcpConnected ? 'ONLINE' : 'OFFLINE'}
                             </span>
                         </div>
                     </div>

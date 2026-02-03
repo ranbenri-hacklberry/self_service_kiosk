@@ -41,8 +41,8 @@ const LiteKDS = () => {
             }
         });
 
-        // Ready sorted by newest updated
-        r.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+        // Ready sorted by stable timestamp (FIFO)
+        r.sort((a, b) => new Date(a.ready_at || a.created_at) - new Date(b.ready_at || b.created_at));
 
         // Combined list for linear navigation
         const all = [...inP, ...r];

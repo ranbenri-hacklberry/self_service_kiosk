@@ -86,14 +86,15 @@ export function useOrders({ businessId, filters = {} } = {}) {
                 return o.order_status === status;
             });
 
-            // CUSTOM SORTING LOGIC:
-            if (status === 'new' || status === 'pending') {
-                filtered.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
-            } else if (status === 'in_prep') {
-                filtered.sort((a, b) => new Date(a.updated_at || a.created_at || 0) - new Date(b.updated_at || b.created_at || 0));
-            } else {
-                filtered.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
-            }
+            // ✅ STABLE FIFO SORTING (MAYA FIXED): Always use created_at.
+            // Never use updated_at for UI positioning as it causes "jumping" (video game effect).
+            filtered.sort((a, b) => {
+                const timeA = new Date(a.created_at || 0).getTime();
+                const timeB = new Date(b.created_at || 0).getTime();
+                if (timeA !== timeB) return timeA - timeB;
+                // Secondary stable sort by ID/OrderNumber
+                return (Number(a.orderNumber) || 0) - (Number(b.orderNumber) || 0);
+            });
 
             grouped[status] = filtered;
         });
@@ -110,7 +111,7 @@ export function useOrders({ businessId, filters = {} } = {}) {
         // console.log('🔍 [useOrders-V2] Fetching from Dexie for businessId:', businessId);
         try {
             const cutoff = new Date();
-            cutoff.setHours(cutoff.getHours() - 24); // Extended to 24h
+            cutoff.setDate(cutoff.getDate() - 7); // Clean: No orders older than 7 days
             const cutoffISO = cutoff.toISOString();
 
             let allOrders;
@@ -741,21 +742,33 @@ export function useOrders({ businessId, filters = {} } = {}) {
         }
 
         const init = async () => {
-            console.log('🔍 [useOrders-V2] Running init for:', businessId);
+            const { isLocalInstance } = await import('../lib/supabase');
+            const isLocal = isLocalInstance();
+
+            console.log('🔍 [useOrders-V2] Running init for:', businessId, isLocal ? '(Local Mode)' : '(Cloud Mode)');
             setIsLoading(true);
             try {
-                // Load from Dexie first (instant)
-                const localOrders = await fetchFromDexie();
-                console.log(`🔍 [useOrders-V2] Local load complete: ${localOrders.length} orders`);
-                setOrders(localOrders);
-                setIsLoading(false);
+                if (isLocal) {
+                    // 🏘️ LOCAL MODE: Direct to Supabase (N150 is the source of truth)
+                    await syncFromSupabase();
+                    const freshOrders = await fetchFromDexie();
+                    setOrders(freshOrders);
+                } else {
+                    // ☁️ CLOUD MODE: Dexie-first (SWR) for perceived performance
+                    const localOrders = await fetchFromDexie();
+                    console.log(`🔍 [useOrders-V2] Local load complete: ${localOrders.length} orders`);
+                    setOrders(localOrders);
+                    setIsLoading(false);
 
-                // Then sync from Supabase in background
-                await syncFromSupabase();
-                const freshOrders = await fetchFromDexie();
-                setOrders(freshOrders);
+                    // Then sync from Supabase in background
+                    await syncFromSupabase();
+                    const freshOrders = await fetchFromDexie();
+                    setOrders(freshOrders);
+                }
             } catch (err) {
                 setError(err.message);
+                setIsLoading(false);
+            } finally {
                 setIsLoading(false);
             }
         };

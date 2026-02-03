@@ -15,19 +15,91 @@ export const runSystemDiagnostics = async (businessId) => {
     try {
         log('🚀 Starting System Diagnostics...');
 
-        // 0. Fetch a valid menu item
-        const { data: menuItems, error: menuError } = await supabase
+        // 0. Fetch items and their mod-links to find the best candidates
+        const { data: allMenuItems, error: menuError } = await supabase
             .from('menu_items')
-            .select('id, price, name')
+            .select('id, price, name, category, kds_routing_logic, is_hot_drink')
             .eq('business_id', businessId)
-            .limit(1);
+            .limit(15);
 
-        if (menuError || !menuItems || menuItems.length === 0) {
-            log('❌ DIAGNOSTICS FAILED: Could not fetch a valid menu item for testing.');
+        if (menuError || !allMenuItems || allMenuItems.length === 0) {
+            log('❌ DIAGNOSTICS FAILED: Could not fetch valid menu items for testing.');
             return { success: false, logs };
         }
-        const testItem = menuItems[0];
-        log(`🔹 Using Test Item: ${testItem.name} (ID: ${testItem.id})`);
+
+        const itemIds = allMenuItems.map(i => i.id);
+        const { data: allLinks } = await supabase.from('menuitemoptions').select('item_id, group_id').in('item_id', itemIds);
+
+        // Count groups per item to find "complex" items
+        const groupCountMap = (allLinks || []).reduce((acc, link) => {
+            acc[link.item_id] = (acc[link.item_id] || 0) + 1;
+            return acc;
+        }, {});
+
+        // Sort items: Put 'קפוצ׳ינו גדול' first, then items with most mods
+        const sortedItems = [...allMenuItems].sort((a, b) => {
+            if (a.name.includes('קפוצ׳ינו גדול')) return -1;
+            if (b.name.includes('קפוצ׳ינו גדול')) return 1;
+            return (groupCountMap[b.id] || 0) - (groupCountMap[a.id] || 0);
+        });
+
+        const testItemsSubset = sortedItems.slice(0, 4); // Take top 4
+        log(`🔹 Selected Test Items: ${testItemsSubset.map(i => `${i.name} (${groupCountMap[i.id] || 0} groups)`).join(', ')}`);
+
+        // 1a. Fetch actual Modifier Values for these items
+        const activeGroupIds = (allLinks || [])
+            .filter(l => testItemsSubset.some(ti => ti.id === l.item_id))
+            .map(l => l.group_id);
+
+        const { data: activeMods } = await supabase
+            .from('optionvalues')
+            .select('*')
+            .in('group_id', activeGroupIds)
+            .eq('business_id', businessId);
+
+        const orderItems = testItemsSubset.map(item => {
+            const itemGroups = (allLinks || []).filter(l => l.item_id === item.id).map(l => l.group_id);
+            const itemMods = [];
+            const selectedGroupIds = new Set();
+
+            // Pick at least 2 different groups if possible
+            if (itemGroups.length > 0 && activeMods?.length > 0) {
+                // Shuffle groups to get random selection
+                const shuffledGroups = [...itemGroups].sort(() => Math.random() - 0.5);
+
+                for (const gId of shuffledGroups) {
+                    if (selectedGroupIds.size >= 3) break; // Try to get up to 3 distinct groups
+
+                    const possibleValues = activeMods.filter(v => v.group_id === gId);
+                    if (possibleValues.length > 0) {
+                        const val = possibleValues[Math.floor(Math.random() * possibleValues.length)];
+                        itemMods.push({
+                            id: val.id,
+                            name: val.value_name,
+                            price: val.price_adjustment,
+                            group_id: val.group_id
+                        });
+                        selectedGroupIds.add(gId);
+                    }
+                }
+            }
+
+            return {
+                item_id: item.id,
+                name: item.name,
+                price: item.price,
+                quantity: 1,
+                kds_routing_logic: item.kds_routing_logic || 'MADE_TO_ORDER',
+                item_status: 'in_progress',
+                is_hot_drink: String(item.is_hot_drink || item.category?.includes('קפה') || false),
+                mods: itemMods.length > 0 ? itemMods : undefined
+            };
+        });
+
+        const orderTotal = orderItems.reduce((sum, item) => {
+            const modsPrice = item.mods?.reduce((mSum, m) => mSum + (m.price || 0), 0) || 0;
+            return sum + (item.price * item.quantity) + modsPrice;
+        }, 0);
 
         // 0b. Check Initial Loyalty Points
         log(`🔹 Checking initial points for ${TEST_PHONE}...`);
@@ -43,26 +115,16 @@ export const runSystemDiagnostics = async (businessId) => {
         }
 
         // 1. Create Order (RPC)
-        log('1️⃣ Creating Test Order (RPC: submit_order_v3)...');
+        log('1️⃣ Creating Test Order with multiple items & modifiers (RPC: submit_order_v3)...');
 
         const { data: orderResult, error: createError } = await supabase.rpc('submit_order_v3', {
             p_business_id: businessId,
-            p_final_total: testItem.price,
+            p_final_total: orderTotal,
             p_order_type: 'dine_in',
             p_payment_method: 'cash',
             p_customer_name: TEST_NAME,
             p_customer_phone: TEST_PHONE,
-            p_items: [
-                {
-                    item_id: testItem.id,
-                    name: testItem.name,
-                    price: testItem.price,
-                    quantity: 1,
-                    kds_routing_logic: 'MADE_TO_ORDER',
-                    item_status: 'in_progress',
-                    is_hot_drink: 'true'
-                }
-            ]
+            p_items: orderItems
         });
 
         if (createError) {
@@ -104,6 +166,68 @@ export const runSystemDiagnostics = async (businessId) => {
                 log(`✅ Loyalty Verified: Points increased from ${initialPoints} to ${finalPoints}`);
             } else {
                 log(`⚠️ LOYALTY WARNING: Points did not increase. (Started: ${initialPoints}, Ended: ${finalPoints})`);
+            }
+        }
+
+        // 2c. Inventory Verification
+        log('🔹 Verifying Inventory Tracking...');
+        const { data: inventoryItems } = await supabase
+            .from('menu_items')
+            .select(`
+                id, 
+                name, 
+                prepared_items_inventory (
+                    id,
+                    current_stock
+                )
+            `)
+            .eq('business_id', businessId)
+            .not('prepared_items_inventory', 'is', null);
+
+        if (!inventoryItems || inventoryItems.length === 0) {
+            log('⚠️ No items with inventory tracking found. Skipping inventory diagnostic.');
+        } else {
+            const invItem = inventoryItems[0];
+            const invRecord = Array.isArray(invItem.prepared_items_inventory)
+                ? invItem.prepared_items_inventory[0]
+                : invItem.prepared_items_inventory;
+
+            if (!invRecord) {
+                log('⚠️ Inventory record found but malformed. Skipping.');
+            } else {
+                const initialStock = invRecord.current_stock;
+                const testStock = initialStock + 5;
+                log(`📊 Found Inventory Item: ${invItem.name}. Current: ${initialStock}. testing update to ${testStock}...`);
+
+                // Perform direct update
+                const { error: invUpdateErr } = await supabase
+                    .from('prepared_items_inventory')
+                    .update({ current_stock: testStock })
+                    .eq('id', invRecord.id);
+
+                if (invUpdateErr) {
+                    log(`❌ INVENTORY UPDATE FAILED: ${invUpdateErr.message}`);
+                } else {
+                    // Verify from DB
+                    const { data: verifyInv } = await supabase
+                        .from('prepared_items_inventory')
+                        .select('current_stock')
+                        .eq('id', invRecord.id)
+                        .single();
+
+                    if (verifyInv?.current_stock === testStock) {
+                        log(`✅ Inventory Update Verified! (DB confirmed ${testStock})`);
+                    } else {
+                        log(`❌ INVENTORY MISMATCH: DB reports ${verifyInv?.current_stock} instead of ${testStock}`);
+                    }
+
+                    // Restore initial stock
+                    await supabase
+                        .from('prepared_items_inventory')
+                        .update({ current_stock: initialStock })
+                        .eq('id', invRecord.id);
+                    log('🔹 Inventory restored to original value.');
+                }
             }
         }
 

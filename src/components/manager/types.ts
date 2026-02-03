@@ -15,6 +15,9 @@ export interface OptionGroup {
   type?: 'single' | 'multi' | string;
   category?: string;
   required?: boolean;
+  is_required?: boolean;
+  min_selection?: number;
+  max_selection?: number;
   description?: string | null;
   metadata?: Record<string, any> | null;
   values: OptionValue[];
@@ -44,5 +47,4 @@ export interface OrderItem extends MenuItem {
   totalPrice: number;
 }
 
-// Explicit type exports for JSX files
-export type { OptionGroup, OrderItem, SelectedOption, OptionValue, MenuItem };
+// End of file

@@ -56,6 +56,7 @@ export const processInvoiceWithGemini = async (base64String, retryCount = 0) => 
 - price: מחיר ליחידה אחת - אם המקור היה לק"ג, חלק ב-1000
 - price_source: "kg" אם המחיר המקורי היה לקילו, "unit" אם היה ליחידה
 - original_price_per_kg: המחיר המקורי לק"ג (רק אם price_source="kg")
+- confidence: רמת הביטחון בזיהוי (0.0 עד 1.0)
 
 החזר **רק** אובייקט JSON תקין בפורמט הבא:
 {
@@ -65,7 +66,7 @@ export const processInvoiceWithGemini = async (base64String, retryCount = 0) => 
   "document_date": "YYYY-MM-DD (התאריך שמופיע על המסמך!)",
   "total_amount": 0,
   "items": [
-    { "name": "...", "category": "...", "unit": "גרם או יח' או ליטר", "quantity": 0, "price": 0, "price_source": "kg או unit", "original_price_per_kg": 0 }
+    { "name": "...", "category": "...", "unit": "גרם או יח' או ליטר", "quantity": 0, "price": 0, "price_source": "kg או unit", "original_price_per_kg": 0, "confidence": 0.95 }
   ]
 }`;
 
@@ -184,36 +185,21 @@ export const generateMenuImage = async (itemName, seedHint = '', backgroundHint 
             .replace(/{{background}}/g, backgroundHint || 'default desert background')
             .replace(/{{composition_style}}/g, aiSettings.composition_style || 'professional product photography')
             .replace(/{{blur}}/g, aiSettings.background_blur_radius ? `${aiSettings.background_blur_radius}px` : 'high bokeh');
-    } else {
-        // FALLBACK TO ORIGINAL LOGIC
-        let presentation = '';
-        let noContainerMode = !seedHint;
+        finalPrompt = `LITERAL PRODUCT PHOTOGRAPHY for an E-commerce catalog.
+**SUBJECT:** "${itemName}"
+${description ? `**DESCRIPTION:** ${description}` : ''}
+${internallyDetectedDescription ? `**DETAILS:** ${internallyDetectedDescription}` : ''}
 
-        if (seedHint) {
-            presentation = `Container style: ${seedHint}.`;
-        } else {
-            presentation = `⚠️ NO CONTAINER! The item appears without any serving vessel.`;
-        }
+**CRITICAL FIDELITY RULES:**
+1. REPLICATE SEEDS EXACTLY: Use the provided REFERENCE PHOTO for the subject and the BACKGROUND_REFERENCE for the environment.
+2. NO BEAUTIFICATION: Avoid adjectives like "breathtaking", "stunning", or "cinematic". No sun flares or extra lighting.
+3. CONTAINER: If the subject is a plant, it MUST be in a "simple brown plastic nursery pot" as shown in the reference. NEVER upgrade to decorative pots.
+4. BACKGROUND: If the background seed shows a specific floor or wall, REPLICATE IT. Do NOT default to desert/mountains unless they appear in the seed.
+5. COMPOSITION: Subject must be centered and fill 75% of the frame. Pure white background is only allowed if the seed is white.
 
-        let background = backgroundHint || `A breathtaking, extremely blurred (bokeh) panoramic vista of the Jordan Valley desert. Distant desert mountains, soft golden sunrise light, sparse desert flora.`;
-
-        finalPrompt = `PRODUCT PHOTOGRAPHY for Israeli boutique cafe menu.
-**ESTABLISHMENT TYPE:** DAIRY & VEGETARIAN CAFE. 
-**STRICT RULES:** NO MEAT!
-**CRITICAL - THE MAIN SUBJECT IS:** "${itemName}"
-${description ? `**USER DESCRIPTION:** ${description}` : ''}
-**PRODUCT DETAILS:** ${internallyDetectedDescription}
-**CONTAINER/PRESENTATION:**
-${presentation}
-- The container/packaging must be BRAND NEW, perfectly symmetric, and flawless.
-- NO DENTS, no warping, no deformation. Perfectly straight edges.
 **PHOTOGRAPHIC GUIDELINES:**
-- Background: ${background}
-- Composition: THE "${itemName}" IS PERFECTLY CENTERED AND FILLS 75-80% OF THE FRAME.
-- Focus: RAZOR-SHARP FOCUS on the ${itemName}.
-- Aesthetic: "Desert Edge" (שפת המדבר) Israeli boutique cafe style.
-- Resolution: 4K.
-- STRICT: No text, no watermarks, no logos.`;
+- Focus: Razor-sharp on the ${itemName}.
+- Style: Flat, commercial, factual.`;
     }
 
     try {
@@ -221,9 +207,10 @@ ${presentation}
 
         const timeout = (aiSettings?.generation_timeout_seconds || 30) * 1000;
 
+        // 🛑 DO NOT CHANGE THIS MODEL WITHOUT EXPLICIT USER APPROVAL. USE 3.0+ 🛑
         const model = genAI.getGenerativeModel({
             model: "gemini-3-pro-image-preview",
-            generationConfig: { responseModalities: ["image", "text"] }
+            generationConfig: { responseModalities: ["IMAGE", "TEXT"] }
         });
 
         const contents = [];

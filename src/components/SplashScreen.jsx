@@ -8,9 +8,15 @@ const SplashScreen = ({ onFinish }) => {
     const [authChecked, setAuthChecked] = useState(false);
     const [imageLoaded, setImageLoaded] = useState(false);
     const [syncComplete, setSyncComplete] = useState(false);
-    const [statusText, setStatusText] = useState('');
+    const [statusText, setStatusText] = useState('מתניע מערכת...');
     const [showSkipButton, setShowSkipButton] = useState(false);
     const [tapCount, setTapCount] = useState(0);
+
+    // --- ✨ NEW SMOOTH PROGRESS LOGIC ---
+    const [progress, setProgress] = useState(0);
+    const [targetProgress, setTargetProgress] = useState(5);
+    const progressTimer = useRef(null);
+    const lastUpdate = useRef(Date.now());
 
     // Track if we've already triggered finish to prevent double calls
     const finishTriggered = useRef(false);
@@ -30,12 +36,31 @@ const SplashScreen = ({ onFinish }) => {
         }
     };
 
+    // 🏃 PROGRESS ANIMATOR: Moves 'progress' towards 'targetProgress' smoothly
     useEffect(() => {
-        console.log('🎨 SplashScreen v4.5.1 Robust mounted');
+        let frame;
+        const animate = () => {
+            setProgress(prev => {
+                if (prev >= targetProgress) return prev;
+                // Cubic easing for a premium feel
+                const distance = targetProgress - prev;
+                const step = (distance * 0.08) + 0.15;
+                return Math.min(prev + step, targetProgress);
+            });
+            frame = requestAnimationFrame(animate);
+        };
+        frame = requestAnimationFrame(animate);
+        return () => cancelAnimationFrame(frame);
+    }, [targetProgress]);
+
+    // 🚀 INITIALIZATION ENGINE: Runs once on mount
+    useEffect(() => {
+        console.log('🎨 SplashScreen v5.2 Engine Fixed');
 
         // Global Safety Timeout - If NOTHING happens in 15 seconds, just go in.
         const globalRescueTimer = setTimeout(() => {
             console.error('🆘 GLOBAL SPLASH TIMEOUT - Forcing entry');
+            setTargetProgress(100);
             setAuthChecked(true);
             setSyncComplete(true);
             setMinTimePassed(true);
@@ -46,84 +71,57 @@ const SplashScreen = ({ onFinish }) => {
 
         const initialize = async () => {
             try {
-                // A. Version Check & Performance Support
+                // Phase 1: Environment & Auth (0-30%)
+                setTargetProgress(15);
                 const { APP_VERSION } = await import('../version');
-                const lastVersion = localStorage.getItem('app_version');
-
-                // --- 🔋 WEAK DEVICE DETECTION ---
-                const isWeakDevice = (navigator.deviceMemory && navigator.deviceMemory <= 4) ||
-                    (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
-                    window.innerWidth < 1024 ||
-                    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-                if (isWeakDevice) {
-                    localStorage.setItem('lite_mode', 'true');
-                    document.body.classList.add('lite-mode');
-                } else {
-                    localStorage.removeItem('lite_mode');
-                    document.body.classList.remove('lite-mode');
-                }
-
-                // Deep memory cleanup
-                sessionStorage.clear();
-
-                if (lastVersion && lastVersion !== APP_VERSION) {
-                    localStorage.removeItem('last_full_sync');
-                    try {
-                        const { db } = await import('../db/database');
-                        await db.delete();
-                    } catch (e) { }
-                }
                 localStorage.setItem('app_version', APP_VERSION);
 
-                // B. Auth Check & Daily Sync
-                const authPromise = supabase.auth.getUser();
-                const authTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Auth Timeout')), 5000));
+                const { data: { user } } = await supabase.auth.getUser();
+                setTargetProgress(30);
 
-                let userRecord = null;
-                try {
-                    const { data: { user } } = await Promise.race([authPromise, authTimeout]);
-                    userRecord = user;
-                } catch (e) {
-                    console.warn('Auth check skipped or failed:', e);
-                }
-
-                if (userRecord) {
-                    setStatusText('מתחבר...');
-                    let businessId = userRecord.user_metadata?.business_id;
+                if (user) {
+                    setStatusText('מחבר פרופיל...');
+                    let businessId = user.user_metadata?.business_id;
 
                     if (!businessId) {
-                        try {
-                            const { data: emp } = await supabase.from('employees')
-                                .select('business_id')
-                                .eq('auth_user_id', userRecord.id)
-                                .maybeSingle();
-                            if (emp) businessId = emp.business_id;
-                        } catch (e) { }
+                        const { data: emp } = await supabase.from('employees').select('business_id').eq('auth_user_id', user.id).maybeSingle();
+                        if (emp) businessId = emp.business_id;
                     }
 
                     if (businessId) {
-                        setStatusText('מסנכרן...');
-                        const syncPromise = initialLoad(businessId, (table) => setStatusText(`טוען ${table}...`));
-                        const syncTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Sync Timeout')), 10000));
+                        setTargetProgress(45);
+                        const { db } = await import('../db/database');
+                        const localItemCount = await db.menu_items.count();
 
-                        try {
-                            await Promise.race([syncPromise, syncTimeout]);
-                        } catch (e) {
-                            console.warn('Sync issues, continuing...');
-                            setStatusText('טוען ממטמון...');
+                        if (localItemCount > 20) {
+                            setStatusText('טוען נתונים...');
+                            // Removed: initialLoad(businessId).catch(e => console.warn('Silent sync skipped:', e));
+                            setTargetProgress(90);
+                            setTimeout(() => {
+                                setSyncComplete(true);
+                                setAuthChecked(true);
+                                setTargetProgress(100);
+                            }, 1000);
+                        } else {
+                            setStatusText('מכין סביבת עבודה...');
+                            // Proceed to app - SyncStatusModal will handle the prompt if needed
+                            setTargetProgress(100);
+                            setSyncComplete(true);
+                            setAuthChecked(true);
                         }
+                    } else {
+                        setTargetProgress(100);
                     }
+                } else {
+                    setTargetProgress(100);
                 }
             } catch (err) {
                 console.error('Initialization error:', err);
-            } finally {
-                setAuthChecked(true);
-                setSyncComplete(true);
+                setTargetProgress(100);
             }
         };
 
-        const minTimer = setTimeout(() => setMinTimePassed(true), 2000);
+        const minTimer = setTimeout(() => setMinTimePassed(true), 1500);
         initialize();
 
         return () => {
@@ -131,15 +129,16 @@ const SplashScreen = ({ onFinish }) => {
             clearTimeout(globalRescueTimer);
             clearTimeout(skipButtonTimer);
         };
-    }, []);
+    }, []); // Run ONCE on mount!
 
     // Coordinate Finish
     useEffect(() => {
-        if (minTimePassed && authChecked && syncComplete && !finishTriggered.current) {
+        if (progress >= 100 && minTimePassed && !finishTriggered.current) {
             finishTriggered.current = true;
-            setTimeout(() => onFinish(), 500);
+            // Delay slightly to show 100% state
+            setTimeout(onFinish, 400);
         }
-    }, [minTimePassed, authChecked, syncComplete, onFinish]);
+    }, [progress, minTimePassed, onFinish]);
 
     return (
         <div className="splash-container">
@@ -162,9 +161,11 @@ const SplashScreen = ({ onFinish }) => {
                 <h1 className="brand-name">iCaffeOS</h1>
                 <p className="tagline">CoffeeShops Operating System</p>
 
-                <div className="mt-12 flex flex-col items-center gap-4 w-full min-h-[100px]">
+                <div className="mt-12 flex flex-col items-center gap-4 w-full min-h-[100px] transition-opacity duration-500"
+                    style={{ opacity: imageLoaded ? 1 : 0 }}
+                >
                     <div className="loading-bar">
-                        <div className="progress"></div>
+                        <div className="progress" style={{ width: `${progress}%`, transition: 'none', animation: 'none' }}></div>
                     </div>
                     {statusText && (
                         <p className="text-white/60 text-[10px] font-mono animate-pulse uppercase tracking-widest">{statusText}</p>

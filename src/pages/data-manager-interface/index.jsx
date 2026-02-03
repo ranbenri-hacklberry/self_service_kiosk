@@ -154,7 +154,6 @@ const ManagerDashboard = () => {
             className="h-full flex flex-col"
           >
             {activeTab === 'sales' && <SalesDashboard />}
-            {activeTab === 'menu' && <MenuDisplay />}
             {activeTab === 'inventory' && <InventoryScreen />}
             {activeTab === 'tasks' && <TasksManager />}
             {activeTab === 'employees' && <EmployeeManager />}

@@ -10,7 +10,7 @@ import { fetchBusinessSeeds, saveBusinessSeed, deleteBusinessSeed } from '../../
 /**
  * EditPanel - Left side panel for editing menu items
  */
-const EditPanel = ({ item, onItemChange, onSave, onClose, authMode, onAuthModeChange, aiSettings, businessId }) => {
+const EditPanel = ({ item, onItemChange, modifiers = [], onModifiersChange, onSave, onClose, authMode, onAuthModeChange, aiSettings, businessId }) => {
     const { isDarkMode } = useTheme();
     const fileInputRef = useRef(null);
     const [isUploading, setIsUploading] = useState(false);
@@ -277,6 +277,46 @@ const EditPanel = ({ item, onItemChange, onSave, onClose, authMode, onAuthModeCh
                     <div className="grid grid-cols-2 gap-2">
                         <button onClick={() => onAuthModeChange('pin')} className={`p-3 rounded-xl text-sm font-bold border transition-all ${authMode === 'pin' ? 'bg-orange-500 text-white ring-2 ring-orange-400' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white text-slate-500'}`}>🔢 PIN</button>
                         <button onClick={() => onAuthModeChange('push')} className={`p-3 rounded-xl text-sm font-bold border transition-all ${authMode === 'push' ? 'bg-orange-500 text-white ring-2 ring-orange-400' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white text-slate-500'}`}>📱 PUSH</button>
+                    </div>
+                </div>
+
+                {/* Modifiers Section */}
+                <div className="space-y-3 pt-2">
+                    <div className="flex items-center justify-between">
+                        <label className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>תוספות ושינויים ({modifiers?.length || 0})</label>
+                        <button className="text-xs font-bold text-orange-500">+ הוסף קבוצה</button>
+                    </div>
+
+                    <div className="space-y-3">
+                        {modifiers && modifiers.length > 0 ? (
+                            modifiers.map((group) => (
+                                <div
+                                    key={group.id}
+                                    className={`p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-700/50 border-slate-600' : 'bg-white border-slate-100 shadow-sm'}`}
+                                >
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="font-bold text-base">{group.name}</span>
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${group.is_required ? 'bg-red-500/10 text-red-500' : 'bg-slate-500/10 text-slate-400'}`}>
+                                            {group.is_required ? 'חובה' : 'רשות'}
+                                        </span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {group.optionvalues?.map(opt => (
+                                            <div
+                                                key={opt.id}
+                                                className={`px-2 py-1 rounded-lg text-xs font-medium ${isDarkMode ? 'bg-slate-600 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                                            >
+                                                {opt.value_name} {opt.price_adjustment > 0 ? `(+₪${opt.price_adjustment})` : ''}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className={`p-6 rounded-2xl border-2 border-dashed text-center ${isDarkMode ? 'border-slate-700 text-slate-500' : 'border-slate-200 text-slate-400'}`}>
+                                <p className="text-sm">אין תוספות מוגדרות למנה זו</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

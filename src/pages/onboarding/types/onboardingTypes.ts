@@ -29,6 +29,7 @@ export enum ModifierRequirement {
  * Supports default selection and negative prices for discounts.
  */
 export interface ModifierItem {
+    id?: string;          // 🆕 UUID for DB sync
     name: string;
     price: number;        // Can be negative for discounts (e.g., "No Cheese[-5]")
     isDefault?: boolean;  // {D} flag - pre-selected option
@@ -43,6 +44,7 @@ export interface ModifierItem {
  *          Add-ons [O|A|3]:Onion[2],ExtraCheese[5]
  */
 export interface ModifierGroup {
+    id?: string; // 🆕 UUID for DB sync
     name: string;
     items: ModifierItem[];
 
@@ -65,7 +67,7 @@ export interface OnboardingItem {
     description: string;
     price: number;
     salePrice?: number; // 🆕 Added sale price support
-    productionArea: 'Kitchen' | 'Bar' | 'Oven' | string;
+    productionArea: 'Kitchen' | 'Bar' | 'Checker' | string;
     ingredients: string[];
     vibeOverride?: string; // from Excel 'Vibe Override'
     modifiers: ModifierGroup[];
@@ -77,18 +79,29 @@ export interface OnboardingItem {
     // 🆕 Advanced Manager Fields
     saleStartDate?: string;
     saleEndDate?: string;
+    englishName?: string; // 🆕 English name for multilingual menus
+    cost?: number;        // 🆕 Cost price for production analysis
     preparationMode?: 'ready' | 'requires_prep' | 'cashier_choice';
     displayKDS?: string[];
-    recipe?: { ingredient: string; quantity: string }[];
+    recipe?: { ingredient: string; quantity: string; unit?: string; cost?: number }[];
     productionSchedule?: { day: string; quantity: number }[];
+
+    // 🆕 Visibility & Routing
+    isVisiblePos?: boolean;
+    isVisibleOnline?: boolean;
+    kdsStation?: 'kitchen' | 'bar' | 'none'; // Main checker routing
+    subStation?: string; // Specific station (Grill, Fish, etc.)
 
     // AI & App State
     prompt?: string;
+    lastPrompt?: string; // 🆕 The exact prompt used for generation
     negativePrompt?: string;
     imageUrl?: string;        // AI generated image URL (Supabase)
-    originalImageUrl?: string; // User uploaded "seed" image for i2i
+    categoryId?: string | null; // 🆕 Linked DB category ID
+    originalImageUrl?: string; // Legacy/Single seed
+    originalImageUrls?: string[]; // 🆕 Multiple product reference images
     manualImage?: Blob | string; // User override
-    status: 'pending' | 'preparing' | 'generating' | 'completed' | 'done' | 'error' | 'approved';
+    status: 'pending' | 'preparing' | 'generating' | 'completed' | 'done' | 'error' | 'approved' | 'image_skipped';
     visualDescription?: string; // 🆕 Visual anchor for AI generation
 
     // Validation
@@ -99,6 +112,16 @@ export interface OnboardingItem {
     powerSource?: string;    // e.g., "Apple Silicon"
     error?: string;          // 🆕 Per-item error message
     seeds?: { type: string, data: string }[]; // 🆕 Visual references for i2i
+    aiImprovement?: boolean; // 🆕 Toggle for 20% AI improvement
+
+    // 🆕 Inventory Settings (Prepared Items)
+    inventorySettings?: {
+        isPreparedItem: boolean;
+        prepType: 'completion' | 'production' | 'defrost';
+        dailyPars: Record<'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday', number>;
+        parShifts?: Partial<Record<'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday', 'opening' | 'closing' | 'prep'>>;
+        hideOnZeroStock?: boolean;
+    };
 }
 
 export interface OnboardingSession {

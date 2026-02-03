@@ -69,6 +69,17 @@ const LiteMenuItemCard = ({ item, onAddToCart }) => {
 
                 {/* Text */}
                 <div className="w-full transform transition-transform duration-300 group-hover:-translate-y-1">
+                    {item?.current_stock !== undefined && item?.current_stock !== null && (
+                        <div className="mb-2">
+                            <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-white text-[10px] font-black backdrop-blur-md border shadow-lg ${item.current_stock === 0 ? 'bg-rose-500/90 border-rose-400/30' : 'bg-emerald-500/90 border-emerald-400/30'}`}>
+                                <span className="opacity-80">
+                                    {item.inventory_settings?.prepType === 'defrost' ? 'מופשרים:' : 'מוכנים:'}
+                                </span>
+                                <span className="font-mono text-xs">{item.current_stock}</span>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex items-baseline justify-between gap-3" dir="rtl">
                         <h3 className="text-xl font-bold text-white leading-tight drop-shadow-lg truncate flex-1 tracking-wide">
                             {item?.name}
