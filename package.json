@@ -55,6 +55,7 @@
     "framer-motion": "^10.16.4",
     "googleapis": "^169.0.0",
     "lucide-react": "^0.484.0",
+    "moltbot": "^0.1.0",
     "multer": "^2.0.2",
     "node-fetch": "^3.3.2",
     "node-thermal-printer": "^4.5.0",

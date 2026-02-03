@@ -7,6 +7,8 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
+import { SerialPort } from 'serialport';
+import { uploadBackupToDrive, getLastBackupTime } from './src/services/dbBackupService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,8 +41,9 @@ let supabase = null; // Default client (will be local for most operations)
 // Initialize Remote Client
 if (REMOTE_URL && REMOTE_KEY) {
     try {
+        const isServiceKey = REMOTE_KEY.length > 200; // Service keys are long
         remoteSupabase = createClient(REMOTE_URL, REMOTE_KEY);
-        console.log("✅ Remote Supabase Client Initialized (Cloud)");
+        console.log(`✅ Remote Supabase Initialized. Role: ${isServiceKey ? 'SERVICE_ROLE (RLS Bypass)' : 'ANON (RLS Limited)'}`);
     } catch (err) {
         console.error("❌ Failed to initialize Remote Supabase:", err.message);
     }
@@ -49,9 +52,10 @@ if (REMOTE_URL && REMOTE_KEY) {
 // Initialize Local Client
 if (LOCAL_URL && LOCAL_KEY) {
     try {
+        const isServiceKey = LOCAL_KEY.length > 200;
         localSupabase = createClient(LOCAL_URL, LOCAL_KEY);
-        supabase = localSupabase; // Use local as default for speed
-        console.log("✅ Local Supabase Client Initialized (Docker)");
+        supabase = localSupabase;
+        console.log(`✅ Local Supabase Initialized. Role: ${isServiceKey ? 'SERVICE_ROLE' : 'ANON'}`);
     } catch (err) {
         console.error("❌ Failed to initialize Local Supabase:", err.message);
         // Fallback to remote if local fails
@@ -59,7 +63,7 @@ if (LOCAL_URL && LOCAL_KEY) {
     }
 } else {
     supabase = remoteSupabase;
-    console.log("ℹ️ Using Remote Supabase as primary (no local config)");
+    console.log("ℹ️ Using Remote Supabase as primary");
 }
 
 if (!supabase) {
@@ -147,26 +151,65 @@ const ensureSupabase = (req, res, next) => {
     next();
 };
 
+// Global list of tables that MUST be filtered by business_id for security
+const MULTI_TENANT_TABLES = [
+    'employees', 'menu_items', 'catalog_items', 'inventory_items', 'item_category',
+    'customers', 'discounts', 'orders', 'order_items', 'optiongroups',
+    'suppliers', 'supplier_orders', 'supplier_order_items', 'loyalty_cards',
+    'loyalty_transactions', 'tasks', 'recurring_tasks', 'task_completions',
+    'prepared_items_inventory', 'recipes', 'recipe_ingredients', 'business_ai_settings'
+];
+
+/**
+ * SECURITY MIDDLEWARE: Enforce business_id for sensitive sync operations
+ * Prevents "leakage" where one business could accidentally (or maliciously) 
+ * fetch data from another by omitting the businessId.
+ */
+const enforceBusinessId = (req, res, next) => {
+    const businessId = req.query.businessId || req.body.businessId || req.headers['x-business-id'];
+    const table = req.params.table || req.body.table;
+
+    // If it's a multi-tenant table, businessId MUST be provided
+    if (table && MULTI_TENANT_TABLES.includes(table) && !businessId) {
+        console.error(`🛡️ [Security] Blocked request for ${table} - Missing businessId!`);
+        return res.status(403).json({
+            error: "Security: businessId is required for this operation",
+            code: "MISSING_BUSINESS_ID"
+        });
+    }
+
+    // Attach to request for easy access in handlers
+    req.businessId = businessId;
+    next();
+};
+
 // ------------------------------------------------------------------
 // === SYNC ENGINE: Cloud to Local ===
 // ------------------------------------------------------------------
 const SYNC_TABLES = [
     { name: 'businesses', key: 'id' },
+    { name: 'business_ai_settings', key: 'id' },
     { name: 'employees', key: 'id' },
     { name: 'menu_items', key: 'id' },
+    { name: 'catalog_items', key: 'id' },
+    { name: 'inventory_items', key: 'id' },
+    { name: 'item_category', key: 'id' },
     { name: 'customers', key: 'id' },
-    { name: 'orders', key: 'id', limit: 1000 },
-    { name: 'order_items', key: 'id', limit: 5000 },
+    { name: 'discounts', key: 'id' },
+    { name: 'orders', key: 'id', limit: 5000 },
+    { name: 'order_items', key: 'id', limit: 30000 },
     { name: 'optiongroups', key: 'id' },
     { name: 'optionvalues', key: 'id' },
     { name: 'menuitemoptions', key: ['item_id', 'group_id'] },
-    { name: 'ingredients', key: 'id' },
     { name: 'suppliers', key: 'id' },
     { name: 'supplier_orders', key: 'id' },
     { name: 'supplier_order_items', key: 'id' },
     { name: 'loyalty_cards', key: 'id' },
     { name: 'loyalty_transactions', key: 'id' },
     { name: 'tasks', key: 'id' },
+    { name: 'recurring_tasks', key: 'id' },
+    { name: 'task_completions', key: 'id' },
+    { name: 'prepared_items_inventory', key: 'item_id' },
     { name: 'recipes', key: 'id' },
     { name: 'recipe_ingredients', key: 'id' },
     { name: 'music_artists', key: 'id' },
@@ -192,129 +235,1299 @@ app.get("/api/sync/status", (req, res) => {
     });
 });
 
-app.post("/api/sync-cloud-to-local", ensureSupabase, async (req, res) => {
-    // Check if both clients are available
-    if (!remoteSupabase) {
-        return res.status(400).json({ error: "Remote Supabase not configured" });
-    }
+app.get("/api/sync/wellness", async (req, res) => {
+    const businessId = req.query.businessId || req.headers['x-business-id'];
     if (!localSupabase) {
-        return res.status(400).json({ error: "Local Supabase not running. Start with: supabase start" });
+        return res.json({ healthy: false, reason: 'local_supabase_not_available', counts: {} });
     }
 
-    // Prevent concurrent syncs
-    if (syncStatus.inProgress) {
-        return res.status(409).json({
-            error: "Sync already in progress",
-            progress: syncStatus.progress,
+    try {
+        const { count: menuCount } = await localSupabase.from('menu_items').select('*', { count: 'exact', head: true });
+
+        const { data: latestOrder } = await localSupabase
+            .from('orders')
+            .select('created_at')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        // NEW: Count stale active orders (older than 12 hours but still in active state)
+        // Note: In Docker/Postgres we use interval syntax or Date comparison
+        const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+        const { count: staleActiveCount } = await localSupabase
+            .from('orders')
+            .select('*', { count: 'exact', head: true })
+            .in('order_status', ['new', 'in_progress', 'ready', 'held'])
+            .lt('created_at', twelveHoursAgo);
+
+        // NEW: Get oldest active order time
+        const { data: oldestOrder } = await localSupabase
+            .from('orders')
+            .select('created_at')
+            .in('order_status', ['new', 'in_progress', 'ready', 'held'])
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+        const hasData = (menuCount > 0);
+        const isHealthy = hasData && (staleActiveCount || 0) <= 20;
+
+        res.json({
+            healthy: isHealthy,
+            counts: {
+                menu_items: menuCount || 0,
+                orders: (await localSupabase.from('orders').select('*', { count: 'exact', head: true })).count || 0,
+                stale_active_orders: staleActiveCount || 0
+            },
+            lastSync: syncStatus.lastSync,
             currentTable: syncStatus.currentTable
         });
+    } catch (err) {
+        console.error('❌ Cache wellness check failed:', err);
+        res.status(500).json({
+            healthy: false,
+            error: err.message,
+            context: 'wellness_check'
+        });
+    }
+});
+
+// ADMIN SECURITY: Simple shared secret for management routes
+const ADMIN_SECRET = 'kadense_admin_2026';
+
+// 📡 NOTIFICATION ENDPOINT (Mock for SMS/WhatsApp)
+app.post("/api/admin/notify-online", async (req, res) => {
+    console.log("📲 [NOTIFICATION] ---------------------------------------------------");
+    console.log("📲 [NOTIFICATION] New Local Client Connected & Reset Successfully!");
+    console.log("📲 [NOTIFICATION] Timestamp:", new Date().toISOString());
+    console.log("📲 [NOTIFICATION] This would be sent via SMS/WhatsApp to Admin.");
+    console.log("📲 [NOTIFICATION] ---------------------------------------------------");
+    res.json({ success: true, message: "Notification sent" });
+});
+
+// 🔄 PURE DOCKER SYNC: Fetch ALL data for a table directly from Docker (bypasses cloud entirely)
+app.get("/api/admin/docker-dump/:table", enforceBusinessId, async (req, res) => {
+    const { table } = req.params;
+    const { recentDays } = req.query;
+    const businessId = req.businessId; // Provided by middleware
+
+    if (!localSupabase) return res.status(503).json({ error: "Docker DB not available" });
+    if (!table) return res.status(400).json({ error: "Table name required" });
+
+    console.log(`📦 [DockerDump] Fetching ${table} for business ${businessId}...`);
+
+    try {
+        let allData = [];
+        let page = 0;
+        let hasMore = true;
+
+        // Use global list
+        const multiTenantTables = MULTI_TENANT_TABLES;
+
+        // Historical tables that should be limited by date
+        const historicalTables = ['orders', 'order_items', 'loyalty_transactions'];
+        const shouldLimitByDate = historicalTables.includes(table) && recentDays;
+
+        // Calculate date filter if needed
+        let fromDate = null;
+        if (shouldLimitByDate) {
+            fromDate = new Date();
+            fromDate.setDate(fromDate.getDate() - parseInt(recentDays));
+            console.log(`📅 [DockerDump] Limiting ${table} to after ${fromDate.toISOString()}`);
+        }
+
+        while (hasMore) {
+            let query = localSupabase.from(table).select('*');
+
+            // --- STRICT BUSINESS FILTERING ---
+            if (businessId) {
+                if (table === 'businesses') {
+                    query = query.eq('id', businessId);
+                } else if (multiTenantTables.includes(table)) {
+                    query = query.eq('business_id', businessId);
+                } else if (table === 'optionvalues' || table === 'menuitemoptions') {
+                    // Force join via optiongroups
+                    const { data: groups } = await localSupabase.from('optiongroups').select('id').eq('business_id', businessId);
+                    const groupIds = (groups || []).map(g => g.id);
+                    if (groupIds.length > 0) {
+                        query = query.in('group_id', groupIds);
+                    } else {
+                        return res.json({ success: true, data: [], count: 0 });
+                    }
+                } else if (table === 'prepared_items_inventory') {
+                    const { data: items } = await localSupabase.from('menu_items').select('id').eq('business_id', businessId);
+                    const itemIds = (items || []).map(i => i.id);
+                    if (itemIds.length > 0) {
+                        query = query.in('item_id', itemIds);
+                    } else {
+                        return res.json({ success: true, data: [], count: 0 });
+                    }
+                }
+            }
+
+            // --- STRICT DATE FILTERING ---
+            if (fromDate) {
+                if (table === 'orders') {
+                    query = query.gte('created_at', fromDate.toISOString());
+                } else if (table === 'loyalty_transactions') {
+                    query = query.gte('created_at', fromDate.toISOString());
+                }
+            }
+
+            // --- PAGING ---
+            const searchableIdTables = ['orders', 'loyalty_transactions', 'customers', 'employees', 'menu_items', 'order_items', 'loyalty_cards'];
+            const hasCreatedAt = ['orders', 'loyalty_transactions', 'order_items', 'task_completions', 'loyalty_cards'].includes(table);
+
+            if (table === 'orders' || table === 'loyalty_transactions' || table === 'order_items') {
+                query = query.order('created_at', { ascending: false });
+            } else if (table === 'menuitemoptions') {
+                query = query.order('item_id', { ascending: true });
+            } else if (table === 'optionvalues') {
+                query = query.order('group_id', { ascending: true });
+            } else if (table === 'prepared_items_inventory') {
+                query = query.order('item_id', { ascending: true });
+            } else if (searchableIdTables.includes(table)) {
+                query = query.order('id', { ascending: false });
+            }
+
+            query = query.range(page * 1000, (page + 1) * 1000 - 1);
+
+            const { data, error } = await query;
+
+            if (error) {
+                console.error(`❌ [DockerDump] Error:`, error.message);
+                return res.status(500).json({ error: error.message });
+            }
+
+            if (!data || data.length === 0) {
+                hasMore = false;
+            } else {
+                // Final safety: filter by business_id in memory just in case RLS or query failed to apply
+                let filtered = data;
+                if (businessId && multiTenantTables.includes(table)) {
+                    filtered = data.filter(d => d.business_id === businessId);
+                }
+
+                allData = allData.concat(filtered);
+                if (data.length < 1000) hasMore = false;
+                page++;
+            }
+        }
+
+        // Special handling for order_items: filter by order_ids from recent orders
+        if (table === 'order_items' && fromDate && businessId) {
+            // Fetch recent order IDs first
+            const { data: recentOrders } = await localSupabase
+                .from('orders')
+                .select('id')
+                .eq('business_id', businessId)
+                .gte('created_at', fromDate.toISOString());
+
+            const recentOrderIds = new Set((recentOrders || []).map(o => o.id));
+            allData = allData.filter(item => recentOrderIds.has(item.order_id));
+            console.log(`📅 [DockerDump] Filtered order_items to ${allData.length} (from ${recentOrderIds.size} recent orders)`);
+        }
+
+        // Generate IDs for tables that don't have them (Dexie requires 'id' as primary key)
+        const tablesNeedingId = ['menuitemoptions', 'optionvalues', 'prepared_items_inventory'];
+        if (tablesNeedingId.includes(table)) {
+            allData = allData.map((row, idx) => {
+                if (!row.id) {
+                    // Create a composite ID to ensure uniqueness
+                    if (table === 'menuitemoptions') {
+                        row.id = `${row.item_id}_${row.group_id}`;
+                    } else if (table === 'optionvalues') {
+                        row.id = `${row.group_id}_${row.value || idx}`;
+                    } else if (table === 'prepared_items_inventory') {
+                        row.id = `prep_${row.item_id || idx}`;
+                    } else {
+                        row.id = `auto_${table}_${idx}`;
+                    }
+                }
+                return row;
+            });
+            console.log(`🔑 [DockerDump] Generated IDs for ${table}`);
+        }
+
+        console.log(`✅ [DockerDump] Returning ${allData.length} rows for ${table}`);
+        res.json({ success: true, data: allData, count: allData.length });
+    } catch (err) {
+        console.error(`❌ [DockerDump] Exception:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// RESOLVE CONFLICT API: Copy data from one source to another
+app.post("/api/admin/resolve-conflict", enforceBusinessId, async (req, res) => {
+    const { table, source } = req.body;
+    const businessId = req.businessId; // From middleware
+
+    if (!table || !source || !businessId) {
+        return res.status(400).json({ error: "Missing table, source, or businessId" });
     }
 
-    const { businessId } = req.body;
+    console.log(`🔧 [ResolveConflict] ${table}: Using ${source} as source of truth for ${businessId}`);
 
-    // Start sync in background, return immediately
-    res.json({
-        message: "Sync started",
-        tables: SYNC_TABLES.map(t => t.name),
-        estimatedTime: "30-60 seconds"
-    });
+    try {
+        const sourceClient = source === 'docker' ? localSupabase : remoteSupabase;
+        const targetClient = source === 'docker' ? remoteSupabase : localSupabase;
 
-    // Background sync process
-    (async () => {
-        syncStatus = { inProgress: true, lastSync: null, progress: 0, currentTable: null, error: null };
+        if (!sourceClient || !targetClient) {
+            return res.status(503).json({ error: "Database clients not available" });
+        }
 
+        // Use global list
+        const multiTenantTables = MULTI_TENANT_TABLES;
+
+        // Step 1: Fetch ALL data from source using paging (to handle tables with >1000 rows)
+        let allSourceData = [];
+        let page = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+            let query = sourceClient.from(table).select('*');
+
+            if (table === 'businesses') {
+                query = query.eq('id', businessId);
+            } else if (multiTenantTables.includes(table)) {
+                query = query.eq('business_id', businessId);
+            } else if (table === 'optionvalues' || table === 'menuitemoptions') {
+                const { data: groups } = await sourceClient.from('optiongroups').select('id').eq('business_id', businessId);
+                const groupIds = (groups || []).map(g => g.id);
+                if (groupIds.length > 0) {
+                    query = query.in('group_id', groupIds);
+                } else {
+                    hasMore = false;
+                    continue;
+                }
+            } else if (table === 'prepared_items_inventory') {
+                const { data: items } = await sourceClient.from('menu_items').select('id').eq('business_id', businessId);
+                const itemIds = (items || []).map(i => i.id);
+                if (itemIds.length > 0) {
+                    query = query.in('item_id', itemIds);
+                } else {
+                    hasMore = false;
+                    continue;
+                }
+            }
+
+            // Apply paging
+            query = query.range(page * 1000, (page + 1) * 1000 - 1);
+            const { data, error: fetchError } = await query;
+
+            if (fetchError) {
+                console.error(`❌ [ResolveConflict] Fetch error for ${table}:`, fetchError);
+                return res.status(500).json({ error: fetchError.message });
+            }
+
+            if (!data || data.length === 0) {
+                hasMore = false;
+            } else {
+                allSourceData = allSourceData.concat(data);
+                if (data.length < 1000) hasMore = false;
+                else page++;
+            }
+        }
+
+        const sourceData = allSourceData;
+
+        if (!sourceData || sourceData.length === 0) {
+            console.log(`⚠️ [ResolveConflict] No data in source for ${table}`);
+            return res.json({ success: true, synced: 0, message: "No data in source" });
+        }
+
+        console.log(`📦 [ResolveConflict] Fetched ${sourceData.length} TOTAL rows from ${source}`);
+
+        // Step 2: Delete existing data in target (carefully)
+        if (table !== 'prepared_items_inventory') {
+            let deleteQuery = targetClient.from(table).delete();
+
+            if (table === 'businesses') {
+                deleteQuery = deleteQuery.eq('id', businessId);
+            } else if (multiTenantTables.includes(table)) {
+                deleteQuery = deleteQuery.eq('business_id', businessId);
+            } else if (table === 'optionvalues' || table === 'menuitemoptions') {
+                const { data: targetGroups } = await targetClient.from('optiongroups').select('id').eq('business_id', businessId);
+                const targetGroupIds = (targetGroups || []).map(g => g.id);
+                if (targetGroupIds.length > 0) {
+                    deleteQuery = deleteQuery.in('group_id', targetGroupIds);
+                }
+            }
+
+            const { error: deleteError } = await deleteQuery;
+            if (deleteError) {
+                console.warn(`⚠️ [ResolveConflict] Delete warning for ${table}:`, deleteError.message);
+            }
+        }
+
+        // Step 3: Upsert source data to target
+        let onConflict = 'id';
+        if (table === 'prepared_items_inventory') onConflict = 'item_id';
+        if (table === 'menuitemoptions') onConflict = 'item_id,group_id';
+
+        if (table === 'order_items') {
+            // SPECIAL HANDLING FOR order_items: Upsert in small batches and ignore FK errors
+            console.log(`🛡️ [ResolveConflict] Using granular upsert for order_items to bypass FK issues`);
+            let successful = 0;
+            let failed = 0;
+
+            // Upsert in batches of 50
+            for (let i = 0; i < sourceData.length; i += 50) {
+                const batch = sourceData.slice(i, i + 50);
+                const { error: batchErr } = await targetClient.from(table).upsert(batch, { onConflict: 'id' });
+
+                if (batchErr) {
+                    // If batch fails, try 1 by 1 for this batch
+                    for (const row of batch) {
+                        const { error: rowErr } = await targetClient.from(table).upsert(row, { onConflict: 'id' });
+                        if (!rowErr) successful++;
+                        else failed++;
+                    }
+                } else {
+                    successful += batch.length;
+                }
+            }
+
+            console.log(`✅ [ResolveConflict] Finished order_items sync: ${successful} success, ${failed} skipped (FK issues)`);
+            return res.json({ success: true, synced: successful, skipped: failed, source, target: source === 'docker' ? 'cloud' : 'docker' });
+        }
+
+        // SPECIAL HANDLING FOR prepared_items_inventory: Uses item_id as primary key
+        if (table === 'prepared_items_inventory') {
+            console.log(`🛡️ [ResolveConflict] Special handling for prepared_items_inventory (${sourceData.length} rows)`);
+            let successful = 0;
+            let failed = 0;
+
+            const targetIsCloud = source === 'docker'; // If source is docker, target is cloud
+
+            for (const row of sourceData) {
+                // Ensure we have the right structure
+                // WORKAROUND: Cloud schema doesn't have 'id' or 'business_id' columns
+                const payload = {
+                    item_id: row.item_id,
+                    initial_stock: row.initial_stock,
+                    current_stock: row.current_stock,
+                    unit: row.unit,
+                    last_updated: row.last_updated
+                };
+
+                // Only include business_id and id if target is Docker (which has these columns)
+                if (!targetIsCloud) {
+                    if (row.business_id) payload.business_id = row.business_id;
+                    if (row.id) payload.id = row.id;
+                }
+
+                const { error } = await targetClient.from(table).upsert(payload, {
+                    onConflict: 'item_id',
+                    ignoreDuplicates: false
+                });
+
+                if (!error) {
+                    successful++;
+                } else {
+                    console.warn(`⚠️ [ResolveConflict] prepared_items_inventory upsert failed for item_id ${row.item_id}:`, error.message);
+                    failed++;
+                }
+            }
+
+            console.log(`✅ [ResolveConflict] Finished prepared_items_inventory sync: ${successful} success, ${failed} failed`);
+            return res.json({ success: true, synced: successful, failed, source, target: source === 'docker' ? 'cloud' : 'docker' });
+        }
+
+        // STANDARD UPSERT for other tables
+        const { error: upsertError } = await targetClient.from(table).upsert(sourceData, {
+            onConflict: onConflict,
+            ignoreDuplicates: false
+        });
+
+        if (upsertError) {
+            console.error(`❌ [ResolveConflict] Upsert error for ${table}:`, upsertError);
+
+            if (upsertError.code === '23503') {
+                return res.status(409).json({ error: `Foreign key violation (23503): Ensure parent records are synced first.` });
+            }
+            return res.status(500).json({ error: upsertError.message });
+        }
+
+        console.log(`✅ [ResolveConflict] Synced ${sourceData.length} rows from ${source} to ${source === 'docker' ? 'cloud' : 'docker'}`);
+        res.json({ success: true, synced: sourceData.length, source, target: source === 'docker' ? 'cloud' : 'docker' });
+
+    } catch (err) {
+        console.error(`❌ [ResolveConflict] Exception:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// SYNC QUEUE INSPECTION API
+app.get("/api/admin/sync-queue", async (req, res) => {
+    try {
+        if (!localSupabase) return res.status(503).json({ error: "Local DB unavailable" });
+
+        const { data, error } = await localSupabase
+            .from('sync_queue')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(100);
+
+        if (error) throw error;
+        res.json(data);
+    } catch (err) {
+        console.error("❌ Failed to fetch sync queue:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post("/api/admin/sync-queue/retry", async (req, res) => {
+    try {
+        if (!localSupabase) return res.status(503).json({ error: "Local DB unavailable" });
+        const { ids } = req.body; // Array of IDs to retry
+
+        if (!ids || !ids.length) return res.status(400).json({ error: "No IDs provided" });
+
+        const { error } = await localSupabase
+            .from('sync_queue')
+            .update({ status: 'PENDING', retries: 0, error_message: null })
+            .in('id', ids);
+
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// TRUSTED STATS API: Bypass RLS to show true counts in DatabaseExplorer
+app.get("/api/admin/trusted-stats", async (req, res) => {
+    const { table, businessId, noBusinessId } = req.query;
+    if (!table || !businessId) return res.status(400).json({ error: "Table and businessId required" });
+
+    // Optional Security Check (X-Admin-Secret)
+    // if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(401).json({ error: "Unauthorized" });
+
+    const isNoBusinessId = noBusinessId === 'true';
+    const results = { cloud: 0, docker: 0, error: null };
+
+    console.log(`📊 [Stats] Fetching counts for ${table} (isNoBusinessId: ${isNoBusinessId})...`);
+
+    try {
+        // --- 1. CLOUD ---
+        let cloudCount = 0;
+
+        // PRIORITIZE RPC for sensitive tables (blocks RLS '0' issues)
+        if (table === 'loyalty_cards' || table === 'loyalty_transactions' || table === 'customers') {
+            console.log(`   - Using RPC override for ${table} count`);
+            const rpcName = table === 'customers' ? 'get_customers_for_sync' :
+                table === 'loyalty_cards' ? 'get_loyalty_cards_for_sync' : 'get_loyalty_transactions_for_sync';
+
+            let rpcTotal = 0;
+            let rpcPage = 0;
+            let hasMoreRpc = true;
+            while (hasMoreRpc) {
+                const { data: rpcData, error: rpcErr } = await remoteSupabase
+                    .rpc(rpcName, { p_business_id: businessId })
+                    .range(rpcPage * 1000, (rpcPage + 1) * 1000 - 1);
+
+                if (!rpcErr && rpcData && rpcData.length > 0) {
+                    rpcTotal += rpcData.length;
+                    if (rpcData.length < 1000) hasMoreRpc = false;
+                    else rpcPage++;
+                } else {
+                    hasMoreRpc = false;
+                }
+            }
+            cloudCount = rpcTotal;
+        } else {
+            // Strategy: Try direct business_id count first
+            let directRes = null;
+            if (table === 'businesses') {
+                directRes = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).eq('id', businessId);
+            } else if (!isNoBusinessId || table === 'order_items') {
+                directRes = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
+            }
+
+            if (directRes && !directRes.error && directRes.count > 0) {
+                cloudCount = directRes.count;
+            } else {
+                // FALLBACK for complex related tables
+                if (table === 'order_items') {
+                    let allOrderIds = [];
+                    let orderPage = 0;
+                    let hasMoreOrders = true;
+                    while (hasMoreOrders) {
+                        const { data: orders } = await remoteSupabase.from('orders').select('id').eq('business_id', businessId).range(orderPage * 1000, (orderPage + 1) * 1000 - 1);
+                        if (!orders || orders.length === 0) hasMoreOrders = false;
+                        else {
+                            allOrderIds.push(...orders.map(o => o.id));
+                            if (orders.length < 1000) hasMoreOrders = false;
+                            orderPage++;
+                        }
+                    }
+                    if (allOrderIds.length > 0) {
+                        for (let i = 0; i < allOrderIds.length; i += 500) {
+                            const batch = allOrderIds.slice(i, i + 500);
+                            const { count } = await remoteSupabase.from('order_items').select('*', { count: 'exact', head: true }).in('order_id', batch);
+                            cloudCount += (count || 0);
+                        }
+                    }
+                } else if (table === 'menuitemoptions' || table === 'optionvalues') {
+                    const { data: groups } = await remoteSupabase.from('optiongroups').select('id').eq('business_id', businessId);
+                    const ids = (groups || []).map(g => g.id);
+                    if (ids.length > 0) {
+                        const { count } = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).in('group_id', ids);
+                        cloudCount = count || 0;
+                    }
+                } else if (isNoBusinessId) {
+                    const { count } = await remoteSupabase.from(table).select('*', { count: 'exact', head: true });
+                    cloudCount = count || 0;
+                }
+            }
+        }
+        results.cloud = cloudCount;
+
+        // --- 2. DOCKER ---
+        if (localSupabase) {
+            let dockerCount = 0;
+            let dDirectRes = null;
+            if (table === 'businesses') {
+                dDirectRes = await localSupabase.from(table).select('*', { count: 'exact', head: true }).eq('id', businessId);
+            } else if (!isNoBusinessId || table === 'order_items') {
+                dDirectRes = await localSupabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
+            }
+
+            if (dDirectRes && !dDirectRes.error && dDirectRes.count !== null) {
+                dockerCount = dDirectRes.count;
+            } else {
+                if (table === 'order_items') {
+                    let allOrderIds = [];
+                    let orderPage = 0;
+                    let hasMoreOrders = true;
+                    while (hasMoreOrders) {
+                        const { data: orders } = await localSupabase.from('orders').select('id').eq('business_id', businessId).range(orderPage * 1000, (orderPage + 1) * 1000 - 1);
+                        if (!orders || orders.length === 0) hasMoreOrders = false;
+                        else {
+                            allOrderIds.push(...orders.map(o => o.id));
+                            if (orders.length < 1000) hasMoreOrders = false;
+                            orderPage++;
+                        }
+                    }
+                    if (allOrderIds.length > 0) {
+                        for (let i = 0; i < allOrderIds.length; i += 500) {
+                            const batch = allOrderIds.slice(i, i + 500);
+                            const { count } = await localSupabase.from('order_items').select('*', { count: 'exact', head: true }).in('order_id', batch);
+                            dockerCount += (count || 0);
+                        }
+                    }
+                } else if (table === 'menuitemoptions' || table === 'optionvalues') {
+                    const { data: groups } = await localSupabase.from('optiongroups').select('id').eq('business_id', businessId);
+                    const ids = (groups || []).map(g => g.id);
+                    if (ids.length > 0) {
+                        const { count } = await localSupabase.from(table).select('*', { count: 'exact', head: true }).in('group_id', ids);
+                        dockerCount = count || 0;
+                    }
+                } else {
+                    // GLOBAL COUNT FALLBACK
+                    const { count } = await localSupabase.from(table).select('*', { count: 'exact', head: true });
+                    dockerCount = count || 0;
+                }
+            }
+            results.docker = dockerCount;
+
+            // SPECIAL: For 'orders' and 'order_items', calculate "Recent (3 Days)" count for validation
+            if (table === 'orders') {
+                const threeDaysAgo = new Date();
+                threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+                const isoDate = threeDaysAgo.toISOString();
+
+                const { count } = await localSupabase
+                    .from('orders')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('business_id', businessId)
+                    .gte('created_at', isoDate);
+
+                results.dockerRecent = count || 0;
+            } else if (table === 'order_items') {
+                // For order_items, it's harder to filter by date directly as it doesn't have created_at usually or it's heavy join
+                // We can approximate or skip. Let's try to join if possible or just use the orders logic client side?
+                // Actually, let's fetch IDs of recent orders and count their items.
+                const threeDaysAgo = new Date();
+                threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+                const isoDate = threeDaysAgo.toISOString();
+
+                // Get recent order IDs
+                const { data: recentOrders } = await localSupabase
+                    .from('orders')
+                    .select('id')
+                    .eq('business_id', businessId)
+                    .gte('created_at', isoDate);
+
+                if (recentOrders && recentOrders.length > 0) {
+                    const ids = recentOrders.map(o => o.id);
+                    let recentItemsCount = 0;
+                    // Batch count
+                    for (let i = 0; i < ids.length; i += 500) {
+                        const batch = ids.slice(i, i + 500);
+                        const { count } = await localSupabase
+                            .from('order_items')
+                            .select('*', { count: 'exact', head: true })
+                            .in('order_id', batch);
+                        recentItemsCount += (count || 0);
+                    }
+                    results.dockerRecent = recentItemsCount;
+                } else {
+                    results.dockerRecent = 0;
+                }
+            } else if (table === 'loyalty_transactions') {
+                const threeDaysAgo = new Date();
+                threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+                const isoDate = threeDaysAgo.toISOString();
+
+                const { count } = await localSupabase
+                    .from('loyalty_transactions')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('business_id', businessId)
+                    .gte('created_at', isoDate);
+
+                results.dockerRecent = count || 0;
+            }
+        }
+
+        console.log(`✅ [Stats] ${table}: Cloud=${results.cloud}, Docker=${results.docker}`);
+        res.json(results);
+    } catch (e) {
+        console.error(`❌ [Stats] Error for ${table}:`, e.message);
+        res.json({ ...results, error: e.message });
+    }
+});
+
+// TABLE METADATA API: Get columns, types, and policies for debugging
+app.get("/api/admin/table-metadata", async (req, res) => {
+    const { table, target = 'cloud' } = req.query;
+    if (!table) return res.status(400).json({ error: "Table name required" });
+
+    const client = target === 'docker' ? localSupabase : remoteSupabase;
+    if (!client) return res.status(400).json({ error: `Target ${target} not available` });
+
+    try {
+        console.log(`🔍 [Metadata] Fetching ${target} schema for ${table}...`);
+
+        const clientStatus = {
+            hasClient: !!client,
+            tableRequested: table,
+            target
+        };
+
+        // 1. Columns and Types
+        let columns = [];
+        let colError = null;
         try {
-            const totalTables = SYNC_TABLES.length;
-            let syncedCount = 0;
+            const { data: infoCols, error: err } = await client
+                .from('information_schema.columns')
+                .select('column_name, data_type, is_nullable, column_default')
+                .eq('table_name', table)
+                .eq('table_schema', 'public');
+
+            if (err) colError = err.message;
+            if (infoCols && infoCols.length > 0) {
+                columns = infoCols;
+            }
+        } catch (e) {
+            colError = e.message;
+        }
+
+        // Fallback or Enrichment via Sample Row
+        let sampleRow = null;
+        let sampleError = null;
+        try {
+            const { data: sample, error: sErr } = await client.from(table).select('*').limit(1);
+            if (sErr) sampleError = sErr.message;
+            if (sample && sample[0]) {
+                sampleRow = sample[0];
+                if (columns.length === 0) {
+                    columns = Object.keys(sample[0]).map(key => ({
+                        column_name: key,
+                        data_type: typeof sample[0][key],
+                        is_nullable: '?',
+                        column_default: '?'
+                    }));
+                }
+            }
+        } catch (e) {
+            sampleError = e.message;
+        }
+
+        // 2. Policies
+        let policies = [];
+        try {
+            const { data: polData } = await client
+                .from('pg_policies')
+                .select('policyname, cmd, qual')
+                .eq('tablename', table);
+            policies = polData || [];
+        } catch (e) {
+            console.warn('Could not fetch policies:', e.message);
+        }
+
+        // 3. Foreign Keys
+        let relationships = [];
+        try {
+            const { data: relData } = await client
+                .from('information_schema.key_column_usage')
+                .select('column_name, constraint_name')
+                .eq('table_name', table);
+            relationships = relData || [];
+        } catch (e) {
+            console.warn('Could not fetch relationships:', e.message);
+        }
+
+        let totalCount = 0;
+        try {
+            const { count, error: cErr } = await client.from(table).select('*', { count: 'exact', head: true });
+            if (!cErr) totalCount = count || 0;
+        } catch (e) {
+            console.warn(`Could not get exact count for ${table}:`, e.message);
+        }
+
+        res.json({
+            table,
+            target,
+            totalRows: totalCount,
+            metadata_source: columns.length > 0 ? (colError ? 'Sample Row Fallback' : 'Database Catalog') : 'Unknown',
+            columns,
+            policies,
+            relationships,
+            diagnostics: {
+                catalogError: colError,
+                sampleError: sampleError,
+                hasSample: !!sampleRow,
+                clientStatus
+            }
+        });
+    } catch (e) {
+        console.error(`❌ [Metadata] Critical Error for ${table}:`, e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// === SMS PROXY (No Auth Required for Balance Check to display on Login Screen) ===
+app.get("/api/sms/balance", async (req, res) => {
+    try {
+        const SMS_API_KEY = '5v$YW#4k2Dn@w96306$H#S7cMp@8t$6R';
+        const ENDPOINT = 'https://sapi.itnewsletter.co.il/api/restApiSms/getBalance';
+
+        console.log('📨 Checking SMS balance via Proxy...');
+        const response = await fetch(ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ApiKey: SMS_API_KEY })
+        });
+
+        const resultText = await response.text();
+        let providerJson;
+        try {
+            providerJson = JSON.parse(resultText);
+        } catch (e) {
+            console.warn('Could not parse SMS provider response:', resultText);
+            throw new Error('Invalid response from SMS provider');
+        }
+
+        if (providerJson.success === false) {
+            throw new Error(providerJson.errDesc || 'SMS Provider Error');
+        }
+
+        // Return simplified result
+        res.json({
+            success: true,
+            balance: providerJson.result,
+            raw: providerJson
+        });
+
+    } catch (err) {
+        console.error('❌ SMS Balance check failed:', err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.get("/api/hardware-snapshot", (req, res) => {
+    const scriptPath = path.join(__dirname, 'scripts', 'hardware_telemetry.py');
+    exec(`python3 "${scriptPath}"`, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`❌ Telemetry Error: ${error.message}`);
+            // Fallback for demo/basic environments
+            return res.json({
+                server: "N150_Edge_Node_Simulated",
+                local_ip: "192.168.1.150",
+                ram: { total_gb: 12.0, available_gb: 8.5, usage_percent: 30 },
+                cpu: { usage_percent: 15, cores: 4 }
+            });
+        }
+        try {
+            res.json(JSON.parse(stdout));
+        } catch (e) {
+            res.status(500).json({ error: "Failed to parse telemetry data" });
+        }
+    });
+});
+
+app.post("/api/sync-cloud-to-local", async (req, res) => {
+    try {
+        console.log("🔍 [Sync Request] Received sync request");
+
+        if (!remoteSupabase) return res.status(400).json({ error: "Remote Supabase not configured" });
+        if (!localSupabase) return res.status(400).json({ error: "Local Supabase not running" });
+
+        if (syncStatus.inProgress) {
+            return res.status(409).json({ error: "Sync in progress", progress: syncStatus.progress });
+        }
+
+        const { businessId, clearLocal } = req.body;
+
+        if (clearLocal) {
+            try {
+                await localSupabase.from('order_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+                await localSupabase.from('orders').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            } catch (e) { console.warn('Cleanup failed:', e.message); }
+        }
+
+        // Return success immediately
+        res.json({ message: "Sync started", estimatedTime: "60s" });
+
+        // Background Process
+        (async () => {
+            if (syncStatus.inProgress) return;
+            syncStatus = { inProgress: true, lastSync: null, progress: 0, currentTable: null, error: null };
             let totalRows = 0;
 
-            for (const tableConfig of SYNC_TABLES) {
-                const { name: tableName, key, limit } = tableConfig;
-                syncStatus.currentTable = tableName;
-                syncStatus.progress = Math.round((syncedCount / totalTables) * 100);
+            // ENSURE CRITICAL ORDER
+            const sortedTables = [...SYNC_TABLES].sort((a, b) => {
+                const priority = { 'loyalty_cards': 1, 'loyalty_transactions': 2, 'orders': 3, 'order_items': 4 };
+                return (priority[a.name] || 99) - (priority[b.name] || 99);
+            });
 
-                try {
-                    // Fetch from cloud
-                    let query = remoteSupabase.from(tableName).select('*');
-
-                    // Apply business filter if applicable
-                    const multiTenantTables = [
-                        'employees', 'menu_items', 'customers', 'orders', 'order_items',
-                        'optiongroups', 'optionvalues', 'suppliers', 'supplier_orders',
-                        'supplier_order_items', 'loyalty_cards', 'loyalty_transactions',
-                        'tasks', 'recipes', 'music_artists', 'music_albums', 'music_songs', 'music_playlists'
-                    ];
-
-                    if (businessId && multiTenantTables.includes(tableName)) {
-                        query = query.eq('business_id', businessId);
+            try {
+                for (let i = 0; i < sortedTables.length; i++) {
+                    const tableConfig = sortedTables[i];
+                    const tableName = tableConfig.name;
+                    // 🛡️ SAFE CLEANUP: Only wipe if explicitly requested (clearLocal) OR only wipe synced data
+                    if (businessId && clearLocal) {
+                        try {
+                            console.log(`🧹 [Sync] SAFE CLEANUP: ${tableName}`);
+                            if (tableName === 'businesses') {
+                                await localSupabase.from('businesses').delete().eq('id', businessId);
+                            } else {
+                                // IMPORTANT: Do NOT delete pending_sync records to avoid losing local-only data
+                                await localSupabase.from(tableName).delete().eq('business_id', businessId).neq('pending_sync', true);
+                            }
+                        } catch (wipeErr) {
+                            console.warn(`⚠️ [Sync] Cleanup skipped for ${tableName}:`, wipeErr.message);
+                        }
+                    } else {
+                        console.log(`🛡️ [Sync] Incremental Merge for ${tableName} (No Wipe)`);
                     }
 
-                    // Apply limit for large tables
-                    if (limit) {
-                        query = query.order('created_at', { ascending: false }).limit(limit);
+                    // 📥 Fetch Logic
+                    let allData = [];
+                    let hasMore = true;
+                    let page = 0;
+
+                    console.log(`📡 [Sync] Fetching ${tableName} for business ${businessId}...`);
+
+                    // SPECIAL: Check if we should use RPC
+                    const rpcName = tableName === 'customers' ? 'get_customers_for_sync' :
+                        tableName === 'loyalty_cards' ? 'get_loyalty_cards_for_sync' :
+                            tableName === 'loyalty_transactions' ? 'get_loyalty_transactions_for_sync' : null;
+
+                    if (rpcName) {
+                        console.log(`   - Using Paginated RPC: ${rpcName}`);
+                        let rpcPage = 0;
+                        let hasMoreRpc = true;
+                        while (hasMoreRpc) {
+                            const { data, error } = await remoteSupabase.rpc(rpcName, { p_business_id: businessId })
+                                .range(rpcPage * 1000, (rpcPage + 1) * 1000 - 1);
+
+                            if (!error && data && data.length > 0) {
+                                allData.push(...data);
+                                if (data.length < 1000) hasMoreRpc = false;
+                                else rpcPage++;
+                            } else {
+                                hasMoreRpc = false;
+                            }
+                        }
+                        hasMore = false;
                     }
 
-                    const { data: cloudData, error: fetchError } = await query;
+                    // SPECIAL: For order_items, pull MUST paginate through all orders (prevents 1000 row limit)
+                    if (tableName === 'order_items' && businessId && hasMore) {
+                        console.log(`🔍 [Sync] Deep-fetching order_items via ALL cloud orders...`);
+                        let cloudOrderIds = [];
+                        let orderPage = 0;
+                        let hasMoreOrders = true;
 
-                    if (fetchError) {
-                        console.warn(`⚠️ Skipping ${tableName}: ${fetchError.message}`);
-                        syncedCount++;
-                        continue;
+                        while (hasMoreOrders) {
+                            const { data: orders } = await remoteSupabase.from('orders')
+                                .select('id')
+                                .eq('business_id', businessId)
+                                .range(orderPage * 1000, (orderPage + 1) * 1000 - 1);
+
+                            if (orders && orders.length > 0) {
+                                cloudOrderIds.push(...orders.map(o => o.id));
+                                if (orders.length < 1000) hasMoreOrders = false;
+                                else orderPage++;
+                            } else {
+                                hasMoreOrders = false;
+                            }
+                        }
+
+                        if (cloudOrderIds.length > 0) {
+                            console.log(`   - Fetching items for ${cloudOrderIds.length} orders...`);
+                            for (let i = 0; i < cloudOrderIds.length; i += 100) {
+                                const batchIds = cloudOrderIds.slice(i, i + 100);
+                                const { data: items, error } = await remoteSupabase.from('order_items').select('*').in('order_id', batchIds);
+                                if (items) allData.push(...items);
+                            }
+                            hasMore = false;
+                        }
+                    }
+                    // SPECIAL: For optionvalues / menuitemoptions
+                    if ((tableName === 'optionvalues' || tableName === 'menuitemoptions') && businessId && hasMore) {
+                        console.log(`🔍 [Sync] Deep-fetching ${tableName} via Option Groups...`);
+                        const { data: groups } = await remoteSupabase.from('optiongroups').select('id').eq('business_id', businessId);
+
+                        if (groups && groups.length > 0) {
+                            const groupIds = groups.map(g => g.id);
+                            for (let i = 0; i < groupIds.length; i += 100) {
+                                const batchIds = groupIds.slice(i, i + 100);
+                                const { data: items, error } = await remoteSupabase.from(tableName).select('*').in('group_id', batchIds);
+                                if (items) allData.push(...items);
+                            }
+                        }
+                        hasMore = false;
                     }
 
-                    if (!cloudData || cloudData.length === 0) {
-                        console.log(`📭 ${tableName}: No data to sync`);
-                        syncedCount++;
-                        continue;
-                    }
+                    while (hasMore) {
+                        let query = remoteSupabase.from(tableName).select('*');
 
-                    // Upsert to local in batches of 100
-                    const batchSize = 100;
-                    for (let i = 0; i < cloudData.length; i += batchSize) {
-                        const batch = cloudData.slice(i, i + batchSize);
-                        const { error: upsertError } = await localSupabase
-                            .from(tableName)
-                            .upsert(batch, {
-                                onConflict: Array.isArray(key) ? key.join(',') : key,
-                                ignoreDuplicates: false
-                            });
+                        const multiTenantTables = [
+                            'employees', 'menu_items', 'customers', 'orders', 'order_items',
+                            'optiongroups', 'suppliers', 'supplier_orders',
+                            'supplier_order_items', 'loyalty_cards', 'loyalty_transactions',
+                            'tasks', 'recurring_tasks', 'task_completions',
+                            'recipes', 'inventory_items', 'business_ai_settings',
+                            'discounts'
+                        ];
 
-                        if (upsertError) {
-                            console.warn(`⚠️ Upsert error on ${tableName} batch ${i}: ${upsertError.message}`);
+                        if (businessId) {
+                            if (tableName === 'businesses') {
+                                query = query.eq('id', businessId);
+                            } else if (multiTenantTables.includes(tableName)) {
+                                query = query.eq('business_id', businessId);
+                            }
+                        }
+
+                        // Pagination for standard tables
+                        query = query.range(page * 1000, (page + 1) * 1000 - 1);
+
+                        const { data, error } = await query;
+                        if (error || !data || data.length === 0) {
+                            hasMore = false;
+                        } else {
+                            allData = allData.concat(data);
+                            if (data.length < 1000) hasMore = false;
+                            page++;
                         }
                     }
 
-                    totalRows += cloudData.length;
-                    console.log(`✅ Synced ${tableName}: ${cloudData.length} rows`);
+                    // Upsert Logic with Last-Write-Wins
+                    if (allData.length > 0) {
+                        console.log(`📥 [Sync] Processing ${allData.length} rows for local ${tableName}...`);
 
-                } catch (tableErr) {
-                    console.warn(`⚠️ Error syncing ${tableName}:`, tableErr.message);
-                }
+                        let batch = allData;
 
-                syncedCount++;
+                        // 🛠️ DATA ENRICHMENT: Ensure every row has the business_id for local filtering
+                        if (businessId && tableName !== 'businesses') {
+                            batch = batch.map(row => ({
+                                ...row,
+                                business_id: row.business_id || businessId
+                            }));
+                        }
+
+                        // Strip problematic columns
+                        if (tableName === 'catalog_items' || tableName === 'inventory_items') {
+                            batch = batch.map(item => {
+                                const cleaned = { ...item };
+                                delete cleaned.default_cost_per_1000_units;
+                                delete cleaned.cost_per_1000_units;
+                                return cleaned;
+                            });
+                        }
+
+                        // 🛡️ Fast Bulk Upsert in Batches of 500
+                        const onConflict = Array.isArray(tableConfig.key) ? tableConfig.key.join(',') : tableConfig.key;
+
+                        for (let i = 0; i < batch.length; i += 500) {
+                            const chunk = batch.slice(i, i + 500);
+                            const { error: upsertErr } = await localSupabase.from(tableName).upsert(chunk, { onConflict });
+
+                            if (upsertErr) {
+                                console.warn(`⚠️ [Sync] Batch upsert failed for ${tableName} (${upsertErr.message}). Retrying row-by-row...`);
+                                // Fallback: Insert rows individually to bypass the one bad row causing FK violation
+                                for (const row of chunk) {
+                                    const { error: singleErr } = await localSupabase.from(tableName).upsert(row, { onConflict });
+                                    if (!singleErr) totalRows++;
+                                }
+                            } else {
+                                totalRows += chunk.length;
+                            }
+                        }
+                    }
+
+                    // 🛠️ SEQUENCE ALIGNMENT: If we just synced orders, update the local sequence to match cloud max
+                    if (tableName === 'orders' && allData.length > 0) {
+                        try {
+                            const maxOrderNum = Math.max(...allData.map(o => o.order_number || 0));
+                            if (maxOrderNum > 0) {
+                                console.log(`🔄 [Sync] Aligning local order sequence to start after: ${maxOrderNum}`);
+                                await localSupabase.rpc('set_order_number_sequence', { next_val: maxOrderNum + 1 });
+                            }
+                        } catch (seqErr) {
+                            console.warn(`⚠️ [Sync] Sequence alignment skipped: ${seqErr.message}`);
+                        }
+                    }
+
+                    // 🗑️ SMART CLEANUP: Remove local records that shouldn't exist (Junk Data)
+                    const CLEANUP_TABLES = ['menuitemoptions', 'optionvalues', 'order_items', 'menu_items', 'optiongroups'];
+
+                    if (CLEANUP_TABLES.includes(tableName) && allData.length > 0) {
+                        const primaryKeyOrKeys = tableConfig.key;
+                        const isComposite = Array.isArray(primaryKeyOrKeys);
+
+                        // Select the ID columns
+                        const selectCols = isComposite ? primaryKeyOrKeys.join(',') : primaryKeyOrKeys;
+
+                        // 1. Get all Local IDs
+                        const { data: localRecords } = await localSupabase
+                            .from(tableName)
+                            .select(selectCols)
+                            .eq('business_id', businessId)
+                            .neq('pending_sync', true);
+
+                        if (localRecords && localRecords.length > 0) {
+                            // Helper to generate unique key string
+                            const getRowKey = (row) => {
+                                if (isComposite) return primaryKeyOrKeys.map(k => row[k]).join('|');
+                                return row[primaryKeyOrKeys];
+                            };
+
+                            const cloudKeySet = new Set(allData.map(r => getRowKey(r)));
+
+                            // Find local records NOT in cloud set
+                            const toDelete = localRecords.filter(r => !cloudKeySet.has(getRowKey(r)));
+
+                            if (toDelete.length > 0) {
+                                console.log(`❌ [Sync] Found ${toDelete.length} junk records in ${tableName}. Deleting...`);
+
+                                // Batch delete
+                                // Handle Composite Delete strictly (PostgREST doesn't support .in() for composite tuples easily)
+                                if (isComposite) {
+                                    // For composite, we have to delete one by one or complex construction.
+                                    // To accept a slightly slower cleanup: delete one by one.
+                                    console.log('   - Deleting composite key records sequentially (safest)...');
+                                    for (const item of toDelete) {
+                                        let match = localSupabase.from(tableName).delete();
+                                        primaryKeyOrKeys.forEach(k => {
+                                            match = match.eq(k, item[k]);
+                                        });
+                                        await match;
+                                    }
+                                } else {
+                                    // Standard Single Key Delete
+                                    const deleteIds = toDelete.map(r => r[primaryKeyOrKeys]);
+                                    for (let i = 0; i < deleteIds.length; i += 100) {
+                                        const batch = deleteIds.slice(i, i + 100);
+                                        await localSupabase.from(tableName).delete().in(primaryKeyOrKeys, batch);
+                                    }
+                                }
+                                console.log(`🧹 [Sync] Junk cleanup complete for ${tableName}`);
+                            }
+                        }
+                    }
+                } // End of table loop
+
+                syncStatus.inProgress = false;
+                syncStatus.progress = 100;
+                syncStatus.lastSync = new Date().toISOString();
+                console.log("✅ Sync Finished Successfully. Total rows:", totalRows);
+
+            } catch (bgError) {
+                console.error("🔥 Background sync CRASHED:", bgError);
+                syncStatus.inProgress = false;
+                syncStatus.error = bgError.message;
             }
+        })();
 
-            syncStatus = {
-                inProgress: false,
-                lastSync: new Date().toISOString(),
-                progress: 100,
-                currentTable: null,
-                error: null,
-                totalRows
-            };
-            console.log(`🎉 Sync complete! ${totalRows} rows synced across ${totalTables} tables`);
+    } catch (routeErr) {
+        console.error("Sync Route Error:", routeErr);
+        if (!res.headersSent) res.status(500).json({ error: routeErr.message });
+    }
+});
 
-        } catch (err) {
-            console.error("❌ Sync failed:", err.message);
-            syncStatus = {
-                inProgress: false,
-                lastSync: null,
-                progress: 0,
-                currentTable: null,
-                error: err.message
-            };
+// NEW: Endpoint to archive/complete stale orders
+app.post('/api/orders/archive-stale', async (req, res) => {
+    const { businessId, olderThanHours = 24, fromStatuses = ['new', 'in_progress', 'ready', 'held', 'pending'] } = req.body;
+
+    if (!localSupabase) return res.status(500).json({ error: 'Local database not available' });
+
+    try {
+        const cutoffTime = new Date(Date.now() - (olderThanHours * 60 * 60 * 1000)).toISOString();
+        console.log(`🧹 Archiving stale orders (older than ${cutoffTime}) for business ${businessId}...`);
+
+        // Step 1: Find them
+        const { data: staleOrders, error: findError } = await localSupabase
+            .from('orders')
+            .select('id')
+            .eq('business_id', businessId)
+            .in('order_status', fromStatuses)
+            .lt('created_at', cutoffTime);
+
+        if (findError) throw findError;
+
+        if (!staleOrders || staleOrders.length === 0) {
+            return res.json({ archivedCount: 0, message: 'No stale orders found' });
         }
-    })();
+
+        const ids = staleOrders.map(o => o.id);
+
+        // Step 2: Archive orders
+        const { error: archiveError } = await localSupabase
+            .from('orders')
+            .update({
+                order_status: 'completed',
+                updated_at: new Date().toISOString()
+            })
+            .in('id', ids);
+
+        if (archiveError) throw archiveError;
+
+        // Step 3: Archive items
+        await localSupabase
+            .from('order_items')
+            .update({
+                item_status: 'completed',
+                updated_at: new Date().toISOString()
+            })
+            .in('order_id', ids);
+
+        res.json({ success: true, archivedCount: ids.length });
+    } catch (err) {
+        console.error('❌ Archive stale failed:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// NEW: Reset sync metadata
+app.post('/api/sync/reset-metadata', (req, res) => {
+    syncStatus.lastSync = null;
+    syncStatus.error = null;
+    res.json({ success: true, message: 'Sync metadata reset' });
+});
+
+// ------------------------------------------------------------------
+// === BACKUP SYSTEM & SCHEDULER ===
+// ------------------------------------------------------------------
+
+// 1. Get Backup Status
+app.get('/api/admin/backup/status', async (req, res) => {
+    const { businessId } = req.query;
+    if (!businessId) return res.status(400).json({ error: 'Business ID required' });
+
+    try {
+        const lastBackup = await getLastBackupTime(businessId);
+        res.json({
+            success: true,
+            lastBackup,
+            status: lastBackup ? 'active' : 'never_backed_up'
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// 2. Trigger Manual/Auto Backup
+const performDatabaseBackup = async (businessId) => {
+    console.log(`💾 [Backup] Starting backup for ${businessId}...`);
+
+    // Fetch critical data
+    const tables = ['orders', 'order_items', 'customers', 'loyalty_cards', 'loyalty_transactions', 'inventory_items'];
+    const backupData = {};
+
+    for (const table of tables) {
+        const { data } = await localSupabase.from(table).select('*').eq('business_id', businessId);
+        if (data) backupData[table] = data;
+    }
+
+    // Save to temp file
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `backup_${businessId}_${timestamp}.json`;
+    const tempPath = path.join(__dirname, 'temp_backups');
+
+    if (!fs.existsSync(tempPath)) fs.mkdirSync(tempPath);
+    const filePath = path.join(tempPath, fileName);
+
+    fs.writeFileSync(filePath, JSON.stringify(backupData, null, 2));
+
+    // Upload
+    const result = await uploadBackupToDrive(filePath, fileName, businessId);
+
+    // Cleanup
+    fs.unlinkSync(filePath);
+
+    return result;
+};
+
+app.post('/api/admin/backup/trigger', async (req, res) => {
+    const { businessId } = req.body;
+    try {
+        const result = await performDatabaseBackup(businessId);
+        res.json(result);
+    } catch (e) {
+        console.error('Backup failed:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// 3. Simple Scheduler (Check every hour)
+setInterval(async () => {
+    // Only run if localSupabase is active
+    if (!localSupabase) return;
+
+    // Hardcoded check for known businesses (in future, fetch from DB)
+    // For now, assuming current context business or from env
+    // This is a simplified auto-runner placeholder
+}, 60 * 60 * 1000);
+
+
+// 4. Download Local Backup (For Monthly)
+app.get('/api/admin/backup/download', async (req, res) => {
+    const { businessId } = req.query;
+    if (!localSupabase) return res.status(500).json({ error: 'DB not ready' });
+
+    try {
+        const tables = ['orders', 'order_items', 'customers', 'loyalty_cards', 'loyalty_transactions', 'supplier_orders'];
+        const backupData = {};
+
+        for (const table of tables) {
+            const { data } = await localSupabase.from(table).select('*').eq('business_id', businessId);
+            if (data) backupData[table] = data;
+        }
+
+        const fileName = `monthly_backup_${new Date().toISOString().slice(0, 10)}.json`;
+
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
+        res.send(JSON.stringify(backupData, null, 2));
+
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // ------------------------------------------------------------------
@@ -2008,9 +3221,7 @@ app.post("/api/music/sync-drive", async (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// === CLOUD RUN PORT ===
-// ------------------------------------------------------------------
-const PORT = process.env.PORT || 8081;
+const PORT = process.env.PORT || 8082;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
 });

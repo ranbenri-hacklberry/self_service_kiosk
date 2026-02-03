@@ -44,12 +44,17 @@ export default defineConfig(({ mode }) => {
       allowedHosts: [".amazonaws.com", ".builtwithrocket.new", "icaffe.hacklberryfinn.com", "localhost"],
       proxy: {
         "/item": {
-          target: "http://localhost:8081",
+          target: "http://localhost:8083",
           changeOrigin: true,
           secure: false,
         },
         "/api": {
-          target: "http://localhost:8081",
+          target: "http://localhost:8083",
+          changeOrigin: true,
+          secure: false,
+        },
+        "/music": {
+          target: "http://localhost:8083",
           changeOrigin: true,
           secure: false,
         },
