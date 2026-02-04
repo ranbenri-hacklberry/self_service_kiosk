@@ -1499,11 +1499,11 @@ export const useKDSData = () => {
                     // Re-fetch this specific order from Supabase to check actual state
                     const { data: verifyData } = await supabase
                         .from('orders')
-                        .select('status')
+                        .select('order_status')
                         .eq('id', smartId)
                         .single();
 
-                    if (verifyData && verifyData.status === nextStatus) {
+                    if (verifyData && verifyData.order_status === nextStatus) {
                         log('✅ Verification success: Server actually updated despite RPC error reporting.');
                     } else {
                         console.error('🚨 DATABASE UPDATE FAILED after verification:', failMsg);
