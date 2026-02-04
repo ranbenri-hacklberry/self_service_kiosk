@@ -34,7 +34,13 @@ import { getBackendApiUrl } from '@/utils/apiUtils';
 // Configuration for the three layers
 const CLOUD_URL = import.meta.env.VITE_SUPABASE_URL;
 const CLOUD_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const DOCKER_URL = 'http://127.0.0.1:54321';
+
+// Use intelligent guess for Docker URL (similar to supabase.js)
+const dockerHostname = window.location.hostname;
+const DOCKER_URL = (dockerHostname === 'localhost' || dockerHostname === '127.0.0.1')
+    ? 'http://127.0.0.1:54321'
+    : `http://${dockerHostname}:54321`;
+
 const DOCKER_KEY = import.meta.env.VITE_LOCAL_SUPABASE_ANON_KEY || CLOUD_KEY;
 
 // Create clients
@@ -851,15 +857,42 @@ DIAGNOSTICS:
         let successCount = 0;
         let errorCount = 0;
 
-        for (const [tableId, source] of Object.entries(selections)) {
+        // PRIORITY ORDER FOR RESOLVE: Parent tables must come before children
+        const PRIORITY_ORDER = [
+            'businesses',
+            'employees',
+            'recurring_tasks',
+            'loyalty_cards',
+            'suppliers',
+            'menu_items',
+            'optiongroups',
+            'optionvalues',
+            'menuitemoptions',
+            'orders',
+            'order_items',
+            'loyalty_transactions',
+            'task_completions',
+            'prepared_items_inventory',
+            'inventory_items'
+        ];
+
+        const sortedSelections = Object.entries(selections).sort((a, b) => {
+            const indexA = PRIORITY_ORDER.indexOf(a[0]);
+            const indexB = PRIORITY_ORDER.indexOf(b[0]);
+            return (indexA === -1 ? 99 : indexA) - (indexB === -1 ? 99 : indexB);
+        });
+
+        const API_URL = getBackendApiUrl();
+
+        for (const [tableId, source] of sortedSelections) {
             const conflict = conflicts.find(c => c.tableId === tableId);
             if (!conflict) continue;
 
             try {
                 addLog(`  → ${tableId}: Syncing from ${source}...`, 'default');
 
-                // Call the resolve-conflict API
-                const res = await fetch('/api/admin/resolve-conflict', {
+                // Call the resolve-conflict API using absolute path
+                const res = await fetch(`${API_URL}/api/admin/resolve-conflict`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ table: tableId, source, businessId })
