@@ -1498,26 +1498,46 @@ app.post("/api/sync-cloud-to-local", async (req, res) => {
 const setupRealtimeBridge = () => {
     if (!remoteSupabase || !localSupabase) return;
 
-    console.log("📡 [Bridge] Setting up real-time listener for Cloud Orders...");
+    console.log("📡 [Bridge] Setting up real-time bidirectional listeners...");
 
+    // 1. CLOUD -> LOCAL (Mainly for Kiosk/Remote orders reaching KDS)
     remoteSupabase
         .channel('cloud-to-local-bridge')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, async (payload) => {
-            console.log("🚀 [Bridge] NEW ORDER detected in Cloud! Syncing to Local...", payload.new.id);
+            console.log("🚀 [Bridge] NEW CLOUD ORDER detected! Syncing to Local...", payload.new.id);
             try {
-                // Fetch the full order details from cloud
                 const { data: order } = await remoteSupabase.from('orders').select('*, order_items(*)').eq('id', payload.new.id).single();
                 if (order) {
                     const { order_items, ...orderData } = order;
-                    // Insert into Local Docker
                     await localSupabase.from('orders').upsert(orderData);
                     if (order_items && order_items.length > 0) {
                         await localSupabase.from('order_items').upsert(order_items);
                     }
-                    console.log(`✅ [Bridge] Order ${payload.new.order_number} synced to Local immediately.`);
+                    console.log(`✅ [Bridge] Cloud Order ${payload.new.order_number} synced to Local.`);
                 }
             } catch (err) {
-                console.error("❌ [Bridge] Failed to sync real-time order:", err.message);
+                console.error("❌ [Bridge] Cloud -> Local sync failed:", err.message);
+            }
+        })
+        .subscribe();
+
+    // 2. LOCAL -> CLOUD (Mainly for Tablet/Local orders reaching Management/Cloud backup)
+    localSupabase
+        .channel('local-to-cloud-bridge')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, async (payload) => {
+            console.log("🚀 [Bridge] NEW LOCAL ORDER detected! Syncing to Cloud...", payload.new.id);
+            try {
+                const { data: order } = await localSupabase.from('orders').select('*, order_items(*)').eq('id', payload.new.id).single();
+                if (order) {
+                    const { order_items, ...orderData } = order;
+                    await remoteSupabase.from('orders').upsert(orderData);
+                    if (order_items && order_items.length > 0) {
+                        await remoteSupabase.from('order_items').upsert(order_items);
+                    }
+                    console.log(`✅ [Bridge] Local Order ${payload.new.order_number} pushed to Cloud.`);
+                }
+            } catch (err) {
+                console.error("❌ [Bridge] Local -> Cloud push failed:", err.message);
             }
         })
         .subscribe();

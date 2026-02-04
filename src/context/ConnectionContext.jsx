@@ -12,18 +12,8 @@ const ConnectionContext = createContext(null);
 const LOCAL_SUPABASE_URL = import.meta.env.VITE_LOCAL_SUPABASE_URL || 'http://127.0.0.1:54321';
 
 export const ConnectionProvider = ({ children }) => {
-    const [state, setState] = useState({
-        status: 'checking',
-        localAvailable: false,
-        cloudAvailable: false,
-        lastSync: null,
-        lastLocalAvailable: null,
-        lastCloudAvailable: null
-    });
-    const [showOfflinePopup, setShowOfflinePopup] = useState(false);
-    const [showOnlinePopup, setShowOnlinePopup] = useState(false);
-    const offlineTimeoutRef = useRef(null);
-    const GRACE_PERIOD_MS = 60000; // 60 seconds grace period (1 minute)
+    // State for what exactly was lost
+    const [lostType, setLostType] = useState(null); // 'local', 'cloud', or 'all'
 
     const checkConnectivity = useCallback(async () => {
         let localOk = false;
@@ -32,6 +22,10 @@ export const ConnectionProvider = ({ children }) => {
         // FAST PATH: If browser says offline, don't even try network calls
         if (!navigator.onLine) {
             console.log('📴 [ConnectionContext] Browser reports offline - skipping network checks');
+            if (state.status !== 'offline') {
+                setLostType('all');
+                setShowOfflinePopup(true);
+            }
             setState(prev => ({
                 ...prev,
                 status: 'offline',
@@ -41,11 +35,10 @@ export const ConnectionProvider = ({ children }) => {
             return;
         }
 
-        // Check Cloud (Remote) - use the main supabase client with strict timeout
+        // Check Cloud (Remote)
         try {
-            // Create a short timeout so we fail fast if network hangs
             const abortController = new AbortController();
-            const timeoutId = setTimeout(() => abortController.abort(), 3000); // 3s timeout
+            const timeoutId = setTimeout(() => abortController.abort(), 3000);
 
             const { error } = await supabase
                 .from('businesses')
@@ -55,20 +48,20 @@ export const ConnectionProvider = ({ children }) => {
             clearTimeout(timeoutId);
             cloudOk = !error;
         } catch (err) {
-            console.log('📡 [ConnectionContext] Cloud check failed:', err.message);
             cloudOk = false;
         }
 
-        // Check Local (Docker/Local Supabase) - ONLY if likely on local network
-        // 🔒 Security/Optimization: Don't scan localhost if we are on a public domain (Vercel)
-        const isLikelyLocal = window.location.hostname === 'localhost' ||
+        // Check Local (Docker)
+        const isLocalHost = window.location.hostname === 'localhost' ||
             window.location.hostname === '127.0.0.1' ||
-            window.location.hostname.startsWith('192.168.');
+            window.location.hostname.startsWith('192.168.') ||
+            window.location.hostname.startsWith('10.') ||
+            window.location.hostname.startsWith('100.');
 
-        if (isLikelyLocal) {
+        if (isLocalHost) {
             try {
                 const localController = new AbortController();
-                const localTimeoutId = setTimeout(() => localController.abort(), 2000); // 2s timeout for local
+                const localTimeoutId = setTimeout(() => localController.abort(), 2000);
 
                 const localResp = await fetch(`${LOCAL_SUPABASE_URL}/rest/v1/`, {
                     method: 'GET',
@@ -79,109 +72,66 @@ export const ConnectionProvider = ({ children }) => {
                 clearTimeout(localTimeoutId);
                 localOk = !!(localResp && localResp.ok);
             } catch (err) {
-                console.log('🏘️ [ConnectionContext] Local check failed:', err.message);
                 localOk = false;
             }
-        } else {
-            console.log('🌍 [ConnectionContext] Skipping local check (Production Environment)');
-            localOk = false;
         }
 
-        // Determine status
-        let status = 'checking';
-        if (localOk && cloudOk) {
-            status = 'online';
-        } else if (localOk && !cloudOk) {
-            status = 'local-only'; // Offline mode
-        } else if (!localOk && cloudOk) {
-            status = 'cloud-only';
-        } else {
-            status = 'offline';
+        // Determine transition and lost type
+        const prevStatus = state.status;
+        let nextStatus = 'offline';
+        if (localOk && cloudOk) nextStatus = 'online';
+        else if (localOk) nextStatus = 'local-only';
+        else if (cloudOk) nextStatus = 'cloud-only';
+
+        // Context-aware popup logic
+        if (nextStatus !== prevStatus && prevStatus !== 'checking') {
+            if (nextStatus === 'offline') {
+                setLostType('all');
+                setShowOfflinePopup(true);
+            } else if (nextStatus === 'local-only' && prevStatus === 'online') {
+                setLostType('cloud');
+                setShowOfflinePopup(true);
+            } else if (nextStatus === 'cloud-only' && prevStatus === 'online' && isLocalHost) {
+                setLostType('local');
+                setShowOfflinePopup(true);
+            } else if (nextStatus === 'online' || (nextStatus === 'cloud-only' && !isLocalHost)) {
+                setShowOfflinePopup(false);
+                if (prevStatus === 'offline' || prevStatus === 'local-only') {
+                    setShowOnlinePopup(true);
+                    setTimeout(() => setShowOnlinePopup(false), 3000);
+                }
+            }
         }
 
-        const now = new Date();
         setState(prev => ({
-            status,
+            status: nextStatus,
             localAvailable: localOk,
             cloudAvailable: cloudOk,
-            lastSync: (localOk && cloudOk) ? now : prev.lastSync,
-            lastLocalAvailable: localOk ? now : prev.lastLocalAvailable,
-            lastCloudAvailable: cloudOk ? now : prev.lastCloudAvailable
+            lastSync: (localOk && cloudOk) ? new Date() : prev.lastSync,
+            lastLocalAvailable: localOk ? new Date() : prev.lastLocalAvailable,
+            lastCloudAvailable: cloudOk ? new Date() : prev.lastCloudAvailable
         }));
 
-        // ✅ AUTO-DISMISS Offline Popup if active check determines online
-        if (status === 'online' || status === 'cloud-only') {
-            if (showOfflinePopup) setShowOfflinePopup(false);
-        }
+    }, [state.status, showOfflinePopup]);
 
-        // Trigger offline popup if transition to offline (and not already shown)
-        if (status === 'offline' && !showOfflinePopup && navigator.onLine) {
-            // Ping failed but browser says online - likely a filter or real internet issue
-            if (!offlineTimeoutRef.current) {
-                offlineTimeoutRef.current = setTimeout(() => {
-                    setShowOnlinePopup(false);
-                    setShowOfflinePopup(true);
-                }, GRACE_PERIOD_MS);
-            }
-        } else if (status === 'online' || status === 'cloud-only') {
-            if (offlineTimeoutRef.current) {
-                clearTimeout(offlineTimeoutRef.current);
-                offlineTimeoutRef.current = null;
-            }
-        }
-
-    }, [showOfflinePopup]);
-
-    // Check on mount and periodically - INCREASED FREQUENCY
+    // Check on mount and periodically
     useEffect(() => {
         checkConnectivity();
-
-        // 🚀 MIGRATION CHECK: Run once on mount to see if we need to nuked outdated Dexie
-        import('@/services/syncService').then(({ autoDetectMigrationAndReset, initialLoad }) => {
-            autoDetectMigrationAndReset().then((wasReset) => {
-                if (wasReset) {
-                    console.log('🔄 [ConnectionContext] Dexie was reset due to migration. Triggering initial load...');
-                    // Trigger initial load to repopulate data immediately
-                    initialLoad(import.meta.env.VITE_BUSINESS_ID || '11111111-1111-1111-1111-111111111111');
-                }
-            });
-        });
-
-        const interval = setInterval(checkConnectivity, 30000); // Check every 30 seconds (was 5)
+        const interval = setInterval(checkConnectivity, 20000);
         return () => clearInterval(interval);
     }, [checkConnectivity]);
 
-    // Listen for online/offline browser events - WITH POPUP
+    // Listen for browser events
     useEffect(() => {
         const handleOnline = () => {
-            console.log('🌐 Device is now ONLINE');
-            if (offlineTimeoutRef.current) {
-                clearTimeout(offlineTimeoutRef.current);
-                offlineTimeoutRef.current = null;
-            }
-            setShowOfflinePopup(false); // Close offline popup first
-            setShowOnlinePopup(true);
+            console.log('🌐 Browser Online');
             checkConnectivity();
-
-            // ✅ AUTO-DISMISS Online Popup after 3 seconds
-            setTimeout(() => {
-                setShowOnlinePopup(false);
-            }, 3000);
         };
         const handleOffline = () => {
-            console.log('📴 Device is now OFFLINE (starting grace period)');
-            setShowOnlinePopup(false);
-
-            // Only trigger popup after grace period
-            if (!offlineTimeoutRef.current) {
-                offlineTimeoutRef.current = setTimeout(() => {
-                    console.log('📴 Grace period ended - showing offline popup');
-                    setShowOfflinePopup(true);
-                    offlineTimeoutRef.current = null;
-                }, GRACE_PERIOD_MS);
-            }
-
-            setState(prev => ({ ...prev, status: 'offline', cloudAvailable: false }));
+            console.log('📴 Browser Offline');
+            setLostType('all');
+            setShowOfflinePopup(true);
+            setState(prev => ({ ...prev, status: 'offline', cloudAvailable: false, localAvailable: false }));
         };
 
         window.addEventListener('online', handleOnline);
@@ -192,53 +142,64 @@ export const ConnectionProvider = ({ children }) => {
         };
     }, [checkConnectivity]);
 
-    // 🔄 AUTO-SYNC TRIGGER: When status becomes online, trigger the offline queue sync
-    const prevStatusRef = useRef('checking');
-
-    useEffect(() => {
-        const currentStatus = state.status;
-        const prevStatus = prevStatusRef.current;
-
-        // If we transitioned TO online FROM something else (offline/checking/local-only)
-        if (currentStatus === 'online' && prevStatus !== 'online') {
-            console.log('🔄 [ConnectionContext] Connection restored! Triggering syncQueue...');
-
-            // Dynamic import to avoid circular deps or heavy load on init
-            import('@/services/offlineQueue').then(({ syncQueue }) => {
-                syncQueue().then(result => {
-                    if (result.synced > 0) {
-                        console.log(`✅ [ConnectionContext] Auto-sync complete: ${result.synced} items pushed.`);
-                    }
-                }).catch(err => console.error('❌ [ConnectionContext] Auto-sync failed:', err));
-            });
+    // Get Popup Content based on lostType
+    const getPopupContent = () => {
+        switch (lostType) {
+            case 'local':
+                return {
+                    icon: '🖥️',
+                    title: 'החיבור לשרת המקומי אבד',
+                    message: 'למרות זאת, אתה עדיין מחובר לענן! המערכת תמשיך לעבוד כרגיל מול השרת המרוחק.',
+                    color: 'from-blue-500 to-indigo-600',
+                    tips: ['✅ הטאבלט עבר לעבוד מול הענן', '✅ הכל נשמר כרגיל', '⚠️ הקיוסק עשוי להגיב לאט יותר']
+                };
+            case 'cloud':
+                return {
+                    icon: '☁️',
+                    title: 'החיבור לאינטרנט אבד',
+                    message: 'אל דאגה, המחשב המקומי (N150) פעיל! המערכת תמשיך לעבוד במצב מקומי.',
+                    color: 'from-amber-500 to-orange-600',
+                    tips: ['✅ המערכת עובדת מול השרת המקומי', '✅ הזמנות נשמרות ב-N150', '🔄 הסנכרון לענן יחזור כשיחזור האינטרנט']
+                };
+            default:
+                return {
+                    icon: '📴',
+                    title: 'אין חיבור לרשת',
+                    message: 'נראה שכרגע אין גישה לאינטרנט וגם לא לשרת המקומי. המערכת עוברת למצב חירום.',
+                    color: 'from-red-500 to-rose-600',
+                    tips: ['⚠️ נתונים נשמרים רק על הטאבלט כרגע', '💳 סליקה ידנית בלבד', '🔄 הכל יסתנכרן אוטומטית כשהקשר יחזור']
+                };
         }
+    };
 
-        prevStatusRef.current = currentStatus;
-    }, [state.status]);
+    const content = getPopupContent();
 
     return (
         <ConnectionContext.Provider value={{ ...state, refresh: checkConnectivity }}>
             {/* Offline Popup */}
             {showOfflinePopup && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-3xl shadow-2xl p-8 mx-4 max-w-sm text-center">
-                        <div className="w-20 h-20 mx-auto mb-4 bg-white/20 rounded-full flex items-center justify-center">
-                            <span className="text-4xl">📴</span>
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-md">
+                    <div className={`bg-gradient-to-br ${content.color} text-white rounded-[40px] shadow-2xl p-10 mx-4 max-w-md text-center border-4 border-white/20`}>
+                        <div className="w-24 h-24 mx-auto mb-6 bg-white/20 rounded-full flex items-center justify-center shadow-inner">
+                            <span className="text-5xl animate-pulse">{content.icon}</span>
                         </div>
-                        <h2 className="text-2xl font-black mb-3">📴 מצב אופליין</h2>
-                        <div className="text-white/90 font-medium text-right space-y-2 mb-4">
-                            <p className="text-center">אין חיבור לאינטרנט</p>
-                            <div className="bg-white/10 rounded-xl p-3 text-sm space-y-1">
-                                <p>⚠️ הזמנות לא יעברו בין מכשירים</p>
-                                <p>💳 סליקת אשראי לא תעבוד</p>
-                                <p>✅ ההזמנות יישמרו ויסתנכרנו כשהחיבור יחזור</p>
-                            </div>
+                        <h2 className="text-3xl font-black mb-4 tracking-tight">{content.title}</h2>
+                        <p className="text-white/90 font-medium mb-6 text-lg leading-relaxed">{content.message}</p>
+
+                        <div className="bg-black/20 rounded-3xl p-5 text-right space-y-3 mb-8 border border-white/10">
+                            {content.tips.map((tip, i) => (
+                                <p key={i} className="flex items-center gap-2 text-sm">
+                                    <span className="w-1.5 h-1.5 bg-white rounded-full flex-shrink-0" />
+                                    {tip}
+                                </p>
+                            ))}
                         </div>
+
                         <button
                             onClick={() => setShowOfflinePopup(false)}
-                            className="w-full py-3 bg-white/20 hover:bg-white/30 rounded-xl font-bold transition"
+                            className="w-full py-4 bg-white text-gray-900 hover:bg-gray-100 rounded-2xl font-black text-xl shadow-xl transition-all transform active:scale-95"
                         >
-                            הבנתי ✓
+                            הבנתי, תודה!
                         </button>
                     </div>
                 </div>
@@ -246,23 +207,13 @@ export const ConnectionProvider = ({ children }) => {
 
             {/* Online Popup */}
             {showOnlinePopup && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-gradient-to-br from-emerald-500 to-green-600 text-white rounded-3xl shadow-2xl p-8 mx-4 max-w-sm text-center">
-                        <div className="w-20 h-20 mx-auto mb-4 bg-white/20 rounded-full flex items-center justify-center">
-                            <span className="text-4xl">🌐</span>
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-none">
+                    <div className="bg-gradient-to-br from-emerald-500 to-green-600 text-white rounded-3xl shadow-2xl p-8 mx-4 max-w-sm text-center animate-bounce-short">
+                        <div className="w-16 h-16 mx-auto mb-4 bg-white/20 rounded-full flex items-center justify-center">
+                            <span className="text-3xl">🌐</span>
                         </div>
-                        <h2 className="text-2xl font-black mb-2">חזרנו אונליין!</h2>
-                        <p className="text-white/90 font-medium mb-4">
-                            החיבור חזר לפעול.
-                            <br />
-                            <span className="text-white/80 text-sm">מסנכרן שינויים...</span>
-                        </p>
-                        <button
-                            onClick={() => setShowOnlinePopup(false)}
-                            className="w-full py-3 bg-white/20 hover:bg-white/30 rounded-xl font-bold transition"
-                        >
-                            מעולה! ✓
-                        </button>
+                        <h2 className="text-2xl font-black mb-1">חזרנו אונליין!</h2>
+                        <p className="text-white/90 font-medium">המערכת חזרה לעבוד במצב מלא.</p>
                     </div>
                 </div>
             )}
