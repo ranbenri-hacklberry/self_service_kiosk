@@ -88,6 +88,18 @@ const TasksManager = () => {
       if (error) throw error;
       setTasks(data || []);
 
+      console.log('🔍 [TasksManager] Raw fetched tasks:', data?.length, data);
+      if (data?.length > 0) {
+        const sample = data[0];
+        console.log('🔍 [TasksManager] Sample task:', {
+          name: sample.name,
+          category: sample.category,
+          is_active: sample.is_active,
+          frequency: sample.frequency,
+          weekly_schedule: sample.weekly_schedule
+        });
+      }
+
       const { data: completions } = await supabase
         .from('task_completions')
         .select('recurring_task_id,completed_at')
