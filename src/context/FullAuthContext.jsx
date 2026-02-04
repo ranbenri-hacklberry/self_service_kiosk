@@ -145,6 +145,42 @@ export const AuthProvider = ({ children }) => {
                 }
             } else {
                 localStorage.removeItem('kiosk_mode');
+
+                // ✨ NEW: ZERO-CONFIG AUTO DISCOVERY
+                // If no session exists, try to discover who we are from the local backend
+                try {
+                    console.log('🔍 [Auth] Attempting Zero-Config auto-discovery...');
+                    const res = await fetch(`${API_URL}/api/admin/identity`);
+                    if (res.ok) {
+                        const { businesses, count } = await res.json();
+                        if (count === 1) {
+                            const biz = businesses[0];
+                            console.log(`🚀 [Auth] Auto-discovered unique business: ${biz.name}. Entering Device Mode.`);
+
+                            // Create a "Device" persistent session
+                            const deviceUser = {
+                                id: `device-${biz.id.slice(0, 8)}`,
+                                name: `מסוף ${biz.name}`,
+                                business_id: biz.id,
+                                business_name: biz.name,
+                                access_level: 'staff',
+                                is_device: true
+                            };
+
+                            setCurrentUser(deviceUser);
+                            localStorage.setItem('kiosk_user', JSON.stringify(deviceUser));
+                            localStorage.setItem('kiosk_auth_time', Date.now().toString());
+                            // Default to kiosk mode for auto-discovered devices
+                            setDeviceMode('kiosk');
+                            localStorage.setItem('kiosk_mode', 'kiosk');
+                        } else if (count > 1) {
+                            console.log(`🏢 [Auth] Multiple businesses discovered (${count}). Waiting for manual selection.`);
+                            // For now, we just log it. In the future, we could trigger a "Select Terminal" screen.
+                        }
+                    }
+                } catch (discoveryErr) {
+                    console.warn('ℹ️ [Auth] Auto-discovery skipped (not on local server or API down)');
+                }
             }
 
             setIsLoading(false);

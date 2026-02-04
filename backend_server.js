@@ -204,6 +204,42 @@ const enforceBusinessId = (req, res, next) => {
 // ------------------------------------------------------------------
 // === SYNC ENGINE: Cloud to Local ===
 // ------------------------------------------------------------------
+// ------------------------------------------------------------------
+// === LOCAL IDENTITY API ===
+// ------------------------------------------------------------------
+/**
+ * Returns the business(es) associated with this local server.
+ * Used for auto-discovery and zero-config login in Kiosk mode.
+ */
+app.get("/api/admin/identity", async (req, res) => {
+    try {
+        // Business IDs can be provided via .env as a comma-separated list
+        const idsString = process.env.LOCAL_BUSINESS_IDS || process.env.VITE_BUSINESS_ID || '';
+        const ids = idsString.split(',').map(id => id.trim()).filter(id => id.length > 0);
+
+        if (ids.length === 0) {
+            return res.json({ businesses: [], count: 0 });
+        }
+
+        // Fetch basic business info for these IDs
+        const { data: businesses, error } = await supabase
+            .from('businesses')
+            .select('id, name, logo_url')
+            .in('id', ids);
+
+        if (error) throw error;
+
+        res.json({
+            businesses: businesses || [],
+            count: businesses?.length || 0,
+            machineId: process.env.MACHINE_ID || 'local-server'
+        });
+    } catch (err) {
+        console.error("❌ Identity check failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 const SYNC_TABLES = [
     { name: 'businesses', key: 'id' },
     { name: 'business_ai_settings', key: 'id' },
