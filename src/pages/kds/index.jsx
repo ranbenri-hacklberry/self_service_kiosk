@@ -17,7 +17,6 @@ import { isDrink, isHotDrink, sortItems, groupOrderItems } from '../../utils/kds
 import OrderCard from './components/OrderCard';
 import OrderEditModal from './components/OrderEditModal';
 import DateScroller from './components/DateScroller';
-import MiniMusicPlayer from '../../components/music/MiniMusicPlayer';
 import ConnectionStatusBar from '../../components/ConnectionStatusBar';
 import BusinessInfoBar from '../../components/BusinessInfoBar';
 import { useKDSData } from './hooks/useKDSData';
@@ -499,11 +498,8 @@ const Header = ({
         <ConnectionStatusBar isIntegrated={true} />
       </div>
 
-      {/* Left Side - Music + Actions */}
+      {/* Left Side - Actions */}
       <div className="flex items-center gap-3 flex-1 justify-end">
-        <MiniMusicPlayer />
-
-        <div className="w-px h-6 bg-gray-200" />
 
         <button
           onClick={canUndo ? onUndoLastAction : undefined}
