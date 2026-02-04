@@ -155,17 +155,29 @@ export const AuthProvider = ({ children }) => {
                         const { businesses, count } = await res.json();
                         if (count === 1) {
                             const biz = businesses[0];
-                            console.log(`🚀 [Auth] Auto-discovered unique business: ${biz.name}. Entering Device Mode.`);
+                            console.log(`🚀 [Auth] Auto-discovered unique business: ${biz.name}. Fetching identity...`);
 
-                            // Create a "Device" persistent session
+                            // 👤 PRE-FETCH: Find the primary owner (Netanel) to use as the session identity
+                            const { data: owners } = await supabase
+                                .from('employees')
+                                .select('*')
+                                .eq('business_id', biz.id)
+                                .in('access_level', ['owner', 'admin']);
+
+                            // Prioritize finding "Netanel" (נתנאל)
+                            const primaryEmployee = owners?.find(e => e.name?.includes('נתנאל') || e.name?.includes('נתי')) || owners?.[0];
+
                             const deviceUser = {
-                                id: `device-${biz.id.slice(0, 8)}`,
-                                name: `מסוף ${biz.name}`,
+                                id: primaryEmployee?.id || `device-${biz.id.slice(0, 8)}`,
+                                name: primaryEmployee?.name || `מסוף ${biz.name}`,
                                 business_id: biz.id,
                                 business_name: biz.name,
-                                access_level: 'staff',
+                                access_level: primaryEmployee?.access_level || 'staff',
+                                pin_code: primaryEmployee?.pin_code || null,
                                 is_device: true
                             };
+
+                            console.log(`👤 [Auth] Auto-login as: ${deviceUser.name}`);
 
                             setCurrentUser(deviceUser);
                             localStorage.setItem('kiosk_user', JSON.stringify(deviceUser));
@@ -175,7 +187,6 @@ export const AuthProvider = ({ children }) => {
                             localStorage.setItem('kiosk_mode', 'kiosk');
                         } else if (count > 1) {
                             console.log(`🏢 [Auth] Multiple businesses discovered (${count}). Waiting for manual selection.`);
-                            // For now, we just log it. In the future, we could trigger a "Select Terminal" screen.
                         }
                     }
                 } catch (discoveryErr) {
