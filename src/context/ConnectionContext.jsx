@@ -12,7 +12,16 @@ const ConnectionContext = createContext(null);
 const LOCAL_SUPABASE_URL = import.meta.env.VITE_LOCAL_SUPABASE_URL || 'http://127.0.0.1:54321';
 
 export const ConnectionProvider = ({ children }) => {
-    // State for what exactly was lost
+    const [state, setState] = useState({
+        status: 'checking',
+        localAvailable: false,
+        cloudAvailable: false,
+        lastSync: null,
+        lastLocalAvailable: null,
+        lastCloudAvailable: null
+    });
+    const [showOfflinePopup, setShowOfflinePopup] = useState(false);
+    const [showOnlinePopup, setShowOnlinePopup] = useState(false);
     const [lostType, setLostType] = useState(null); // 'local', 'cloud', or 'all'
 
     const checkConnectivity = useCallback(async () => {
