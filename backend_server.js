@@ -1258,34 +1258,52 @@ app.post("/api/sync-cloud-to-local", async (req, res) => {
 
                     // SPECIAL: For order_items, pull MUST paginate through all orders (prevents 1000 row limit)
                     if (tableName === 'order_items' && businessId && hasMore) {
-                        console.log(`🔍 [Sync] Deep-fetching order_items via ALL cloud orders...`);
-                        let cloudOrderIds = [];
-                        let orderPage = 0;
-                        let hasMoreOrders = true;
+                        try {
+                            console.log(`🔍 [Sync] Deep-fetching order_items via ALL cloud orders...`);
+                            let cloudOrderIds = [];
+                            let orderPage = 0;
+                            let hasMoreOrders = true;
 
-                        while (hasMoreOrders) {
-                            const { data: orders } = await remoteSupabase.from('orders')
-                                .select('id')
-                                .eq('business_id', businessId)
-                                .range(orderPage * 1000, (orderPage + 1) * 1000 - 1);
+                            while (hasMoreOrders) {
+                                const { data: orders, error: oErr } = await remoteSupabase.from('orders')
+                                    .select('id')
+                                    .eq('business_id', businessId)
+                                    .range(orderPage * 1000, (orderPage + 1) * 1000 - 1);
 
-                            if (orders && orders.length > 0) {
-                                cloudOrderIds.push(...orders.map(o => o.id));
-                                if (orders.length < 1000) hasMoreOrders = false;
-                                else orderPage++;
+                                if (oErr) throw oErr;
+
+                                if (orders && orders.length > 0) {
+                                    cloudOrderIds.push(...orders.map(o => o.id));
+                                    if (orders.length < 1000) hasMoreOrders = false;
+                                    else orderPage++;
+                                } else {
+                                    hasMoreOrders = false;
+                                }
+                            }
+
+                            if (cloudOrderIds.length > 0) {
+                                console.log(`   - Fetching items for ${cloudOrderIds.length} orders...`);
+                                for (let i = 0; i < cloudOrderIds.length; i += 100) {
+                                    const batchIds = cloudOrderIds.slice(i, i + 100);
+                                    const { data: items, error: iErr } = await remoteSupabase.from('order_items').select('*').in('order_id', batchIds);
+                                    if (iErr) {
+                                        console.warn(`⚠️ [Sync] Batch fetch for order_items failed at index ${i}:`, iErr.message);
+                                        continue;
+                                    }
+                                    if (items) allData.push(...items);
+                                }
+                                console.log(`   ✓ [Sync] Successfully fetched ${allData.length} order_items using order_id mapping.`);
+                                hasMore = false;
                             } else {
-                                hasMoreOrders = false;
+                                console.warn(`⚠️ [Sync] No orders found in cloud for business ${businessId}. Skipping deep-fetch for items.`);
+                                // Fallback: try direct fetch if business_id exists on items
+                                hasMore = true;
                             }
-                        }
-
-                        if (cloudOrderIds.length > 0) {
-                            console.log(`   - Fetching items for ${cloudOrderIds.length} orders...`);
-                            for (let i = 0; i < cloudOrderIds.length; i += 100) {
-                                const batchIds = cloudOrderIds.slice(i, i + 100);
-                                const { data: items, error } = await remoteSupabase.from('order_items').select('*').in('order_id', batchIds);
-                                if (items) allData.push(...items);
-                            }
-                            hasMore = false;
+                        } catch (deepFetchErr) {
+                            console.error(`❌ [Sync] Deep-fetch for order_items failed:`, deepFetchErr.message);
+                            addLog && addLog(`⚠ Deep-fetch items failed: ${deepFetchErr.message}`, 'warning');
+                            // Let it fallback to standard fetch
+                            hasMore = true;
                         }
                     }
                     // SPECIAL: For optionvalues / menuitemoptions
