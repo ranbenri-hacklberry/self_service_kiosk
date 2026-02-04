@@ -728,192 +728,208 @@ app.get("/api/admin/trusted-stats", async (req, res) => {
 
     try {
         // --- 1. CLOUD ---
-        let cloudCount = 0;
+        if (remoteSupabase) {
+            try {
+                let cloudCount = 0;
 
-        // PRIORITIZE RPC for sensitive tables (blocks RLS '0' issues)
-        if (table === 'loyalty_cards' || table === 'loyalty_transactions' || table === 'customers') {
-            console.log(`   - Using RPC override for ${table} count`);
-            const rpcName = table === 'customers' ? 'get_customers_for_sync' :
-                table === 'loyalty_cards' ? 'get_loyalty_cards_for_sync' : 'get_loyalty_transactions_for_sync';
+                // PRIORITIZE RPC for sensitive tables (blocks RLS '0' issues)
+                if (table === 'loyalty_cards' || table === 'loyalty_transactions' || table === 'customers') {
+                    console.log(`   - Using RPC override for ${table} count`);
+                    const rpcName = table === 'customers' ? 'get_customers_for_sync' :
+                        table === 'loyalty_cards' ? 'get_loyalty_cards_for_sync' : 'get_loyalty_transactions_for_sync';
 
-            let rpcTotal = 0;
-            let rpcPage = 0;
-            let hasMoreRpc = true;
-            while (hasMoreRpc) {
-                const { data: rpcData, error: rpcErr } = await remoteSupabase
-                    .rpc(rpcName, { p_business_id: businessId })
-                    .range(rpcPage * 1000, (rpcPage + 1) * 1000 - 1);
+                    let rpcTotal = 0;
+                    let rpcPage = 0;
+                    let hasMoreRpc = true;
+                    while (hasMoreRpc) {
+                        const { data: rpcData, error: rpcErr } = await remoteSupabase
+                            .rpc(rpcName, { p_business_id: businessId })
+                            .range(rpcPage * 1000, (rpcPage + 1) * 1000 - 1);
 
-                if (!rpcErr && rpcData && rpcData.length > 0) {
-                    rpcTotal += rpcData.length;
-                    if (rpcData.length < 1000) hasMoreRpc = false;
-                    else rpcPage++;
+                        if (!rpcErr && rpcData && rpcData.length > 0) {
+                            rpcTotal += rpcData.length;
+                            if (rpcData.length < 1000) hasMoreRpc = false;
+                            else rpcPage++;
+                        } else {
+                            hasMoreRpc = false;
+                        }
+                    }
+                    cloudCount = rpcTotal;
                 } else {
-                    hasMoreRpc = false;
-                }
-            }
-            cloudCount = rpcTotal;
-        } else {
-            // Strategy: Try direct business_id count first
-            let directRes = null;
-            if (table === 'businesses') {
-                directRes = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).eq('id', businessId);
-            } else if (!isNoBusinessId || table === 'order_items') {
-                directRes = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
-            }
+                    // Strategy: Try direct business_id count first
+                    let directRes = null;
+                    if (table === 'businesses') {
+                        directRes = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).eq('id', businessId);
+                    } else if (!isNoBusinessId || table === 'order_items') {
+                        directRes = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
+                    }
 
-            if (directRes && !directRes.error && directRes.count > 0) {
-                cloudCount = directRes.count;
-            } else {
-                // FALLBACK for complex related tables
-                if (table === 'order_items') {
-                    let allOrderIds = [];
-                    let orderPage = 0;
-                    let hasMoreOrders = true;
-                    while (hasMoreOrders) {
-                        const { data: orders } = await remoteSupabase.from('orders').select('id').eq('business_id', businessId).range(orderPage * 1000, (orderPage + 1) * 1000 - 1);
-                        if (!orders || orders.length === 0) hasMoreOrders = false;
-                        else {
-                            allOrderIds.push(...orders.map(o => o.id));
-                            if (orders.length < 1000) hasMoreOrders = false;
-                            orderPage++;
+                    if (directRes && !directRes.error && directRes.count !== null) {
+                        cloudCount = directRes.count;
+                    } else {
+                        // FALLBACK for complex related tables
+                        if (table === 'order_items') {
+                            let allOrderIds = [];
+                            let orderPage = 0;
+                            let hasMoreOrders = true;
+                            while (hasMoreOrders) {
+                                const { data: orders } = await remoteSupabase.from('orders').select('id').eq('business_id', businessId).range(orderPage * 1000, (orderPage + 1) * 1000 - 1);
+                                if (!orders || orders.length === 0) hasMoreOrders = false;
+                                else {
+                                    allOrderIds.push(...orders.map(o => o.id));
+                                    if (orders.length < 1000) hasMoreOrders = false;
+                                    orderPage++;
+                                }
+                            }
+                            if (allOrderIds.length > 0) {
+                                let totalItems = 0;
+                                for (let i = 0; i < allOrderIds.length; i += 500) {
+                                    const batch = allOrderIds.slice(i, i + 500);
+                                    const { count } = await remoteSupabase.from('order_items').select('*', { count: 'exact', head: true }).in('order_id', batch);
+                                    totalItems += (count || 0);
+                                }
+                                cloudCount = totalItems;
+                            }
+                        } else if (table === 'menuitemoptions' || table === 'optionvalues') {
+                            const { data: groups } = await remoteSupabase.from('optiongroups').select('id').eq('business_id', businessId);
+                            const ids = (groups || []).map(g => g.id);
+                            if (ids.length > 0) {
+                                const { count } = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).in('group_id', ids);
+                                cloudCount = count || 0;
+                            }
+                        } else if (isNoBusinessId) {
+                            const { count } = await remoteSupabase.from(table).select('*', { count: 'exact', head: true });
+                            cloudCount = count || 0;
                         }
                     }
-                    if (allOrderIds.length > 0) {
-                        for (let i = 0; i < allOrderIds.length; i += 500) {
-                            const batch = allOrderIds.slice(i, i + 500);
-                            const { count } = await remoteSupabase.from('order_items').select('*', { count: 'exact', head: true }).in('order_id', batch);
-                            cloudCount += (count || 0);
-                        }
-                    }
-                } else if (table === 'menuitemoptions' || table === 'optionvalues') {
-                    const { data: groups } = await remoteSupabase.from('optiongroups').select('id').eq('business_id', businessId);
-                    const ids = (groups || []).map(g => g.id);
-                    if (ids.length > 0) {
-                        const { count } = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).in('group_id', ids);
-                        cloudCount = count || 0;
-                    }
-                } else if (isNoBusinessId) {
-                    const { count } = await remoteSupabase.from(table).select('*', { count: 'exact', head: true });
-                    cloudCount = count || 0;
                 }
+                results.cloud = cloudCount;
+            } catch (cloudErr) {
+                console.warn(`⚠️ Cloud count failed for ${table}:`, cloudErr.message);
+                results.cloud_error = cloudErr.message;
             }
         }
-        results.cloud = cloudCount;
 
         // --- 2. DOCKER ---
         if (localSupabase) {
-            let dockerCount = 0;
-            let dDirectRes = null;
-            if (table === 'businesses') {
-                dDirectRes = await localSupabase.from(table).select('*', { count: 'exact', head: true }).eq('id', businessId);
-            } else if (!isNoBusinessId || table === 'order_items') {
-                dDirectRes = await localSupabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
-            }
+            try {
+                let dockerCount = 0;
+                let dDirectRes = null;
+                if (table === 'businesses') {
+                    dDirectRes = await localSupabase.from(table).select('*', { count: 'exact', head: true }).eq('id', businessId);
+                } else if (!isNoBusinessId || table === 'order_items') {
+                    dDirectRes = await localSupabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
+                }
 
-            if (dDirectRes && !dDirectRes.error && dDirectRes.count !== null) {
-                dockerCount = dDirectRes.count;
-            } else {
-                if (table === 'order_items') {
-                    let allOrderIds = [];
-                    let orderPage = 0;
-                    let hasMoreOrders = true;
-                    while (hasMoreOrders) {
-                        const { data: orders } = await localSupabase.from('orders').select('id').eq('business_id', businessId).range(orderPage * 1000, (orderPage + 1) * 1000 - 1);
-                        if (!orders || orders.length === 0) hasMoreOrders = false;
-                        else {
-                            allOrderIds.push(...orders.map(o => o.id));
-                            if (orders.length < 1000) hasMoreOrders = false;
-                            orderPage++;
+                if (dDirectRes && !dDirectRes.error && dDirectRes.count !== null) {
+                    dockerCount = dDirectRes.count;
+                } else {
+                    if (table === 'order_items') {
+                        let allOrderIds = [];
+                        let orderPage = 0;
+                        let hasMoreOrders = true;
+                        while (hasMoreOrders) {
+                            const { data: orders } = await localSupabase.from('orders').select('id').eq('business_id', businessId).range(orderPage * 1000, (orderPage + 1) * 1000 - 1);
+                            if (!orders || orders.length === 0) hasMoreOrders = false;
+                            else {
+                                allOrderIds.push(...orders.map(o => o.id));
+                                if (orders.length < 1000) hasMoreOrders = false;
+                                orderPage++;
+                            }
                         }
-                    }
-                    if (allOrderIds.length > 0) {
-                        for (let i = 0; i < allOrderIds.length; i += 500) {
-                            const batch = allOrderIds.slice(i, i + 500);
-                            const { count } = await localSupabase.from('order_items').select('*', { count: 'exact', head: true }).in('order_id', batch);
-                            dockerCount += (count || 0);
+                        if (allOrderIds.length > 0) {
+                            let totalItems = 0;
+                            for (let i = 0; i < allOrderIds.length; i += 500) {
+                                const batch = allOrderIds.slice(i, i + 500);
+                                const { count } = await localSupabase.from('order_items').select('*', { count: 'exact', head: true }).in('order_id', batch);
+                                totalItems += (count || 0);
+                            }
+                            dockerCount = totalItems;
                         }
-                    }
-                } else if (table === 'menuitemoptions' || table === 'optionvalues') {
-                    const { data: groups } = await localSupabase.from('optiongroups').select('id').eq('business_id', businessId);
-                    const ids = (groups || []).map(g => g.id);
-                    if (ids.length > 0) {
-                        const { count } = await localSupabase.from(table).select('*', { count: 'exact', head: true }).in('group_id', ids);
+                    } else if (table === 'menuitemoptions' || table === 'optionvalues') {
+                        const { data: groups } = await localSupabase.from('optiongroups').select('id').eq('business_id', businessId);
+                        const ids = (groups || []).map(g => g.id);
+                        if (ids.length > 0) {
+                            const { count } = await localSupabase.from(table).select('*', { count: 'exact', head: true }).in('group_id', ids);
+                            dockerCount = count || 0;
+                        }
+                    } else {
+                        // GLOBAL COUNT FALLBACK
+                        const { count } = await localSupabase.from(table).select('*', { count: 'exact', head: true });
                         dockerCount = count || 0;
                     }
-                } else {
-                    // GLOBAL COUNT FALLBACK
-                    const { count } = await localSupabase.from(table).select('*', { count: 'exact', head: true });
-                    dockerCount = count || 0;
                 }
-            }
-            results.docker = dockerCount;
-
-            // SPECIAL: For 'orders' and 'order_items', calculate "Recent (3 Days)" count for validation
-            if (table === 'orders') {
-                const threeDaysAgo = new Date();
-                threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-                const isoDate = threeDaysAgo.toISOString();
-
-                const { count } = await localSupabase
-                    .from('orders')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('business_id', businessId)
-                    .gte('created_at', isoDate);
-
-                results.dockerRecent = count || 0;
-            } else if (table === 'order_items') {
-                // For order_items, it's harder to filter by date directly as it doesn't have created_at usually or it's heavy join
-                // We can approximate or skip. Let's try to join if possible or just use the orders logic client side?
-                // Actually, let's fetch IDs of recent orders and count their items.
-                const threeDaysAgo = new Date();
-                threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-                const isoDate = threeDaysAgo.toISOString();
-
-                // Get recent order IDs
-                const { data: recentOrders } = await localSupabase
-                    .from('orders')
-                    .select('id')
-                    .eq('business_id', businessId)
-                    .gte('created_at', isoDate);
-
-                if (recentOrders && recentOrders.length > 0) {
-                    const ids = recentOrders.map(o => o.id);
-                    let recentItemsCount = 0;
-                    // Batch count
-                    for (let i = 0; i < ids.length; i += 500) {
-                        const batch = ids.slice(i, i + 500);
-                        const { count } = await localSupabase
-                            .from('order_items')
-                            .select('*', { count: 'exact', head: true })
-                            .in('order_id', batch);
-                        recentItemsCount += (count || 0);
-                    }
-                    results.dockerRecent = recentItemsCount;
-                } else {
-                    results.dockerRecent = 0;
-                }
-            } else if (table === 'loyalty_transactions') {
-                const threeDaysAgo = new Date();
-                threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-                const isoDate = threeDaysAgo.toISOString();
-
-                const { count } = await localSupabase
-                    .from('loyalty_transactions')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('business_id', businessId)
-                    .gte('created_at', isoDate);
-
-                results.dockerRecent = count || 0;
+                results.docker = dockerCount;
+            } catch (dockerErr) {
+                console.warn(`⚠️ Docker count failed for ${table}:`, dockerErr.message);
+                results.docker_error = dockerErr.message;
             }
         }
+        // SPECIAL: For 'orders' and 'order_items', calculate "Recent (3 Days)" count for validation
+        if (table === 'orders') {
+            const threeDaysAgo = new Date();
+            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+            const isoDate = threeDaysAgo.toISOString();
+
+            const { count } = await localSupabase
+                .from('orders')
+                .select('*', { count: 'exact', head: true })
+                .eq('business_id', businessId)
+                .gte('created_at', isoDate);
+
+            results.dockerRecent = count || 0;
+        } else if (table === 'order_items') {
+            // For order_items, it's harder to filter by date directly as it doesn't have created_at usually or it's heavy join
+            // We can approximate or skip. Let's try to join if possible or just use the orders logic client side?
+            // Actually, let's fetch IDs of recent orders and count their items.
+            const threeDaysAgo = new Date();
+            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+            const isoDate = threeDaysAgo.toISOString();
+
+            // Get recent order IDs
+            const { data: recentOrders } = await localSupabase
+                .from('orders')
+                .select('id')
+                .eq('business_id', businessId)
+                .gte('created_at', isoDate);
+
+            if (recentOrders && recentOrders.length > 0) {
+                const ids = recentOrders.map(o => o.id);
+                let recentItemsCount = 0;
+                // Batch count
+                for (let i = 0; i < ids.length; i += 500) {
+                    const batch = ids.slice(i, i + 500);
+                    const { count } = await localSupabase
+                        .from('order_items')
+                        .select('*', { count: 'exact', head: true })
+                        .in('order_id', batch);
+                    recentItemsCount += (count || 0);
+                }
+                results.dockerRecent = recentItemsCount;
+            } else {
+                results.dockerRecent = 0;
+            }
+        } else if (table === 'loyalty_transactions') {
+            const threeDaysAgo = new Date();
+            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+            const isoDate = threeDaysAgo.toISOString();
+
+            const { count } = await localSupabase
+                .from('loyalty_transactions')
+                .select('*', { count: 'exact', head: true })
+                .eq('business_id', businessId)
+                .gte('created_at', isoDate);
+
+            results.dockerRecent = count || 0;
+        }
+    }
 
         console.log(`✅ [Stats] ${table}: Cloud=${results.cloud}, Docker=${results.docker}`);
-        res.json(results);
-    } catch (e) {
-        console.error(`❌ [Stats] Error for ${table}:`, e.message);
-        res.json({ ...results, error: e.message });
-    }
+    res.json(results);
+} catch (e) {
+    console.error(`❌ [Stats] Error for ${table}:`, e.message);
+    res.json({ ...results, error: e.message });
+}
 });
 
 // TABLE METADATA API: Get columns, types, and policies for debugging
