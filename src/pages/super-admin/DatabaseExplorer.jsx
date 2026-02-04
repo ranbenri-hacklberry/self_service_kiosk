@@ -62,9 +62,9 @@ const COMPARABLE_TABLES = [
     { id: 'task_completions', label: 'ביצועי משימות', dexie: 'task_completions' },
     { id: 'customers', label: 'לקוחות', dexie: 'customers' },
     { id: 'loyalty_cards', label: 'כרטיסי מועדון', dexie: 'loyalty_cards' },
-    { id: 'loyalty_transactions', label: 'עסקאות מועדון', dexie: 'loyalty_transactions' },
-    { id: 'orders', label: 'הזמנות', dexie: 'orders' },
-    { id: 'order_items', label: 'פריטי הזמנה', dexie: 'order_items' },
+    { id: 'loyalty_transactions', label: 'עסקאות מועדון', dexie: 'loyalty_transactions', isHistorical: true },
+    { id: 'orders', label: 'הזמנות', dexie: 'orders', isHistorical: true },
+    { id: 'order_items', label: 'פריטי הזמנה', dexie: 'order_items', isHistorical: true },
     { id: 'suppliers', label: 'ספקים', dexie: 'suppliers' },
     { id: 'discounts', label: 'הנחות', dexie: 'discounts' },
 ];
@@ -573,17 +573,21 @@ DIAGNOSTICS:
                 try {
                     const response = await fetch(`/api/admin/trusted-stats?table=${tableId}&businessId=${currentUser.business_id}&noBusinessId=${!!table.noBusinessId}`);
                     // Parsing response which now includes optional 'dockerRecent' for orders/order_items
-                    const { cloud, docker, dockerRecent, error } = await response.json();
+                    const { cloud, docker, cloudRecent, dockerRecent, error } = await response.json();
 
                     if (error) {
                         newStats[tableId].cloud = { count: 'ERR', columns: 0, loading: false, error };
                         newStats[tableId].docker = { count: 'ERR', columns: 0, loading: false, error };
                     } else {
-                        newStats[tableId].cloud = { count: cloud || 0, columns: 0, loading: false };
-                        // Store dockerRecent if available
+                        newStats[tableId].cloud = {
+                            count: cloud || 0,
+                            recent: cloudRecent,
+                            columns: 0,
+                            loading: false
+                        };
                         newStats[tableId].docker = {
                             count: docker || 0,
-                            recent: dockerRecent, // Optional: Logic for 3-day sync validation
+                            recent: dockerRecent,
                             columns: 0,
                             loading: false
                         };
@@ -618,7 +622,7 @@ DIAGNOSTICS:
                                 const totalCount = await db[table.dexie].count();
                                 if (totalCount > 0) {
                                     // Hack: show total count with a mark if mismatch
-                                    // count = `${count} / ${totalCount}`; 
+                                    // count = `${count} / ${totalCount}`;
                                     // Actually better to just show total if we are in super admin context likely
                                     console.warn(`[Dexie] ${table.dexie} filtered count is 0 but total is ${totalCount}. Context: ${currentUser.business_id}`);
                                 }
@@ -1303,15 +1307,18 @@ DIAGNOSTICS:
 
                                     // Special Logic for 3-Day Window Tables (Historical Tables)
                                     if (table.isHistorical && !hasError && layerStats.dexie.count !== '-') {
-                                        const recentCount = layerStats.docker.recent;
-                                        // If available, compare Dexie against recentCount instead of total
-                                        if (recentCount !== undefined && recentCount !== null) {
-                                            if (layerStats.dexie.count === recentCount) {
+                                        const dRecent = layerStats.docker.recent;
+                                        const cRecent = layerStats.cloud.recent;
+
+                                        // If both Docker and Cloud agree on the 3rd day count, and Dexie matches it - we are golden.
+                                        // If Docker or Cloud recent counts are unavailable, we skip the mismatch indicator.
+                                        const targetCount = dRecent ?? cRecent;
+
+                                        if (targetCount !== undefined && targetCount !== null) {
+                                            if (layerStats.dexie.count === targetCount) {
                                                 allMatched = true;
                                                 isRecentMatched = true;
                                             } else {
-                                                // Double check: if Dexie has MORE than recent (e.g. didn't prune yet), it's technically fully synced+extra.
-                                                // But user wants explicit confirmation of 3 days.
                                                 allMatched = false;
                                             }
                                         }
@@ -1364,6 +1371,12 @@ DIAGNOSTICS:
                                             <td className="px-2 py-5 border-l border-slate-800/30">
                                                 <div className="flex flex-col items-center gap-1">
                                                     <CountBadge count={layerStats.cloud.count} loading={layerStats.cloud.loading} />
+                                                    {/* Show Recent Count for Cloud */}
+                                                    {layerStats.cloud.recent !== undefined && layerStats.cloud.recent !== layerStats.cloud.count && (
+                                                        <span className="text-[9px] text-slate-500 font-mono">
+                                                            (3d: {layerStats.cloud.recent})
+                                                        </span>
+                                                    )}
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); copyTableMetadata(table.id, table.label, 'cloud'); }}
                                                         className={`p-1 rounded-md transition-all text-[9px] flex items-center gap-1 ${copyingTable?.id === table.id && copyingTable?.target === 'cloud' ? 'text-emerald-400' : 'text-slate-600 hover:text-blue-400'}`}

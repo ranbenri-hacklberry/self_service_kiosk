@@ -922,65 +922,49 @@ app.get("/api/admin/trusted-stats", async (req, res) => {
                 results.docker_error = dockerErr.message;
             }
         }
-        // SPECIAL: For 'orders' and 'order_items', calculate "Recent (3 Days)" count for validation
-        if (table === 'orders') {
+        // Helper for 3-day window count
+        const getRecentCount = async (client, tableName, bId) => {
             const threeDaysAgo = new Date();
             threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
             const isoDate = threeDaysAgo.toISOString();
 
-            const { count } = await localSupabase
-                .from('orders')
+            // 1. Try direct check (preferred)
+            const { count, error } = await client
+                .from(tableName)
                 .select('*', { count: 'exact', head: true })
-                .eq('business_id', businessId)
+                .eq('business_id', bId)
                 .gte('created_at', isoDate);
 
-            results.dockerRecent = count || 0;
-        } else if (table === 'order_items') {
-            // For order_items, it's harder to filter by date directly as it doesn't have created_at usually or it's heavy join
-            // We can approximate or skip. Let's try to join if possible or just use the orders logic client side?
-            // Actually, let's fetch IDs of recent orders and count their items.
-            const threeDaysAgo = new Date();
-            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-            const isoDate = threeDaysAgo.toISOString();
+            if (!error && count !== null) return count;
 
-            // Get recent order IDs
-            const { data: recentOrders } = await localSupabase
-                .from('orders')
-                .select('id')
-                .eq('business_id', businessId)
-                .gte('created_at', isoDate);
-
-            if (recentOrders && recentOrders.length > 0) {
-                const ids = recentOrders.map(o => o.id);
-                let recentItemsCount = 0;
-                // Batch count
-                for (let i = 0; i < ids.length; i += 500) {
-                    const batch = ids.slice(i, i + 500);
-                    const { count } = await localSupabase
-                        .from('order_items')
-                        .select('*', { count: 'exact', head: true })
-                        .in('order_id', batch);
-                    recentItemsCount += (count || 0);
+            // 2. Fallback for order_items via orders
+            if (tableName === 'order_items') {
+                const { data: recentOrders } = await client.from('orders').select('id').eq('business_id', bId).gte('created_at', isoDate);
+                if (recentOrders && recentOrders.length > 0) {
+                    const ids = recentOrders.map(o => o.id);
+                    let total = 0;
+                    for (let i = 0; i < ids.length; i += 500) {
+                        const batch = ids.slice(i, i + 500);
+                        const { count: c } = await client.from('order_items').select('*', { count: 'exact', head: true }).in('order_id', batch);
+                        total += (c || 0);
+                    }
+                    return total;
                 }
-                results.dockerRecent = recentItemsCount;
-            } else {
-                results.dockerRecent = 0;
             }
-        } else if (table === 'loyalty_transactions') {
-            const threeDaysAgo = new Date();
-            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-            const isoDate = threeDaysAgo.toISOString();
+            return 0;
+        };
 
-            const { count } = await localSupabase
-                .from('loyalty_transactions')
-                .select('*', { count: 'exact', head: true })
-                .eq('business_id', businessId)
-                .gte('created_at', isoDate);
-
-            results.dockerRecent = count || 0;
+        const historicalTables = ['orders', 'order_items', 'loyalty_transactions'];
+        if (historicalTables.includes(table)) {
+            if (remoteSupabase) {
+                results.cloudRecent = await getRecentCount(remoteSupabase, table, businessId).catch(() => 0);
+            }
+            if (localSupabase) {
+                results.dockerRecent = await getRecentCount(localSupabase, table, businessId).catch(() => 0);
+            }
         }
 
-        console.log(`✅ [Stats] ${table}: Cloud=${results.cloud}, Docker=${results.docker}`);
+        console.log(`✅ [Stats] ${table}: Cloud=${results.cloud} (${results.cloudRecent || 'N/A'}), Docker=${results.docker} (${results.dockerRecent || 'N/A'})`);
         res.json(results);
     } catch (e) {
         console.error(`❌ [Stats] Error for ${table}:`, e.message);
