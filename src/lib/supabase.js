@@ -29,28 +29,47 @@ const getClient = (url, key) => {
     });
 };
 
-// Initial default - Start with local if we're on a known local network or have a local URL
-const isLikelyLocal = window.location.hostname === 'localhost' ||
+// PRODUCTION CHECK: If we are on Vercel or any non-local hostname, ALWAYS use cloud. No exceptions.
+const isProduction = window.location.hostname.includes('vercel.app') ||
+    window.location.hostname.includes('.com') ||
+    window.location.hostname.includes('.co.il') ||
+    (!window.location.hostname.startsWith('192.168.') &&
+        window.location.hostname !== 'localhost' &&
+        window.location.hostname !== '127.0.0.1');
+
+// Only consider local if explicitly on localhost/127.0.0.1/192.168.x AND not production
+const isLikelyLocal = !isProduction && (
+    window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1' ||
     window.location.hostname.startsWith('192.168.') ||
-    window.location.search.includes('local=true');
+    window.location.search.includes('local=true')
+);
 
-// FORCE LOCAL MODE Strategy
+// Initialize client immediately - CLOUD for production, LOCAL only for dev
 activeClient = createClient(isLikelyLocal ? localUrl : cloudUrl, isLikelyLocal ? localKey : cloudKey, {
     auth: { storage: window.localStorage }
 });
 isLocal = isLikelyLocal;
+
+console.log(`🚀 Supabase Init: ${isProduction ? '☁️ PRODUCTION (Cloud Only)' : (isLikelyLocal ? '🏠 LOCAL MODE' : '☁️ CLOUD')}`);
 
 export const supabase = new Proxy({}, {
     get: (target, prop) => activeClient[prop]
 });
 
 export const initSupabase = async () => {
-    console.log(`🔌 Initializing Supabase Connection (Target: ${isLikelyLocal ? 'LOCAL ONLY' : 'CLOUD'})`);
+    // If we're in production, skip all local checks entirely
+    if (isProduction) {
+        isLocal = false;
+        activeClient = getClient(cloudUrl, cloudKey);
+        console.log('☁️ CONNECTED: Using Cloud Supabase (Production Mode)');
+        localStorage.setItem('is_local_instance', 'false');
+        return { isLocal: false, url: cloudUrl };
+    }
 
+    // Only for local development: try to connect to local Supabase
     if (isLikelyLocal) {
         try {
-            // Validate Local Connection
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 2000);
 
@@ -69,20 +88,19 @@ export const initSupabase = async () => {
                 console.log('🏘️ CONNECTED: Using Local Supabase (127.0.0.1:54321)');
                 localStorage.setItem('is_local_instance', 'true');
             } else {
-                console.error(`❌ Local Supabase unreachable (Status: ${response?.status}). Please ensure Docker is running.`);
-                // CRITICAL: Even if check fails, we STAY on local config so user sees the error instead of silently switching to cloud
-                // This prevents the "split brain" data issue.
-                isLocal = true;
-                activeClient = getClient(localUrl, localKey);
+                // Local failed - fall back to cloud for dev
+                console.warn('⚠️ Local Supabase unreachable, falling back to Cloud');
+                isLocal = false;
+                activeClient = getClient(cloudUrl, cloudKey);
+                localStorage.setItem('is_local_instance', 'false');
             }
         } catch (e) {
-            console.error('❌ Local connection failed entirely:', e);
-            // We still enforce local client to avoid confusion
-            isLocal = true;
-            activeClient = getClient(localUrl, localKey);
+            console.warn('⚠️ Local connection failed, falling back to Cloud:', e.message);
+            isLocal = false;
+            activeClient = getClient(cloudUrl, cloudKey);
+            localStorage.setItem('is_local_instance', 'false');
         }
     } else {
-        // Production / Cloud
         isLocal = false;
         activeClient = getClient(cloudUrl, cloudKey);
         console.log('☁️ CONNECTED: Using Cloud Supabase');
