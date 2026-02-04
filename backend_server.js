@@ -174,7 +174,8 @@ const MULTI_TENANT_TABLES = [
     'customers', 'discounts', 'orders', 'order_items', 'optiongroups',
     'suppliers', 'supplier_orders', 'supplier_order_items', 'loyalty_cards',
     'loyalty_transactions', 'tasks', 'recurring_tasks', 'task_completions',
-    'prepared_items_inventory', 'recipes', 'recipe_ingredients', 'business_ai_settings'
+    'prepared_items_inventory', 'recipes', 'recipe_ingredients', 'business_ai_settings',
+    'prep_logs', 'prepared_items_logs', 'inventory_logs'
 ];
 
 /**
@@ -667,7 +668,23 @@ app.post("/api/admin/resolve-conflict", enforceBusinessId, async (req, res) => {
             console.error(`❌ [ResolveConflict] Upsert error for ${table}:`, upsertError);
 
             if (upsertError.code === '23503') {
-                return res.status(409).json({ error: `Foreign key violation (23503): Ensure parent records are synced first.` });
+                console.warn(`⚠️ [ResolveConflict] Foreign key violation for ${table}. Retrying in granular mode...`);
+                // Fallback to granular upsert if bulk fails due to FK
+                let successful = 0;
+                let failed = 0;
+                for (const row of sourceData) {
+                    const { error: rowErr } = await targetClient.from(table).upsert(row, { onConflict: onConflict });
+                    if (!rowErr) successful++;
+                    else failed++;
+                }
+                return res.json({
+                    success: true,
+                    synced: successful,
+                    failed,
+                    message: "Granular sync completed with some FK skips",
+                    source,
+                    target: source === 'docker' ? 'cloud' : 'docker'
+                });
             }
             return res.status(500).json({ error: upsertError.message });
         }
