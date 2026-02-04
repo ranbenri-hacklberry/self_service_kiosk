@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { db } from '@/db/database';
 import { useAuth } from '@/context/AuthContext';
+import { getBackendApiUrl } from '../../utils/apiUtils';
 
 // Configuration for the three layers
 const CLOUD_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -682,8 +683,7 @@ DIAGNOSTICS:
             setSyncProgress({ current: 5, total: 100, message: 'מסנכרן ענן לדוקר (רקע)...' });
 
             try {
-                const isLocalServer = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-                const API_URL = isLocalServer ? '' : (import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') || '');
+                const API_URL = getBackendApiUrl();
 
                 await fetch(`${API_URL}/api/sync-cloud-to-local`, {
                     method: 'POST',

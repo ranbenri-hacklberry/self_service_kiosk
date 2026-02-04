@@ -151,10 +151,18 @@ PGPASSWORD='your_password' pg_dump -h aws-1-eu-central-1.pooler.supabase.com \
 
 ### סנכרון נתונים (Remote to Local)
 
-ניתן להשתמש בסקריפט הסנכרון הקיים:
+ניתן להשתמש בסקריפט הסנכרון הקיים (Pull):
 
 ```bash
 node scripts/sync-remote-to-local.mjs
+```
+
+### סנכרון נתונים (Local to Remote)
+
+ניתן להשתמש בסקריפט הסנכרון החדש (Push):
+
+```bash
+node scripts/sync-local-to-remote.mjs
 ```
 
 ### Migrations קיימים

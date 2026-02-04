@@ -5,12 +5,8 @@ import { useAuth } from '@/context/AuthContext';
 const MusicContext = createContext(null);
 
 // Get base URL for music files from backend - Use relative paths on localhost to leverage Vite proxy
-const isLocalServer = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const MUSIC_API_URL = isLocalServer ? '' : (
-    import.meta.env.VITE_MUSIC_API_URL ||
-    import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
-    'http://127.0.0.1:8082'
-);
+import { getBackendApiUrl } from '../utils/apiUtils';
+const MUSIC_API_URL = getBackendApiUrl();
 
 export const MusicProvider = ({ children }) => {
     const { currentUser } = useAuth();

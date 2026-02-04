@@ -2,9 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 
 const cloudUrl = import.meta.env?.VITE_SUPABASE_URL;
 const cloudKey = import.meta.env?.VITE_SUPABASE_ANON_KEY;
-// FORCE 127.0.0.1 to avoid 503 errors on LAN IP
-const localUrl = 'http://127.0.0.1:54321';
-const localKey = import.meta.env?.VITE_LOCAL_SUPABASE_ANON_KEY || cloudKey;
+// Standardized Hybrid Logic
+const localUrl = import.meta.env?.VITE_LOCAL_SUPABASE_URL || 'http://127.0.0.1:54321';
+const localKey = import.meta.env?.VITE_LOCAL_SUPABASE_SERVICE_KEY || import.meta.env?.VITE_LOCAL_SUPABASE_ANON_KEY || cloudKey;
 
 if (!cloudUrl || !cloudKey) {
     console.error('🚨 Supabase environment variables missing!');

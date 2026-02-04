@@ -20,6 +20,7 @@ import DateScroller from './components/DateScroller';
 import ConnectionStatusBar from '../../components/ConnectionStatusBar';
 import BusinessInfoBar from '../../components/BusinessInfoBar';
 import { useKDSData } from './hooks/useKDSData';
+import { getBackendApiUrl } from '../../utils/apiUtils';
 
 // Simple Error Boundary for KDS
 class KDSErrorBoundary extends React.Component {
@@ -59,10 +60,7 @@ class KDSErrorBoundary extends React.Component {
   }
 }
 
-const API_URL =
-  (import.meta.env.VITE_MANAGER_API_URL ||
-    import.meta.env.VITE_DATA_MANAGER_API_URL ||
-    'https://aimanageragentrani-625352399481.europe-west1.run.app').replace(/\/$/, '');
+const API_URL = getBackendApiUrl();
 
 // --- סגנונות (CSS) ---
 const kdsStyles = `

@@ -41,6 +41,7 @@ A comprehensive, offline-first Point of Sale (POS) and self-service kiosk applic
 * **Database:** PostgreSQL (via [Supabase](https://supabase.com/)).
 
 * **Business Logic:** Extensive use of PostgreSQL **RPCs** (Remote Procedure Calls) for critical operations like `submit_order` to simplify frontend logic and ensure ACID transactions.
+  * See [SUPABASE_RPC_GUIDE.md](./SUPABASE_RPC_GUIDE.md) for a full list of available functions.
 * **Real-time:** Supabase Realtime for instant KDS updates.
 
 ---

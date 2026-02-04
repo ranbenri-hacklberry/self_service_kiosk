@@ -26,51 +26,68 @@ app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
 // === HYBRID SUPABASE SETUP ===
-// Remote (Cloud) - for Auth verification and initial sync
+// Standardized Names: LOCAL_SUPABASE_URL, LOCAL_SUPABASE_SERVICE_KEY
 const REMOTE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const REMOTE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
-// Local (Docker) - for fast operations and offline mode
-const LOCAL_URL = process.env.LOCAL_SUPABASE_URL || 'http://127.0.0.1:54321';
-const LOCAL_KEY = process.env.LOCAL_SUPABASE_SERVICE_KEY || process.env.VITE_LOCAL_SERVICE_ROLE_KEY;
+const LOCAL_URL = process.env.LOCAL_SUPABASE_URL;
+const LOCAL_KEY = process.env.LOCAL_SUPABASE_SERVICE_KEY;
 
 let remoteSupabase = null;
 let localSupabase = null;
-let supabase = null; // Default client (will be local for most operations)
+let supabase = null;
 
-// Initialize Remote Client
+// 1. Initialize Remote Client (Always needed for Auth verification)
 if (REMOTE_URL && REMOTE_KEY) {
     try {
-        const isServiceKey = REMOTE_KEY.length > 200; // Service keys are long
         remoteSupabase = createClient(REMOTE_URL, REMOTE_KEY);
-        console.log(`✅ Remote Supabase Initialized. Role: ${isServiceKey ? 'SERVICE_ROLE (RLS Bypass)' : 'ANON (RLS Limited)'}`);
+        console.log(`☁️ Remote Supabase Initialized.`);
     } catch (err) {
         console.error("❌ Failed to initialize Remote Supabase:", err.message);
     }
 }
 
-// Initialize Local Client
-if (LOCAL_URL && LOCAL_KEY) {
-    try {
-        const isServiceKey = LOCAL_KEY.length > 200;
-        localSupabase = createClient(LOCAL_URL, LOCAL_KEY);
-        supabase = localSupabase;
-        console.log(`✅ Local Supabase Initialized. Role: ${isServiceKey ? 'SERVICE_ROLE' : 'ANON'}`);
-    } catch (err) {
-        console.error("❌ Failed to initialize Local Supabase:", err.message);
-        // Fallback to remote if local fails
+// 2. Initialize Local Client with ACTIVE CHECK
+async function initLocalSupabase() {
+    if (LOCAL_URL && LOCAL_KEY) {
+        try {
+            console.log(`🔍 Checking Local Supabase at ${LOCAL_URL}...`);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+            const response = await fetch(`${LOCAL_URL}/rest/v1/`, {
+                method: 'GET',
+                headers: { 'apikey': LOCAL_KEY },
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            if (response.ok) {
+                localSupabase = createClient(LOCAL_URL, LOCAL_KEY);
+                supabase = localSupabase;
+                console.log(`✅ Local Supabase Detected - Running in LOCAL mode.`);
+            } else {
+                throw new Error(`Response status: ${response.status}`);
+            }
+        } catch (err) {
+            console.log(`ℹ️ Using Remote Supabase Fallback (Local check failed: ${err.message})`);
+            supabase = remoteSupabase;
+        }
+    } else {
         supabase = remoteSupabase;
+        console.log("ℹ️ Using Remote Supabase as primary (Local variables missing)");
     }
-} else {
-    supabase = remoteSupabase;
-    console.log("ℹ️ Using Remote Supabase as primary");
+
+    if (!supabase) {
+        console.error("⚠️ WARNING: No Supabase client available! Server in limited mode.");
+    } else {
+        console.log("✅ Supabase client ready for operations");
+    }
 }
 
-if (!supabase) {
-    console.error("⚠️ WARNING: No Supabase client available! Server in limited mode.");
-} else {
-    console.log("✅ Supabase client ready for operations");
-}
+// Start initialization
+await initLocalSupabase();
 
 // === HYBRID AUTH MIDDLEWARE ===
 const hybridAuth = async (req, res, next) => {

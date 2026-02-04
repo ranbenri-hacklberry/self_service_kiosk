@@ -3,12 +3,9 @@ import { supabase } from '../lib/supabase'; // 🆕 FIX: Import supabase client
 import AuthContext from './AuthContextCore';
 
 // API URL for sync endpoint - Favor relative paths when running locally to use Vite proxy
-const isLocalServer = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const API_URL = isLocalServer ? '' : (
-    import.meta.env.VITE_MUSIC_API_URL ||
-    import.meta.env.VITE_MANAGER_API_URL?.replace(/\/$/, '') ||
-    'http://127.0.0.1:8082'
-);
+import { getBackendApiUrl } from '../utils/apiUtils';
+
+const API_URL = getBackendApiUrl();
 
 import { APP_VERSION } from '../version';
 
