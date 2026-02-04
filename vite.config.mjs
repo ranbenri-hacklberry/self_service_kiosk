@@ -10,6 +10,12 @@ export default defineConfig(({ mode }) => {
   const isLite = env.VITE_APP_MODE === 'lite';
   const rootDir = process.cwd();
 
+  // Docker networking: use service name 'backend' when running in container
+  // Falls back to localhost:8081 for local development
+  const backendTarget = process.env.DOCKER_ENV === 'true'
+    ? 'http://backend:8080'
+    : 'http://localhost:8081';
+
   const aliases = {
     "@": path.resolve(rootDir, "./src"),
   };
@@ -44,17 +50,17 @@ export default defineConfig(({ mode }) => {
       allowedHosts: [".amazonaws.com", ".builtwithrocket.new", "icaffe.hacklberryfinn.com", "localhost"],
       proxy: {
         "/item": {
-          target: "http://localhost:8081",
+          target: backendTarget,
           changeOrigin: true,
           secure: false,
         },
         "/api": {
-          target: "http://localhost:8081",
+          target: backendTarget,
           changeOrigin: true,
           secure: false,
         },
         "/music": {
-          target: "http://localhost:8081",
+          target: backendTarget,
           changeOrigin: true,
           secure: false,
         },
