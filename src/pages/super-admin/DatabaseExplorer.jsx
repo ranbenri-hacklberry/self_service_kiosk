@@ -1304,26 +1304,37 @@ DIAGNOSTICS:
                                         layerStats.dexie.count ?? 0
                                     ];
 
-                                    // Default Match Logic
-                                    let allMatched = counts.every(c => c === counts[0] && c !== 'ERR' && c !== '-');
+                                    // Robust Match Logic
+                                    const cCount = layerStats.cloud.count;
+                                    const dCount = layerStats.docker.count;
+                                    const xCount = layerStats.dexie.count;
+
+                                    let allMatched = false;
                                     let isRecentMatched = false;
-                                    const hasError = counts.some(c => c === 'ERR');
+                                    const hasError = [cCount, dCount, xCount].some(c => c === 'ERR');
 
-                                    // Special Logic for 3-Day Window Tables (Historical Tables)
-                                    if (table.isHistorical && !hasError && layerStats.dexie.count !== '-') {
-                                        const dRecent = layerStats.docker.recent;
-                                        const cRecent = layerStats.cloud.recent;
+                                    if (!hasError) {
+                                        // Special Logic for 3-Day Window Tables (Historical Tables)
+                                        if (table.isHistorical && xCount !== '-') {
+                                            const dRecent = layerStats.docker.recent;
+                                            const cRecent = layerStats.cloud.recent;
+                                            const targetCount = dRecent ?? cRecent;
 
-                                        // If both Docker and Cloud agree on the 3rd day count, and Dexie matches it - we are golden.
-                                        // If Docker or Cloud recent counts are unavailable, we skip the mismatch indicator.
-                                        const targetCount = dRecent ?? cRecent;
+                                            if (targetCount !== undefined && targetCount !== null) {
+                                                if (xCount === targetCount) {
+                                                    allMatched = true;
+                                                    isRecentMatched = true;
+                                                }
+                                            }
+                                        }
 
-                                        if (targetCount !== undefined && targetCount !== null) {
-                                            if (layerStats.dexie.count === targetCount) {
-                                                allMatched = true;
-                                                isRecentMatched = true;
-                                            } else {
-                                                allMatched = false;
+                                        // Standard Match Logic: If Docker and Dexie match, we are in good shape locally.
+                                        // We only flag mismatch if Cloud clearly has a different number (unless Cloud is unknown/loading).
+                                        if (!allMatched && dCount !== '-' && xCount !== '-') {
+                                            if (dCount === xCount) {
+                                                if (cCount === '-' || cCount === 'ERR' || cCount === dCount || cCount === null) {
+                                                    allMatched = true;
+                                                }
                                             }
                                         }
                                     }
@@ -1368,6 +1379,35 @@ DIAGNOSTICS:
                                                         >
                                                             <Cloud size={14} />
                                                             עדכן מהענן
+                                                        </button>
+
+                                                        <button
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                if (!window.confirm(`⚠️ האם לבצע סנכרון נקי לטבלת ${table.label}? \n\nתהליך זה ימחק את הטבלה בדפדפן ויטען אותה מחדש מהדוקר.`)) return;
+                                                                try {
+                                                                    setSyncLoading(true);
+                                                                    setSyncProgress({ current: 0, total: 100, message: `מנקה ${table.label}...` });
+                                                                    await db[table.dexie].clear();
+
+                                                                    const businessId = currentUser?.business_id || localStorage.getItem('kds_business_id');
+                                                                    const res = await fetch(`${getBackendApiUrl()}/api/admin/docker-dump/${table.id}?businessId=${businessId}`);
+                                                                    const data = await res.json();
+                                                                    if (Array.isArray(data)) {
+                                                                        await db[table.dexie].bulkPut(data);
+                                                                        alert(`✅ סונכרנו ${data.length} רשומות ל-${table.label}`);
+                                                                    }
+                                                                    await fetchAllStats();
+                                                                } catch (err) {
+                                                                    alert(`שגיאה: ${err.message}`);
+                                                                } finally {
+                                                                    setSyncLoading(false);
+                                                                }
+                                                            }}
+                                                            className="px-3 py-1 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 text-xs rounded-lg border border-orange-500/30 transition-all flex items-center gap-2"
+                                                        >
+                                                            <DatabaseZap size={14} />
+                                                            סנכרון נקי (Docker)
                                                         </button>
                                                     </div>
                                                 </div>
