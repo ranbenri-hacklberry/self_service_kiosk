@@ -34,14 +34,18 @@ const isProduction = window.location.hostname.includes('vercel.app') ||
     window.location.hostname.includes('.com') ||
     window.location.hostname.includes('.co.il') ||
     (!window.location.hostname.startsWith('192.168.') &&
+        !window.location.hostname.startsWith('10.') &&
+        !window.location.hostname.startsWith('100.') &&
         window.location.hostname !== 'localhost' &&
         window.location.hostname !== '127.0.0.1');
 
-// Only consider local if explicitly on localhost/127.0.0.1/192.168.x AND not production
+// Only consider local if explicitly on localhost/127.0.0.1/192.168.x/10.x/100.x AND not production
 const isLikelyLocal = !isProduction && (
     window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1' ||
     window.location.hostname.startsWith('192.168.') ||
+    window.location.hostname.startsWith('10.') ||
+    window.location.hostname.startsWith('100.') ||
     window.location.search.includes('local=true')
 );
 

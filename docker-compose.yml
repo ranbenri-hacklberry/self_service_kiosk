@@ -31,7 +31,7 @@ services:
     ports:
       - "4028:4028"
     environment:
-      - VITE_MANAGER_API_URL=http://backend:8080
+      - PORT=4028
     volumes:
       - .:/app
       - /app/node_modules
