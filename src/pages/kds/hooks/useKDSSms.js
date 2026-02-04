@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { sendSms } from '../../../services/smsService';
+import { sendSms } from '@/services/smsService';
 
 /**
  * 📱 useKDSSms Hook

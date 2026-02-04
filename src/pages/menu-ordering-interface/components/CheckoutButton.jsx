@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
-import Button from '../../../components/ui/Button';
-import Icon from '../../../components/AppIcon';
-import { useTheme } from '../../../context/ThemeContext';
+import Button from '@/components/ui/Button';
+import Icon from '@/components/AppIcon';
+import { useTheme } from '@/context/ThemeContext';
 
 const CheckoutButton = ({
   cartTotal = 0,

@@ -3,7 +3,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import Component from '../../pages/menu-ordering-interface/components/MTOQuickNotesModal';
+import Component from '@/pages/menu-ordering-interface/components/MTOQuickNotesModal';
 
 // @vitest-environment jsdom
 

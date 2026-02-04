@@ -13,7 +13,7 @@
 
 import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
 import { Clock, Edit, RotateCcw, Flame, Truck, Phone, MapPin, Package, Check, CheckCircle, Box } from 'lucide-react';
-import { sortItems } from '../../../utils/kdsUtils';
+import { sortItems } from '@/utils/kdsUtils';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
 // Fallback for item icons to prevent crash

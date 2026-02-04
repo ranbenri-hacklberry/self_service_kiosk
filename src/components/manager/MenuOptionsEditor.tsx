@@ -1,5 +1,5 @@
 import React from 'react';
-import { OptionGroup } from './types';
+import { OptionGroup } from '@/components/manager/types';
 
 interface MenuOptionsEditorProps {
   value: Record<string, any>;

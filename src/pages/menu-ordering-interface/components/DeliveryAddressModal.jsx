@@ -10,9 +10,9 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { X, Truck, MapPin, Phone, User, Check, Home, Dog, Users, Building2, Loader2 } from 'lucide-react';
-import { getAddressSuggestions, DEFAULT_CITY } from '../../../data/israelAddresses';
-import { supabase } from '../../../lib/supabase';
-import { useTheme } from '../../../context/ThemeContext';
+import { getAddressSuggestions, DEFAULT_CITY } from '@/data/israelAddresses';
+import { supabase } from '@/lib/supabase';
+import { useTheme } from '@/context/ThemeContext';
 
 // Delivery note options (like payment method buttons)
 const DELIVERY_NOTES_OPTIONS = [

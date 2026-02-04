@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { DollarSign, ChevronDown } from 'lucide-react';
-import AnimatedSection from '../AnimatedSection';
+import AnimatedSection from '@/components/manager/menu-editor/AnimatedSection';
 
 const PricingSection = ({
     formData,

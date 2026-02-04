@@ -3,7 +3,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import Component from '../../pages/kds/components/CashPaymentModal';
+import Component from '@/pages/kds/components/CashPaymentModal';
 
 // @vitest-environment jsdom
 

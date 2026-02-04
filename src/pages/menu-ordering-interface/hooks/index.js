@@ -8,7 +8,7 @@
  * - Performance (hooks can be optimized independently)
  */
 
-export { useCart } from './useCart';
-export { useLoyalty } from './useLoyalty';
-export { useMenuItems } from './useMenuItems';
-export { useDiscounts } from './useDiscounts';
+export { useCart } from '@/pages/menu-ordering-interface/hooks/useCart';
+export { useLoyalty } from '@/pages/menu-ordering-interface/hooks/useLoyalty';
+export { useMenuItems } from '@/pages/menu-ordering-interface/hooks/useMenuItems';
+export { useDiscounts } from '@/pages/menu-ordering-interface/hooks/useDiscounts';

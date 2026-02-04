@@ -6,7 +6,7 @@
 import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import KanbanOrderCard from './KanbanOrderCard';
+import KanbanOrderCard from '@/components/kanban/KanbanOrderCard';
 import { Coffee, Sprout, Globe, GripVertical } from 'lucide-react';
 
 // Map business types to icons (can be used for additional badges if needed)

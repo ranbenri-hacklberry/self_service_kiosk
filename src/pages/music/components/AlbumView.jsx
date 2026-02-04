@@ -6,7 +6,7 @@ import { useAlbums } from '@/hooks/useAlbums';
 import SongRow from '@/components/music/SongRow';
 import '@/styles/music.css';
 
-import { getBackendApiUrl } from '../utils/apiUtils';
+import { getBackendApiUrl } from '@/utils/apiUtils';
 
 const MUSIC_API_URL = getBackendApiUrl();
 

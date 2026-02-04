@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Loader2 } from 'lucide-react';
-import { useTheme } from '../../context/ThemeContext';
-import { useAuth } from '../../context/AuthContext';
-import { useMenuItems } from '../menu-ordering-interface/hooks/useMenuItems';
-import MenuItemCard from '../menu-ordering-interface/components/MenuItemCard';
+import { useTheme } from '@/context/ThemeContext';
+import { useAuth } from '@/context/AuthContext';
+import { useMenuItems } from '@/pages/menu-ordering-interface/hooks/useMenuItems';
+import MenuItemCard from '@/pages/menu-ordering-interface/components/MenuItemCard';
 
 /**
  * PreviewPanel - Right side panel showing menu items grid

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { Clock, CheckCircle, RotateCcw, AlertTriangle, LayoutGrid, Check, Plus, Edit, Flame, CreditCard, X, Image, ChevronRight } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
-import KDSPaymentModal from '../../pages/kds/components/KDSPaymentModal';
+import { useAuth } from '@/context/AuthContext';
+import KDSPaymentModal from '@/pages/kds/components/KDSPaymentModal';
 
 // --- Shared Helpers ---
 const isDrink = (item) => {

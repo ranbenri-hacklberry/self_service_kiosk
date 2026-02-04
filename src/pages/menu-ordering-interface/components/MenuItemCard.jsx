@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Flame } from 'lucide-react';
-import { useCachedImage } from '../../../hooks/useCachedImage';
-import { useTheme } from '../../../context/ThemeContext';
+import { useCachedImage } from '@/hooks/useCachedImage';
+import { useTheme } from '@/context/ThemeContext';
 
 const MenuItemCard = ({ item, onAddToCart }) => {
   const { isDarkMode } = useTheme();

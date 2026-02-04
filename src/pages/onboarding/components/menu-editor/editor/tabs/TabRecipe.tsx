@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Search, PlusCircle, RefreshCw, X } from 'lucide-react';
-import { OnboardingItem } from '../../../../types/onboardingTypes';
-import { supabase } from '../../../../../../lib/supabase';
-import { useOnboardingStore } from '../../../../store/useOnboardingStore';
+import { OnboardingItem } from '@/types/onboardingTypes';
+import { supabase } from '@/lib/supabase';
+import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
 
 interface InventoryItem {
     id: number | string;

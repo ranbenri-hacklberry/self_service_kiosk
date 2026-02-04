@@ -5,7 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 const MusicContext = createContext(null);
 
 // Get base URL for music files from backend - Use relative paths on localhost to leverage Vite proxy
-import { getBackendApiUrl } from '../utils/apiUtils';
+import { getBackendApiUrl } from '@/utils/apiUtils';
 const MUSIC_API_URL = getBackendApiUrl();
 
 export const MusicProvider = ({ children }) => {

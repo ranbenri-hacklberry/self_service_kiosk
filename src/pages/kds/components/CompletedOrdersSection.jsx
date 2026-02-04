@@ -1,5 +1,5 @@
 import React from 'react';
-import OrderCard from './OrderCard';
+import OrderCard from '@/pages/kds/components/OrderCard';
 
 const CompletedOrdersSection = ({ completedOrders = [], onMarkDelivered, onPaymentCollected }) => {
   return (

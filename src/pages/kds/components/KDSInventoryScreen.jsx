@@ -3,13 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { Search, Truck, Plus, X, ArrowRight, Package, Save, Check, CheckCircle, RefreshCw, ChevronLeft, ChevronRight, Trash2, Edit2, AlertTriangle, ChevronDown, ChevronUp, Clock, House, Camera, Upload, ScanLine, Filter, RotateCcw, Calculator, ClipboardList, ChefHat, Snowflake, Thermometer, ClipboardCheck } from 'lucide-react';
-import LowStockReportModal from './LowStockReportModal';
-import ConfirmationModal from '../../../components/ui/ConfirmationModal';
-import UnifiedHeader from '../../../components/UnifiedHeader';
-import TripleCheckCard from '../../../components/manager/TripleCheckCard';
+import LowStockReportModal from '@/pages/kds/components/LowStockReportModal';
+import ConfirmationModal from '@/components/ui/ConfirmationModal';
+import UnifiedHeader from '@/components/UnifiedHeader';
+import TripleCheckCard from '@/components/manager/TripleCheckCard';
 import { useInvoiceOCR } from '@/hooks/useInvoiceOCR';
 import { logInventoryAction } from '@/lib/inventoryLog';
-import ManagerAuthModal from '../../../components/ManagerAuthModal';
+import ManagerAuthModal from '@/components/ManagerAuthModal';
 
 /**
  * KDS Inventory Screen - Redesigned Layout

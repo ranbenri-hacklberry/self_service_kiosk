@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Package, ChevronDown, Minus, Plus, ShoppingCart, Save, History, User, AlertCircle, RotateCcw, MapPin, Settings, X, AlertTriangle, Scale, Trash2 } from 'lucide-react';
-import ManagerAuthModal from '../ManagerAuthModal';
+import ManagerAuthModal from '@/components/ManagerAuthModal';
 
 /**
  * InventoryItemCard - Compact version for Manager Inventory Screen

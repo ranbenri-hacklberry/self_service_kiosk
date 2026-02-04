@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import Icon from '../AppIcon';
-import { recordTimeClockEvent, getEmployeeClockStatus } from '../../services/timeClockService';
-import { safeJsonParse } from '../../utils';
-import { APP_VERSION } from '../../config/version';
+import Icon from '@/components/AppIcon';
+import { recordTimeClockEvent, getEmployeeClockStatus } from '@/services/timeClockService';
+import { safeJsonParse } from '@/utils';
+import { APP_VERSION } from '@/config/version';
 
 const Header = memo(({
   primaryAction = null,

@@ -1,4 +1,4 @@
-import { db, cached_images } from '../db/database';
+import { db, cached_images } from '@/db/database';
 
 /**
  * Service to sync and cache menu item images locally in Dexie

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import MenuManagerCard from './MenuManagerCard';
+import MenuManagerCard from '@/components/manager/MenuManagerCard';
 import {
   Search, Coffee, GlassWater, Croissant, Sandwich,
   ArrowRight, Plus, X, Soup, Pizza, Salad, Cake, Wine, Beer,

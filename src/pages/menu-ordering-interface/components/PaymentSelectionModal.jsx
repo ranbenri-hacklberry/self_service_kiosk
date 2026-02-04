@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { X, Check, CreditCard, Clock, Gift, Banknote, Star } from 'lucide-react';
-import Button from '../../../components/ui/Button'; // Assuming Button component exists in this path, based on previous file
-import { cn } from '../../../utils/cn'; // Assuming cn exists
-import { useDiscounts } from '../hooks/useDiscounts';
-import { useTheme } from '../../../context/ThemeContext';
+import Button from '@/components/ui/Button'; // Assuming Button component exists in this path, based on previous file
+import { cn } from '@/utils/cn'; // Assuming cn exists
+import { useDiscounts } from '@/hooks/useDiscounts';
+import { useTheme } from '@/context/ThemeContext';
 
 const PaymentSelectionModal = ({
   isOpen,

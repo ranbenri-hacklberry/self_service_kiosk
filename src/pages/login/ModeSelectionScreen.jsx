@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '@/context/AuthContext';
 import { Monitor, ChefHat, LogOut, BarChart3, Coffee, Users, Music, ShieldAlert, Package, List, LayoutGrid, Truck, ShoppingCart, Settings, MessageSquare, ExternalLink } from 'lucide-react';
-import WhatsNewModal from '../../components/WhatsNewModal';
-import SmsBalanceWidget from '../../components/SmsBalanceWidget';
+import WhatsNewModal from '@/components/WhatsNewModal';
+import SmsBalanceWidget from '@/components/SmsBalanceWidget';
 
 const ModeSelectionScreen = () => {
     const navigate = useNavigate();

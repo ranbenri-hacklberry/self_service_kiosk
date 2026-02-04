@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { X, Plus, Check, RefreshCw, Wand2 } from 'lucide-react';
-import { useOnboardingStore } from '../../../store/useOnboardingStore';
-import { supabase } from '../../../../../lib/supabase';
+import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
+import { supabase } from '@/lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
-import { analyzeVisualSeed } from '../../../logic/onboardingLogic';
+import { analyzeVisualSeed } from '@/pages/onboarding/logic/onboardingLogic';
 
 interface CategoryDesignModalProps {
     category: string;

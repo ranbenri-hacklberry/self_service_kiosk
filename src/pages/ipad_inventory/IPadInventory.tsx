@@ -5,19 +5,19 @@ const MotionDiv = motion.div as any;
 import { useAuth } from '@/context/AuthContext';
 
 // Hooks
-import { useInventoryData } from './hooks/useInventoryData';
-import { useStockUpdates } from './hooks/useStockUpdates';
-import { useIncomingOrders } from './hooks/useIncomingOrders';
-import { useTripleCheckSession } from './hooks/useTripleCheckSession';
-import { useInvoiceOCR } from './hooks/useInvoiceOCR';
+import { useInventoryData } from '@/pages/ipad_inventory/hooks/useInventoryData';
+import { useStockUpdates } from '@/pages/ipad_inventory/hooks/useStockUpdates';
+import { useIncomingOrders } from '@/pages/ipad_inventory/hooks/useIncomingOrders';
+import { useTripleCheckSession } from '@/pages/ipad_inventory/hooks/useTripleCheckSession';
+import { useInvoiceOCR } from '@/pages/ipad_inventory/hooks/useInvoiceOCR';
 
 // Components
-import InventoryHeader from './components/InventoryHeader';
-import SuppliersList from './components/SuppliersList';
-import InventoryItemsGrid from './components/InventoryItemsGrid';
-import IncomingOrdersList from './components/IncomingOrdersList';
-import TripleCheckSession from './components/TripleCheckSession';
-import { IncomingOrder } from './types';
+import InventoryHeader from '@/pages/ipad_inventory/components/InventoryHeader';
+import SuppliersList from '@/pages/ipad_inventory/components/SuppliersList';
+import InventoryItemsGrid from '@/pages/ipad_inventory/components/InventoryItemsGrid';
+import IncomingOrdersList from '@/pages/ipad_inventory/components/IncomingOrdersList';
+import TripleCheckSession from '@/pages/ipad_inventory/components/TripleCheckSession';
+import { IncomingOrder } from '@/pages/ipad_inventory/types';
 
 interface IPadInventoryProps {
     onExit: () => void;

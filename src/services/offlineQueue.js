@@ -5,8 +5,8 @@
  * @module services/offlineQueue
  */
 
-import { db } from '../db/database';
-import { supabase } from '../lib/supabase';
+import { db } from '@/db/database';
+import { supabase } from '@/lib/supabase';
 
 // Queue table definition - add to database.js version 2
 // For now, we'll use a simple IndexedDB pattern

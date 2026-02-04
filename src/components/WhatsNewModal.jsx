@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, Monitor, Smartphone, CheckCircle, ArrowLeft, Package, Ghost, Maximize } from 'lucide-react';
-import { APP_VERSION } from '../version';
+import { APP_VERSION } from '@/version';
 
 /**
  * WhatsNewModal - Shows version update highlights to users

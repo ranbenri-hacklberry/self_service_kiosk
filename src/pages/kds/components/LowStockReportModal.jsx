@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, AlertTriangle, Check, Plus, Minus, MessageSquare } from 'lucide-react'; // Changed icon
-import { sendSms } from '../../../services/smsService';
+import { sendSms } from '@/services/smsService';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 

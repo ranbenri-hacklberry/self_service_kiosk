@@ -137,7 +137,7 @@ export const ConnectionProvider = ({ children }) => {
         checkConnectivity();
 
         // 🚀 MIGRATION CHECK: Run once on mount to see if we need to nuked outdated Dexie
-        import('../services/syncService').then(({ autoDetectMigrationAndReset, initialLoad }) => {
+        import('@/services/syncService').then(({ autoDetectMigrationAndReset, initialLoad }) => {
             autoDetectMigrationAndReset().then((wasReset) => {
                 if (wasReset) {
                     console.log('🔄 [ConnectionContext] Dexie was reset due to migration. Triggering initial load...');
@@ -204,7 +204,7 @@ export const ConnectionProvider = ({ children }) => {
             console.log('🔄 [ConnectionContext] Connection restored! Triggering syncQueue...');
 
             // Dynamic import to avoid circular deps or heavy load on init
-            import('../services/offlineQueue').then(({ syncQueue }) => {
+            import('@/services/offlineQueue').then(({ syncQueue }) => {
                 syncQueue().then(result => {
                     if (result.synced > 0) {
                         console.log(`✅ [ConnectionContext] Auto-sync complete: ${result.synced} items pushed.`);

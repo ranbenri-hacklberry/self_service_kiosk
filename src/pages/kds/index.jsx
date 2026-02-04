@@ -7,20 +7,20 @@ import {
   Check, AlertTriangle, X, RefreshCw, Flame, Edit, ChevronRight, House,
   Calendar, ChevronLeft, History
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { sendSms } from '../../services/smsService';
-import KDSPaymentModal from './components/KDSPaymentModal';
-import HistoryInfoModal from './components/HistoryInfoModal';
-import StaffQuickAccessModal from '../../components/StaffQuickAccessModal';
-import { useAuth } from '../../context/AuthContext';
-import { isDrink, isHotDrink, sortItems, groupOrderItems } from '../../utils/kdsUtils';
-import OrderCard from './components/OrderCard';
-import OrderEditModal from './components/OrderEditModal';
-import DateScroller from './components/DateScroller';
-import ConnectionStatusBar from '../../components/ConnectionStatusBar';
-import BusinessInfoBar from '../../components/BusinessInfoBar';
-import { useKDSData } from './hooks/useKDSData';
-import { getBackendApiUrl } from '../../utils/apiUtils';
+import { supabase } from '@/lib/supabase';
+import { sendSms } from '@/services/smsService';
+import KDSPaymentModal from '@/pages/kds/components/KDSPaymentModal';
+import HistoryInfoModal from '@/pages/kds/components/HistoryInfoModal';
+import StaffQuickAccessModal from '@/components/StaffQuickAccessModal';
+import { useAuth } from '@/context/AuthContext';
+import { isDrink, isHotDrink, sortItems, groupOrderItems } from '@/utils/kdsUtils';
+import OrderCard from '@/pages/kds/components/OrderCard';
+import OrderEditModal from '@/pages/kds/components/OrderEditModal';
+import DateScroller from '@/pages/kds/components/DateScroller';
+import ConnectionStatusBar from '@/components/ConnectionStatusBar';
+import BusinessInfoBar from '@/components/BusinessInfoBar';
+import { useKDSData } from '@/pages/kds/hooks/useKDSData';
+import { getBackendApiUrl } from '@/utils/apiUtils';
 
 // Simple Error Boundary for KDS
 class KDSErrorBoundary extends React.Component {

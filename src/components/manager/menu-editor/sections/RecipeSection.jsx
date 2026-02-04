@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Package, ChevronDown, Plus, Trash2, Search, Box } from 'lucide-react';
-import AnimatedSection from '../AnimatedSection';
+import AnimatedSection from '@/components/manager/menu-editor/AnimatedSection';
 
 const RecipeSection = ({
     components,

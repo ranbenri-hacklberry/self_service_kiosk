@@ -1,17 +1,17 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import Icon from '../../components/AppIcon';
-import ManagerHeader from '../../components/manager/ManagerHeader';
+import Icon from '@/components/AppIcon';
+import ManagerHeader from '@/components/manager/ManagerHeader';
 import { supabase } from '@/lib/supabase';
-import { db } from '../../db/database';
+import { db } from '@/db/database';
 import { useAuth } from '@/context/AuthContext';
 import { Send, Mic, MicOff, Coffee, TrendingUp, Users, Settings, RefreshCw, Loader2, BookOpen, Calendar, Package, ClipboardList, Copy as CopyIcon, Edit2, Check, X, Terminal } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { searchCode, formatCodeContext } from '@/services/codeSearchService';
-import { askMaya } from '../../services/aiService';
-import { mcpClient } from '../../services/mcpClient';
+import { askMaya } from '@/services/aiService';
+import { mcpClient } from '@/services/mcpClient';
 
 const MAYA_VERSION = "v2.0 - RAG Code Expert Mode";
 

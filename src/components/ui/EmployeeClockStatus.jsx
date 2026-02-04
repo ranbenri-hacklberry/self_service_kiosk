@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import Icon from '../AppIcon';
-import { getEmployeeClockStatus, calculateWorkHours } from '../../services/timeClockService';
-import { formatDateTime } from '../../utils';
+import Icon from '@/components/AppIcon';
+import { getEmployeeClockStatus, calculateWorkHours } from '@/services/timeClockService';
+import { formatDateTime } from '@/utils';
 
 const EmployeeClockStatus = ({ employeeId, className = '' }) => {
   const [clockStatus, setClockStatus] = useState(null);

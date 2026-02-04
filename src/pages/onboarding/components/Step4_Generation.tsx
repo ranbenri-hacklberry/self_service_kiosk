@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useTheme } from '../../../context/ThemeContext';
+import { useTheme } from '@/context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChefHat, Sparkles, XCircle, CheckCircle, Loader2, ArrowRight } from 'lucide-react';
-import { useOnboardingStore } from '../store/useOnboardingStore';
+import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
 
 const TIPS = [
     "Did you know? Consistent lighting in photos increases sales by 20%.",

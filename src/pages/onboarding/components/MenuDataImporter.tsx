@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
-import { useOnboardingStore } from '../store/useOnboardingStore';
-import { useTheme } from '../../../context/ThemeContext';
+import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
+import { useTheme } from '@/context/ThemeContext';
 import { useDropzone } from 'react-dropzone';
 import { FileSpreadsheet, CheckCircle, AlertTriangle, ArrowRight, Sparkles } from 'lucide-react';
 import * as XLSX from 'xlsx';

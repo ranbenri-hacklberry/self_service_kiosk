@@ -2,10 +2,10 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import InventoryItemCard from './InventoryItemCard';
-import TripleCheckCard from './TripleCheckCard';
+import InventoryItemCard from '@/components/manager/InventoryItemCard';
+import TripleCheckCard from '@/components/manager/TripleCheckCard';
 import { Search, Truck, Plus, X, ArrowRight, Package, ShoppingCart, Check, ChevronLeft, ChevronRight, Settings, PlusCircle, Save, AlertTriangle } from 'lucide-react';
-import ConfirmationModal from '../ui/ConfirmationModal';
+import ConfirmationModal from '@/components/ui/ConfirmationModal';
 import { logInventoryAction } from '@/lib/inventoryLog';
 
 

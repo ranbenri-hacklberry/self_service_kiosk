@@ -3,7 +3,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import Component from '../../pages/new-customer-name-collection-screen/components/HebrewKeyboard';
+import Component from '@/pages/new-customer-name-collection-screen/components/HebrewKeyboard';
 
 // @vitest-environment jsdom
 

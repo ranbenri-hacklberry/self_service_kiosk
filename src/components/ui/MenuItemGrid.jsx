@@ -1,7 +1,7 @@
 import React from 'react';
-import Button from './Button';
-import Image from '../AppImage';
-import Icon from '../AppIcon';
+import Button from '@/components/ui/Button';
+import Image from '@/components/AppImage';
+import Icon from '@/components/AppIcon';
 
 const MenuItemGrid = ({ filteredItems = [], onAddToCart }) => {
   const defaultMenuItems = [

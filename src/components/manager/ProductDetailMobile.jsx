@@ -1,5 +1,5 @@
 import React from 'react';
-import MenuOptionsEditor from './MenuOptionsEditor';
+import MenuOptionsEditor from '@/components/manager/MenuOptionsEditor';
 
 const LABEL_MAP = {
   name: 'שם פריט',

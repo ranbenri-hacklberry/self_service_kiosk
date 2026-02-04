@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import './SplashScreen.css';
-import { supabase } from '../lib/supabase';
-import { initialLoad } from '../services/syncService';
+import '@/components/SplashScreen.css';
+import { supabase } from '@/lib/supabase';
+import { initialLoad } from '@/services/syncService';
 
 const SplashScreen = ({ onFinish }) => {
     const [minTimePassed, setMinTimePassed] = useState(false);
@@ -90,7 +90,7 @@ const SplashScreen = ({ onFinish }) => {
 
                     if (businessId) {
                         setTargetProgress(45);
-                        const { db } = await import('../db/database');
+                        const { db } = await import('@/db/database');
                         const localItemCount = await db.menu_items.count();
 
                         if (localItemCount > 20) {

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import LiteMenuItemCard from './LiteMenuItemCard';
+import LiteMenuItemCard from '@/pages/lite/components/LiteMenuItemCard';
 import { Search } from 'lucide-react';
 
 const LiteMenuGrid = ({ items = [], onAddToCart, isLoading = false }) => {

@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase } from '@/lib/supabase';
 
 export type InventoryActionType = 'manual_count' | 'order_receipt' | 'order_deduction' | 'waste';
 

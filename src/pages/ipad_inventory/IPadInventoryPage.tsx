@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { IPadInventory } from './index';
+import { IPadInventory } from '@/pages/ipad_inventory/index';
 
 const IPadInventoryPage: React.FC = () => {
     const navigate = useNavigate();

@@ -1,9 +1,9 @@
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useStore } from '@/core/store';
-import LiteOrderCard from './components/LiteOrderCard';
-import LiteHeader from './components/LiteHeader';
-import LiteOrderEditModal from './components/LiteOrderEditModal';
+import LiteOrderCard from '@/pages/lite/components/LiteOrderCard';
+import LiteHeader from '@/pages/lite/components/LiteHeader';
+import LiteOrderEditModal from '@/pages/lite/components/LiteOrderEditModal';
 
 const LiteKDS = () => {
     const {

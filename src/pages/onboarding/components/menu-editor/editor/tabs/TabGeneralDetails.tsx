@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Wand2 } from 'lucide-react';
-import { OnboardingItem } from '../../../../types/onboardingTypes';
+import { OnboardingItem } from '@/types/onboardingTypes';
 
 interface TabGeneralDetailsProps {
     localItem: OnboardingItem;

@@ -1,5 +1,5 @@
 import React from 'react';
-import MiniMusicBar from './music/MiniMusicBar';
+import MiniMusicBar from '@/components/music/MiniMusicBar';
 
 // This component now solely renders the MiniMusicBar in its original locations across the app.
 // The "Status" part has been moved to the new global ConnectivityStatus component.

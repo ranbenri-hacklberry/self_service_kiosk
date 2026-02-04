@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useOnboardingStore } from '../../../store/useOnboardingStore';
+import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
 
 interface HumorousLoaderProps {
     variant?: 'full' | 'mini';

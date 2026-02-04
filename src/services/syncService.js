@@ -11,9 +11,9 @@
  * @module services/syncService
  */
 
-import { db, sync_meta } from '../db/database';
-import { supabase } from '../lib/supabase';
-import { syncQueue, getPendingActions } from './offlineQueue';
+import { db, sync_meta } from '@/db/database';
+import { supabase } from '@/lib/supabase';
+import { syncQueue, getPendingActions } from '@/services/offlineQueue';
 
 // Sync configuration
 const SYNC_CONFIG = {

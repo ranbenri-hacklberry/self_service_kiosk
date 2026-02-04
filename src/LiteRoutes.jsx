@@ -1,9 +1,9 @@
 
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import LiteModeSelection from './pages/lite/LiteModeSelection';
-import LiteKDS from './pages/lite/LiteKDS';
-import LiteOrdering from './pages/lite/LiteOrdering';
+import LiteModeSelection from '@/pages/lite/LiteModeSelection';
+import LiteKDS from '@/pages/lite/LiteKDS';
+import LiteOrdering from '@/pages/lite/LiteOrdering';
 import { useStore } from '@/core/store';
 
 const ProtectedLiteRoute = ({ children }) => {

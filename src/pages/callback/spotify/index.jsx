@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { handleSpotifyCallback } from '../../../lib/spotifyService';
+import { handleSpotifyCallback } from '@/lib/spotifyService';
 
 /**
  * Spotify OAuth Callback Handler

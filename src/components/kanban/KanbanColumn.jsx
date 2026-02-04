@@ -6,7 +6,7 @@
 import React from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import DraggableOrderCard from './DraggableOrderCard';
+import DraggableOrderCard from '@/components/kanban/DraggableOrderCard';
 import { motion } from 'framer-motion';
 import { RefreshCw } from 'lucide-react';
 

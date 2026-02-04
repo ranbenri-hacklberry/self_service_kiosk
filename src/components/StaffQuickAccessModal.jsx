@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { loginEmployee, clockEvent, getShiftStatus } from '../lib/employees/employeeService';
+import { useAuth } from '@/context/AuthContext';
+import { loginEmployee, clockEvent, getShiftStatus } from '@/lib/employees/employeeService';
 import { X, Clock, LogOut, RefreshCw, UserCheck } from 'lucide-react';
 
 const StaffQuickAccessModal = ({ isOpen, onClose }) => {

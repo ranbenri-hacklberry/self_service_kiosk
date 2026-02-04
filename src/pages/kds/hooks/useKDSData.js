@@ -9,13 +9,13 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { supabase, isLocalInstance } from '../../../lib/supabase';
-import { useAuth } from '../../../context/AuthContext';
-import { sendSms } from '../../../services/smsService';
-import { groupOrderItems, sortItems } from '../../../utils/kdsUtils';
+import { supabase, isLocalInstance } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
+import { sendSms } from '@/services/smsService';
+import { groupOrderItems, sortItems } from '@/utils/kdsUtils';
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '../../../db/database';
-import { syncQueue } from '../../../services/offlineQueue';
+import { db } from '@/db/database';
+import { syncQueue } from '@/services/offlineQueue';
 
 // 🌸 MAYA'S MODULAR ARCHITECTURE: Import pure helpers for testability
 import {
@@ -26,8 +26,8 @@ import {
     groupItemsByStatus,
     hasActiveItems,
     getSmartId
-} from './kdsProcessingHelpers';
-import { useKDSSms } from './useKDSSms';
+} from '@/pages/kds/hooks/kdsProcessingHelpers';
+import { useKDSSms } from '@/pages/kds/hooks/useKDSSms';
 
 /**
  * 📘 TABLE OF CONTENTS (INDEX)
@@ -964,7 +964,7 @@ export const useKDSData = () => {
 
                 // 🔌 OFFLINE ORDERS: Merge local Dexie orders that haven't been synced yet
                 try {
-                    const { db } = await import('../../../db/database');
+                    const { db } = await import('@/db/database');
                     // 📅 DATE LIMIT: Only consider orders from today's anchor (5:00 AM)
                     const anchor = new Date();
                     anchor.setHours(5, 0, 0, 0);
@@ -1292,7 +1292,7 @@ export const useKDSData = () => {
             console.log(`📴 Handling status update locally (Offline: ${!navigator.onLine}, Next: ${nextStatus}, Action: ${currentStatus})`);
             try {
                 // db is imported at top level
-                const { queueAction } = await import('../../../services/offlineQueue');
+                const { queueAction } = await import('@/services/offlineQueue');
 
                 let itemStatus = nextStatus === 'completed' ? 'completed' :
                     nextStatus === 'ready' ? 'ready' : 'in_progress';
@@ -1608,7 +1608,7 @@ export const useKDSData = () => {
 
             // 💾 DEXIE FIRST: Mark items as in_progress immediately
             try {
-                const { db } = await import('../../../db/database');
+                const { db } = await import('@/db/database');
                 await db.order_items.where('id').anyOf(itemIds).modify({
                     item_status: 'in_progress',
                     updated_at: now
@@ -1655,7 +1655,7 @@ export const useKDSData = () => {
 
             // 💾 DEXIE FIRST: Mark items as ready immediately
             try {
-                const { db } = await import('../../../db/database');
+                const { db } = await import('@/db/database');
                 await db.order_items.where('id').anyOf(itemIds).modify({
                     item_status: 'ready',
                     updated_at: now
@@ -1815,7 +1815,7 @@ export const useKDSData = () => {
             console.log('📴 Offline: Confirming payment locally');
             try {
                 // db is imported at top level
-                const { queueAction } = await import('../../../services/offlineQueue');
+                const { queueAction } = await import('@/services/offlineQueue');
 
                 // Update local order
                 await db.orders.update(cleanOrderId, {
@@ -2186,7 +2186,7 @@ export const useKDSData = () => {
             if (!navigator.onLine) {
                 console.log('📴 Offline: Loading history from Dexie');
                 try {
-                    const { db } = await import('../../../db/database');
+                    const { db } = await import('@/db/database');
 
                     // Get completed orders from local DB
                     const startOfDay = new Date(date);

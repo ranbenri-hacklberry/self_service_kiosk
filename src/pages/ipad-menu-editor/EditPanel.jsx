@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Camera, Upload, Sparkles, Save, X, ChevronDown, Image as ImageIcon, Loader2 } from 'lucide-react';
-import { useTheme } from '../../context/ThemeContext';
-import SeedContainerPicker from '../../components/SeedContainerPicker';
-import { supabase } from '../../lib/supabase';
-import { generateMenuImage } from '../../services/geminiService';
-import { fetchBusinessSeeds, saveBusinessSeed, deleteBusinessSeed } from '../../services/aiSettingsService';
+import { useTheme } from '@/context/ThemeContext';
+import SeedContainerPicker from '@/components/SeedContainerPicker';
+import { supabase } from '@/lib/supabase';
+import { generateMenuImage } from '@/services/geminiService';
+import { fetchBusinessSeeds, saveBusinessSeed, deleteBusinessSeed } from '@/services/aiSettingsService';
 
 /**
  * EditPanel - Left side panel for editing menu items

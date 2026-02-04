@@ -1,13 +1,13 @@
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useOnboardingStore } from '../store/useOnboardingStore';
-import BrandIdentityDesigner from './BrandIdentityDesigner';
-import MenuDataImporter from './MenuDataImporter';
-import MenuReviewDashboard from './MenuReviewDashboard';
-import { useTheme } from '../../../context/ThemeContext';
+import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
+import BrandIdentityDesigner from '@/pages/onboarding/components/BrandIdentityDesigner';
+import MenuDataImporter from '@/pages/onboarding/components/MenuDataImporter';
+import MenuReviewDashboard from '@/pages/onboarding/components/MenuReviewDashboard';
+import { useTheme } from '@/context/ThemeContext';
 import { ChevronLeft, AlertTriangle, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../../context/AuthContext';
+import { useAuth } from '@/context/AuthContext';
 
 const WizardLayout = () => {
     const { step, setStep, initSession, isLoading, error, setError } = useOnboardingStore();

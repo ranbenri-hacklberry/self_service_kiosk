@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { getLoyaltyCount } from '../../../lib/loyalty';
+import { getLoyaltyCount } from '@/lib/loyalty';
 
 /**
  * Custom hook for loyalty management

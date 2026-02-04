@@ -1,5 +1,5 @@
 
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/lib/supabase';
 
 export const fetchAISettings = async (businessId) => {
     if (!businessId) return null;

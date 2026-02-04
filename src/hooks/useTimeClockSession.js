@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getSessionData, setSessionData } from '../utils';
-import { getEmployeeClockStatus, validateEmployee } from '../services/timeClockService';
+import { getSessionData, setSessionData } from '@/utils';
+import { getEmployeeClockStatus, validateEmployee } from '@/services/timeClockService';
 
 /**
  * Custom hook for managing employee time clock session

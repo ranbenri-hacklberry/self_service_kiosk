@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquare, ExternalLink } from 'lucide-react';
-import { getSmsBalance } from '../services/smsService';
+import { getSmsBalance } from '@/services/smsService';
 
 const SmsBalanceWidget = () => {
     const [balance, setBalance] = useState(null);

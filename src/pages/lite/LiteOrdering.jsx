@@ -1,11 +1,11 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useStore } from '@/core/store';
-import LiteHeader from './components/LiteHeader';
-import LiteMenuGrid from './components/LiteMenuGrid';
-import LiteSmartCart from './components/LiteSmartCart';
-import LiteModifierModal from './components/LiteModifierModal';
-import LitePaymentModal from './components/LitePaymentModal';
+import LiteHeader from '@/pages/lite/components/LiteHeader';
+import LiteMenuGrid from '@/pages/lite/components/LiteMenuGrid';
+import LiteSmartCart from '@/pages/lite/components/LiteSmartCart';
+import LiteModifierModal from '@/pages/lite/components/LiteModifierModal';
+import LitePaymentModal from '@/pages/lite/components/LitePaymentModal';
 
 const LiteOrdering = () => {
     const { menuItems, fetchMenu, cart, addToCart, removeFromCart, submitOrder, currentUser, logout } = useStore();

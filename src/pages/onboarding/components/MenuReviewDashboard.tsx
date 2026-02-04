@@ -4,17 +4,17 @@ import {
     Package, Clock, Globe, AlertCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useOnboardingStore } from '../store/useOnboardingStore';
-import { useAuth } from '../../../context/AuthContext';
-import { OnboardingItem } from '../types/onboardingTypes';
-import { normalizeCategory } from '../logic/onboardingLogic';
+import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
+import { useAuth } from '@/context/AuthContext';
+import { OnboardingItem } from '@/types/onboardingTypes';
+import { normalizeCategory } from '@/pages/onboarding/logic/onboardingLogic';
 
 // Components
-import HumorousLoader from './menu-editor/shared/HumorousLoader';
-import CategoryDesignModal from './menu-editor/editor/CategoryDesignModal';
-import MenuItemEditModal from './menu-editor/editor/MenuItemEditModal';
-import ManagerAuthModal from '../../../components/ManagerAuthModal';
-import UnifiedHeader from '../../../components/UnifiedHeader';
+import HumorousLoader from '@/pages/onboarding/components/menu-editor/shared/HumorousLoader';
+import CategoryDesignModal from '@/pages/onboarding/components/menu-editor/editor/CategoryDesignModal';
+import MenuItemEditModal from '@/pages/onboarding/components/menu-editor/editor/MenuItemEditModal';
+import ManagerAuthModal from '@/components/ManagerAuthModal';
+import UnifiedHeader from '@/components/UnifiedHeader';
 
 const MenuReviewDashboard = () => {
     const { currentUser } = useAuth();

@@ -1,4 +1,4 @@
-import { getSupabase } from './supabase';
+import { getSupabase } from '@/lib/supabase';
 
 /**
  * Get loyalty balance for a customer
@@ -105,7 +105,7 @@ export async function addCoffeePurchase(customerPhone, orderId, itemsCount = 1, 
     // 🔥 IMMEDIATE LOCAL UPDATE - Update Dexie so data is available instantly
     if (data?.success && data?.card_id && user?.business_id) {
       try {
-        const { db } = await import('../db/database');
+        const { db } = await import('@/db/database');
         const cleanPhone = customerPhone.replace(/\D/g, '');
 
         // Update or insert the loyalty card in Dexie

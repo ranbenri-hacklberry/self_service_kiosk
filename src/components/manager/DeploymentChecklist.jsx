@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import db from '../../db/database';
-import './DeploymentChecklist.css';
+import { supabase } from '@/lib/supabase';
+import db from '@/db/database';
+import '@/components/manager/DeploymentChecklist.css';
 
 const DeploymentChecklist = ({ businessId }) => {
     const [phases, setPhases] = useState({

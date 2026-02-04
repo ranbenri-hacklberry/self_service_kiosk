@@ -4,7 +4,7 @@ import { X, Save, Check, Trash2, Image as ImageIcon, Plus, Power, GripHorizontal
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { fetchManagerItemOptions, clearOptionsCache } from '@/lib/managerApi';
-import CategoryManager from './CategoryManager';
+import CategoryManager from '@/components/manager/CategoryManager';
 
 // Reusable animated accordion section to prevent layout jumps
 const AnimatedSection = ({ show, children }) => (

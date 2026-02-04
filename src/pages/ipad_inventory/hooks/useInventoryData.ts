@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { InventoryItem, Supplier } from '../types';
+import { InventoryItem, Supplier } from '@/types';
 
 export const useInventoryData = (businessId?: string) => {
     const [items, setItems] = useState<InventoryItem[]>([]);

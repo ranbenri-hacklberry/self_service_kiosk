@@ -3,7 +3,7 @@ import { X, Phone, User, Check, Loader2, UserCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
-import NumericKeypad from './NumericKeypad';
+import NumericKeypad from '@/components/NumericKeypad';
 
 /**
  * CustomerInfoModal - Unified modal for collecting/editing customer phone and name
@@ -118,7 +118,7 @@ const CustomerInfoModal = ({
             if (!navigator.onLine) {
                 console.log('📴 Offline: Looking up customer in Dexie...');
                 try {
-                    const { db: dynamicDb } = await import('../db/database');
+                    const { db: dynamicDb } = await import('@/db/database');
                     const allCustomers = await dynamicDb.customers.toArray();
                     const search9 = cleanPhone.slice(-9);
 
@@ -317,7 +317,7 @@ const CustomerInfoModal = ({
             // OFFLINE MODE: Save customer locally in Dexie
             if (!navigator.onLine) {
                 console.log('📴 Offline: Creating/Updating customer locally in Dexie...');
-                const { db: dynamicDb } = await import('../db/database');
+                const { db: dynamicDb } = await import('@/db/database');
 
                 // CRITICAL: Check if this phone ALREADY exists in Dexie to avoid duplicates
                 if (cleanPhone && cleanPhone.length === 10) {
@@ -351,7 +351,7 @@ const CustomerInfoModal = ({
 
                 // Queue for sync
                 try {
-                    const { queueAction } = await import('../services/offlineQueue');
+                    const { queueAction } = await import('@/services/offlineQueue');
                     const cleanIdForQueue = orderId ? (orderId.toString().match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] || orderId) : null;
 
                     await queueAction('UPDATE_CUSTOMER', {
@@ -403,7 +403,7 @@ const CustomerInfoModal = ({
             (async () => {
                 try {
                     // Cache to Dexie for offline use
-                    const { db } = await import('../db/database');
+                    const { db } = await import('@/db/database');
                     await db.customers.put({
                         ...customer,
                         phone_number: cleanPhone || null,
@@ -436,7 +436,7 @@ const CustomerInfoModal = ({
 
             // Attempt local cache update if possible
             try {
-                const { db: dDb } = await import('../db/database');
+                const { db: dDb } = await import('@/db/database');
                 await dDb.customers.put({
                     ...transientCustomer,
                     phone_number: cleanPhone || null,
@@ -474,7 +474,7 @@ const CustomerInfoModal = ({
             // 1. Update local Dexie immediately regardless of online status
             // This ensures UI consistency across components even for staged orders
             try {
-                const { db: dynamicDb } = await import('../db/database');
+                const { db: dynamicDb } = await import('@/db/database');
 
                 // Update ALL related orders (base + any stages)
                 const count = await dynamicDb.orders
@@ -495,7 +495,7 @@ const CustomerInfoModal = ({
             if (!navigator.onLine) {
                 console.log('📴 Offline: Queuing order update for sync...');
                 try {
-                    const { queueAction } = await import('../services/offlineQueue');
+                    const { queueAction } = await import('@/services/offlineQueue');
                     await queueAction('UPDATE_CUSTOMER', {
                         orderId: cleanOrderId,
                         ...updateData

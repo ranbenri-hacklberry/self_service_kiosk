@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { useOnboardingStore } from '../store/useOnboardingStore';
-import { useTheme } from '../../../context/ThemeContext';
+import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
+import { useTheme } from '@/context/ThemeContext';
 import {
     CheckCircle2,
     Rocket,

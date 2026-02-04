@@ -1,6 +1,6 @@
 import React, { useState, useCallback, memo, useMemo } from 'react';
 import { Clock, Edit, MapPin, Package, Phone, Truck, Eye, AlertCircle, Image as ImageIcon, Check } from 'lucide-react';
-import { sortItems } from '../../utils/kdsUtils';
+import { sortItems } from '@/utils/kdsUtils';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
 const KanbanOrderCard = memo(({

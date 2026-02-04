@@ -3,7 +3,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import Component from '../../pages/employee-login-screen/components/ManagerOverrideModal';
+import Component from '@/pages/employee-login-screen/components/ManagerOverrideModal';
 
 // @vitest-environment jsdom
 

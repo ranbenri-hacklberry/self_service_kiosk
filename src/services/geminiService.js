@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { AI_MODELS, FALLBACK_MODELS } from '../config/models';
+import { AI_MODELS, FALLBACK_MODELS } from '@/config/models';
 
 /**
  * Gemini Service for OCR tasks using the official Google SDK

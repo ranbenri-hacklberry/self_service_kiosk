@@ -2,19 +2,19 @@ import { useState, useEffect } from 'react';
 import { X, ChefHat, Package, Wand2, Plus, Settings, Clock, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { v4 as uuidv4 } from 'uuid';
-import { OnboardingItem } from '../../../types/onboardingTypes';
-import { useOnboardingStore } from '../../../store/useOnboardingStore';
-import { supabase } from '../../../../../lib/supabase';
-import { analyzeVisualSeed, compressImageToBlob } from '../../../logic/onboardingLogic';
+import { OnboardingItem } from '@/types/onboardingTypes';
+import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
+import { supabase } from '@/lib/supabase';
+import { analyzeVisualSeed, compressImageToBlob } from '@/pages/onboarding/logic/onboardingLogic';
 import { AlertCircle, Trash2 } from 'lucide-react';
 
 // Tabs
-import TabGeneralDetails from './tabs/TabGeneralDetails';
-import TabVisualsAI from './tabs/TabVisualsAI';
-import TabModifiers from './tabs/TabModifiers';
-import TabRecipe from './tabs/TabRecipe';
-import TabPrep from './tabs/TabPrep';
-import ManagerAuthModal from '../../../../../components/ManagerAuthModal';
+import TabGeneralDetails from '@/pages/onboarding/components/menu-editor/editor/tabs/TabGeneralDetails';
+import TabVisualsAI from '@/pages/onboarding/components/menu-editor/editor/tabs/TabVisualsAI';
+import TabModifiers from '@/pages/onboarding/components/menu-editor/editor/tabs/TabModifiers';
+import TabRecipe from '@/pages/onboarding/components/menu-editor/editor/tabs/TabRecipe';
+import TabPrep from '@/pages/onboarding/components/menu-editor/editor/tabs/TabPrep';
+import ManagerAuthModal from '@/components/ManagerAuthModal';
 
 interface MenuItemEditModalProps {
     item: OnboardingItem;

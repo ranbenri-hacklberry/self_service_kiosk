@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { X, Check, AlertCircle, Plus, Minus, Receipt } from 'lucide-react';
-import { ReceivingSession, ReceivingSessionItem } from '../types';
+import { ReceivingSession, ReceivingSessionItem } from '@/types';
 
 const MotionDiv = motion.div as any;
 const MotionButton = motion.button as any;

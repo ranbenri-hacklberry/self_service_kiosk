@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle, Loader2, Database } from 'lucide-react';
-import db from '../db/database';
-import { initialLoad } from '../services/syncService';
+import db from '@/db/database';
+import { initialLoad } from '@/services/syncService';
 import { useAuth } from '@/context/AuthContext';
 
 /**

@@ -6,9 +6,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import { useOrders } from '../../hooks/useOrders';
-import OrderCard from '../kds/components/OrderCard';
+import { useAuth } from '@/context/AuthContext';
+import { useOrders } from '@/hooks/useOrders';
+import OrderCard from '@/pages/kds/components/OrderCard';
 import {
     ArrowRight, Truck, RefreshCw, AlertTriangle, Package
 } from 'lucide-react';

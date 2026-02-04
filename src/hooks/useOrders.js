@@ -21,8 +21,8 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { db } from '../db/database';
-import { supabase } from '../lib/supabase';
+import { db } from '@/db/database';
+import { supabase } from '@/lib/supabase';
 
 // Order status flow - UNIFIED with KDS/DB
 export const ORDER_STATUSES = ['pending', 'new', 'in_progress', 'ready', 'shipped', 'delivered', 'cancelled'];
@@ -742,7 +742,7 @@ export function useOrders({ businessId, filters = {} } = {}) {
         }
 
         const init = async () => {
-            const { isLocalInstance } = await import('../lib/supabase');
+            const { isLocalInstance } = await import('@/lib/supabase');
             const isLocal = isLocalInstance();
 
             console.log('🔍 [useOrders-V2] Running init for:', businessId, isLocal ? '(Local Mode)' : '(Cloud Mode)');

@@ -1,6 +1,6 @@
 import React from 'react';
-import Button from './Button';
-import Icon from '../AppIcon';
+import Button from '@/components/ui/Button';
+import Icon from '@/components/AppIcon';
 
 const PaymentActionButton = ({ 
   cartTotal = 0, 

@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
-import MenuCategoryFilter from './components/MenuCategoryFilter';
-import MenuGrid from './components/MenuGrid';
-import SmartCart from './components/SmartCart';
-import CheckoutButton from './components/CheckoutButton';
-import PaymentSelectionModal from './components/PaymentSelectionModal';
-import ModifierModal from './components/ModifierModal';
-import SaladPrepDecision from './components/SaladPrepDecision';
-import MTOQuickNotesModal from './components/MTOQuickNotesModal';
-import DeliveryAddressModal from './components/DeliveryAddressModal';
+import MenuCategoryFilter from '@/pages/menu-ordering-interface/components/MenuCategoryFilter';
+import MenuGrid from '@/pages/menu-ordering-interface/components/MenuGrid';
+import SmartCart from '@/pages/menu-ordering-interface/components/SmartCart';
+import CheckoutButton from '@/pages/menu-ordering-interface/components/CheckoutButton';
+import PaymentSelectionModal from '@/pages/menu-ordering-interface/components/PaymentSelectionModal';
+import ModifierModal from '@/pages/menu-ordering-interface/components/ModifierModal';
+import SaladPrepDecision from '@/pages/menu-ordering-interface/components/SaladPrepDecision';
+import MTOQuickNotesModal from '@/pages/menu-ordering-interface/components/MTOQuickNotesModal';
+import DeliveryAddressModal from '@/pages/menu-ordering-interface/components/DeliveryAddressModal';
 import OrderConfirmationModal from '@/components/ui/OrderConfirmationModal';
 import CustomerInfoModal from '@/components/CustomerInfoModal';
 import { addCoffeePurchase, getLoyaltyCount, handleLoyaltyAdjustment, getLoyaltyRedemptionForOrder } from "@/lib/loyalty";
@@ -19,7 +19,7 @@ import { useTheme } from '@/context/ThemeContext';
 import UnifiedHeader from '@/components/UnifiedHeader';
 import Icon from '@/components/AppIcon';
 // Custom hooks
-import { useMenuItems, useLoyalty, useCart } from './hooks';
+import { useMenuItems, useLoyalty, useCart } from '@/pages/menu-ordering-interface/hooks';
 
 const ORDER_ORIGIN_STORAGE_KEY = 'order_origin';
 
@@ -371,7 +371,7 @@ const MenuOrderingInterface = () => {
         // OFFLINE FALLBACK: Load customer from Dexie if offline
         if (!navigator.onLine) {
           try {
-            const { db } = await import('../../db/database');
+            const { db } = await import('@/db/database');
             const customers = await db.customers.where('phone').equals(order.customer_phone).toArray();
             if (customers.length === 0) {
               // Try phone_number field as well
@@ -407,7 +407,7 @@ const MenuOrderingInterface = () => {
           // Cache to Dexie for offline
           if (customer) {
             try {
-              const { db } = await import('../../db/database');
+              const { db } = await import('@/db/database');
               await db.customers.put(customer);
               // [CLEANED] console.log('💾 Customer cached to Dexie:', customer.name);
             } catch (e) {
@@ -2070,8 +2070,8 @@ const MenuOrderingInterface = () => {
         // [CLEANED] console.log('📴 Offline: Saving order locally...');
 
         try {
-          const { db } = await import('../../db/database');
-          const { queueAction } = await import('../../services/offlineQueue');
+          const { db } = await import('@/db/database');
+          const { queueAction } = await import('@/services/offlineQueue');
 
           // Generate local order ID (proper UUID!) and number
           const localOrderId = uuidv4();
@@ -2461,7 +2461,7 @@ const MenuOrderingInterface = () => {
               btn.disabled = true;
               try {
                 console.log('📥 Starting sync...');
-                const { initialLoad } = await import('../../services/syncService');
+                const { initialLoad } = await import('@/services/syncService');
                 const result = await initialLoad(currentUser?.business_id);
                 alert('✅ סנכרון הושלם! רענן את הדף.');
               } catch (err) {

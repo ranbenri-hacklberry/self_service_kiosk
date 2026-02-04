@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { House, RotateCcw } from 'lucide-react';
-import KDSInventoryScreen from '../kds/components/KDSInventoryScreen';
+import KDSInventoryScreen from '@/pages/kds/components/KDSInventoryScreen';
 
 const InventoryPage = () => {
     const navigate = useNavigate();

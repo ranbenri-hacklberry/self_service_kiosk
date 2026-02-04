@@ -1,5 +1,5 @@
-import { supabase } from '../lib/supabase';
-import { sendSms } from './smsService';
+import { supabase } from '@/lib/supabase';
+import { sendSms } from '@/services/smsService';
 
 /**
  * Runs a complete End-to-End Health Check on the Ordering System

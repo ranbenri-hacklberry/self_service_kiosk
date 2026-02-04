@@ -1,4 +1,4 @@
-import { ThermalPrinter } from './ThermalPrinter.js';
+import { ThermalPrinter } from '@/services/printer/ThermalPrinter.js';
 
 const mockOrder = {
     id: 'TEST-DTR-01',

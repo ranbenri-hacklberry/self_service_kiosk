@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import MenuOptionsEditor from './MenuOptionsEditor';
-import { OptionGroup } from './types';
+import MenuOptionsEditor from '@/components/manager/MenuOptionsEditor';
+import { OptionGroup } from '@/components/manager/types';
 import { fetchManagerItemOptions } from '@/lib/managerApi';
 
 interface ItemDetailsProps {

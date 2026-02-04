@@ -1,8 +1,8 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Check, X, Coffee, Salad, Sandwich, Mountain, Sparkles, Upload, Loader2 } from 'lucide-react';
-import { useTheme } from '../context/ThemeContext';
-import { supabase } from '../lib/supabase';
+import { useTheme } from '@/context/ThemeContext';
+import { supabase } from '@/lib/supabase';
 
 /**
  * SeedContainerPicker - Two sections: Containers & Backgrounds

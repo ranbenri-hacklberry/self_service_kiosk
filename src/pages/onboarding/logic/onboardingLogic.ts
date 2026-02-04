@@ -3,7 +3,7 @@
  * Core business logic: Parsing, Validation, and Prompt Generation.
  */
 
-import { OnboardingItem, ModifierGroup, ModifierItem, ModifierLogic, ModifierRequirement, AtmosphereSeed } from '../types/onboardingTypes';
+import { OnboardingItem, ModifierGroup, ModifierItem, ModifierLogic, ModifierRequirement, AtmosphereSeed } from '@/types/onboardingTypes';
 
 /**
  * 🆕 Category Normalization

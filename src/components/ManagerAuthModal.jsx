@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Lock, Send, Check, Loader2, AlertCircle } from 'lucide-react';
-import { useTheme } from '../context/ThemeContext';
-import { supabase } from '../lib/supabase';
+import { useTheme } from '@/context/ThemeContext';
+import { supabase } from '@/lib/supabase';
 
 /**
  * ManagerAuthModal - PIN and Push authentication for manager actions

@@ -6,11 +6,11 @@
  */
 
 import React, { useState } from 'react';
-import { db, clearAllData, getSyncStatus, isDatabaseReady } from '../db/database';
-import { initialLoad, syncOrders, isOnline } from '../services/syncService';
-import { syncQueue, getQueueStats, getPendingActions } from '../services/offlineQueue';
+import { db, clearAllData, getSyncStatus, isDatabaseReady } from '@/db/database';
+import { initialLoad, syncOrders, isOnline } from '@/services/syncService';
+import { syncQueue, getQueueStats, getPendingActions } from '@/services/offlineQueue';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '@/context/AuthContext';
 import { Database, RefreshCw, Trash2, Download, Wifi, WifiOff, CheckCircle, XCircle, Upload, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
@@ -209,7 +209,7 @@ const DexieTestPage = () => {
                 setMessage('📴 Offline - showing cached data');
 
                 // Still load from Dexie for display
-                const { db: dynamicDb } = await import('../db/database');
+                const { db: dynamicDb } = await import('@/db/database');
                 await dynamicDb.open();
                 const allOrders = await dynamicDb.orders.toArray();
                 setDirectOrders(allOrders);
@@ -240,7 +240,7 @@ const DexieTestPage = () => {
 
                 // STEP 3: Clean up local orders that have been synced
                 setMessage('🔄 Step 3/3: Cleaning synced local orders...');
-                const { db: dynamicDb } = await import('../db/database');
+                const { db: dynamicDb } = await import('@/db/database');
                 await dynamicDb.open();
 
                 const allOrders = await dynamicDb.orders.toArray();
@@ -327,7 +327,7 @@ const DexieTestPage = () => {
     const cleanupStaleOrders = async () => {
         setLoading(true);
         try {
-            const { db: dynamicDb } = await import('../db/database');
+            const { db: dynamicDb } = await import('@/db/database');
             const allOrders = await dynamicDb.orders.toArray();
 
             // Find orders with L-prefix order_number or non-UUID ids
@@ -361,7 +361,7 @@ const DexieTestPage = () => {
     const clearCompletedQueue = async () => {
         setLoading(true);
         try {
-            const { db: dynamicDb } = await import('../db/database');
+            const { db: dynamicDb } = await import('@/db/database');
             if (dynamicDb.offline_queue_v2) {
                 const completed = await dynamicDb.offline_queue_v2.where('status').equals('completed').count();
                 await dynamicDb.offline_queue_v2.where('status').equals('completed').delete();
@@ -395,7 +395,7 @@ const DexieTestPage = () => {
 
         setLoading(true);
         try {
-            const { db: dynamicDb } = await import('../db/database');
+            const { db: dynamicDb } = await import('@/db/database');
             await dynamicDb.orders.delete(orderId);
             await dynamicDb.order_items.where('order_id').equals(orderId).delete();
             setMessage(`🗑️ הזמנה ${orderId} נמחקה מ-Dexie`);
@@ -419,7 +419,7 @@ const DexieTestPage = () => {
         setValidationResult(null);
 
         try {
-            const { supabase } = await import('../lib/supabase');
+            const { supabase } = await import('@/lib/supabase');
 
             // DATE LIMIT: Yesterday 00:00 onwards (matching KDS filter)
             const yesterday = new Date();

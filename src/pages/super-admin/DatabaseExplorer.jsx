@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { db } from '@/db/database';
 import { useAuth } from '@/context/AuthContext';
-import { getBackendApiUrl } from '../../utils/apiUtils';
+import { getBackendApiUrl } from '@/utils/apiUtils';
 
 // Configuration for the three layers
 const CLOUD_URL = import.meta.env.VITE_SUPABASE_URL;

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { IncomingOrder } from '../types';
+import { IncomingOrder } from '@/types';
 
 export const useIncomingOrders = (businessId?: string) => {
     const [orders, setOrders] = useState<IncomingOrder[]>([]);

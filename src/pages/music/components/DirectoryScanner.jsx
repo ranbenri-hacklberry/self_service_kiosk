@@ -3,7 +3,7 @@ import { X, FolderOpen, HardDrive, Music, RefreshCw, Check, Copy } from 'lucide-
 import { motion } from 'framer-motion';
 import '@/styles/music.css';
 
-import { getBackendApiUrl } from '../../../utils/apiUtils';
+import { getBackendApiUrl } from '@/utils/apiUtils';
 
 const MUSIC_API_URL = getBackendApiUrl();
 

@@ -1,12 +1,12 @@
 import { create } from 'zustand';
-import { onboarding_sessions } from '../../../db/database';
-import { OnboardingItem, AtmosphereSeed, ModifierLogic, ModifierRequirement } from '../types/onboardingTypes';
-import { validateMenuRow, mapRowToItem, validateModifierGroups, enrichItemVisually, generateImagePrompt, generateImageGemini, normalizeCategory, parseModifierString } from '../logic/onboardingLogic';
-import { syncModifiersToRelational } from '../logic/modifierSync';
+import { onboarding_sessions } from '@/db/database';
+import { OnboardingItem, AtmosphereSeed, ModifierLogic, ModifierRequirement } from '@/types/onboardingTypes';
+import { validateMenuRow, mapRowToItem, validateModifierGroups, enrichItemVisually, generateImagePrompt, generateImageGemini, normalizeCategory, parseModifierString } from '@/pages/onboarding/logic/onboardingLogic';
+import { syncModifiersToRelational } from '@/pages/onboarding/logic/modifierSync';
 import { v4 as uuidv4 } from 'uuid';
-import { supabase } from '../../../lib/supabase';
+import { supabase } from '@/lib/supabase';
 // @ts-ignore
-import { queueAction } from '../../../services/offlineQueue';
+import { queueAction } from '@/services/offlineQueue';
 
 interface OnboardingState {
     sessionId: number | null;

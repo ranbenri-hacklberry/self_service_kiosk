@@ -17,8 +17,8 @@ import {
     defaultDropAnimationSideEffects
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import KanbanColumn from './KanbanColumn';
-import KanbanOrderCard from './KanbanOrderCard';
+import KanbanColumn from '@/components/kanban/KanbanColumn';
+import KanbanOrderCard from '@/components/kanban/KanbanOrderCard';
 
 // Default column order - Unified with lifecycle: Incoming -> Prep -> Ready -> Shipped
 const DEFAULT_COLUMNS = ['new', 'in_prep', 'ready', 'shipped'];

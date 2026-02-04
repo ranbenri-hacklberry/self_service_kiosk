@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { AtmosphereSeed } from '../types/onboardingTypes';
-import { useOnboardingStore } from '../store/useOnboardingStore';
-import { useTheme } from '../../../context/ThemeContext';
+import { AtmosphereSeed } from '@/types/onboardingTypes';
+import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
+import { useTheme } from '@/context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
 import { Upload, X, ArrowRight, Utensils, Image as ImageIcon } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { supabase } from '../../../lib/supabase';
-import { analyzeVisualSeed } from '../logic/onboardingLogic';
+import { supabase } from '@/lib/supabase';
+import { analyzeVisualSeed } from '@/pages/onboarding/logic/onboardingLogic';
 
 const BrandIdentityDesigner = () => {
     const { businessId, atmosphereSeeds, addAtmosphereSeed, removeAtmosphereSeed, setStep } = useOnboardingStore();

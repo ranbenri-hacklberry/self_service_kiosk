@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Check, ChefHat, ShoppingBag } from 'lucide-react';
-import { useTheme } from '../../../context/ThemeContext';
+import { useTheme } from '@/context/ThemeContext';
 
 /**
  * SaladPrepDecision Component

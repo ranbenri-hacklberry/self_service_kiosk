@@ -3,7 +3,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import Component from '../../pages/returning-customer-welcome-screen/components/LoyaltyProgressIndicator';
+import Component from '@/pages/returning-customer-welcome-screen/components/LoyaltyProgressIndicator';
 
 // @vitest-environment jsdom
 

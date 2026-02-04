@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
-import { supabase } from '../../../../lib/supabase';
-import { fetchManagerItemOptions, clearOptionsCache } from '../../../../lib/managerApi';
+import { supabase } from '@/lib/supabase';
+import { fetchManagerItemOptions, clearOptionsCache } from '@/lib/managerApi';
 
 export const useModifiers = ({ item, user, inventoryOptions }) => {
     // -------------------------------------------------------------------------

@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { PlusCircle, X, Check, ClipboardList, ChevronLeft, Trash2, Coffee, ExternalLink } from 'lucide-react';
-import ConfirmationModal from '../ui/ConfirmationModal';
+import ConfirmationModal from '@/components/ui/ConfirmationModal';
 import { TASK_CATEGORIES, isCategoryMatch, getCategoryAliases } from '@/config/taskCategories';
 
 // Variants for smooth animation

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getCachedImageURL } from '../services/imageSyncService';
+import { getCachedImageURL } from '@/services/imageSyncService';
 
 /**
  * Hook to automatically provide a local object URL if an image is cached in Dexie.

@@ -1,5 +1,5 @@
 import React from 'react';
-import { useTheme } from '../../../context/ThemeContext';
+import { useTheme } from '@/context/ThemeContext';
 
 const MenuCategoryFilter = ({ activeCategory = 'hot-drinks', onCategoryChange, categories: propCategories }) => {
   const { isDarkMode } = useTheme();

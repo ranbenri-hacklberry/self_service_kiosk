@@ -5,14 +5,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import { useOrders } from '../../hooks/useOrders';
-import { useOrderAlerts } from '../../hooks/useOrderAlerts';
-import { KanbanBoard } from '../../components/kanban';
-import ShipmentModal from '../../components/kanban/ShipmentModal';
-import KDSPaymentModal from '../../pages/kds/components/KDSPaymentModal';
-import { sendSms } from '../../services/smsService';
-import { supabase } from '../../lib/supabase';
+import { useAuth } from '@/context/AuthContext';
+import { useOrders } from '@/hooks/useOrders';
+import { useOrderAlerts } from '@/hooks/useOrderAlerts';
+import { KanbanBoard } from '@/components/kanban';
+import ShipmentModal from '@/components/kanban/ShipmentModal';
+import KDSPaymentModal from '@/pages/kds/components/KDSPaymentModal';
+import { sendSms } from '@/services/smsService';
+import { supabase } from '@/lib/supabase';
 import {
     RefreshCw, ArrowRight, Bell, BellOff,
     LayoutGrid, Truck

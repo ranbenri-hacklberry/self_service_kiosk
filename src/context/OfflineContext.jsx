@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { initialLoad, syncOrders, subscribeToAllChanges, isOnline } from '../services/syncService';
-import { useAuth } from './AuthContext';
+import { initialLoad, syncOrders, subscribeToAllChanges, isOnline } from '@/services/syncService';
+import { useAuth } from '@/context/AuthContext';
 
 const OfflineContext = createContext();
 
@@ -80,7 +80,7 @@ export const OfflineProvider = ({ children }) => {
             console.log('🌐 Back online - syncing pending changes...');
             const syncPending = async () => {
                 try {
-                    const { syncQueue } = await import('../services/offlineQueue');
+                    const { syncQueue } = await import('@/services/offlineQueue');
                     const result = await syncQueue();
                     if (result.synced > 0) {
                         console.log(`✅ Synced ${result.synced} pending actions to Supabase`);

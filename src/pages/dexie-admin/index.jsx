@@ -1149,7 +1149,7 @@ const DexieAdminPanel = () => {
 
                                                         try {
                                                             // 2. Clear Database
-                                                            const { clearAllData, db } = await import('../../db/database');
+                                                            const { clearAllData, db } = await import('@/db/database');
                                                             await clearAllData();
 
                                                             // 3. Force re-load metadata to UI (should show zeros)

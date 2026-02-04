@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Check, Phone, User, Edit3 } from 'lucide-react';
-import { supabase } from '../../../lib/supabase';
-import CustomerInfoModal from '../../../components/CustomerInfoModal';
+import { supabase } from '@/lib/supabase';
+import CustomerInfoModal from '@/components/CustomerInfoModal';
 import { getShortName, getModColorClass } from '@/config/modifierShortNames';
 
 /**

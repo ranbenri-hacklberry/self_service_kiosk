@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { runSystemDiagnostics, simulateNightlyTraffic } from '../../services/healthCheck';
-import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
+import { runSystemDiagnostics, simulateNightlyTraffic } from '@/services/healthCheck';
+import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
-import DeploymentChecklist from './DeploymentChecklist';
+import DeploymentChecklist from '@/components/manager/DeploymentChecklist';
 
 // 🛠️ Force local backend for diagnostics if we're on localhost
 const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'

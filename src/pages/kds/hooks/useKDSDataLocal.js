@@ -14,10 +14,10 @@
 
 import { useMemo, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useAuth } from '../../../context/AuthContext';
-import db from '../../../db/database';
-import { groupOrderItems } from '../../../utils/kdsUtils';
-import { useKDSSms } from './useKDSSms';
+import { useAuth } from '@/context/AuthContext';
+import db from '@/db/database';
+import { groupOrderItems } from '@/utils/kdsUtils';
+import { useKDSSms } from '@/pages/kds/hooks/useKDSSms';
 
 export const useKDSDataLocal = () => {
     const { currentUser } = useAuth();
@@ -35,7 +35,7 @@ export const useKDSDataLocal = () => {
 
             const autoSync = async () => {
                 try {
-                    const { syncOrders } = await import('../../../services/syncService');
+                    const { syncOrders } = await import('@/services/syncService');
                     const result = await syncOrders(businessId);
                     if (result.success) {
                         console.log(`✅ [KDS] Auto-sync complete: ${result.ordersCount || 0} orders`);
@@ -403,7 +403,7 @@ export const useKDSDataLocal = () => {
         console.log(`✅ [KDS Local] Dexie updated for item ${itemId}`);
 
         // 2. Sync to Supabase in background (fire-and-forget)
-        const { supabase } = await import('../../../lib/supabase');
+        const { supabase } = await import('@/lib/supabase');
         supabase.from('order_items').update({ item_status: newStatus, updated_at: new Date().toISOString() }).eq('id', itemId)
             .then(({ error }) => error ? console.error(`❌ Sync failed:`, error) : console.log(`📤 Synced item ${itemId}`));
     };
@@ -419,7 +419,7 @@ export const useKDSDataLocal = () => {
         await db.orders.update(orderId, payload);
 
         // 2. Sync to Supabase in background
-        const { supabase } = await import('../../../lib/supabase');
+        const { supabase } = await import('@/lib/supabase');
         supabase.from('orders').update(payload).eq('id', orderId)
             .then(({ error }) => error ? console.error(`❌ Sync failed:`, error) : console.log(`📤 Synced order ${orderId}`));
     };
@@ -434,7 +434,7 @@ export const useKDSDataLocal = () => {
         await db.order_items.update(itemId, payload);
 
         // 2. Sync to Supabase
-        const { supabase } = await import('../../../lib/supabase');
+        const { supabase } = await import('@/lib/supabase');
         supabase.from('order_items').update(payload).eq('id', itemId)
             .then(({ error }) => error ? console.error(`❌ Sync failed:`, error) : console.log(`📤 Synced fire item ${itemId}`));
     };
@@ -494,7 +494,7 @@ export const useKDSDataLocal = () => {
         await db.orders.update(orderId, payload);
 
         // 2. Sync to Supabase
-        const { supabase } = await import('../../../lib/supabase');
+        const { supabase } = await import('@/lib/supabase');
         supabase.from('orders').update(payload).eq('id', orderId)
             .then(({ error }) => error ? console.error(`❌ Sync failed:`, error) : console.log(`📤 Synced payment ${orderId}`));
     };
@@ -523,7 +523,7 @@ export const useKDSDataLocal = () => {
                 // We use the existing sync service but we might need a specific "fetch history" RPC if syncOrders is limited.
                 // For now, let's assume syncOrders brings in enough data or we rely on the broader sync.
                 // Actually, let's manually fetch from Supabase to populate Dexie for this date!
-                const { supabase } = await import('../../../lib/supabase');
+                const { supabase } = await import('@/lib/supabase');
                 const { data: serverOrders, error } = await supabase
                     .rpc('get_kds_orders', {
                         p_business_id: businessId,
@@ -644,7 +644,7 @@ export const useKDSDataLocal = () => {
         console.log('🔄 [KDS] Refreshing - pulling latest from Supabase...');
         try {
             // Pull latest orders from Supabase to Dexie
-            const { syncOrders } = await import('../../../services/syncService');
+            const { syncOrders } = await import('@/services/syncService');
             const pullResult = await syncOrders(businessId);
             if (pullResult.success) {
                 console.log(`✅ [KDS] Pulled ${pullResult.ordersCount || 0} orders from Supabase`);

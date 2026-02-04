@@ -6,12 +6,12 @@ import {
     Snowflake, ClipboardList, Package, Plus, Save, Minus, Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../context/AuthContext';
-import { db } from '../../db/database';
-import UnifiedHeader from '../../components/UnifiedHeader';
-import TaskManagementView from '../../components/kds/TaskManagementView';
-import { isCategoryMatch, getCategoryAliases, TASK_CATEGORIES } from '../../config/taskCategories';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
+import { db } from '@/db/database';
+import UnifiedHeader from '@/components/UnifiedHeader';
+import TaskManagementView from '@/components/kds/TaskManagementView';
+import { isCategoryMatch, getCategoryAliases, TASK_CATEGORIES } from '@/config/taskCategories';
 
 const PrepPage = () => {
     const navigate = useNavigate();

@@ -12,12 +12,12 @@ import { useAuth } from '@/context/AuthContext';
 import AlbumCard from '@/components/music/AlbumCard';
 import VinylTurntable from '@/components/music/VinylTurntable';
 import SongRow from '@/components/music/SongRow';
-import MiniMusicPlayer from '../../components/music/MiniMusicPlayer';
-import ConnectionStatusBar from '../../components/ConnectionStatusBar';
-import AlbumView from './components/AlbumView';
-import PlaylistBuilder from './components/PlaylistBuilder';
-import DirectoryScanner from './components/DirectoryScanner';
-import SpotifyAlbumSearch from './components/SpotifyAlbumSearch';
+import MiniMusicPlayer from '@/components/music/MiniMusicPlayer';
+import ConnectionStatusBar from '@/components/ConnectionStatusBar';
+import AlbumView from '@/pages/music/components/AlbumView';
+import PlaylistBuilder from '@/pages/music/components/PlaylistBuilder';
+import DirectoryScanner from '@/pages/music/components/DirectoryScanner';
+import SpotifyAlbumSearch from '@/pages/music/components/SpotifyAlbumSearch';
 import SpotifyService from '@/lib/spotifyService';
 import '@/styles/music.css';
 

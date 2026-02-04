@@ -1,9 +1,9 @@
 import React from 'react';
 import { House } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import MiniMusicPlayer from './music/MiniMusicPlayer';
-import ConnectivityStatus from './ConnectivityStatus';
-import ConnectionStatusBar from './ConnectionStatusBar';
+import MiniMusicPlayer from '@/components/music/MiniMusicPlayer';
+import ConnectivityStatus from '@/components/ConnectivityStatus';
+import ConnectionStatusBar from '@/components/ConnectionStatusBar';
 
 const UnifiedHeader = ({
     title,

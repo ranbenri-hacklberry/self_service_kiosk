@@ -3,7 +3,7 @@ import {
     ChevronDown, PlusCircle, Trash2, Edit2, Package, Save, CheckCircle,
     Minus, Plus, GripHorizontal
 } from 'lucide-react';
-import AnimatedSection from './AnimatedSection';
+import AnimatedSection from '@/components/manager/menu-editor/AnimatedSection';
 
 const ModifiersSection = ({
     allGroups,

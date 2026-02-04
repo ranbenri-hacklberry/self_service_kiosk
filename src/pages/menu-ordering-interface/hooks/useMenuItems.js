@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { supabase } from '../../../lib/supabase';
-import { db, menu_cache } from '../../../db/database';
+import { supabase } from '@/lib/supabase';
+import { db, menu_cache } from '@/db/database';
 
 // Map database categories to frontend category IDs (legacy fallback)
 const CATEGORY_MAP = {
@@ -177,7 +177,7 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
                     if (cloudInventory) await db.prepared_items_inventory.bulkPut(cloudInventory);
 
                     // 🖼️ Cache images for offline use
-                    import('../../../services/imageSyncService').then(m => m.syncMenuImages(cloudData));
+                    import('@/services/imageSyncService').then(m => m.syncMenuImages(cloudData));
                 }
             } else {
                 // Background update
@@ -194,7 +194,7 @@ export const useMenuItems = (defaultCategory = 'hot-drinks', businessId = null) 
                         if (cloudInventory) await db.prepared_items_inventory.bulkPut(cloudInventory);
 
                         // 🖼️ Cache images for offline use
-                        import('../../../services/imageSyncService').then(m => m.syncMenuImages(cloudData));
+                        import('@/services/imageSyncService').then(m => m.syncMenuImages(cloudData));
                     }
                 });
             }

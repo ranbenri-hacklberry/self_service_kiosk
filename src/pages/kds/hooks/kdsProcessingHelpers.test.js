@@ -17,7 +17,7 @@ import {
     determineCardStatus,
     hasActiveItems,
     getSmartId
-} from './kdsProcessingHelpers';
+} from '@/pages/kds/hooks/kdsProcessingHelpers';
 
 describe('extractString', () => {
     it('returns empty string for null/undefined', () => {
