@@ -1586,11 +1586,14 @@ export const useKDSData = () => {
 
             } catch (supabaseErr) {
                 console.error('❌ Supabase update failed:', supabaseErr);
+                const errorDetails = supabaseErr?.message || JSON.stringify(supabaseErr);
+                console.error('📋 Exact Error Details:', errorDetails);
+
                 setErrorModal({
                     show: true,
                     title: 'שגיאה בעדכון',
                     message: 'העדכון בשרת נכשל. נסה שוב.',
-                    details: supabaseErr.message,
+                    details: errorDetails,
                     retryLabel: 'נסה שוב',
                     onRetry: () => updateOrderStatus(orderId, currentStatus)
                 });
