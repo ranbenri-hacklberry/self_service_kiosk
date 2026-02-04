@@ -322,14 +322,14 @@ const ModeSelectionScreen = () => {
                         </button>
                     )}
 
-                    {/* 6. Database Explorer - Admin Only */}
-                    {(currentUser?.is_super_admin || currentUser?.role === 'admin') && (
+                    {/* 6. Database Explorer - Admin/Owner Only */}
+                    {(currentUser?.is_super_admin || currentUser?.role === 'admin' || isOwner) && (
                         <button
                             onClick={() => handleModeSelect('db-explorer')}
-                            className="hidden md:block group relative bg-slate-800 rounded-2xl p-5 hover:bg-slate-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-500"
+                            className="group relative bg-slate-800 rounded-2xl p-5 hover:bg-slate-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl text-right overflow-hidden border-2 border-transparent hover:border-purple-500"
                         >
                             <div className="absolute top-3 left-3 bg-purple-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                                Admin
+                                Admin / Owner
                             </div>
                             <div className="absolute top-0 left-0 w-20 h-20 bg-purple-900/50 rounded-br-full -translate-x-5 -translate-y-5 group-hover:scale-110 transition-transform" />
                             <div className="relative z-10">
