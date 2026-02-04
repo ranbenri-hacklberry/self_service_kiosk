@@ -477,8 +477,16 @@ export const syncOrders = async (businessId) => {
     const fromDateISO = fromDate.toISOString();
     const toDateISO = new Date().toISOString();
 
-    const clientBrand = (supabase.supabaseUrl.includes('127.0.0.1') || supabase.supabaseUrl.includes('localhost')) ? 'DOCKER' : 'CLOUD';
+    const clientBrand = (supabase.supabaseUrl.includes('127.0.0.1') || supabase.supabaseUrl.includes('localhost') || supabase.supabaseUrl.includes('10.')) ? 'DOCKER' : 'CLOUD';
     console.log(`📅 [syncOrders] ${clientBrand} Sync - Filtering and Pruning from:`, fromDateISO, 'to:', toDateISO);
+
+    // 🛡️ PERFORMANCE OPTIMIZATION: On local N150 (DOCKER mode),
+    // we DON'T need to fetch heavy history periodically while working.
+    // The local DB is already the source of truth.
+    if (clientBrand === 'DOCKER') {
+        console.log('🏘️ [Sync] Local mode detected. Skipping expensive history fetch to maintain snappy performance.');
+        return { success: true, count: 0 };
+    }
 
     try {
         let orders = [];
