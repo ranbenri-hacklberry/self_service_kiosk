@@ -1489,7 +1489,16 @@ export const useKDSData = () => {
                     ({ data: rpcData, error: rpcError } = await supabase.rpc('update_order_status_v3', rpcParams));
                 }
 
-                if (rpcError) throw rpcError;
+                if (rpcError) {
+                    console.error('🚨 DATABASE RPC ERROR (Network/SQL):', rpcError);
+                    throw rpcError;
+                }
+
+                if (rpcData && rpcData.success === false) {
+                    const failMsg = rpcData.error || 'Unknown database rejection';
+                    console.error('🚨 DATABASE UPDATE REJECTED:', failMsg, 'Full Response:', rpcData);
+                    throw new Error(failMsg);
+                }
 
                 if (nextStatus === 'ready' && orderToMove?.customerPhone) {
                     handleSendSms(orderToMove.customerPhone, orderToMove.customerName);
