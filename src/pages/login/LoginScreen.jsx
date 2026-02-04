@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { loginEmployee, clockEvent } from '@/lib/employees/employeeService';
 import { Loader2, User, KeyRound, ArrowRight, CheckCircle, AlertTriangle, Eye, EyeOff, Building2, Keyboard } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import VirtualKeyboard from '@/components/ui/VirtualKeyboard';
 
 // Remove BrandLogo import since we're not using it anymore
 
@@ -21,6 +22,12 @@ const LoginScreen = () => {
     // Multi-Business Selection State
     const [matchedEmployees, setMatchedEmployees] = useState([]);
     const [showSelector, setShowSelector] = useState(false);
+
+    // Virtual Keyboard State
+    const [showKeyboard, setShowKeyboard] = useState(false);
+    const [activeField, setActiveField] = useState(null); // 'email' | 'password'
+    const emailRef = useRef(null);
+    const passwordRef = useRef(null);
 
     // Auto-redirect if already logged in
     React.useEffect(() => {
@@ -209,9 +216,11 @@ const LoginScreen = () => {
                                         <div className="relative">
                                             <User className="absolute top-1/2 -translate-y-1/2 right-3 text-slate-400 w-4 h-4" />
                                             <input
+                                                ref={emailRef}
                                                 type="email"
                                                 value={email}
                                                 onChange={e => setEmail(e.target.value)}
+                                                onFocus={() => setActiveField('email')}
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pr-10 pl-3 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-400 text-sm"
                                                 placeholder="your@email.com"
                                                 required
@@ -226,9 +235,11 @@ const LoginScreen = () => {
                                         <div className="relative">
                                             <KeyRound className="absolute top-1/2 -translate-y-1/2 right-3 text-slate-400 w-4 h-4" />
                                             <input
+                                                ref={passwordRef}
                                                 type={showPassword ? "text" : "password"}
                                                 value={password}
                                                 onChange={e => setPassword(e.target.value)}
+                                                onFocus={() => setActiveField('password')}
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pr-10 pl-10 text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all font-sans text-sm"
                                                 placeholder=""
                                                 required
@@ -263,9 +274,11 @@ const LoginScreen = () => {
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            // Simple strategy: focus the input to trigger OS keyboard
-                                            const emailInput = document.querySelector('input[type="email"]');
-                                            if (emailInput) emailInput.focus();
+                                            setShowKeyboard(true);
+                                            if (!activeField) {
+                                                setActiveField('email');
+                                                emailRef.current?.focus();
+                                            }
                                         }}
                                         className="w-full mt-2 text-slate-400 text-xs flex items-center justify-center gap-1 hover:text-blue-500 transition-colors py-2"
                                     >
@@ -278,6 +291,36 @@ const LoginScreen = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Virtual Keyboard Overlay */}
+            <VirtualKeyboard
+                isOpen={showKeyboard}
+                onClose={() => setShowKeyboard(false)}
+                activeField={activeField}
+                onInput={(char) => {
+                    if (activeField === 'email') {
+                        setEmail(prev => prev + char);
+                    } else if (activeField === 'password') {
+                        setPassword(prev => prev + char);
+                    }
+                }}
+                onBackspace={() => {
+                    if (activeField === 'email') {
+                        setEmail(prev => prev.slice(0, -1));
+                    } else if (activeField === 'password') {
+                        setPassword(prev => prev.slice(0, -1));
+                    }
+                }}
+                onEnter={() => {
+                    if (activeField === 'email') {
+                        setActiveField('password');
+                        passwordRef.current?.focus();
+                    } else {
+                        setShowKeyboard(false);
+                        handleLogin();
+                    }
+                }}
+            />
         </div>
     );
 };
