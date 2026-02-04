@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Plus, Minus, History, AlertTriangle } from 'lucide-react';
-import { InventoryItem } from '@/types';
+import { InventoryItem } from '@/pages/ipad_inventory/types';
 
 const MotionDiv = motion.div as any;
 

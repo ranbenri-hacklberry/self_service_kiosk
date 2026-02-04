@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { onboarding_sessions } from '@/db/database';
-import { OnboardingItem, AtmosphereSeed, ModifierLogic, ModifierRequirement } from '@/types/onboardingTypes';
+import { OnboardingItem, AtmosphereSeed, ModifierLogic, ModifierRequirement } from '@/pages/onboarding/types/onboardingTypes';
 import { validateMenuRow, mapRowToItem, validateModifierGroups, enrichItemVisually, generateImagePrompt, generateImageGemini, normalizeCategory, parseModifierString } from '@/pages/onboarding/logic/onboardingLogic';
 import { syncModifiersToRelational } from '@/pages/onboarding/logic/modifierSync';
 import { v4 as uuidv4 } from 'uuid';

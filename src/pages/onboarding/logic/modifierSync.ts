@@ -1,6 +1,6 @@
 
 import { supabase } from '@/lib/supabase';
-import { ModifierGroup, ModifierLogic, ModifierRequirement } from '@/types/onboardingTypes';
+import { ModifierGroup, ModifierLogic, ModifierRequirement } from '@/pages/onboarding/types/onboardingTypes';
 
 /**
  * Synchronizes the JSON-based modifiers state with the relational database tables.

@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ShoppingBag, ChevronLeft } from 'lucide-react';
-import { Supplier } from '@/types';
+import { Supplier } from '@/pages/ipad_inventory/types';
 
 const MotionButton = motion.button as any;
 

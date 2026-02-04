@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Settings, ClipboardCheck, ChefHat, Wine, Sunrise, Utensils, Sunset, Plus, Minus } from 'lucide-react';
-import { OnboardingItem } from '@/types/onboardingTypes';
+import { OnboardingItem } from '@/pages/onboarding/types/onboardingTypes';
 
 interface TabPrepProps {
     localItem: OnboardingItem;

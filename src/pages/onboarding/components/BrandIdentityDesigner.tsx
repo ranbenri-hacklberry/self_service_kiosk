@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AtmosphereSeed } from '@/types/onboardingTypes';
+import { AtmosphereSeed } from '@/pages/onboarding/types/onboardingTypes';
 import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
 import { useTheme } from '@/context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';

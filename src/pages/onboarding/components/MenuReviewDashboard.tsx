@@ -6,7 +6,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
 import { useAuth } from '@/context/AuthContext';
-import { OnboardingItem } from '@/types/onboardingTypes';
+import { OnboardingItem } from '@/pages/onboarding/types/onboardingTypes';
 import { normalizeCategory } from '@/pages/onboarding/logic/onboardingLogic';
 
 // Components

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Wand2, Package, RefreshCw, Check, AlertCircle, X, Plus, Trash2, Upload, Copy, Settings, ChevronDown, ChevronUp } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { OnboardingItem, AtmosphereSeed } from '@/types/onboardingTypes';
+import { OnboardingItem, AtmosphereSeed } from '@/pages/onboarding/types/onboardingTypes';
 import { compressImageToBlob } from '@/pages/onboarding/logic/onboardingLogic';
 
 interface TabVisualsAIProps {

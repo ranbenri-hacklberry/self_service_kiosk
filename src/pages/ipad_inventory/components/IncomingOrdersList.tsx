@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Truck, Calendar, Package, ArrowRight } from 'lucide-react';
-import { IncomingOrder } from '@/types';
+import { IncomingOrder } from '@/pages/ipad_inventory/types';
 
 const MotionDiv = motion.div as any;
 const MotionButton = motion.button as any;

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, ChefHat, Package, Wand2, Plus, Settings, Clock, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { v4 as uuidv4 } from 'uuid';
-import { OnboardingItem } from '@/types/onboardingTypes';
+import { OnboardingItem } from '@/pages/onboarding/types/onboardingTypes';
 import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
 import { supabase } from '@/lib/supabase';
 import { analyzeVisualSeed, compressImageToBlob } from '@/pages/onboarding/logic/onboardingLogic';

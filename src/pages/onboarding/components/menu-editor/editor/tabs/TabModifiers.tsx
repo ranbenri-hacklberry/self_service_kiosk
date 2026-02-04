@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, Trash2, ChevronDown, Star, HelpCircle } from 'lucide-react';
-import { OnboardingItem, ModifierGroup, ModifierRequirement, ModifierLogic } from '@/types/onboardingTypes';
+import { OnboardingItem, ModifierGroup, ModifierRequirement, ModifierLogic } from '@/pages/onboarding/types/onboardingTypes';
 
 interface TabModifiersProps {
     localItem: OnboardingItem;

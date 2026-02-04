@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { InventoryItem, ReceivingSession, ReceivingSessionItem } from '@/types';
+import { InventoryItem, ReceivingSession, ReceivingSessionItem } from '@/pages/ipad_inventory/types';
 
 export const useTripleCheckSession = (items: InventoryItem[], businessId?: string) => {
     const [session, setSession] = useState<ReceivingSession | null>(null);
