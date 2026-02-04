@@ -737,6 +737,25 @@ app.post("/api/admin/sync-queue/retry", async (req, res) => {
 });
 
 // TRUSTED STATS API: Bypass RLS to show true counts in DatabaseExplorer
+app.post("/api/admin/purge-docker-table", async (req, res) => {
+    const { table } = req.body;
+    if (!table) return res.status(400).json({ error: "Table name required" });
+    if (!localSupabase) return res.status(503).json({ error: "Local DB not ready" });
+
+    try {
+        console.log(`💣 [Nuclear Wipe] Wiping table ${table} in Docker...`);
+        // We use a query that effectively matches everything to bypass RLS if needed
+        const { error } = await localSupabase.from(table).delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+        if (error) throw error;
+
+        res.json({ success: true, message: `Table ${table} cleared completely` });
+    } catch (e) {
+        console.error(`❌ [Nuclear Wipe] Failed for ${table}:`, e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get("/api/admin/trusted-stats", async (req, res) => {
     const { table, businessId, noBusinessId } = req.query;
     if (!table || !businessId) return res.status(400).json({ error: "Table and businessId required" });

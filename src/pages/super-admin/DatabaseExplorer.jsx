@@ -665,6 +665,28 @@ DIAGNOSTICS:
      * UNIFIED SYNC: Docker -> Dexie (Single Source of Truth)
      * With Terminal logging and Conflict Detection
      */
+    const purgeDockerTable = async (tableId) => {
+        if (!window.confirm(`⚠️ האם אתה בטוח שברצונך למחוק את כל הנתונים בטבלת [${tableId}] מה-Docker המקומי? פעולה זו אינה הפיכה.`)) return;
+
+        try {
+            const API_URL = getBackendApiUrl();
+            const res = await fetch(`${API_URL}/api/admin/purge-docker-table`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ table: tableId })
+            });
+            const result = await res.json();
+            if (result.success) {
+                alert(`✅ הטבלה ${tableId} נוקתה לחלוטין!`);
+                fetchAllStats(); // Refresh counts
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (e) {
+            alert(`❌ ניקוי נכשל: ${e.message}`);
+        }
+    };
+
     const triggerFullVerticalSync = async () => {
         if (!currentUser?.business_id || syncLoading) return;
         setSyncLoading(true);
@@ -1305,6 +1327,31 @@ DIAGNOSTICS:
                                                                 3 ימים
                                                             </span>
                                                         )}
+                                                        {/* Nuclear Wipe Button */}
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                purgeDockerTable(table.id);
+                                                            }}
+                                                            className="p-1.5 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors group relative"
+                                                            title="ניקוי רדיקלי (Docker)"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none border border-red-500/30">
+                                                                ניקוי רדיקלי (Docker)
+                                                            </span>
+                                                        </button>
+
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                resolveConflict(table.id, 'cloud');
+                                                            }}
+                                                            className="px-3 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs rounded-lg border border-blue-500/30 transition-all flex items-center gap-2"
+                                                        >
+                                                            <Cloud size={14} />
+                                                            עדכן מהענן
+                                                        </button>
                                                     </div>
                                                 </div>
                                             </td>
