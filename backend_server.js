@@ -1100,12 +1100,25 @@ app.get("/api/hardware-snapshot", (req, res) => {
     });
 });
 
+app.post("/api/admin/force-reset-sync", (req, res) => {
+    syncStatus.inProgress = false;
+    syncStatus.error = null;
+    res.json({ message: "Sync status forced to idle" });
+});
+
 app.post("/api/sync-cloud-to-local", async (req, res) => {
     try {
         console.log("🔍 [Sync Request] Received sync request");
 
         if (!remoteSupabase) return res.status(400).json({ error: "Remote Supabase not configured" });
         if (!localSupabase) return res.status(400).json({ error: "Local Supabase not running" });
+
+        // PROTECTOR: If sync has been running for more than 5 minutes, assume it's stuck and reset it
+        const SYNC_TIMEOUT = 5 * 60 * 1000;
+        if (syncStatus.inProgress && syncStatus.startTime && (Date.now() - syncStatus.startTime > SYNC_TIMEOUT)) {
+            console.warn("⚠️ [Sync] Previous sync was stuck for > 5 mins. Resetting.");
+            syncStatus.inProgress = false;
+        }
 
         if (syncStatus.inProgress) {
             return res.status(409).json({ error: "Sync in progress", progress: syncStatus.progress });
@@ -1126,12 +1139,27 @@ app.post("/api/sync-cloud-to-local", async (req, res) => {
         // Background Process
         (async () => {
             if (syncStatus.inProgress) return;
-            syncStatus = { inProgress: true, lastSync: null, progress: 0, currentTable: null, error: null };
+            syncStatus = {
+                inProgress: true,
+                lastSync: null,
+                progress: 0,
+                currentTable: null,
+                error: null,
+                startTime: Date.now()
+            };
             let totalRows = 0;
 
-            // ENSURE CRITICAL ORDER
+            // ENSURE CRITICAL ORDER: Items needed as foreign keys must come first
             const sortedTables = [...SYNC_TABLES].sort((a, b) => {
-                const priority = { 'loyalty_cards': 1, 'loyalty_transactions': 2, 'orders': 3, 'order_items': 4 };
+                const priority = {
+                    'businesses': 1,
+                    'recurring_tasks': 2,
+                    'loyalty_cards': 3,
+                    'loyalty_transactions': 4,
+                    'orders': 5,
+                    'order_items': 6,
+                    'task_completions': 7
+                };
                 return (priority[a.name] || 99) - (priority[b.name] || 99);
             });
 
