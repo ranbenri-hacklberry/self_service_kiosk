@@ -922,14 +922,13 @@ app.get("/api/admin/trusted-stats", async (req, res) => {
 
             results.dockerRecent = count || 0;
         }
-    }
 
         console.log(`✅ [Stats] ${table}: Cloud=${results.cloud}, Docker=${results.docker}`);
-    res.json(results);
-} catch (e) {
-    console.error(`❌ [Stats] Error for ${table}:`, e.message);
-    res.json({ ...results, error: e.message });
-}
+        res.json(results);
+    } catch (e) {
+        console.error(`❌ [Stats] Error for ${table}:`, e.message);
+        res.json({ ...results, error: e.message });
+    }
 });
 
 // TABLE METADATA API: Get columns, types, and policies for debugging
