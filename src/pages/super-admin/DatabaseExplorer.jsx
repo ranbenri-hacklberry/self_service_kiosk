@@ -782,10 +782,11 @@ DIAGNOSTICS:
                 setSyncProgress({ current: progress, total: 100, message: `טוען ${label} מהדוקר...` });
 
                 try {
+                    const API_URL = getBackendApiUrl();
                     const queryParams = new URLSearchParams({ businessId });
                     if (isHistorical) queryParams.append('recentDays', '3');
 
-                    const res = await fetch(`/api/admin/docker-dump/${t.remote}?${queryParams.toString()}`);
+                    const res = await fetch(`${API_URL}/api/admin/docker-dump/${t.remote}?${queryParams.toString()}`);
                     const json = await res.json();
 
                     if (json.success && json.data && Array.isArray(json.data)) {
@@ -818,7 +819,8 @@ DIAGNOSTICS:
             const detectedConflicts = [];
             for (const table of COMPARABLE_TABLES) {
                 try {
-                    const statsRes = await fetch(`/api/admin/trusted-stats?table=${table.id}&businessId=${businessId}&noBusinessId=${!!table.noBusinessId}`);
+                    const API_URL = getBackendApiUrl();
+                    const statsRes = await fetch(`${API_URL}/api/admin/trusted-stats?table=${table.id}&businessId=${businessId}&noBusinessId=${!!table.noBusinessId}`);
                     const { cloud, docker } = await statsRes.json();
 
                     if (cloud !== docker && cloud !== undefined && docker !== undefined) {

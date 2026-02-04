@@ -1,3 +1,5 @@
+import { getBackendApiUrl } from '@/utils/apiUtils';
+
 // SMS Service - Cloud Function Proxy (Production)
 // Production endpoint for sending SMS via Google Cloud Function
 // Production endpoint for sending SMS via Google Cloud Function
@@ -88,38 +90,16 @@ export const sendSms = async (phone, message) => {
     }
 };
 
-
 /**
  * Check the remaining SMS balance.
- * Uses local backend proxy if available, otherwise expects a deployed Cloud Function (check-balance).
+ * Uses local backend proxy if available.
  * @returns {Promise<number|null>} Balance amount or null if failed
  */
 export const getSmsBalance = async () => {
     try {
-        // Try local backend first (for development/hybrid)
-        // Hardcode localhost:8082 for local dev if window.location is on different port (like 4028)
-        let baseUrl = '';
-        if (typeof window !== 'undefined') {
-            const host = window.location.hostname;
-            if (host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.')) {
-                // If we are on dev port (4028/5173), point to backend at 8082
-                if (window.location.port !== '8082') {
-                    baseUrl = 'http://localhost:8082';
-                }
-            } else {
-                // Production: Use relative path (assuming served from same origin)
-                // OR if Vercel functions, it might be /api/sms/balance directly
-                baseUrl = '';
-            }
-        } else {
-            // SSR / Server Side:
-            // If we are in production (NODE_ENV), do NOT use localhost.
-            // If we are local dev, maybe localhost is fine, but safer to skip or use env var.
-            // For Vercel, this should likely be empty string or full URL from env
-            baseUrl = process.env.NEXT_PUBLIC_API_URL || '';
-        }
-
+        const baseUrl = getBackendApiUrl();
         const response = await fetch(`${baseUrl}/api/sms/balance`);
+
         if (response.ok) {
             const data = await response.json();
             if (data.success && typeof data.balance === 'number') {
