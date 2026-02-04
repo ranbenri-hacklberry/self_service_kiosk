@@ -62,7 +62,8 @@ const COMPARABLE_TABLES = [
     { id: 'discounts', label: 'הנחות', dexie: 'discounts' },
     { id: 'suppliers', label: 'ספקים', dexie: 'suppliers' },
     { id: 'inventory_items', label: 'פריטי מלאי', dexie: 'inventory_items' },
-    { id: 'recurring_tasks', label: 'משימות חוזרות', dexie: 'recurring_tasks' },
+    { id: 'recurring_tasks', label: 'משימות מחזוריות', dexie: 'recurring_tasks' },
+    { id: 'tasks', label: 'משימות', dexie: 'tasks' },
     { id: 'task_completions', label: 'ביצועי משימות', dexie: 'task_completions' },
     { id: 'prepared_items_inventory', label: 'מלאי פריטים מוכנים', dexie: 'prepared_items_inventory' },
 ];

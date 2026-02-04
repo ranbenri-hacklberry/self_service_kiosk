@@ -550,7 +550,13 @@ app.post("/api/admin/resolve-conflict", enforceBusinessId, async (req, res) => {
 
         if (!sourceData || sourceData.length === 0) {
             console.log(`⚠️ [ResolveConflict] No data in source for ${table}`);
-            return res.json({ success: true, synced: 0, message: "No data in source" });
+            return res.json({
+                success: true,
+                synced: 0,
+                message: "No data in source",
+                source,
+                target: source === 'docker' ? 'cloud' : 'docker'
+            });
         }
 
         console.log(`📦 [ResolveConflict] Fetched ${sourceData.length} TOTAL rows from ${source}`);
