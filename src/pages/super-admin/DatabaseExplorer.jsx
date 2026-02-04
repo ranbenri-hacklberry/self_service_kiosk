@@ -687,6 +687,10 @@ DIAGNOSTICS:
         }
     };
 
+    const resolveConflict = async (tableId, source) => {
+        await handleResolveConflicts({ [tableId]: source });
+    };
+
     const triggerFullVerticalSync = async () => {
         if (!currentUser?.business_id || syncLoading) return;
         setSyncLoading(true);
