@@ -1489,15 +1489,26 @@ export const useKDSData = () => {
                     ({ data: rpcData, error: rpcError } = await supabase.rpc('update_order_status_v3', rpcParams));
                 }
 
-                if (rpcError) {
-                    console.error('🚨 DATABASE RPC ERROR (Network/SQL):', rpcError);
-                    throw rpcError;
-                }
+                if (rpcError || (rpcData && rpcData.success === false)) {
+                    const failMsg = rpcError?.message || rpcData?.error || 'Unknown database rejection';
+                    console.warn('⚠️ Supabase RPC reported error, verifying if update actually took effect...', failMsg);
 
-                if (rpcData && rpcData.success === false) {
-                    const failMsg = rpcData.error || 'Unknown database rejection';
-                    console.error('🚨 DATABASE UPDATE REJECTED:', failMsg, 'Full Response:', rpcData);
-                    throw new Error(failMsg);
+                    // Wait 1.5s for DB to settle and sync to catch up
+                    await new Promise(r => setTimeout(r, 1500));
+
+                    // Re-fetch this specific order from Supabase to check actual state
+                    const { data: verifyData } = await supabase
+                        .from('orders')
+                        .select('status')
+                        .eq('id', smartId)
+                        .single();
+
+                    if (verifyData && verifyData.status === nextStatus) {
+                        log('✅ Verification success: Server actually updated despite RPC error reporting.');
+                    } else {
+                        console.error('🚨 DATABASE UPDATE FAILED after verification:', failMsg);
+                        throw rpcError || new Error(failMsg);
+                    }
                 }
 
                 if (nextStatus === 'ready' && orderToMove?.customerPhone) {
