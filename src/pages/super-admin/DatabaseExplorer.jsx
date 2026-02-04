@@ -755,6 +755,7 @@ DIAGNOSTICS:
             const SYNC_TABLES = [
                 { remote: 'businesses', local: 'businesses' },
                 { remote: 'employees', local: 'employees' },
+                { remote: 'item_category', local: 'item_category' },
                 { remote: 'menu_items', local: 'menu_items' },
                 { remote: 'customers', local: 'customers' },
                 { remote: 'optiongroups', local: 'optiongroups' },
@@ -767,6 +768,7 @@ DIAGNOSTICS:
                 { remote: 'order_items', local: 'order_items', recentDays: 3 },
                 { remote: 'suppliers', local: 'suppliers' },
                 { remote: 'recurring_tasks', local: 'recurring_tasks' },
+                { remote: 'tasks', local: 'tasks' },
                 { remote: 'task_completions', local: 'task_completions' },
                 { remote: 'inventory_items', local: 'inventory_items' },
                 { remote: 'prepared_items_inventory', local: 'prepared_items_inventory' }
@@ -1098,6 +1100,7 @@ DIAGNOSTICS:
                                     const tablesToSync = [
                                         { remote: 'businesses', local: 'businesses' },
                                         { remote: 'employees', local: 'employees' },
+                                        { remote: 'item_category', local: 'item_category' },
                                         { remote: 'menu_items', local: 'menu_items' },
                                         { remote: 'customers', local: 'customers' },
                                         { remote: 'optiongroups', local: 'optiongroups' },
@@ -1110,6 +1113,7 @@ DIAGNOSTICS:
                                         { remote: 'order_items', local: 'order_items', recentDays: 3 },
                                         { remote: 'suppliers', local: 'suppliers' },
                                         { remote: 'recurring_tasks', local: 'recurring_tasks' },
+                                        { remote: 'tasks', local: 'tasks' },
                                         { remote: 'task_completions', local: 'task_completions' },
                                         { remote: 'inventory_items', local: 'inventory_items' },
                                         { remote: 'prepared_items_inventory', local: 'prepared_items_inventory' }
@@ -1295,9 +1299,9 @@ DIAGNOSTICS:
 
 
                                     const counts = [
-                                        layerStats.cloud.count,
-                                        layerStats.docker.count,
-                                        layerStats.dexie.count
+                                        layerStats.cloud.count ?? 0,
+                                        layerStats.docker.count ?? 0,
+                                        layerStats.dexie.count ?? 0
                                     ];
 
                                     // Default Match Logic

@@ -808,6 +808,7 @@ app.get("/api/admin/trusted-stats", async (req, res) => {
                             if (rpcData.length < 1000) hasMoreRpc = false;
                             else rpcPage++;
                         } else {
+                            if (rpcErr) console.error(`   - RPC count fail for ${table} batch ${rpcPage}:`, rpcErr.message);
                             hasMoreRpc = false;
                         }
                     }
@@ -857,6 +858,11 @@ app.get("/api/admin/trusted-stats", async (req, res) => {
                         } else if (isNoBusinessId) {
                             const { count } = await remoteSupabase.from(table).select('*', { count: 'exact', head: true });
                             cloudCount = count || 0;
+                        } else {
+                            // GENERIC FALLBACK: If direct count fails or is null, try a simpler select with count
+                            const { count, error: countErr } = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
+                            if (!countErr) cloudCount = count || 0;
+                            else console.warn(`   - Generic cloud count for ${table} failed:`, countErr.message);
                         }
                     }
                 }
@@ -928,7 +934,21 @@ app.get("/api/admin/trusted-stats", async (req, res) => {
             threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
             const isoDate = threeDaysAgo.toISOString();
 
-            // 1. Try direct check (preferred)
+            // 1. Try RPC if available for sensitive tables (Cloud only)
+            if (client === remoteSupabase) {
+                if (tableName === 'loyalty_transactions' || tableName === 'customers' || tableName === 'loyalty_cards') {
+                    const rpcName = tableName === 'loyalty_transactions' ? 'get_loyalty_transactions_for_sync' :
+                        tableName === 'customers' ? 'get_customers_for_sync' : 'get_loyalty_cards_for_sync';
+
+                    const { data: rpcData } = await client.rpc(rpcName, { p_business_id: bId });
+                    if (rpcData) {
+                        // Filter by date client-side since RPC usually returns all
+                        return rpcData.filter(r => r.created_at >= isoDate).length;
+                    }
+                }
+            }
+
+            // 2. Try direct check (preferred)
             const { count, error } = await client
                 .from(tableName)
                 .select('*', { count: 'exact', head: true })
@@ -1331,7 +1351,7 @@ app.post("/api/sync-cloud-to-local", async (req, res) => {
                             'supplier_order_items', 'loyalty_cards', 'loyalty_transactions',
                             'tasks', 'recurring_tasks', 'task_completions',
                             'recipes', 'inventory_items', 'business_ai_settings',
-                            'discounts'
+                            'discounts', 'item_category'
                         ];
 
                         if (businessId) {
