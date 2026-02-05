@@ -1243,6 +1243,7 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 const { data: newGroup, error: groupError } = await supabase.from('optiongroups').insert({
                     name: group.name,
                     menu_item_id: menuItemId, // Link to the menu item
+                    business_id: user?.business_id, // CRITICAL: Add business_id
                     is_required: group.is_required || false,
                     is_multiple_select: group.is_multiple_select || false,
                     is_food: group.is_food,
@@ -1255,7 +1256,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 // CRITICAL: Also add link in junction table (menuitemoptions)
                 const { error: linkError } = await supabase.from('menuitemoptions').insert({
                     item_id: menuItemId,
-                    group_id: currentGroupId
+                    group_id: currentGroupId,
+                    business_id: user?.business_id // CRITICAL: Add business_id
                 });
                 if (linkError) console.error('❌ Error linking group to item:', linkError);
                 else console.log('✅ Linked new group to item via menuitemoptions');
@@ -1267,7 +1269,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                     is_multiple_select: group.is_multiple_select || false,
                     is_food: group.is_food,
                     is_drink: group.is_drink,
-                    display_order: group.display_order
+                    display_order: group.display_order,
+                    business_id: user?.business_id // Ensure business_id is set
                 }).eq('id', currentGroupId);
                 if (updateError) console.error('❌ Error updating group:', updateError);
             }
@@ -1285,7 +1288,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                         is_default: option.is_default,
                         display_order: option.display_order,
                         inventory_item_id: option.inventory_item_id,
-                        quantity: option.quantity
+                        quantity: option.quantity,
+                        business_id: user?.business_id // CRITICAL: Add business_id
                     });
                     if (error) console.error('❌ Error inserting option:', error);
                     else console.log('✅ Inserted new option');
@@ -1302,7 +1306,8 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                         is_default: option.is_default,
                         display_order: option.display_order,
                         inventory_item_id: option.inventory_item_id,
-                        quantity: option.quantity
+                        quantity: option.quantity,
+                        business_id: user?.business_id // CRITICAL: Add business_id
                     });
 
                     if (error) console.error('❌ Error upserting option:', error);

@@ -6,7 +6,7 @@ import { ModifierGroup, ModifierLogic, ModifierRequirement } from '@/pages/onboa
  * Synchronizes the JSON-based modifiers state with the relational database tables.
  * This ensures that the POS (which reads relational tables) matches the Editor (which edits JSON).
  */
-export const syncModifiersToRelational = async (menuItemId: string | number, modifiers: ModifierGroup[]) => {
+export const syncModifiersToRelational = async (menuItemId: string | number, modifiers: ModifierGroup[], businessId?: string | number) => {
     const numericId = Number(menuItemId);
     const isNumericId = !isNaN(numericId);
 
@@ -30,17 +30,18 @@ export const syncModifiersToRelational = async (menuItemId: string | number, mod
         for (const group of modifiers) {
             // Determine ID (use existing if valid UUID, else create new)
             let groupId = group.id;
-            const isNewGroup = !groupId || !groupId.includes('-'); // Simple UUID check
+            const isNewGroup = !groupId || !String(groupId).includes('-'); // Simple UUID check
 
-            const groupPayload = {
+            const groupPayload: any = {
                 menu_item_id: numericId,
                 name: group.name,
                 is_required: group.requirement === ModifierRequirement.MANDATORY,
-                is_multiple_select: group.logic === ModifierLogic.ADD && group.maxSelection > 1, // Inference
-                min_selection: group.requirement === ModifierRequirement.MANDATORY ? 1 : 0,
-                max_selection: group.logic === ModifierLogic.ADD ? (group.maxSelection || 10) : 1,
-                is_replacement: group.logic === ModifierLogic.REPLACE
+                is_multiple_select: group.logic === ModifierLogic.ADD && (group.maxSelection || 0) > 1, // Inference
+                business_id: businessId || null
             };
+
+            // Remove columns that don't exist in the current schema to avoid 400 errors
+            // min_selection, max_selection, is_replacement removed as they are not in the 'optiongroups' table
 
             let upsertedGroup;
 
@@ -72,10 +73,10 @@ export const syncModifiersToRelational = async (menuItemId: string | number, mod
                 groupId = upsertedGroup.id;
 
                 // 2a. Sync Values for this Group
-                await syncGroupValues(groupId!, group.items);
+                await syncGroupValues(groupId!, group.items, businessId);
 
                 // 2b. Ensure Link in menuitemoptions
-                await ensureLink(numericId, groupId!);
+                await ensureLink(numericId, groupId!, businessId);
             }
         }
 
@@ -94,7 +95,7 @@ export const syncModifiersToRelational = async (menuItemId: string | number, mod
     }
 };
 
-const syncGroupValues = async (groupId: string, items: any[]) => {
+const syncGroupValues = async (groupId: string, items: any[], businessId?: string | number) => {
     // Fetch existing values
     const { data: existingValues } = await supabase
         .from('optionvalues')
@@ -108,11 +109,12 @@ const syncGroupValues = async (groupId: string, items: any[]) => {
         let valId = item.id;
         const isNewVal = !valId || !String(valId).includes('-');
 
-        const valPayload = {
+        const valPayload: any = {
             group_id: groupId,
             value_name: item.name,
             price_adjustment: item.price || 0,
-            is_default: item.isDefault || false
+            is_default: item.isDefault || false,
+            business_id: businessId || null
         };
 
         if (isNewVal) {
@@ -122,7 +124,7 @@ const syncGroupValues = async (groupId: string, items: any[]) => {
                 currentValueIds.add(data.id);
             }
         } else {
-            await supabase.from('optionvalues').update(valPayload).eq('id', valId);
+            await supabase.from('optionvalues').update(valPayload).eq('id', valId).select('id');
             currentValueIds.add(valId);
         }
     }
@@ -134,7 +136,7 @@ const syncGroupValues = async (groupId: string, items: any[]) => {
     }
 };
 
-const ensureLink = async (itemId: number, groupId: string) => {
+const ensureLink = async (itemId: number, groupId: string, businessId?: string | number) => {
     const { data } = await supabase
         .from('menuitemoptions')
         .select('id')
@@ -142,6 +144,10 @@ const ensureLink = async (itemId: number, groupId: string) => {
         .maybeSingle();
 
     if (!data) {
-        await supabase.from('menuitemoptions').insert([{ item_id: itemId, group_id: groupId }]);
+        await supabase.from('menuitemoptions').insert([{
+            item_id: itemId,
+            group_id: groupId,
+            business_id: businessId || null
+        }]);
     }
 };

@@ -346,7 +346,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
                         const syncId = Number(itemId);
                         const { error } = await supabase.from('menu_items').update(dbItem).eq('id', syncId);
                         if (error) throw error;
-                        await syncModifiersToRelational(syncId, item.modifiers || []); // 🆕 Sync relational tables
+                        await syncModifiersToRelational(syncId, item.modifiers || [], businessId); // 🆕 Sync relational tables
                         await get().syncRecurringTasks(businessId, syncId, item);
                     } else {
                         const { data, error } = await supabase.from('menu_items').insert([dbItem]).select();
@@ -354,7 +354,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
                         if (data?.[0]) {
                             const newId = data[0].id.toString();
                             set(state => ({ items: state.items.map(i => i.id === itemId ? { ...i, id: newId } : i) }));
-                            await syncModifiersToRelational(Number(newId), item.modifiers || []); // 🆕 Sync relational tables
+                            await syncModifiersToRelational(Number(newId), item.modifiers || [], businessId); // 🆕 Sync relational tables
                             await get().syncRecurringTasks(businessId, Number(newId), item);
                         }
                     }

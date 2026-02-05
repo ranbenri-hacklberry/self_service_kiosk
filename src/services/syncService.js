@@ -214,10 +214,10 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
 
         // 1.5 Loyalty Transactions - 3 Days ONLY
         if (remoteTable === 'loyalty_transactions' && businessId) {
-            console.log(`🔄 Syncing loyalty_transactions (LAST 3 DAYS only)...`);
-            const threeDaysAgo = new Date();
-            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-            const isoDate = threeDaysAgo.toISOString();
+            console.log(`🔄 Syncing loyalty_transactions (LAST 24 HOURS only)...`);
+            const oneDayAgo = new Date();
+            oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+            const isoDate = oneDayAgo.toISOString();
 
             let page = 0;
             let hasMore = true;
@@ -248,12 +248,12 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
 
 
         if (remoteTable === 'order_items' && businessId) {
-            console.log(`🔄 Syncing order_items (LAST 3 DAYS only) using JOIN...`);
+            console.log(`🔄 Syncing order_items (LAST 24 HOURS only) using JOIN...`);
 
-            // 🕒 3-Day Window Calculation
-            const threeDaysAgo = new Date();
-            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-            const isoDate = threeDaysAgo.toISOString();
+            // 🕒 1-Day Window Calculation
+            const oneDayAgo = new Date();
+            oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+            const isoDate = oneDayAgo.toISOString();
 
             let page = 0;
             let hasMore = true;
@@ -298,10 +298,10 @@ export const syncTable = async (localTable, remoteTable, filter = null, business
         }
 
         if (remoteTable === 'orders' && businessId) {
-            console.log(`🔄 Syncing orders (LAST 3 DAYS only)...`);
-            const threeDaysAgo = new Date();
-            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-            const isoDate = threeDaysAgo.toISOString();
+            console.log(`🔄 Syncing orders (LAST 24 HOURS only)...`);
+            const oneDayAgo = new Date();
+            oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+            const isoDate = oneDayAgo.toISOString();
 
             let page = 0;
             let hasMore = true;

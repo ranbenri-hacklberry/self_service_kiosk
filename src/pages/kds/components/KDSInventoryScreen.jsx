@@ -771,6 +771,7 @@ const KDSInventoryScreen = ({ onExit }) => {
 
             // Try to match with order items
             const matchedOrderItem = orderItems.find(oi =>
+                (ocrItem.inventory_item_id && String(oi.inventory_item_id) === String(ocrItem.inventory_item_id)) ||
                 oi.inventory_item_id === matchedItem?.id ||
                 oi.name.toLowerCase() === name.toLowerCase() ||
                 oi.name.includes(name) ||
@@ -786,7 +787,7 @@ const KDSInventoryScreen = ({ onExit }) => {
 
             return {
                 id: ocrItem.id || `temp-${Date.now()}-${Math.random()}`,
-                name,
+                name: matchedItem?.name || matchedOrderItem?.name || name,
                 unit: cleanUnit(ocrItem.unit || matchedItem?.unit || matchedOrderItem?.unit || 'יח׳'),
                 invoicedQty,
                 actualQty: invoicedQty,

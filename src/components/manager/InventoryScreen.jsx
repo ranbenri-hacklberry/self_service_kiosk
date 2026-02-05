@@ -386,8 +386,11 @@ const InventoryScreen = () => {
         `תאריך: ${new Date().toLocaleDateString('he-IL')}\n` +
         `----------------\n` +
         group.items.map(i => {
-          // Rule: If unit is 'גרם', show as 'יחידות' in orders
-          const displayUnit = i.unit === 'גרם' ? 'יחידות' : i.unit;
+          // Rule: If item has weight per unit > 1 (e.g. 1kg bag), show as 'units' but calculate in base unit
+          const invItem = items.find(inv => inv.id === i.itemId);
+          const isPackage = invItem && invItem.weight_per_unit > 1;
+          const displayUnit = isPackage || i.unit === 'גרם' || i.unit === 'מ״ל' ? 'יחידות' : i.unit;
+
           return `- ${i.itemName}: ${i.qty} ${displayUnit}`;
         }).join('\n') +
         `\n----------------\nתודה!`;
@@ -581,8 +584,11 @@ const InventoryScreen = () => {
       const invoicedQty = ocrItem.quantity || ocrItem.amount || 0;
       const unitPrice = ocrItem.price || ocrItem.cost_per_unit || 0;
 
+      const inventoryItemId = ocrItem.inventory_item_id || ocrItem.inventoryItemId;
+
       // Try to match with existing inventory item
       const matchedItem = items.find(inv =>
+        (inventoryItemId && (inv.id === inventoryItemId || Number(inv.id) === Number(inventoryItemId))) ||
         inv.name.toLowerCase() === name.toLowerCase() ||
         inv.name.includes(name) ||
         name.includes(inv.name)
@@ -590,7 +596,7 @@ const InventoryScreen = () => {
 
       return {
         id: ocrItem.id || `temp-${Date.now()}-${Math.random()}`,
-        name,
+        name: matchedItem?.name || name, // Use catalog name if matched
         unit: ocrItem.unit || matchedItem?.unit || 'יח׳',
         invoicedQty,
         actualQty: invoicedQty, // Default to invoiced

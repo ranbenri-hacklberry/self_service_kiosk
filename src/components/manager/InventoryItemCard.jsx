@@ -83,11 +83,19 @@ const InventoryItemCard = ({ item, onStockChange = null, onOrderChange = null, o
         let delta;
         if (wpu > 0) {
             if (isWeightMode) {
-                delta = direction * 500; // 0.5kg steps
+                // If in weight mode, we add/subtract weight directly
+                // If it's a gram item, increments of 0.5kg (500g) are standard
+                delta = direction * 500;
             } else {
+                // Default: Count in units (packs). 
+                // A unit can be 1kg, 200g, etc. (defined by wpu)
                 delta = direction * countStep * wpu;
             }
+        } else if (item.unit === 'g' || item.unit === 'gram' || item.unit === 'גרם') {
+            // Gram item without explicit WPU: Assume countStep refers to Kg (major unit)
+            delta = direction * countStep * 1000;
         } else {
+            // Standard unit item (or gram item where user wants to count in grams)
             delta = direction * countStep;
         }
 
@@ -122,18 +130,33 @@ const InventoryItemCard = ({ item, onStockChange = null, onOrderChange = null, o
         setHasOrderChange(false);
     }, [orderQty, item.id, onOrderChange]);
 
-    // Formatting Display
+    // Formatting Display helper to avoid .0
+    const formatValue = (val) => {
+        const num = Number(val);
+        if (isNaN(num)) return "0";
+        // If it's a whole number, don't show decimal
+        if (num % 1 === 0) return num.toString();
+        // Otherwise show up to 2 decimals but trim trailing zeros
+        return parseFloat(num.toFixed(2)).toString();
+    };
+
     const { displayValue, displayUnit } = useMemo(() => {
-        if (wpu > 1) {
+        // If we have a WPU, we show Units by default (standard pack counting)
+        if (wpu > 0) {
             if (isWeightMode) {
-                return { displayValue: (currentStock / 1000).toFixed(1), displayUnit: 'ק״ג' };
+                return { displayValue: formatValue(currentStock / 1000), displayUnit: 'ק״ג' };
             }
-            return { displayValue: (currentStock / wpu).toFixed(1), displayUnit: 'יח׳' };
+            // Show units (packs)
+            return { displayValue: formatValue(currentStock / wpu), displayUnit: 'יח׳' };
         }
+
+        // If base unit is grams but no WPU set, show as Kg for convenience
         if (item.unit === 'g' || item.unit === 'gram' || item.unit === 'גרם') {
-            return { displayValue: (currentStock / 1000).toFixed(1), displayUnit: 'ק״ג' };
+            return { displayValue: formatValue(currentStock / 1000), displayUnit: 'ק״ג' };
         }
-        return { displayValue: currentStock.toString(), displayUnit: item.unit || 'יח׳' };
+
+        // Default: display stock directly
+        return { displayValue: formatValue(currentStock), displayUnit: item.unit || 'יח׳' };
     }, [currentStock, wpu, isWeightMode, item.unit]);
 
     const handleOpenEdit = (e) => {
@@ -257,8 +280,8 @@ const InventoryItemCard = ({ item, onStockChange = null, onOrderChange = null, o
                                 </div>
                             )}
 
-                            {/* Only show weight toggle for Vegetables (ירקות) */}
-                            {wpu > 0 && item.category === 'ירקות' && (
+                            {/* Weight Toggle: Enabled for any item with WPU to allow switching between Packs and Total Weight */}
+                            {wpu > 0 && (
                                 <button
                                     onClick={(e) => { e.stopPropagation(); setIsWeightMode(!isWeightMode); }}
                                     className="text-[8px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full font-bold hover:bg-slate-200 transition-colors self-start mt-1.5"
@@ -293,7 +316,7 @@ const InventoryItemCard = ({ item, onStockChange = null, onOrderChange = null, o
                         <div className="flex items-center gap-2">
                             <CompactStepper
                                 label="הזמנה"
-                                value={orderQty}
+                                value={formatValue(orderQty)}
                                 unit="יח׳"
                                 onChange={handleOrderClick}
                                 colorClass={orderQty > 0 ? "text-indigo-600" : "text-slate-400"}

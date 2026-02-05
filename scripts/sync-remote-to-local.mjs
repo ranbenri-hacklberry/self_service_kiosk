@@ -7,7 +7,7 @@ dotenv.config();
 const REMOTE_URL = process.env.VITE_SUPABASE_URL;
 const REMOTE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 const LOCAL_URL = 'http://127.0.0.1:54321';
-const LOCAL_KEY = process.env.VITE_LOCAL_SERVICE_ROLE_KEY;
+const LOCAL_KEY = process.env.VITE_LOCAL_SERVICE_ROLE_KEY || process.env.LOCAL_SUPABASE_SERVICE_KEY;
 
 if (!REMOTE_URL || !REMOTE_KEY) {
     console.error('❌ Missing REMOTE credentials in .env');
@@ -24,7 +24,7 @@ const localSupabase = createClient(LOCAL_URL, LOCAL_KEY);
 // סדר נכון לפי FK dependencies
 const TABLES_TO_SYNC = [
     // 1. טבלאות בסיס ללא תלויות
-    'business_profiles',
+    'businesses',
     // 2. טבלאות שתלויות ב-business
     'inventory_items',
     'menu_items',
@@ -47,7 +47,7 @@ async function syncTable(tableName, conflictColumn = 'id') {
             .select('*');
 
         if (fetchError) {
-            console.error(`❌ Error fetching ${tableName}:`, fetchError.message);
+            console.error(`❌ Error fetching ${tableName}:`, fetchError.message, fetchError.details || '');
             return { success: false, rows: 0 };
         }
 
