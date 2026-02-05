@@ -23,7 +23,46 @@ app.use(cors({
 app.use(express.json());
 
 // Configure multer for file uploads (memory storage)
+// Configure multer for file uploads (memory storage)
 const upload = multer({ storage: multer.memoryStorage() });
+
+// === WHATSAPP PROXY SETUP ===
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8086';
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'maya_secret_2026';
+
+app.use('/api/whatsapp', async (req, res) => {
+    // Strip the /api/whatsapp prefix to get the real endpoint
+    const endpoint = req.url;
+    const targetUrl = `${EVOLUTION_API_URL}${endpoint}`;
+
+    // console.log(`📞 Proxying WhatsApp Request: ${req.method} ${targetUrl}`);
+
+    try {
+        const response = await fetch(targetUrl, {
+            method: req.method,
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': EVOLUTION_API_KEY
+            },
+            body: (req.method !== 'GET' && req.method !== 'HEAD') ? JSON.stringify(req.body) : undefined
+        });
+
+        // Handle empty responses (like 204 No Content)
+        const text = await response.text();
+        const data = text ? JSON.parse(text) : {};
+
+        if (!response.ok) {
+            console.warn(`⚠️ WhatsApp API Error (${response.status}):`, data);
+            return res.status(response.status).json(data);
+        }
+
+        res.status(response.status).json(data);
+    } catch (error) {
+        console.error('❌ WhatsApp API proxy internal error:', error.message);
+        // Don't crash, just return 502
+        res.status(502).json({ error: 'Failed to connect to WhatsApp Service', details: error.message });
+    }
+});
 
 // === HYBRID SUPABASE SETUP ===
 // Standardized Names: LOCAL_SUPABASE_URL, LOCAL_SUPABASE_SERVICE_KEY

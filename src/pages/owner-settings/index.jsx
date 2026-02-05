@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import GoogleConnectButton from '@/components/GoogleConnectButton';
 import AccountantAccess from '@/components/settings/AccountantAccess';
+import WhatsAppConnect from '@/components/settings/WhatsAppConnect';
 
 const OwnerSettings = () => {
     const navigate = useNavigate();
@@ -147,6 +148,9 @@ const OwnerSettings = () => {
                         </div>
                     </div>
                 </motion.div>
+
+                {/* WhatsApp Integration Card */}
+                <WhatsAppConnect />
 
                 {/* Google Integration Card */}
                 <motion.div>
