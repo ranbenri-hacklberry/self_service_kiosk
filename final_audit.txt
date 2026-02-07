@@ -1,0 +1,35 @@
+🚀 Starting Deep Audit of Cloud vs Docker...
+Reviewing employees... 10 vs 10 [✅ MATCH]
+Reviewing menu_items... 76 vs 76 [✅ MATCH]
+Reviewing customers... 787 vs 787 [✅ MATCH]
+Reviewing orders... 3176 vs 3176 [✅ MATCH]
+Reviewing order_items... 5251 vs 5251 [✅ MATCH]
+Reviewing loyalty_cards... 1000 vs 1034 [⚠️ PARTIAL/OVER]
+Reviewing loyalty_transactions... 1080 vs 580 [❌ DISCREPANCY]
+Reviewing optiongroups... 16 vs 16 [✅ MATCH]
+Reviewing optionvalues... 33 vs 33 [✅ MATCH]
+Reviewing menuitemoptions... 41 vs 41 [✅ MATCH]
+Reviewing suppliers... 5 vs 5 [✅ MATCH]
+Reviewing recurring_tasks... 31 vs 31 [✅ MATCH]
+Reviewing task_completions... 50 vs 50 [✅ MATCH]
+Reviewing inventory_items... 89 vs 89 [✅ MATCH]
+
+--- FINAL AUDIT REPORT ---
+┌─────────┬────────────────────────┬───────┬────────┬──────────────────┐
+│ (index) │ table                  │ cloud │ docker │ status           │
+├─────────┼────────────────────────┼───────┼────────┼──────────────────┤
+│ 0       │ 'employees'            │ 10    │ 10     │ '✅ MATCH'       │
+│ 1       │ 'menu_items'           │ 76    │ 76     │ '✅ MATCH'       │
+│ 2       │ 'customers'            │ 787   │ 787    │ '✅ MATCH'       │
+│ 3       │ 'orders'               │ 3176  │ 3176   │ '✅ MATCH'       │
+│ 4       │ 'order_items'          │ 5251  │ 5251   │ '✅ MATCH'       │
+│ 5       │ 'loyalty_cards'        │ 1000  │ 1034   │ '⚠️ PARTIAL/OVER' │
+│ 6       │ 'loyalty_transactions' │ 1080  │ 580    │ '❌ DISCREPANCY' │
+│ 7       │ 'optiongroups'         │ 16    │ 16     │ '✅ MATCH'       │
+│ 8       │ 'optionvalues'         │ 33    │ 33     │ '✅ MATCH'       │
+│ 9       │ 'menuitemoptions'      │ 41    │ 41     │ '✅ MATCH'       │
+│ 10      │ 'suppliers'            │ 5     │ 5      │ '✅ MATCH'       │
+│ 11      │ 'recurring_tasks'      │ 31    │ 31     │ '✅ MATCH'       │
+│ 12      │ 'task_completions'     │ 50    │ 50     │ '✅ MATCH'       │
+│ 13      │ 'inventory_items'      │ 89    │ 89     │ '✅ MATCH'       │
+└─────────┴────────────────────────┴───────┴────────┴──────────────────┘

@@ -603,8 +603,7 @@ export const useKDSData = () => {
                                         menu_items: {
                                             name: name,
                                             price: item.price || menuItem?.price || 0,
-                                            kds_routing_logic: menuItem?.kds_routing_logic || 'MADE_TO_ORDER',
-                                            is_prep_required: menuItem?.is_prep_required !== false
+                                            kds_routing_logic: menuItem?.kds_routing_logic || 'MADE_TO_ORDER'
                                         }
                                     };
                                 })

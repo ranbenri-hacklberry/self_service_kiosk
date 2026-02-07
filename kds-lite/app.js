@@ -474,7 +474,6 @@ async function loadOrders() {
             } else {
                 // 📍 Otherwise, check routing logic
                 if (menu.kds_routing_logic === 'GRAB_AND_GO') return false;
-                if (menu.kds_routing_logic === 'NEVER_SHOW') return false;
             }
 
             // 📍 Station filtering

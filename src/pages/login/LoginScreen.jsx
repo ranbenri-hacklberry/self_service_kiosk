@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -39,6 +39,15 @@ const LoginScreen = () => {
             }
         }
     }, [currentUser, navigate]);
+
+    // Auto-fill email from URL parameter
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const emailParam = params.get('email');
+        if (emailParam) {
+            setEmail(emailParam);
+        }
+    }, []);
 
     const handleLogin = async (e) => {
         if (e) e.preventDefault();

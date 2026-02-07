@@ -2607,7 +2607,7 @@ const MenuOrderingInterface = () => {
           // Prevent auto-add for food items OR items with allow_notes enabled so user can add notes
           allowAutoAdd={!isFoodItem(selectedItemForMod) && selectedItemForMod?.allow_notes === false}
           extraGroups={
-            (selectedItemForMod?.inventory_settings?.isPreparedItem || selectedItemForMod?.kds_routing_logic === 'hybrid' || selectedItemForMod?.kds_routing_logic === 'CONDITIONAL')
+            (selectedItemForMod?.kds_routing_logic === 'hybrid' || selectedItemForMod?.kds_routing_logic === 'CONDITIONAL')
               ? [{
                 id: 'kds_routing',
                 name: 'אופן הכנה',

@@ -168,69 +168,29 @@ export const useKDSDataLocal = () => {
 
             // Process items
             const processedItems = items
-                .filter(item => {
-                    // Filter out completed/cancelled items
-                    if (['completed', 'cancelled'].includes(item.item_status)) {
-                        console.log(`  ⏭️ Item ${item.id}: status=${item.item_status} (filtered)`);
-                        return false;
-                    }
-
+                .filter(item => item.item_status !== 'cancelled')
+                .map(item => {
                     const menuItem = menuItems.get(item.menu_item_id);
-                    // 🛠️ FIX: Do not filter out items just because menu lookup fails. Use item.name instead.
-                    const itemName = menuItem?.name || item.name;
-                    if (!itemName) {
-                        console.log(`  ⏭️ Item ${item.id}: no name found (filtered)`);
-                        return false;
-                    }
+                    const itemName = menuItem?.name || item.name || 'Unknown Item';
 
-                    // Defaults if menu item missing
+                    // prep logic
                     const kdsLogic = menuItem?.kds_routing_logic || 'MADE_TO_ORDER';
-                    const isPrepRequired = menuItem?.is_prep_required;
 
-                    // Check for KDS override in mods
+                    // Check for override
                     let hasOverride = false;
                     const mods = item.mods;
-                    if (typeof mods === 'string') {
-                        if (mods.includes('__KDS_OVERRIDE__')) {
-                            hasOverride = true;
-                        } else {
-                            // Try parsing as JSON
-                            try {
-                                const parsed = JSON.parse(mods);
-                                if (parsed?.kds_override === true) hasOverride = true;
-                                if (Array.isArray(parsed) && parsed.includes('__KDS_OVERRIDE__')) hasOverride = true;
-                            } catch (e) { /* ignore */ }
-                        }
-                    } else if (Array.isArray(mods)) {
-                        if (mods.includes('__KDS_OVERRIDE__')) hasOverride = true;
-                    } else if (mods && typeof mods === 'object') {
-                        // Direct object check
-                        if (mods.kds_override === true) hasOverride = true;
+                    if (typeof mods === 'string' && (mods.includes('__KDS_OVERRIDE__') || mods.includes('__KDS_OVER_RIDE__'))) hasOverride = true;
+                    else if (Array.isArray(mods) && mods.some(m => String(m).includes('__KDS_OVERRIDE__'))) hasOverride = true;
+
+                    let isPrepRequired = true;
+                    if (kdsLogic === 'GRAB_AND_GO') isPrepRequired = false;
+                    else if (kdsLogic === 'CONDITIONAL') isPrepRequired = hasOverride;
+
+                    // ⚡ AUTO-READY: If item doesn't need prep, it's effectively 'ready' instantly
+                    let itemStatus = item.item_status;
+                    if (!isPrepRequired && (itemStatus === 'new' || itemStatus === 'pending')) {
+                        itemStatus = 'ready';
                     }
-
-                    // Routing logic priority:
-                    // 1. Explicit exclude takes precedence (is_prep_required = false)
-                    if (isPrepRequired === false) {
-                        // console.log(`  ⏭️ Item ${item.id} (${itemName}): Explicitly hidden (is_prep_required=false)`);
-                        return false;
-                    }
-
-                    // 2. Explicit include takes precedence (is_prep_required = true)
-                    if (isPrepRequired === true) return true;
-
-                    // 3. Check Override for Conditional
-                    if (kdsLogic === 'CONDITIONAL') return hasOverride;
-
-                    // 4. Default for MADE_TO_ORDER (if is_prep_required is NULL/Undefined)
-                    // If it's Made to Order but prep requirement is unknown, we default to SHOW
-                    // UNLESS user wants stricter filtering. For now, assuming standard behavior involves showing it.
-                    if (kdsLogic === 'MADE_TO_ORDER') return true;
-
-                    return true;
-                })
-                .map(item => {
-                    const menuItem = menuItems.get(item.menu_item_id) || { price: 0 };
-                    const name = menuItem.name || item.name || 'Unknown Item';
 
                     // Parse modifiers
                     let modsArray = [];

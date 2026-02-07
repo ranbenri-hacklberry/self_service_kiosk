@@ -118,8 +118,16 @@ const ManagerOrderCard = ({ order, isReady = false, onOrderStatusUpdate, onPayme
 
     // Split Logic: Right = Drinks, Left = Food
     const items = order.items || [];
-    const drinkItems = sortItems(items.filter(item => isDrink(item)));
-    const foodItems = sortItems(items.filter(item => !isDrink(item)));
+
+    // 🛡️ VIEW FILTERING:
+    // In Prep Tab (!isReady): Hide Grab & Go items to focus kitchen attention.
+    // In Ready Tab (isReady): Show EVERYTHING so expeditor packs the full order.
+    const visibleItems = isReady
+        ? items
+        : items.filter(item => !item.isHiddenInPrep);
+
+    const drinkItems = sortItems(visibleItems.filter(item => isDrink(item)));
+    const foodItems = sortItems(visibleItems.filter(item => !isDrink(item)));
 
     const hasDrinks = drinkItems.length > 0;
     const hasFood = foodItems.length > 0;
@@ -366,7 +374,13 @@ const ManagerKDS = () => {
                     else if (typeof mods === 'string' && mods.includes('__KDS_OVERRIDE__')) hasOverride = true;
                     else if (Array.isArray(mods) && (mods.includes('__KDS_OVERRIDE__') || mods.includes('__KDS_OVER_RIDE__'))) hasOverride = true;
 
-                    if ((kdsLogic === 'GRAB_AND_GO' || kdsLogic === 'CONDITIONAL') && !hasOverride) return false;
+                    // INSTEAD OF FILTERING EXECUTION:
+                    // We mark items as "hiddenInPrep" so they don't show up in the prep list,
+                    // but they DO show up in the ready list.
+                    if ((kdsLogic === 'GRAB_AND_GO' || kdsLogic === 'CONDITIONAL') && !hasOverride) {
+                        item.isHiddenInPrep = true;
+                        // We do NOT return false here anymore. We keep the item.
+                    }
 
                     return true;
                 });

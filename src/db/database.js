@@ -377,6 +377,12 @@ db.version(21).stores({
     item_category: 'id, name, name_he, business_id, position'
 });
 
+// Version 22: Ambiance Engine support
+db.version(22).stores({
+    system_config: 'id, key, updated_at',
+    local_assets: 'id, file_path, artist, title, album, genre, year, duration, scanned_at'
+});
+
 // Export table references for easy access
 export const {
     active_order_items,
@@ -401,7 +407,9 @@ export const {
     prepared_items_inventory,
     suppliers,
     inventory_items,
-    item_category
+    item_category,
+    system_config,
+    local_assets
 } = db;
 
 

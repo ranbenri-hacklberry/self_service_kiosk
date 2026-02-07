@@ -147,11 +147,12 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     const updateInventorySettings = (field, value) => {
         setInventorySettings(prev => ({ ...prev, [field]: value }));
 
-        // 🔒 Enforce KDS Constraint: Inventory Items = Cashier Choice (Conditional)
+        // Inventory items no longer automatically force 'conditional' KDS visibility.
+        // This allows users to have inventory items that are always MADE_TO_ORDER.
         console.log('📦 Updating Inventory:', field, value);
-        if (field === 'isPreparedItem' && value === true) {
-            setKdsVisibility('conditional');
-        }
+        // if (field === 'isPreparedItem' && value === true) {
+        //     setKdsVisibility('conditional');
+        // }
 
         setIsDirty(true);
     };
@@ -229,9 +230,69 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
     // Unsaved changes will show confirmation popup on close
 
 
+    // ⚡ FETCH FRESH DATA ON OPEN
     useEffect(() => {
+        let isMounted = true;
+
+        const loadFreshData = async () => {
+            if (!item?.id) return; // New item, nothing to fetch
+
+            try {
+                // Determine if we need to show loading (only if we suspect stale data)
+                // For better UX, we can start with props data and update if server differs, 
+                // but to be safe against the pricing bug, let's fetch.
+
+                // console.log('🔄 Fetching fresh item data for:', item.id);
+                const { data: freshItem, error } = await supabase
+                    .from('menu_items')
+                    .select('*')
+                    .eq('id', item.id)
+                    .single();
+
+                if (error || !isMounted) {
+                    console.error('⚠️ Could not fetch fresh data, using props fallback', error);
+                    return;
+                }
+
+                // If we got fresh data, use it to populate the form
+                const source = freshItem || item;
+
+                const initialData = {
+                    name: source.name || '',
+                    price: source.price || '',
+                    description: source.description || '',
+                    category: source.category || '',
+                    category_id: source.category_id || null,
+                    image_url: source.image_url || '',
+                    is_in_stock: source.is_in_stock ?? true,
+                    sale_price: source.sale_price || '',
+                    sale_start_date: source.sale_start_date || '',
+                    sale_start_time: source.sale_start_time || '',
+                    sale_end_date: source.sale_end_date || '',
+                    sale_end_time: source.sale_end_time || '',
+                    allow_notes: source.allow_notes ?? true
+                };
+
+                // CRITICAL: Update KDS Visibility from fresh source
+                if (source.kds_routing_logic) {
+                    setKdsVisibility(source.kds_routing_logic);
+                    // Also update the ref so isDirty calculation is correct against the FRESH data
+                    initialKdsVisibilityRef.current = source.kds_routing_logic;
+                }
+
+                setFormData(initialData);
+
+                // Update refs for dirty checking
+                initialFormDataRef.current = JSON.stringify(initialData);
+
+            } catch (err) {
+                console.error('Error loading fresh item config:', err);
+            }
+        };
+
         if (item) {
-            const initialData = {
+            // 1. Initialize immediately with props to avoid flicker
+            const immediateData = {
                 name: item.name || '',
                 price: item.price || '',
                 description: item.description || '',
@@ -246,17 +307,13 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                 sale_end_time: item.sale_end_time || '',
                 allow_notes: item.allow_notes ?? true
             };
-            setFormData(initialData);
+            setFormData(immediateData);
+            setKdsVisibility(item.kds_routing_logic || null);
 
-            // Store initial state for isDirty comparison
-            initialFormDataRef.current = JSON.stringify(initialData);
-            initialKdsVisibilityRef.current = item.kds_routing_logic || null;
-            initialPrepAreasRef.current = JSON.stringify(item.prep_areas || []);
-            setIsDirty(false);
-            setHistory([]); // Reset history
-
-            setIsNewCategory(false);
-
+            // 2. Fetch fresh data to ensure accuracy
+            if (item.id) {
+                loadFreshData();
+            }
             if (item.inventory_settings) {
                 setInventorySettings(item.inventory_settings);
             } else {
@@ -278,9 +335,14 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
             fetchInventoryOptions().then((invData) => fetchComponents(item.id, invData));
             fetchUniqueModifiers(); // Fetch unique modifiers for the picker
         }
+
         const handleClickOutside = (event) => { if (searchRef.current && !searchRef.current.contains(event.target)) setShowSuggestions(false); };
         document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
+
+        return () => {
+            isMounted = false;
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
     }, [item]);
 
     const fetchCategories = async () => {
@@ -1829,26 +1891,21 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                     {/* KDS Visibility Mode (Single Button - Cycles on Click) */}
                                     {/* KDS Visibility Mode (Single Button - Cycles on Click) */}
                                     {(() => {
-                                        // 🔒 Inventory Override Rule:
-                                        // If this is a Prepared/Inventory item, we MUST set KDS to 'CONDITIONAL' (Cashier Choice/Prompt).
-                                        // We lock the UI to reflect this enforced logic.
+                                        // 🔓 Decoupled: Inventory items no longer force 'CONDITIONAL' mode.
+                                        // Users can now choose regular preparation (MADE_TO_ORDER) for inventory items.
                                         const isInventoryItem = inventorySettings?.isPreparedItem;
 
                                         const modes = [
                                             { value: null, label: 'קטגוריה', color: 'bg-gray-100 text-gray-600 border-gray-200' },
-                                            { value: 'MADE_TO_ORDER', label: 'תמיד', color: 'bg-green-100 text-green-700 border-green-300' },
-                                            { value: 'NEVER_SHOW', label: 'לעולם לא', color: 'bg-red-100 text-red-700 border-red-300' },
+                                            { value: 'MADE_TO_ORDER', label: 'דורש הכנה', color: 'bg-green-100 text-green-700 border-green-300' },
+                                            { value: 'NEVER_SHOW', label: 'מוכן להגשה', color: 'bg-red-100 text-red-700 border-red-300' },
                                             { value: 'CONDITIONAL', label: 'שאל קופאי', color: 'bg-purple-100 text-purple-700 border-purple-300' }
                                         ];
 
-                                        const effectiveValue = isInventoryItem ? 'CONDITIONAL' : kdsVisibility;
+                                        const effectiveValue = kdsVisibility;
                                         const currentMode = modes.find(m => m.value === effectiveValue) || modes[0];
 
                                         const cycleMode = () => {
-                                            if (isInventoryItem) {
-                                                // Locked - maybe shake animation or toast?
-                                                return;
-                                            }
                                             const currentIndex = modes.findIndex(m => m.value === kdsVisibility);
                                             const nextIndex = (currentIndex + 1) % modes.length;
                                             setKdsVisibility(modes[nextIndex].value);
@@ -1858,16 +1915,12 @@ const MenuEditModal = ({ item, onClose, onSave }) => {
                                             <button
                                                 type="button"
                                                 onClick={cycleMode}
-                                                disabled={isInventoryItem}
-                                                className={`h-14 px-3 rounded-xl flex flex-col items-center justify-center font-bold transition-all shrink-0 border-2 ${currentMode.color} ${isInventoryItem ? 'opacity-90 cursor-not-allowed contrast-125' : 'cursor-pointer hover:brightness-95'}`}
+                                                className={`h-14 px-3 rounded-xl flex flex-col items-center justify-center font-bold transition-all shrink-0 border-2 ${currentMode.color} cursor-pointer hover:brightness-95`}
                                             >
                                                 <div className="flex items-center justify-center gap-1">
-                                                    {isInventoryItem && <Lock size={10} className="shrink-0" />}
                                                     <span className="text-xs leading-tight whitespace-nowrap">KDS: {currentMode.label}</span>
                                                 </div>
-                                                <span className="text-[9px] opacity-60 font-medium">
-                                                    {isInventoryItem ? '(נעול: פריט מלאי)' : '(לחץ לשינוי)'}
-                                                </span>
+                                                <span className="text-[9px] opacity-60 font-medium">(לחץ לשינוי)</span>
                                             </button>
                                         );
                                     })()}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Edit2, Image as ImageIcon, Eye, EyeOff } from 'lucide-react';
+import { Edit2, Image as ImageIcon, Eye, EyeOff, Flame, ShoppingBag, GitBranch } from 'lucide-react';
 
 const MenuManagerCard = ({
     item = null,
@@ -28,7 +28,9 @@ const MenuManagerCard = ({
         sale_start_date: item.sale_start_date,
         sale_end_date: item.sale_end_date,
         sale_start_time: item.sale_start_time,
-        sale_end_time: item.sale_end_time
+        sale_start_time: item.sale_start_time,
+        sale_end_time: item.sale_end_time,
+        kds_routing_logic: item.kds_routing_logic // Pass through KDS logic
     };
 
     const isAvailable = safeItem.is_in_stock !== false;
@@ -132,6 +134,33 @@ const MenuManagerCard = ({
                         בקרוב
                     </div>
                 )}
+
+                {/* KDS Routing Badge */}
+                {(() => {
+                    const routing = safeItem.kds_routing_logic;
+                    if (routing === 'MADE_TO_ORDER') {
+                        return (
+                            <div className="absolute bottom-0 right-0 bg-orange-500/90 backdrop-blur-sm text-white p-1 rounded-tl-lg shadow-sm" title="דורש הכנה">
+                                <Flame size={10} strokeWidth={3} />
+                            </div>
+                        );
+                    }
+                    if (routing === 'GRAB_AND_GO') {
+                        return (
+                            <div className="absolute bottom-0 right-0 bg-emerald-500/90 backdrop-blur-sm text-white p-1 rounded-tl-lg shadow-sm" title="מוכן להגשה (Grab & Go)">
+                                <ShoppingBag size={10} strokeWidth={3} />
+                            </div>
+                        );
+                    }
+                    if (routing === 'CONDITIONAL') {
+                        return (
+                            <div className="absolute bottom-0 right-0 bg-purple-500/90 backdrop-blur-sm text-white p-1 rounded-tl-lg shadow-sm" title="מותנה (לפי בחירת קופאי)">
+                                <GitBranch size={10} strokeWidth={3} />
+                            </div>
+                        );
+                    }
+                    return null;
+                })()}
             </div>
 
             {/* 📝 Content Section */}

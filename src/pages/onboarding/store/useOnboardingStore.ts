@@ -212,6 +212,9 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
                     productionArea: ci.production_area || 'Checker',
                     categoryId: ci.category_id,
                     originalImageUrls: ci.original_image_urls || [],
+                    preparationMode: ci.kds_routing_logic === 'GRAB_AND_GO' ? 'ready' :
+                        ci.kds_routing_logic === 'CONDITIONAL' ? 'cashier_choice' :
+                            'requires_prep', // Default to MADE_TO_ORDER logic
                 };
             }) as OnboardingItem[];
 
@@ -311,7 +314,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
 
             // 🔄 KDS Routing Logic Mapping
             let kdsLogic = 'MADE_TO_ORDER'; // Default to "Always Prepare"
-            if (item.preparationMode === 'ready') kdsLogic = 'NEVER_SHOW'; // Grab n Go
+            if (item.preparationMode === 'ready') kdsLogic = 'GRAB_AND_GO'; // Grab n Go
             else if (item.preparationMode === 'cashier_choice') kdsLogic = 'CONDITIONAL'; // Decision at POS
 
             const dbItem: any = {
@@ -329,9 +332,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
                 ai_prompt: item.prompt,
                 english_name: item.englishName || '',
                 cost: item.cost || 0,
-                is_prep_required: item.preparationMode === 'requires_prep', // Legacy field?
                 kds_routing_logic: kdsLogic, // ✅ Correctly mapped field
-                display_kds: item.displayKDS || [item.productionArea || 'Checker'], // 🆕 Support multi-KDS routing
                 inventory_settings: item.inventorySettings || null,
                 is_deleted: false,
                 original_image_urls: item.originalImageUrls || []

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
     Plus, Settings, Trash2, RefreshCw, Wand2, Check,
-    Package, Clock, Globe, AlertCircle
+    Package, Clock, Globe, AlertCircle, Flame, ShoppingBag, HelpCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '@/pages/onboarding/store/useOnboardingStore';
@@ -256,6 +256,25 @@ const MenuReviewDashboard = () => {
                                     <div className="absolute top-2 right-2 flex flex-row-reverse gap-1 z-10 items-center">
                                         {item.isVisiblePos !== false && <span className="h-5 px-1.5 bg-white border border-slate-200 rounded text-[9px] font-black flex items-center">POS</span>}
                                         {item.isVisibleOnline !== false && <span className="h-5 px-1.5 bg-white border border-slate-200 rounded text-indigo-600 flex items-center"><Globe size={11} /></span>}
+                                    </div>
+
+                                    {/* KDS Mode Badge */}
+                                    <div className="absolute bottom-2 right-2 z-10">
+                                        {item.preparationMode === 'requires_prep' && (
+                                            <div className="bg-orange-500/90 text-white p-1.5 rounded-lg shadow-sm backdrop-blur-sm" title="דורש הכנה">
+                                                <Flame size={12} strokeWidth={3} />
+                                            </div>
+                                        )}
+                                        {item.preparationMode === 'ready' && (
+                                            <div className="bg-emerald-500/90 text-white p-1.5 rounded-lg shadow-sm backdrop-blur-sm" title="מוכן להגשה (Grab & Go)">
+                                                <ShoppingBag size={12} strokeWidth={3} />
+                                            </div>
+                                        )}
+                                        {item.preparationMode === 'cashier_choice' && (
+                                            <div className="bg-purple-500/90 text-white p-1.5 rounded-lg shadow-sm backdrop-blur-sm" title="מותנה (לפי בחירת קופאי)">
+                                                <HelpCircle size={12} strokeWidth={3} />
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="absolute top-2 left-2 flex gap-1 z-20 opacity-0 group-hover:opacity-100 transition-opacity">

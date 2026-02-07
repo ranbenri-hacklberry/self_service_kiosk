@@ -1,0 +1,9 @@
+{
+    "name": "check-sms-balance",
+    "version": "1.0.0",
+    "description": "Check SMS Balance via GlobalSMS",
+    "main": "index.js",
+    "dependencies": {
+        "@google-cloud/functions-framework": "^3.0.0"
+    }
+}

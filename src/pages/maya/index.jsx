@@ -395,7 +395,7 @@ ${completedTasks.map(t => `-V ${t.name} (ע"י ${t.completed_by} ב-${t.time})`)
         }
 
         // 3. Menu context & Recipes
-        supabase.from('menu_items').select('name, price, category, is_prep_required').eq('business_id', currentUser.business_id).limit(200)
+        supabase.from('menu_items').select('name, price, category, kds_routing_logic').eq('business_id', currentUser.business_id).limit(200)
             .then(({ data }) => {
                 const menuList = data?.map(i => `${i.name} (₪${i.price})`).join(', ') || '';
                 setContextData(p => ({ ...p, menu: menuList, status: { ...p.status, menu: 'success' } }));

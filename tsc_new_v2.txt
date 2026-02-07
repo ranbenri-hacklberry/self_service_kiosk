@@ -1,0 +1,42 @@
+src/pages/ipad_inventory/hooks/useIncomingOrders.ts(2,26): error TS2307: Cannot find module '@/lib/supabase' or its corresponding type declarations.
+src/pages/ipad_inventory/hooks/useInventoryData.ts(2,26): error TS2307: Cannot find module '@/lib/supabase' or its corresponding type declarations.
+src/pages/ipad_inventory/hooks/useInvoiceOCR.ts(2,51): error TS2307: Cannot find module '@/utils/imageUtils' or its corresponding type declarations.
+src/pages/ipad_inventory/hooks/useInvoiceOCR.ts(3,35): error TS2307: Cannot find module '@/services/ocrService' or its corresponding type declarations.
+src/pages/ipad_inventory/hooks/useStockUpdates.ts(2,26): error TS2307: Cannot find module '@/lib/supabase' or its corresponding type declarations.
+src/pages/ipad_inventory/hooks/useTripleCheckSession.ts(2,26): error TS2307: Cannot find module '@/lib/supabase' or its corresponding type declarations.
+src/pages/ipad_inventory/index.ts(1,42): error TS6142: Module './IPadInventory' was resolved to '/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/ipad_inventory/IPadInventory.tsx', but '--jsx' is not set.
+src/pages/ipad_inventory/IPadInventory.tsx(1,8): error TS1259: Module '"/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/pages/ipad_inventory/IPadInventory.tsx(3,25): error TS2307: Cannot find module '@/context/AuthContext' or its corresponding type declarations.
+src/pages/ipad_inventory/IPadInventory.tsx(13,29): error TS6142: Module './components/InventoryHeader' was resolved to '/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/ipad_inventory/components/InventoryHeader.tsx', but '--jsx' is not set.
+src/pages/ipad_inventory/IPadInventory.tsx(14,27): error TS6142: Module './components/SuppliersList' was resolved to '/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/ipad_inventory/components/SuppliersList.tsx', but '--jsx' is not set.
+src/pages/ipad_inventory/IPadInventory.tsx(15,32): error TS6142: Module './components/InventoryItemsGrid' was resolved to '/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/ipad_inventory/components/InventoryItemsGrid.tsx', but '--jsx' is not set.
+src/pages/ipad_inventory/IPadInventory.tsx(16,32): error TS6142: Module './components/IncomingOrdersList' was resolved to '/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/ipad_inventory/components/IncomingOrdersList.tsx', but '--jsx' is not set.
+src/pages/ipad_inventory/IPadInventory.tsx(17,32): error TS6142: Module './components/TripleCheckSession' was resolved to '/Users/user/.gemini/antigravity/scratch/my_app/frontend_source/src/pages/ipad_inventory/components/TripleCheckSession.tsx', but '--jsx' is not set.
+src/pages/ipad_inventory/IPadInventory.tsx(97,9): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(98,13): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(104,13): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(105,17): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(107,25): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(112,29): error TS2322: Type '{ key: string; initial: { opacity: number; x: number; }; animate: { opacity: number; x: number; }; exit: { opacity: number; x: number; }; className: string; }' is not assignable to type 'HTMLAttributesWithoutMotionProps<unknown, unknown> & MotionProps & RefAttributes<unknown>'.
+  Property 'className' does not exist on type 'HTMLAttributesWithoutMotionProps<unknown, unknown> & MotionProps & RefAttributes<unknown>'.
+src/pages/ipad_inventory/IPadInventory.tsx(114,29): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(121,29): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(128,25): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(133,29): error TS2322: Type '{ key: string; initial: { opacity: number; x: number; }; animate: { opacity: number; x: number; }; exit: { opacity: number; x: number; }; className: string; }' is not assignable to type 'HTMLAttributesWithoutMotionProps<unknown, unknown> & MotionProps & RefAttributes<unknown>'.
+  Property 'className' does not exist on type 'HTMLAttributesWithoutMotionProps<unknown, unknown> & MotionProps & RefAttributes<unknown>'.
+src/pages/ipad_inventory/IPadInventory.tsx(135,29): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(147,13): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(149,21): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(159,21): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(160,25): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(161,29): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(162,29): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(164,25): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(165,29): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(166,29): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+src/pages/ipad_inventory/IPadInventory.tsx(173,13): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+npm notice
+npm notice New minor version of npm available! 11.6.2 -> 11.8.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.8.0
+npm notice To update run: npm install -g npm@11.8.0
+npm notice

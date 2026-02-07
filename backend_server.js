@@ -27,9 +27,93 @@ app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
 // === WHATSAPP PROXY SETUP ===
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8086';
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8085';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'maya_secret_2026';
+const LM_STUDIO_URL = process.env.LM_STUDIO_URL || 'http://localhost:1234/v1/chat/completions';
 
+// 🧠 AI Webhook Handler (Must be BEFORE the proxy middleware)
+app.post('/api/whatsapp/webhook', async (req, res) => {
+    try {
+        const body = req.body;
+        // Evolution API Structure: body.data.messageType, body.data.message.conversation, etc.
+        // Or sometimes wrapped in an event array. Let's handle standard Evolution API webhook format.
+
+        const data = body.data || body; // Handle potential wrapping
+
+        // 1. Basic validation - Ignore status updates or own messages
+        if (!data || !data.key || data.key.fromMe || !data.message) {
+            return res.status(200).send('IGNORED');
+        }
+
+        // 2. Extract Text
+        // Evolution API can put text in 'conversation' or 'extendedTextMessage.text'
+        const incomingText = data.message.conversation ||
+            data.message.extendedTextMessage?.text ||
+            null;
+
+        if (!incomingText) {
+            return res.status(200).send('NO_TEXT');
+        }
+
+        const senderId = data.key.remoteJid; // e.g., "972501234567@s.whatsapp.net"
+        const instanceName = data.instance || 'default';
+
+        console.log(`💬 [WhatsApp AI] Received from ${senderId}: "${incomingText.substring(0, 50)}..."`);
+
+        // 3. Send to LM Studio
+        const aiResponse = await fetch(LM_STUDIO_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [
+                    { role: "system", content: "You are Maya, a helpful AI assistant for a coffee shop. Keep answers short and friendly in Hebrew." },
+                    { role: "user", content: incomingText }
+                ],
+                temperature: 0.7,
+                max_tokens: 150,
+                model: "local-model" // LM Studio usually ignores this or uses loaded model
+            })
+        });
+
+        if (!aiResponse.ok) {
+            console.error('❌ LM Studio Error:', await aiResponse.text());
+            return res.status(200).send('AI_ERROR'); // Return 200 to WhatsApp so it doesn't retry
+        }
+
+        const aiData = await aiResponse.json();
+        const responseText = aiData.choices?.[0]?.message?.content || "מצטערת, לא הצלחתי לחשוב על תשובה.";
+
+        console.log(`🤖 [WhatsApp AI] Reply: "${responseText.substring(0, 50)}..."`);
+
+        // 4. Send Reply back via Evolution API
+        const replyUrl = `${EVOLUTION_API_URL}/message/sendText/${instanceName}`;
+        await fetch(replyUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': EVOLUTION_API_KEY
+            },
+            body: JSON.stringify({
+                number: senderId,
+                options: {
+                    delay: 1200,
+                    presence: 'composing'
+                },
+                textMessage: {
+                    text: responseText
+                }
+            })
+        });
+
+        return res.status(200).send('PROCESSED');
+
+    } catch (err) {
+        console.error('❌ Webhook Handler Error:', err);
+        return res.status(500).send('ERROR');
+    }
+});
+
+// Proxy all other /api/whatsapp requests to Evolution API
 app.use('/api/whatsapp', async (req, res) => {
     // Strip the /api/whatsapp prefix to get the real endpoint
     const endpoint = req.url;

@@ -193,6 +193,27 @@ export const buildStructuredModifiers = (modsArray, notes = null) => {
  */
 export const shouldIncludeItem = (item, fallbackMenuItem = null) => {
     if (item.item_status === 'cancelled') return false;
+
+    // Look for menu item data in the item object (from RPC) or the fallback (from Dexie)
+    const menuItem = item.menu_items || fallbackMenuItem;
+    if (!menuItem) return true; // Show by default if we can't find menu item data
+
+    const kdsLogic = menuItem.kds_routing_logic || 'MADE_TO_ORDER';
+
+    // Check for KDS override in modifiers (e.g. from POS/Kiosk)
+    let hasOverride = false;
+    const mods = item.mods;
+    if (typeof mods === 'string') {
+        if (mods.includes('__KDS_OVERRIDE__')) hasOverride = true;
+    } else if (Array.isArray(mods)) {
+        if (mods.some(m => String(m).includes('__KDS_OVERRIDE__'))) hasOverride = true;
+    }
+
+    // 🛡️ ROUTING LOGIC:
+    if (kdsLogic === 'GRAB_AND_GO') return false;
+    if (kdsLogic === 'CONDITIONAL') return hasOverride;
+
+    // Default to show (MADE_TO_ORDER)
     return true;
 };
 
@@ -213,47 +234,56 @@ export const processOrderItems = (order, menuMap) => {
     const isLocalInProgress = (order._useLocalStatus || order.pending_sync) && order.order_status === 'in_progress';
 
     return (order.order_items || [])
-        .filter(item => {
-            if (item.item_status === 'cancelled') return false;
-
-            // Nuclear Bypass: Keep everything if locally in progress (offline/undo scenario)
-            if (isLocalInProgress) return true;
-
+        .filter(item => item.item_status !== 'cancelled') // ✅ Show everything else
+        .map(item => {
             // 🔍 LOOKUP FRESH ITEM DATA
             const freshMenuItem = menuMap?.get(item.menu_item_id);
-            return shouldIncludeItem(item, freshMenuItem);
-        })
-        .map(item => {
+            const menuItemData = item.menu_items || freshMenuItem;
+
+            // 🛡️ KDS ROUTING LOGIC: Determine if this item actually needs prep
+            const kdsLogic = menuItemData?.kds_routing_logic || 'MADE_TO_ORDER';
+
+            let isPrepRequired = true;
+            if (kdsLogic === 'GRAB_AND_GO') isPrepRequired = false;
+            else if (kdsLogic === 'CONDITIONAL') {
+                const mods = item.mods;
+                let hasOverride = false;
+                if (typeof mods === 'string' && mods.includes('__KDS_OVER_RIDE__')) hasOverride = true;
+                if (typeof mods === 'string' && mods.includes('__KDS_OVERRIDE__')) hasOverride = true;
+                else if (Array.isArray(mods) && mods.some(m => String(m).includes('__KDS_OVERRIDE__'))) hasOverride = true;
+                isPrepRequired = hasOverride;
+            }
+
             // Visual Status Normalization
-            const visualStatus = (isLocalInProgress && ['completed', 'ready'].includes(item.item_status))
-                ? 'in_progress' : item.item_status;
+            let itemStatus = item.item_status;
+            // ⚡ AUTO-READY: If item doesn't need prep, it's effectively 'ready' instantly
+            if (!isPrepRequired && (itemStatus === 'new' || itemStatus === 'pending')) {
+                itemStatus = 'ready';
+            }
+
+            const visualStatus = (isLocalInProgress && ['completed', 'ready'].includes(itemStatus))
+                ? 'in_progress' : itemStatus;
 
             // Modifier Processing
             const modsArray = parseModifiers(item.mods);
             const structuredModifiers = buildStructuredModifiers(modsArray, item.notes);
-
-            // 🔑 CRITICAL: Generate modsKey for proper item grouping
-            // This key ensures items with different modifiers are NOT merged together
-            // e.g., coffee with oat milk vs regular coffee should remain separate
             const modsKey = modsArray.map(m => typeof m === 'object' ? (m.name || m.text || JSON.stringify(m)) : String(m)).sort().join('|');
-
-            // Fallback to menu cache if menu_items missing from RPC
-            const menuItem = menuMap?.get(item.menu_item_id);
 
             return {
                 id: item.id,
                 menuItemId: item.menu_items?.id || item.menu_item_id || item.id,
-                name: extractString(item.name || item.menu_items?.name || menuItem?.name || 'פריט מהתפריט'),
+                name: extractString(item.name || item.menu_items?.name || freshMenuItem?.name || 'פריט מהתפריט'),
                 modifiers: structuredModifiers,
-                modsKey, // 🔑 Key for groupOrderItems to distinguish items by modifiers
+                modsKey,
                 quantity: item.quantity,
                 status: visualStatus,
-                item_status: item.item_status,
-                price: item.menu_items?.price || item.price || menuItem?.price || 0,
-                category: item.menu_items?.category || menuItem?.category || '',
+                item_status: itemStatus,
+                is_prep_item: isPrepRequired,
+                price: item.menu_items?.price || item.price || freshMenuItem?.price || 0,
+                category: item.menu_items?.category || freshMenuItem?.category || '',
                 course_stage: item.course_stage || 1,
                 item_fired_at: item.item_fired_at,
-                is_early_delivered: item.is_early_delivered || (['ready', 'completed'].includes(item.item_status) && !['ready', 'completed'].includes(order.order_status))
+                is_early_delivered: item.is_early_delivered || (['ready', 'completed'].includes(itemStatus) && !['ready', 'completed'].includes(order.order_status))
             };
         });
 };
