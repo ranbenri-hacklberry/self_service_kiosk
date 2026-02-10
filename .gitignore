@@ -37,5 +37,8 @@ yarn-error.log*
 service-account.json
 encrypted_music_output/
 *.sql
+!supabase/migrations/*.sql
 *.log
 *.mjs
+desert_language.env
+scripts/grok_*.py

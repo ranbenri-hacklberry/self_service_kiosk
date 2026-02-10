@@ -22,131 +22,122 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Request logger
+app.use((req, res, next) => {
+    console.log(`📡 [${req.method}] ${req.path}`);
+    next();
+});
+
 // Configure multer for file uploads (memory storage)
 // Configure multer for file uploads (memory storage)
 const upload = multer({ storage: multer.memoryStorage() });
 
-// === WHATSAPP PROXY SETUP ===
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8085';
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'maya_secret_2026';
-const LM_STUDIO_URL = process.env.LM_STUDIO_URL || 'http://localhost:1234/v1/chat/completions';
 
-// 🧠 AI Webhook Handler (Must be BEFORE the proxy middleware)
-app.post('/api/whatsapp/webhook', async (req, res) => {
+// === WHATSAPP & SMS MANAGER (LOCAL) ===
+import whatsAppManager from './src/services/whatsappManager.js';
+
+// === MAYA API ROUTES ===
+import mayaRoutes from './backend/api/mayaRoutes.js';
+import marketingRoutes from './backend/api/marketingRoutes.js';
+import adminRoutes from './backend/api/adminRoutes.js';
+import { startDockerWatchdog } from './backend/services/dockerWatchdog.js';
+
+app.use('/api/maya', mayaRoutes);
+app.use('/api/marketing', marketingRoutes);
+app.use('/api/admin', adminRoutes);
+
+// Start Docker Monitoring (Checks every 60s)
+startDockerWatchdog(60000);
+
+// 1. WhatsApp Status Check
+app.get('/api/whatsapp/status', (req, res) => {
+    const instanceName = req.query.instanceName || 'default';
+    const status = whatsAppManager.getStatus(instanceName);
+    res.json(status);
+});
+
+// 2. WhatsApp Connect/QR
+app.post('/api/whatsapp/connect', async (req, res) => {
+    const { instanceName } = req.body;
     try {
-        const body = req.body;
-        // Evolution API Structure: body.data.messageType, body.data.message.conversation, etc.
-        // Or sometimes wrapped in an event array. Let's handle standard Evolution API webhook format.
+        await whatsAppManager.connectToWhatsApp(instanceName || 'default');
+        res.json({ success: true, message: 'Initiating connection...' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
-        const data = body.data || body; // Handle potential wrapping
+// 3. WhatsApp Send Message
+app.post('/api/whatsapp/send', async (req, res) => {
+    const { to, text, instanceName } = req.body;
+    try {
+        await whatsAppManager.sendText(instanceName || 'default', to, text);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
-        // 1. Basic validation - Ignore status updates or own messages
-        if (!data || !data.key || data.key.fromMe || !data.message) {
-            return res.status(200).send('IGNORED');
+// 3.5 WhatsApp Logout/Disconnect
+app.delete('/api/whatsapp/instance/logout/:instanceName', async (req, res) => {
+    const { instanceName } = req.params;
+    try {
+        const success = await whatsAppManager.disconnect(instanceName || 'default');
+        res.json({ success });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 4. Global SMS Send (using DB Key)
+app.post('/api/sms/send', async (req, res) => {
+    const { to, text, businessId } = req.body;
+
+    try {
+        // Fetch API Key from DB
+        const { data: business } = await supabase
+            .from('businesses')
+            .select('global_sms_api_key, sms_sender_id')
+            .eq('id', businessId)
+            .single();
+
+        if (!business || !business.global_sms_api_key) {
+            return res.status(400).json({ error: 'Missing Global SMS API Key for business' });
         }
 
-        // 2. Extract Text
-        // Evolution API can put text in 'conversation' or 'extendedTextMessage.text'
-        const incomingText = data.message.conversation ||
-            data.message.extendedTextMessage?.text ||
-            null;
+        // Send via Global SMS API
+        const GLOBAL_SMS_URL = 'https://sapi.itnewsletter.co.il/api/restApiSms/sendSmsToRecipients';
 
-        if (!incomingText) {
-            return res.status(200).send('NO_TEXT');
-        }
+        console.log(`📨 [GlobalSMS] Sending to ${to}...`);
 
-        const senderId = data.key.remoteJid; // e.g., "972501234567@s.whatsapp.net"
-        const instanceName = data.instance || 'default';
-
-        console.log(`💬 [WhatsApp AI] Received from ${senderId}: "${incomingText.substring(0, 50)}..."`);
-
-        // 3. Send to LM Studio
-        const aiResponse = await fetch(LM_STUDIO_URL, {
+        const response = await fetch(GLOBAL_SMS_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                messages: [
-                    { role: "system", content: "You are Maya, a helpful AI assistant for a coffee shop. Keep answers short and friendly in Hebrew." },
-                    { role: "user", content: incomingText }
-                ],
-                temperature: 0.7,
-                max_tokens: 150,
-                model: "local-model" // LM Studio usually ignores this or uses loaded model
+                ApiKey: business.global_sms_api_key,
+                txtOriginator: business.sms_sender_id || '0548317887',
+                destinations: to.replace(/\D/g, ''),
+                txtSMSmessage: text,
+                dteToDeliver: '',
+                txtAddInf: ''
             })
         });
 
-        if (!aiResponse.ok) {
-            console.error('❌ LM Studio Error:', await aiResponse.text());
-            return res.status(200).send('AI_ERROR'); // Return 200 to WhatsApp so it doesn't retry
+        const result = await response.json();
+
+        if (result.success) {
+            res.json({ success: true, messageId: result.result || 'ok' });
+        } else {
+            console.error('❌ Global SMS Provider Error:', result);
+            res.status(500).json({ error: result.errDesc || 'Provider error' });
         }
-
-        const aiData = await aiResponse.json();
-        const responseText = aiData.choices?.[0]?.message?.content || "מצטערת, לא הצלחתי לחשוב על תשובה.";
-
-        console.log(`🤖 [WhatsApp AI] Reply: "${responseText.substring(0, 50)}..."`);
-
-        // 4. Send Reply back via Evolution API
-        const replyUrl = `${EVOLUTION_API_URL}/message/sendText/${instanceName}`;
-        await fetch(replyUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': EVOLUTION_API_KEY
-            },
-            body: JSON.stringify({
-                number: senderId,
-                options: {
-                    delay: 1200,
-                    presence: 'composing'
-                },
-                textMessage: {
-                    text: responseText
-                }
-            })
-        });
-
-        return res.status(200).send('PROCESSED');
 
     } catch (err) {
-        console.error('❌ Webhook Handler Error:', err);
-        return res.status(500).send('ERROR');
+        console.error('❌ SMS Failed:', err);
+        res.status(500).json({ error: 'Failed to send SMS' });
     }
 });
 
-// Proxy all other /api/whatsapp requests to Evolution API
-app.use('/api/whatsapp', async (req, res) => {
-    // Strip the /api/whatsapp prefix to get the real endpoint
-    const endpoint = req.url;
-    const targetUrl = `${EVOLUTION_API_URL}${endpoint}`;
-
-    // console.log(`📞 Proxying WhatsApp Request: ${req.method} ${targetUrl}`);
-
-    try {
-        const response = await fetch(targetUrl, {
-            method: req.method,
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': EVOLUTION_API_KEY
-            },
-            body: (req.method !== 'GET' && req.method !== 'HEAD') ? JSON.stringify(req.body) : undefined
-        });
-
-        // Handle empty responses (like 204 No Content)
-        const text = await response.text();
-        const data = text ? JSON.parse(text) : {};
-
-        if (!response.ok) {
-            console.warn(`⚠️ WhatsApp API Error (${response.status}):`, data);
-            return res.status(response.status).json(data);
-        }
-
-        res.status(response.status).json(data);
-    } catch (error) {
-        console.error('❌ WhatsApp API proxy internal error:', error.message);
-        // Don't crash, just return 502
-        res.status(502).json({ error: 'Failed to connect to WhatsApp Service', details: error.message });
-    }
-});
 
 // === HYBRID SUPABASE SETUP ===
 // Standardized Names: LOCAL_SUPABASE_URL, LOCAL_SUPABASE_SERVICE_KEY
@@ -308,20 +299,57 @@ const MULTI_TENANT_TABLES = [
  */
 const enforceBusinessId = (req, res, next) => {
     const businessId = req.query.businessId || req.body.businessId || req.headers['x-business-id'];
-    const table = req.params.table || req.body.table;
+    const table = req.params.table || req.body.table || req.query.table;
 
     // If it's a multi-tenant table, businessId MUST be provided
     if (table && MULTI_TENANT_TABLES.includes(table) && !businessId) {
         console.error(`🛡️ [Security] Blocked request for ${table} - Missing businessId!`);
-        return res.status(403).json({
-            error: "Security: businessId is required for this operation",
-            code: "MISSING_BUSINESS_ID"
-        });
+        return res.status(400).json({ error: `businessId is required for table ${table}` });
     }
 
-    // Attach to request for easy access in handlers
-    req.businessId = businessId;
+    req.businessId = businessId; // Stick it on the request
+    req.table = table;           // Also pass the table name along
     next();
+};
+
+/**
+ * SHARED HELPER: Build a filtered query for synchronization based on table type
+ */
+const getSyncQuery = async (client, tableName, businessId, options = { countOnly: false }) => {
+    let q = client.from(tableName).select('*', options.countOnly ? { count: 'exact', head: true } : {});
+
+    if (tableName === 'businesses') return q.eq('id', businessId);
+
+    // 1. Tables that might lack business_id and need relationship join
+    if (tableName === 'order_items') {
+        const { count: hasDirect } = await client.from(tableName).select('*', { count: 'exact', head: true }).eq('business_id', businessId).limit(1);
+        if (hasDirect) return q.eq('business_id', businessId);
+
+        // Fallback: Join with orders
+        const { data: orders } = await client.from('orders').select('id').eq('business_id', businessId);
+        const ids = (orders || []).map(o => o.id);
+        return ids.length > 0 ? q.in('order_id', ids) : null;
+    }
+
+    if (tableName === 'optionvalues' || tableName === 'menuitemoptions') {
+        const { data: groups } = await client.from('optiongroups').select('id').eq('business_id', businessId);
+        const groupIds = (groups || []).map(g => g.id);
+        return groupIds.length > 0 ? q.in('group_id', groupIds) : null;
+    }
+
+    if (tableName === 'prepared_items_inventory') {
+        const { data: items } = await client.from('menu_items').select('id').eq('business_id', businessId);
+        const itemIds = (items || []).map(i => i.id);
+        return itemIds.length > 0 ? q.in('item_id', itemIds) : null;
+    }
+
+    // 2. Standard multi-tenant tables
+    if (MULTI_TENANT_TABLES.includes(tableName)) {
+        return q.eq('business_id', businessId);
+    }
+
+    // 3. Global tables
+    return q;
 };
 
 // ------------------------------------------------------------------
@@ -520,10 +548,21 @@ app.get("/api/admin/docker-dump/:table", enforceBusinessId, async (req, res) => 
             if (businessId) {
                 if (table === 'businesses') {
                     query = query.eq('id', businessId);
-                } else if (multiTenantTables.includes(table)) {
-                    query = query.eq('business_id', businessId);
+                } else if (table === 'order_items') {
+                    // Try direct business_id first, fallback to order join
+                    const { count: hasDirect } = await localSupabase.from('order_items').select('*', { count: 'exact', head: true }).eq('business_id', businessId).limit(1);
+                    if (hasDirect) {
+                        query = query.eq('business_id', businessId);
+                    } else {
+                        const { data: recentOrders } = await localSupabase.from('orders').select('id').eq('business_id', businessId);
+                        const orderIds = (recentOrders || []).map(o => o.id);
+                        if (orderIds.length > 0) {
+                            query = query.in('order_id', orderIds);
+                        } else {
+                            return res.json({ success: true, data: [], count: 0 });
+                        }
+                    }
                 } else if (table === 'optionvalues' || table === 'menuitemoptions') {
-                    // Force join via optiongroups
                     const { data: groups } = await localSupabase.from('optiongroups').select('id').eq('business_id', businessId);
                     const groupIds = (groups || []).map(g => g.id);
                     if (groupIds.length > 0) {
@@ -531,6 +570,8 @@ app.get("/api/admin/docker-dump/:table", enforceBusinessId, async (req, res) => 
                     } else {
                         return res.json({ success: true, data: [], count: 0 });
                     }
+                } else if (multiTenantTables.includes(table)) {
+                    query = query.eq('business_id', businessId);
                 } else if (table === 'prepared_items_inventory') {
                     const { data: items } = await localSupabase.from('menu_items').select('id').eq('business_id', businessId);
                     const itemIds = (items || []).map(i => i.id);
@@ -636,223 +677,82 @@ app.get("/api/admin/docker-dump/:table", enforceBusinessId, async (req, res) => 
 
 // RESOLVE CONFLICT API: Copy data from one source to another
 app.post("/api/admin/resolve-conflict", enforceBusinessId, async (req, res) => {
-    const { table, source } = req.body;
-    const businessId = req.businessId; // From middleware
+    const { table, source } = req.body; // source should stay in body
+    const businessId = req.businessId;
+    const finalTable = table || req.table;
 
-    if (!table || !source || !businessId) {
-        return res.status(400).json({ error: "Missing table, source, or businessId" });
+    if (!finalTable || !source || !businessId) {
+        return res.status(400).json({ error: "Missing required parameters (table, source, businessId)" });
     }
 
-    console.log(`🔧 [ResolveConflict] ${table}: Using ${source} as source of truth for ${businessId}`);
+    console.log(`🔧 [ResolveConflict] ${finalTable}: Syncing from ${source} for ${businessId}`);
 
     try {
         const sourceClient = source === 'docker' ? localSupabase : remoteSupabase;
         const targetClient = source === 'docker' ? remoteSupabase : localSupabase;
+        const targetName = source === 'docker' ? 'cloud' : 'docker';
 
         if (!sourceClient || !targetClient) {
-            return res.status(503).json({ error: "Database clients not available" });
+            return res.status(503).json({ error: "DB clients not ready" });
         }
 
-        // Use global list
-        const multiTenantTables = MULTI_TENANT_TABLES;
-
-        // Step 1: Fetch ALL data from source using paging (to handle tables with >1000 rows)
-        let allSourceData = [];
+        // 1. Fetch filtered data from source
+        let allData = [];
         let page = 0;
         let hasMore = true;
 
         while (hasMore) {
-            let query = sourceClient.from(table).select('*');
+            const query = await getSyncQuery(sourceClient, finalTable, businessId);
+            if (!query) { hasMore = false; continue; }
 
-            if (table === 'businesses') {
-                query = query.eq('id', businessId);
-            } else if (multiTenantTables.includes(table)) {
-                query = query.eq('business_id', businessId);
-            } else if (table === 'optionvalues' || table === 'menuitemoptions') {
-                const { data: groups } = await sourceClient.from('optiongroups').select('id').eq('business_id', businessId);
-                const groupIds = (groups || []).map(g => g.id);
-                if (groupIds.length > 0) {
-                    query = query.in('group_id', groupIds);
-                } else {
-                    hasMore = false;
-                    continue;
-                }
-            } else if (table === 'prepared_items_inventory') {
-                const { data: items } = await sourceClient.from('menu_items').select('id').eq('business_id', businessId);
-                const itemIds = (items || []).map(i => i.id);
-                if (itemIds.length > 0) {
-                    query = query.in('item_id', itemIds);
-                } else {
-                    hasMore = false;
-                    continue;
-                }
-            }
-
-            // Apply paging
-            query = query.range(page * 1000, (page + 1) * 1000 - 1);
-            const { data, error: fetchError } = await query;
-
-            if (fetchError) {
-                console.error(`❌ [ResolveConflict] Fetch error for ${table}:`, fetchError);
-                return res.status(500).json({ error: fetchError.message });
-            }
+            const { data, error } = await query.range(page * 1000, (page + 1) * 1000 - 1);
+            if (error) throw error;
 
             if (!data || data.length === 0) {
                 hasMore = false;
             } else {
-                allSourceData = allSourceData.concat(data);
+                allData.push(...data);
                 if (data.length < 1000) hasMore = false;
                 else page++;
             }
         }
 
-        const sourceData = allSourceData;
-
-        if (!sourceData || sourceData.length === 0) {
-            console.log(`⚠️ [ResolveConflict] No data in source for ${table}`);
-            return res.json({
-                success: true,
-                synced: 0,
-                message: "No data in source",
-                source,
-                target: source === 'docker' ? 'cloud' : 'docker'
-            });
+        if (allData.length === 0) {
+            console.log(`⚠️ [ResolveConflict] ${finalTable}: No source data found.`);
+            return res.json({ success: true, synced: 0, target: targetName, message: "No data found" });
         }
 
-        console.log(`📦 [ResolveConflict] Fetched ${sourceData.length} TOTAL rows from ${source}`);
+        console.log(`📦 [ResolveConflict] ${finalTable}: Found ${allData.length} source rows.`);
 
-        // Step 2: Delete existing data in target (carefully)
-        if (table !== 'prepared_items_inventory') {
-            let deleteQuery = targetClient.from(table).delete();
-
-            if (table === 'businesses') {
-                deleteQuery = deleteQuery.eq('id', businessId);
-            } else if (multiTenantTables.includes(table)) {
-                deleteQuery = deleteQuery.eq('business_id', businessId);
-            } else if (table === 'optionvalues' || table === 'menuitemoptions') {
-                const { data: targetGroups } = await targetClient.from('optiongroups').select('id').eq('business_id', businessId);
-                const targetGroupIds = (targetGroups || []).map(g => g.id);
-                if (targetGroupIds.length > 0) {
-                    deleteQuery = deleteQuery.in('group_id', targetGroupIds);
-                }
-            }
-
-            const { error: deleteError } = await deleteQuery;
-            if (deleteError) {
-                console.warn(`⚠️ [ResolveConflict] Delete warning for ${table}:`, deleteError.message);
-            }
+        // 2. Delete target records (filtered)
+        const deleteQuery = await getSyncQuery(targetClient, finalTable, businessId);
+        if (deleteQuery && finalTable !== 'prepared_items_inventory') {
+            const { error: delErr } = await deleteQuery.delete();
+            if (delErr) console.warn(`⚠️ [ResolveConflict] ${finalTable}: Delete warning:`, delErr.message);
         }
 
-        // Step 3: Upsert source data to target
+        // 3. Upsert to target
         let onConflict = 'id';
-        if (table === 'prepared_items_inventory') onConflict = 'item_id';
-        if (table === 'menuitemoptions') onConflict = 'item_id,group_id';
+        if (finalTable === 'prepared_items_inventory') onConflict = 'item_id';
+        if (finalTable === 'menuitemoptions') onConflict = 'item_id,group_id';
 
-        if (table === 'order_items') {
-            // SPECIAL HANDLING FOR order_items: Upsert in small batches and ignore FK errors
-            console.log(`🛡️ [ResolveConflict] Using granular upsert for order_items to bypass FK issues`);
-            let successful = 0;
-            let failed = 0;
-
-            // Upsert in batches of 50
-            for (let i = 0; i < sourceData.length; i += 50) {
-                const batch = sourceData.slice(i, i + 50);
-                const { error: batchErr } = await targetClient.from(table).upsert(batch, { onConflict: 'id' });
-
-                if (batchErr) {
-                    // If batch fails, try 1 by 1 for this batch
-                    for (const row of batch) {
-                        const { error: rowErr } = await targetClient.from(table).upsert(row, { onConflict: 'id' });
-                        if (!rowErr) successful++;
-                        else failed++;
-                    }
-                } else {
-                    successful += batch.length;
-                }
+        const { error: upErr } = await targetClient.from(finalTable).upsert(allData, { onConflict });
+        if (upErr) {
+            console.warn(`⚠️ [ResolveConflict] ${finalTable}: Bulk upsert failed, retrying granularly:`, upErr.message);
+            let successCount = 0;
+            let failCount = 0;
+            for (const row of allData) {
+                const { error: rowErr } = await targetClient.from(finalTable).upsert(row, { onConflict });
+                if (!rowErr) successCount++; else failCount++;
             }
-
-            console.log(`✅ [ResolveConflict] Finished order_items sync: ${successful} success, ${failed} skipped (FK issues)`);
-            return res.json({ success: true, synced: successful, skipped: failed, source, target: source === 'docker' ? 'cloud' : 'docker' });
+            return res.json({ success: true, synced: successCount, failed: failCount, target: targetName, method: 'granular' });
         }
 
-        // SPECIAL HANDLING FOR prepared_items_inventory: Uses item_id as primary key
-        if (table === 'prepared_items_inventory') {
-            console.log(`🛡️ [ResolveConflict] Special handling for prepared_items_inventory (${sourceData.length} rows)`);
-            let successful = 0;
-            let failed = 0;
-
-            const targetIsCloud = source === 'docker'; // If source is docker, target is cloud
-
-            for (const row of sourceData) {
-                // Ensure we have the right structure
-                // WORKAROUND: Cloud schema doesn't have 'id' or 'business_id' columns
-                const payload = {
-                    item_id: row.item_id,
-                    initial_stock: row.initial_stock,
-                    current_stock: row.current_stock,
-                    unit: row.unit,
-                    last_updated: row.last_updated
-                };
-
-                // Only include business_id and id if target is Docker (which has these columns)
-                if (!targetIsCloud) {
-                    if (row.business_id) payload.business_id = row.business_id;
-                    if (row.id) payload.id = row.id;
-                }
-
-                const { error } = await targetClient.from(table).upsert(payload, {
-                    onConflict: 'item_id',
-                    ignoreDuplicates: false
-                });
-
-                if (!error) {
-                    successful++;
-                } else {
-                    console.warn(`⚠️ [ResolveConflict] prepared_items_inventory upsert failed for item_id ${row.item_id}:`, error.message);
-                    failed++;
-                }
-            }
-
-            console.log(`✅ [ResolveConflict] Finished prepared_items_inventory sync: ${successful} success, ${failed} failed`);
-            return res.json({ success: true, synced: successful, failed, source, target: source === 'docker' ? 'cloud' : 'docker' });
-        }
-
-        // STANDARD UPSERT for other tables
-        const { error: upsertError } = await targetClient.from(table).upsert(sourceData, {
-            onConflict: onConflict,
-            ignoreDuplicates: false
-        });
-
-        if (upsertError) {
-            console.error(`❌ [ResolveConflict] Upsert error for ${table}:`, upsertError);
-
-            if (upsertError.code === '23503') {
-                console.warn(`⚠️ [ResolveConflict] Foreign key violation for ${table}. Retrying in granular mode...`);
-                // Fallback to granular upsert if bulk fails due to FK
-                let successful = 0;
-                let failed = 0;
-                for (const row of sourceData) {
-                    const { error: rowErr } = await targetClient.from(table).upsert(row, { onConflict: onConflict });
-                    if (!rowErr) successful++;
-                    else failed++;
-                }
-                return res.json({
-                    success: true,
-                    synced: successful,
-                    failed,
-                    message: "Granular sync completed with some FK skips",
-                    source,
-                    target: source === 'docker' ? 'cloud' : 'docker'
-                });
-            }
-            return res.status(500).json({ error: upsertError.message });
-        }
-
-        console.log(`✅ [ResolveConflict] Synced ${sourceData.length} rows from ${source} to ${source === 'docker' ? 'cloud' : 'docker'}`);
-        res.json({ success: true, synced: sourceData.length, source, target: source === 'docker' ? 'cloud' : 'docker' });
+        console.log(`✅ [ResolveConflict] ${finalTable}: Synced ${allData.length} rows.`);
+        res.json({ success: true, synced: allData.length, target: targetName });
 
     } catch (err) {
-        console.error(`❌ [ResolveConflict] Exception:`, err);
+        console.error(`❌ [ResolveConflict] ${finalTable} Failed:`, err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -879,21 +779,104 @@ app.get("/api/admin/sync-queue", async (req, res) => {
 app.post("/api/admin/sync-queue/retry", async (req, res) => {
     try {
         if (!localSupabase) return res.status(503).json({ error: "Local DB unavailable" });
-        const { ids } = req.body; // Array of IDs to retry
+        const { ids } = req.body;
 
         if (!ids || !ids.length) return res.status(400).json({ error: "No IDs provided" });
 
+        console.log(`🔄 [SyncQueue] Retrying ${ids.length} items...`);
         const { error } = await localSupabase
             .from('sync_queue')
-            .update({ status: 'PENDING', retries: 0, error_message: null })
+            .update({ status: 'PENDING', error_message: null })
             .in('id', ids);
 
         if (error) throw error;
+
+        // Proactively trigger a run
+        processSyncQueue().catch(e => console.error("Immediate sync failed:", e));
+
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
+
+// 🔄 BACKGROUND SYNC WORKER
+const processSyncQueue = async () => {
+    if (!localSupabase || !remoteSupabase) return;
+
+    // Mutex to avoid parallel runs
+    if (global.isProcessingSyncQueue) return;
+    global.isProcessingSyncQueue = true;
+
+    try {
+        // Fetch up to 100 pending or failed items
+        const { data: items, error: fetchError } = await localSupabase
+            .from('sync_queue')
+            .select('*')
+            .or('status.eq.PENDING,status.eq.FAILED')
+            .order('created_at', { ascending: true })
+            .limit(100);
+
+        if (fetchError) throw fetchError;
+        if (!items || items.length === 0) {
+            global.isProcessingSyncQueue = false;
+            return;
+        }
+
+        console.log(`🔄 [SyncWorker] Processing ${items.length} items...`);
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const item of items) {
+            try {
+                const action = (item.action || 'UPSERT').toUpperCase();
+                let result;
+
+                if (action === 'DELETE') {
+                    if (!item.record_id) throw new Error("Missing record_id for DELETE");
+                    result = await remoteSupabase.from(item.table_name).delete().eq('id', item.record_id);
+                } else {
+                    // UPSERT handles both INSERT and UPDATE (PostgRest behavior)
+                    if (!item.payload) throw new Error("Missing payload for UPSERT");
+                    result = await remoteSupabase.from(item.table_name).upsert(item.payload);
+                }
+
+                if (result.error) throw result.error;
+
+                // Success
+                await localSupabase.from('sync_queue').update({
+                    status: 'DONE', // 'DONE' instead of 'SUCCESS' for consistency with UI
+                    sent_at: new Date().toISOString(),
+                    error_message: null
+                }).eq('id', item.id);
+                successCount++;
+
+            } catch (err) {
+                console.error(`❌ [SyncWorker] Item ${item.id} (${item.table_name}) failed:`, err.message);
+                await localSupabase.from('sync_queue').update({
+                    status: 'FAILED',
+                    error_message: err.message
+                }).eq('id', item.id);
+                failCount++;
+            }
+        }
+
+        console.log(`✅ [SyncWorker] Batch complete. Success: ${successCount}, Failed: ${failCount}`);
+
+        // If we hit the limit, there might be more. Trigger another run shortly.
+        if (items.length === 100) {
+            setTimeout(processSyncQueue, 1000);
+        }
+
+    } catch (e) {
+        console.error("❌ [SyncWorker] Fatal worker error:", e.message);
+    } finally {
+        global.isProcessingSyncQueue = false;
+    }
+};
+
+// Polling interval: every 30 seconds for higher responsiveness
+setInterval(processSyncQueue, 30 * 1000);
 
 // TRUSTED STATS API: Bypass RLS to show true counts in DatabaseExplorer
 app.post("/api/admin/purge-docker-table", async (req, res) => {
@@ -930,224 +913,132 @@ app.post("/api/admin/purge-docker-table", async (req, res) => {
     }
 });
 
-app.get("/api/admin/trusted-stats", async (req, res) => {
-    const { table, businessId, noBusinessId } = req.query;
+// TRUSTED STATS API: Bypass RLS to show true counts in DatabaseExplorer
+app.all("/api/admin/trusted-stats", enforceBusinessId, async (req, res) => {
+    const businessId = req.businessId;
+    const table = req.table;
+
     if (!table || !businessId) return res.status(400).json({ error: "Table and businessId required" });
 
-    // Optional Security Check (X-Admin-Secret)
-    // if (req.headers['x-admin-secret'] !== ADMIN_SECRET) return res.status(401).json({ error: "Unauthorized" });
+    const results = { cloud: 0, docker: 0 };
 
-    const isNoBusinessId = noBusinessId === 'true';
-    const results = { cloud: 0, docker: 0, error: null };
+    try {
+        // 1. Cloud Count
+        if (remoteSupabase) {
+            const q = await getSyncQuery(remoteSupabase, table, businessId, { countOnly: true });
+            if (q) {
+                const { count, error } = await q;
+                if (!error) results.cloud = count || 0;
+            }
+        }
 
-    console.log(`📊 [Stats] Fetching counts for ${table} (isNoBusinessId: ${isNoBusinessId})...`);
+        // 2. Docker Count
+        if (localSupabase) {
+            const q = await getSyncQuery(localSupabase, table, businessId, { countOnly: true });
+            if (q) {
+                const { count, error } = await q;
+                if (!error) results.docker = count || 0;
+                else {
+                    // Fallback for Docker
+                    const { count: total } = await localSupabase.from(table).select('*', { count: 'exact', head: true });
+                    results.docker = total || 0;
+                }
+            }
+        }
+
+        res.json(results);
+    } catch (err) {
+        console.error(`❌ Stats error:`, err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// TIMESTAMP COMPARISON API: Get latest updated_at from both sources for LWW comparison
+app.get("/api/admin/compare-timestamps", async (req, res) => {
+    const { table, businessId } = req.query;
+    if (!table || !businessId) return res.status(400).json({ error: "Table and businessId required" });
+
+    const results = {
+        cloud: { latestUpdatedAt: null, count: 0, hasUpdatedAt: false },
+        docker: { latestUpdatedAt: null, count: 0, hasUpdatedAt: false }
+    };
+
+    const TABLES_WITHOUT_UPDATED_AT = ['menuitemoptions', 'optionvalues', 'task_completions'];
+    const hasUpdatedAtColumn = !TABLES_WITHOUT_UPDATED_AT.includes(table);
+
+    console.log(`🕐 [Timestamps] Comparing ${table} for ${businessId}...`);
 
     try {
         // --- 1. CLOUD ---
         if (remoteSupabase) {
             try {
-                let cloudCount = 0;
-
-                // PRIORITIZE RPC for sensitive tables (blocks RLS '0' issues)
-                if (table === 'loyalty_cards' || table === 'loyalty_transactions' || table === 'customers') {
-                    console.log(`   - Using RPC override for ${table} count`);
-                    const rpcName = table === 'customers' ? 'get_customers_for_sync' :
-                        table === 'loyalty_cards' ? 'get_loyalty_cards_for_sync' : 'get_loyalty_transactions_for_sync';
-
-                    let rpcTotal = 0;
-                    let rpcPage = 0;
-                    let hasMoreRpc = true;
-                    while (hasMoreRpc) {
-                        const { data: rpcData, error: rpcErr } = await remoteSupabase
-                            .rpc(rpcName, { p_business_id: businessId })
-                            .range(rpcPage * 1000, (rpcPage + 1) * 1000 - 1);
-
-                        if (!rpcErr && rpcData && rpcData.length > 0) {
-                            rpcTotal += rpcData.length;
-                            if (rpcData.length < 1000) hasMoreRpc = false;
-                            else rpcPage++;
-                        } else {
-                            if (rpcErr) console.error(`   - RPC count fail for ${table} batch ${rpcPage}:`, rpcErr.message);
-                            hasMoreRpc = false;
-                        }
-                    }
-                    cloudCount = rpcTotal;
-                } else {
-                    // Strategy: Try direct business_id count first
-                    let directRes = null;
-                    if (table === 'businesses') {
-                        directRes = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).eq('id', businessId);
-                    } else if (!isNoBusinessId || table === 'order_items') {
-                        directRes = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
-                    }
-
-                    if (directRes && !directRes.error && directRes.count !== null) {
-                        cloudCount = directRes.count;
+                const query = await getSyncQuery(remoteSupabase, table, businessId, { countOnly: true });
+                if (query) {
+                    let finalQuery = query;
+                    if (hasUpdatedAtColumn) {
+                        finalQuery = finalQuery.order('updated_at', { ascending: false, nullsFirst: false }).limit(1);
                     } else {
-                        // FALLBACK for complex related tables
-                        if (table === 'order_items') {
-                            let allOrderIds = [];
-                            let orderPage = 0;
-                            let hasMoreOrders = true;
-                            while (hasMoreOrders) {
-                                const { data: orders } = await remoteSupabase.from('orders').select('id').eq('business_id', businessId).range(orderPage * 1000, (orderPage + 1) * 1000 - 1);
-                                if (!orders || orders.length === 0) hasMoreOrders = false;
-                                else {
-                                    allOrderIds.push(...orders.map(o => o.id));
-                                    if (orders.length < 1000) hasMoreOrders = false;
-                                    orderPage++;
-                                }
-                            }
-                            if (allOrderIds.length > 0) {
-                                let totalItems = 0;
-                                for (let i = 0; i < allOrderIds.length; i += 500) {
-                                    const batch = allOrderIds.slice(i, i + 500);
-                                    const { count } = await remoteSupabase.from('order_items').select('*', { count: 'exact', head: true }).in('order_id', batch);
-                                    totalItems += (count || 0);
-                                }
-                                cloudCount = totalItems;
-                            }
-                        } else if (table === 'menuitemoptions' || table === 'optionvalues') {
-                            const { data: groups } = await remoteSupabase.from('optiongroups').select('id').eq('business_id', businessId);
-                            const ids = (groups || []).map(g => g.id);
-                            if (ids.length > 0) {
-                                const { count } = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).in('group_id', ids);
-                                cloudCount = count || 0;
-                            }
-                        } else if (isNoBusinessId) {
-                            const { count } = await remoteSupabase.from(table).select('*', { count: 'exact', head: true });
-                            cloudCount = count || 0;
-                        } else {
-                            // GENERIC FALLBACK: If direct count fails or is null, try a simpler select with count
-                            const { count, error: countErr } = await remoteSupabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
-                            if (!countErr) cloudCount = count || 0;
-                            else console.warn(`   - Generic cloud count for ${table} failed:`, countErr.message);
-                        }
+                        finalQuery = finalQuery.limit(1);
+                    }
+
+                    const { data, count, error } = await finalQuery;
+                    if (!error) {
+                        results.cloud.count = count || 0;
+                        results.cloud.hasUpdatedAt = hasUpdatedAtColumn;
+                        if (data && data.length > 0 && data[0].updated_at) results.cloud.latestUpdatedAt = data[0].updated_at;
                     }
                 }
-                results.cloud = cloudCount;
-            } catch (cloudErr) {
-                console.warn(`⚠️ Cloud count failed for ${table}:`, cloudErr.message);
-                results.cloud_error = cloudErr.message;
+            } catch (e) {
+                console.warn(`⚠️ Cloud check failed for ${table}:`, e.message);
             }
         }
 
         // --- 2. DOCKER ---
         if (localSupabase) {
             try {
-                let dockerCount = 0;
-                let dDirectRes = null;
-                if (table === 'businesses') {
-                    dDirectRes = await localSupabase.from(table).select('*', { count: 'exact', head: true }).eq('id', businessId);
-                } else if (!isNoBusinessId || table === 'order_items') {
-                    dDirectRes = await localSupabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
-                }
-
-                if (dDirectRes && !dDirectRes.error && dDirectRes.count !== null) {
-                    dockerCount = dDirectRes.count;
-                } else {
-                    if (table === 'order_items') {
-                        let allOrderIds = [];
-                        let orderPage = 0;
-                        let hasMoreOrders = true;
-                        while (hasMoreOrders) {
-                            const { data: orders } = await localSupabase.from('orders').select('id').eq('business_id', businessId).range(orderPage * 1000, (orderPage + 1) * 1000 - 1);
-                            if (!orders || orders.length === 0) hasMoreOrders = false;
-                            else {
-                                allOrderIds.push(...orders.map(o => o.id));
-                                if (orders.length < 1000) hasMoreOrders = false;
-                                orderPage++;
-                            }
-                        }
-                        if (allOrderIds.length > 0) {
-                            let totalItems = 0;
-                            for (let i = 0; i < allOrderIds.length; i += 500) {
-                                const batch = allOrderIds.slice(i, i + 500);
-                                const { count } = await localSupabase.from('order_items').select('*', { count: 'exact', head: true }).in('order_id', batch);
-                                totalItems += (count || 0);
-                            }
-                            dockerCount = totalItems;
-                        }
-                    } else if (table === 'menuitemoptions' || table === 'optionvalues') {
-                        const { data: groups } = await localSupabase.from('optiongroups').select('id').eq('business_id', businessId);
-                        const ids = (groups || []).map(g => g.id);
-                        if (ids.length > 0) {
-                            const { count } = await localSupabase.from(table).select('*', { count: 'exact', head: true }).in('group_id', ids);
-                            dockerCount = count || 0;
-                        }
+                const query = await getSyncQuery(localSupabase, table, businessId, { countOnly: true });
+                if (query) {
+                    let finalQuery = query;
+                    if (hasUpdatedAtColumn) {
+                        finalQuery = finalQuery.order('updated_at', { ascending: false, nullsFirst: false }).limit(1);
                     } else {
-                        // GLOBAL COUNT FALLBACK
-                        const { count } = await localSupabase.from(table).select('*', { count: 'exact', head: true });
-                        dockerCount = count || 0;
+                        finalQuery = finalQuery.limit(1);
+                    }
+
+                    const { data, count, error } = await finalQuery;
+                    if (!error) {
+                        results.docker.count = count || 0;
+                        results.docker.hasUpdatedAt = hasUpdatedAtColumn;
+                        if (data && data.length > 0 && data[0].updated_at) results.docker.latestUpdatedAt = data[0].updated_at;
+                    } else {
+                        const { count: total } = await localSupabase.from(table).select('*', { count: 'exact', head: true });
+                        results.docker.count = total || 0;
                     }
                 }
-                results.docker = dockerCount;
-            } catch (dockerErr) {
-                console.warn(`⚠️ Docker count failed for ${table}:`, dockerErr.message);
-                results.docker_error = dockerErr.message;
-            }
-        }
-        // Helper for 3-day window count
-        const getRecentCount = async (client, tableName, bId) => {
-            const threeDaysAgo = new Date();
-            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-            const isoDate = threeDaysAgo.toISOString();
-
-            // 1. Try RPC if available for sensitive tables (Cloud only)
-            if (client === remoteSupabase) {
-                if (tableName === 'loyalty_transactions' || tableName === 'customers' || tableName === 'loyalty_cards') {
-                    const rpcName = tableName === 'loyalty_transactions' ? 'get_loyalty_transactions_for_sync' :
-                        tableName === 'customers' ? 'get_customers_for_sync' : 'get_loyalty_cards_for_sync';
-
-                    const { data: rpcData } = await client.rpc(rpcName, { p_business_id: bId });
-                    if (rpcData) {
-                        // Filter by date client-side since RPC usually returns all
-                        return rpcData.filter(r => r.created_at >= isoDate).length;
-                    }
-                }
-            }
-
-            // 2. Try direct check (preferred)
-            const { count, error } = await client
-                .from(tableName)
-                .select('*', { count: 'exact', head: true })
-                .eq('business_id', bId)
-                .gte('created_at', isoDate);
-
-            if (!error && count !== null) return count;
-
-            // 2. Fallback for order_items via orders
-            if (tableName === 'order_items') {
-                const { data: recentOrders } = await client.from('orders').select('id').eq('business_id', bId).gte('created_at', isoDate);
-                if (recentOrders && recentOrders.length > 0) {
-                    const ids = recentOrders.map(o => o.id);
-                    let total = 0;
-                    for (let i = 0; i < ids.length; i += 500) {
-                        const batch = ids.slice(i, i + 500);
-                        const { count: c } = await client.from('order_items').select('*', { count: 'exact', head: true }).in('order_id', batch);
-                        total += (c || 0);
-                    }
-                    return total;
-                }
-            }
-            return 0;
-        };
-
-        const historicalTables = ['orders', 'order_items', 'loyalty_transactions'];
-        if (historicalTables.includes(table)) {
-            if (remoteSupabase) {
-                results.cloudRecent = await getRecentCount(remoteSupabase, table, businessId).catch(() => 0);
-            }
-            if (localSupabase) {
-                results.dockerRecent = await getRecentCount(localSupabase, table, businessId).catch(() => 0);
+            } catch (e) {
+                console.warn(`⚠️ Docker check failed for ${table}:`, e.message);
             }
         }
 
-        console.log(`✅ [Stats] ${table}: Cloud=${results.cloud} (${results.cloudRecent || 'N/A'}), Docker=${results.docker} (${results.dockerRecent || 'N/A'})`);
-        res.json(results);
-    } catch (e) {
-        console.error(`❌ [Stats] Error for ${table}:`, e.message);
-        res.json({ ...results, error: e.message });
+        let winner = 'cloud';
+        let reason = 'Authoritative default';
+        if (results.cloud.count === 0 && results.docker.count > 0) {
+            winner = 'docker';
+            reason = 'Docker has data, Cloud is empty';
+        } else if (hasUpdatedAtColumn && results.cloud.latestUpdatedAt && results.docker.latestUpdatedAt) {
+            if (new Date(results.docker.latestUpdatedAt) > new Date(results.cloud.latestUpdatedAt)) {
+                winner = 'docker';
+                reason = `Docker newer (${results.docker.latestUpdatedAt})`;
+            } else {
+                reason = `Cloud newer/same (${results.cloud.latestUpdatedAt})`;
+            }
+        }
+
+        res.json({ ...results, winner, reason });
+
+    } catch (err) {
+        console.error(`❌ [Timestamps] Global error:`, err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -1326,6 +1217,7 @@ app.post("/api/admin/force-reset-sync", (req, res) => {
     res.json({ message: "Sync status forced to idle" });
 });
 
+// Keep old endpoint for backward compatibility during transition
 app.post("/api/sync-cloud-to-local", async (req, res) => {
     try {
         console.log("🔍 [Sync Request] Received sync request");
@@ -3592,7 +3484,7 @@ app.post("/api/music/sync-drive", async (req, res) => {
 });
 
 // ------------------------------------------------------------------
-const PORT = process.env.PORT || 8082;
+const PORT = process.env.PORT || 8081;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
 });

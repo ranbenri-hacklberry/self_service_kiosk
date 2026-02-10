@@ -15,6 +15,7 @@ services:
       - LOCAL_SUPABASE_URL=http://supabase_kong_scarlet-zodiac:8000
       - LOCAL_SUPABASE_SERVICE_KEY=${VITE_LOCAL_SERVICE_ROLE_KEY}
       - IS_LOCAL_MODE=true
+      - BIOMETRIC_SCRAMBLE_KEY=${BIOMETRIC_SCRAMBLE_KEY}
     env_file:
       - .env
     extra_hosts:
