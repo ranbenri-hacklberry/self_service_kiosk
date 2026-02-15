@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Database, Building2, Shield, LogOut, LayoutDashboard, Search, ChevronRight, Activity, X } from 'lucide-react';
+import { Database, Building2, Shield, LogOut, LayoutDashboard, Search, ChevronRight, Activity, X, MessageSquare, Monitor } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import SystemDiagnostics from '@/components/manager/SystemDiagnostics';
 import SystemMap from '@/components/super-admin/SystemMap';
+import KDSObservability from '@/components/super-admin/KDSObservability';
 
 const SuperAdminPortal = () => {
     const navigate = useNavigate();
@@ -63,6 +64,14 @@ const SuperAdminPortal = () => {
 
     const mainOptions = [
         {
+            title: 'דשבורד ראשי',
+            subtitle: 'ניהול והוספת עסקים',
+            icon: <Building2 size={32} className="text-blue-400" />,
+            path: '/super-admin/businesses',
+            color: 'from-blue-600/20 to-blue-900/40',
+            borderColor: 'border-blue-500/30'
+        },
+        {
             title: 'סייר מסד נתונים',
             subtitle: 'ניהול טבלאות, שאילתות ו-RLS',
             icon: <Database size={32} className="text-purple-400" />,
@@ -71,12 +80,12 @@ const SuperAdminPortal = () => {
             borderColor: 'border-purple-500/30'
         },
         {
-            title: 'דשבורד ראשי',
-            subtitle: 'ניהול והוספת עסקים',
-            icon: <Building2 size={32} className="text-blue-400" />,
-            path: '/super-admin/businesses',
-            color: 'from-blue-600/20 to-blue-900/40',
-            borderColor: 'border-blue-500/30'
+            title: 'שליחת SMS',
+            subtitle: 'מרכז הודעות בסגנון WhatsApp',
+            icon: <MessageSquare size={32} className="text-green-400" />,
+            path: '/super-admin/sms',
+            color: 'from-green-600/20 to-green-900/40',
+            borderColor: 'border-green-500/30'
         }
     ];
 
@@ -113,14 +122,14 @@ const SuperAdminPortal = () => {
             </motion.div>
 
             {/* Main Options Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-6xl relative z-10 mb-10">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-6xl relative z-10 mb-8">
                 {mainOptions.map((item, idx) => (
                     <motion.button
                         key={idx}
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: idx * 0.1 }}
-                        onClick={() => navigate(item.path)}
+                        onClick={() => item.onClick ? item.onClick() : navigate(item.path)}
                         className={`group relative p-6 bg-gradient-to-br ${item.color} rounded-2xl border ${item.borderColor} backdrop-blur-sm hover:translate-y-[-2px] hover:shadow-xl transition-all duration-300 text-right overflow-hidden`}
                     >
                         <div className="absolute top-0 left-0 w-24 h-24 bg-white/5 rounded-br-[3rem] -translate-x-8 -translate-y-8 group-hover:scale-110 transition-transform duration-500 blur-xl opacity-30"></div>
@@ -143,6 +152,11 @@ const SuperAdminPortal = () => {
                         </div>
                     </motion.button>
                 ))}
+            </div>
+
+            {/* KDS Live Monitor Section */}
+            <div className="w-full max-w-6xl relative z-10 mb-10">
+                <KDSObservability />
             </div>
 
             {/* Businesses List Section */}
